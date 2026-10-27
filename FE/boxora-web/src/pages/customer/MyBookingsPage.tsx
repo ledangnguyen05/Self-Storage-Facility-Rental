@@ -175,7 +175,7 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       description: `Nhân viên đã xếp buồng kho #${b.unitCode} tại ${b.facilityName}. Quý khách vui lòng đến theo lịch hẹn mang CCCD để hoàn tất nhận kho.`,
       step: 3,
       stepLabel: 'Đã xếp buồng kho',
-      priorityTag: '✓ Đã xếp buồng kho',
+      priorityTag: '✓ Sẵn sàng đón tiếp',
       priorityTagClass: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800',
     }
   }
@@ -656,17 +656,6 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 </p>
               </div>
             </div>
-
-            {canAccessPortal && (
-              <button
-                type="button"
-                onClick={() => navigate('/portal/customer')}
-                className="self-start sm:self-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0"
-              >
-                <Unlock size={14} />
-                <span>Vào Portal Kho Đang Thuê</span>
-              </button>
-            )}
           </div>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
@@ -699,9 +688,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 3
               </span>
               <div>
-                <span className="font-bold text-slate-900 dark:text-white block">3. Nhân viên xếp ô kho</span>
+                <span className="font-bold text-slate-900 dark:text-white block">3. Tới chọn kho mong muốn</span>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                  Staff kiểm tra cơ sở và gán mã buồng kho
+                  Đến kho để nhân viên xác nhận và gán mã buồng kho
                 </span>
               </div>
             </div>
@@ -713,7 +702,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               <div>
                 <span className="font-bold text-slate-900 dark:text-white block">4. Nhận mã PIN IoT 24/7</span>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-                  Tự động gửi email &amp; kích hoạt Portal
+                  Nhận thông tin qua email và thông báo Web
                 </span>
               </div>
             </div>
@@ -964,11 +953,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           <span className={`w-2 h-2 rounded-full ${stageInfo.dotClass}`} />
                           <span>{stageInfo.label}</span>
                         </span>
-                        {stageInfo.priorityTag && (
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${stageInfo.priorityTagClass || 'text-blue-600'}`}>
-                            {stageInfo.priorityTag}
-                          </span>
-                        )}
+                        {stageInfo.priorityTag &&
+                          stageInfo.priorityTag.replace(/[✓\s]/g, '').toLowerCase() !==
+                            stageInfo.label.replace(/[✓\s]/g, '').toLowerCase() && (
+                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${stageInfo.priorityTagClass || 'text-blue-600'}`}>
+                              {stageInfo.priorityTag}
+                            </span>
+                          )}
                       </div>
                     </div>
 

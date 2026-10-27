@@ -3,6 +3,7 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
+import com.boxora.dto.request.ToggleMaintenanceRequest;
 import com.boxora.dto.response.StorageUnitResponse;
 import com.boxora.service.StorageUnitService;
 import jakarta.validation.Valid;
@@ -55,7 +56,7 @@ public class StorageUnitController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_STAFF', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> updateUnit(
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
@@ -71,8 +72,11 @@ public class StorageUnitController {
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
-    public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái bảo trì ngăn kho thành công", storageUnitService.toggleMaintenance(id)));
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_STAFF', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(
+            @PathVariable UUID id,
+            @RequestBody(required = false) ToggleMaintenanceRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái bảo trì ngăn kho thành công", storageUnitService.toggleMaintenance(id, request)));
     }
 }

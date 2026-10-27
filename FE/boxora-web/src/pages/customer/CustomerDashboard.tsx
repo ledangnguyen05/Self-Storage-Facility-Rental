@@ -1789,12 +1789,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleTabChange('explore')}
-              className="stitch-btn-primary text-xs"
-            >
-              <span>Thuê thêm kho</span>
-            </button>
+            
             <button
               onClick={() => handleTabChange('support')}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
@@ -2387,7 +2382,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             <div>
                               <div className="flex items-center gap-1.5">
                                 <span className="font-mono text-base font-extrabold text-slate-900">
-                                  {b.unitCode ? `KHO #${b.unitCode}` : 'Vị trí kho xác nhận khi check-in'}
+                                  {b.unitCode ? `KHO #${b.unitCode}` : `KHO CHỜ GÁN (${b.unitTypeName || 'Theo đơn'})`}
                                 </span>
                               </div>
                               <span className="text-xs text-slate-500 block truncate max-w-[180px]">
@@ -3585,7 +3580,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   {bookingPackage === 'custom' && (
                     <div className="p-3 bg-blue-50/50 border border-blue-200/80 rounded-xl flex items-center gap-3">
                       <span className="text-xs font-semibold text-slate-700 shrink-0">Nhập số ngày muốn thuê:</span>
-                      <div className="flex items-center gap-2 flex-1">
+                      <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
                         <input
                           type="number"
                           min={1}

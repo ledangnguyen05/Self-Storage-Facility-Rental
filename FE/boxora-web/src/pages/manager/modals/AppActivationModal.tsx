@@ -218,7 +218,7 @@ export const AppActivationModal: React.FC<AppActivationModalProps> = ({
                 maxLength={6}
                 value={activationPin}
                 onChange={(e) => setActivationPin(e.target.value.replace(/\D/g, ''))}
-                className="px-4 py-2 bg-white rounded-lg border border-blue-300 font-mono text-2xl font-black text-slate-900 tracking-widest text-center flex-1 shadow-2xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="min-w-0 px-4 py-2 bg-white rounded-lg border border-blue-300 font-mono text-2xl font-black text-slate-900 tracking-widest text-center flex-1 shadow-2xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
               <button
                 type="button"

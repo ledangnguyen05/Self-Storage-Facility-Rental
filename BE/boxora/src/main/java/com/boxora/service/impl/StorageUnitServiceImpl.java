@@ -2,6 +2,7 @@ package com.boxora.service.impl;
 
 import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
+import com.boxora.dto.request.ToggleMaintenanceRequest;
 import com.boxora.dto.response.StorageUnitResponse;
 import com.boxora.entity.Facility;
 import com.boxora.entity.FacilityPolicy;
@@ -267,6 +268,11 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
     @Override
     public StorageUnitResponse toggleMaintenance(UUID id) {
+        return toggleMaintenance(id, null);
+    }
+
+    @Override
+    public StorageUnitResponse toggleMaintenance(UUID id, ToggleMaintenanceRequest request) {
         StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
@@ -295,7 +301,21 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             if (hasActiveContract || hasActiveBooking) {
                 throw new AppException(ErrorCode.STORAGE_UNIT_IN_USE);
             }
+            if ( request != null && (request.getReason() == null || request.getReason().trim().isEmpty()) ) {
+                throw new IllegalArgumentException("Vui lòng nhập lý do bảo trì kỹ thuật.");
+            }
+            String reason = (request != null && request.getReason() != null && !request.getReason().trim().isEmpty())
+                    ? request.getReason().trim()
+                    : "Bảo trì kỹ thuật định kỳ";
+            String maintenanceBy = (request != null && request.getMaintenanceBy() != null && !request.getMaintenanceBy().trim().isEmpty())
+                    ? request.getMaintenanceBy().trim()
+                    : (org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() != null
+                        ? org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName()
+                        : "Kỹ thuật viên cơ sở");
             unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+            unit.setMaintenanceReason(reason);
+            unit.setMaintenanceBy(maintenanceBy);
+            unit.setMaintenanceAt(java.time.LocalDateTime.now());
         } else if (unit.getStatus() == UnitStatus.UNDER_MAINTENANCE) {
             // Tắt bảo trì: Phục hồi trạng thái thực tế dựa trên hợp đồng/booking, KHÔNG đưa kho đang thuê về AVAILABLE
             boolean hasActiveContract = rentalContractRepository.existsByUnit_IdAndStatusIn(
@@ -314,6 +334,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 unit.setStatus(UnitStatus.RESERVED);
             } else {
                 unit.setStatus(UnitStatus.AVAILABLE);
+            unit.setMaintenanceReason(null);
+            unit.setMaintenanceBy(null);
+            unit.setMaintenanceAt(null);
             }
         }
 
@@ -324,7 +347,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 ActivityAction.STORAGE_UNIT_STATUS_CHANGE,
                 "StorageUnit",
                 unit.getId(),
-                String.format("Chuyển trạng thái bảo trì ngăn kho %s từ %s sang %s", unit.getUnitCode(), oldStatus, unit.getStatus()),
+                unit.getStatus() == UnitStatus.UNDER_MAINTENANCE
+                        ? String.format("Chuyển ngăn kho %s sang bảo trì kỹ thuật (Người phụ trách: %s | Lý do: %s)", unit.getUnitCode(), unit.getMaintenanceBy(), unit.getMaintenanceReason())
+                        : String.format("Hoàn tất bảo trì ngăn kho %s, chuyển từ %s sang %s", unit.getUnitCode(), oldStatus, unit.getStatus()),
                 oldStatus,
                 unit.getStatus()
         );
@@ -423,6 +448,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .startDate(startDate)
                 .dueDate(dueDate)
                 .imageUrl(u.getImageUrl())
+                .maintenanceReason(u.getMaintenanceReason())
+                .maintenanceBy(u.getMaintenanceBy())
+                .maintenanceAt(u.getMaintenanceAt() != null ? u.getMaintenanceAt().toString() : null)
                 .build();
     }
 }

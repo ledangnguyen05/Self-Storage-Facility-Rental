@@ -35,4 +35,7 @@ public class StorageUnitResponse {
     private String startDate;
     private String dueDate;
     private String imageUrl;
+    private String maintenanceReason;
+    private String maintenanceBy;
+    private String maintenanceAt;
 }

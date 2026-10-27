@@ -128,7 +128,7 @@ export function CustomerBookingCard({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-base font-extrabold text-slate-900">
-                  {unitCode ? `KHO #${unitCode}` : 'Vị trí kho xác nhận khi check-in'}
+                  {unitCode ? `KHO #${unitCode}` : 'KHO CHỜ GÁN KHI CHECK-IN'}
                 </span>
                 <span className={`stitch-badge ${
                   booking.status === 'ACTIVE'
@@ -165,7 +165,7 @@ export function CustomerBookingCard({
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs font-mono text-slate-600">
+        <div className="flex items-center justify-between gap-2 flex-wrap rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs font-mono text-slate-600">
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[15px] text-cyan-600">security</span>
             PIN/QR trong Boxora

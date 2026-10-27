@@ -42,6 +42,9 @@ interface InspectedUnit {
   facilityId?: string
   facilityName?: string
   imageUrl?: string
+  maintenanceReason?: string
+  maintenanceBy?: string
+  maintenanceAt?: string
 }
 
 type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
@@ -66,7 +69,7 @@ export const ManagerDashboard: React.FC = () => {
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
     if (!tab) return false
     if (role === 'STAFF') {
-      return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets'
+      return tab === 'overview'
     }
     return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
   }
@@ -169,6 +172,11 @@ export const ManagerDashboard: React.FC = () => {
   // Modals state
   const [showIoTModal, setShowIoTModal] = useState(false)
   const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
+  const [maintenanceModalUnit, setMaintenanceModalUnit] = useState<InspectedUnit | null>(null)
+  const [maintenanceReasonInput, setMaintenanceReasonInput] = useState<string>('')
+  const [maintenanceByInput, setMaintenanceByInput] = useState<string>('')
+  const [maintenanceError, setMaintenanceError] = useState<string>('')
+  const [isSubmittingMaintenance, setIsSubmittingMaintenance] = useState<boolean>(false)
   const [showReadOnlyBookingModal, setShowReadOnlyBookingModal] = useState(false)
   const [receptionAlertData, setReceptionAlertData] = useState<{
     isOpen: boolean
@@ -287,9 +295,11 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin'),
-            contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ'),
-            due: (su.startDate && su.dueDate)
+            tenant: isMaint ? (su.maintenanceBy || 'Kỹ thuật viên cơ sở') : (su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin')),
+            contract: isMaint ? (su.maintenanceReason || 'Bảo trì kỹ thuật định kỳ') : (su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ')),
+            due: isMaint
+              ? (su.maintenanceAt ? new Date(su.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Đang bảo trì')
+              : (su.startDate && su.dueDate)
               ? `${new Date(su.startDate).toLocaleDateString('vi-VN')} - ${new Date(su.dueDate).toLocaleDateString('vi-VN')}`
               : su.dueDate
               ? new Date(su.dueDate).toLocaleDateString('vi-VN')
@@ -301,7 +311,10 @@ export const ManagerDashboard: React.FC = () => {
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
             facilityName: su.facilityName,
-            imageUrl: su.imageUrl
+            imageUrl: su.imageUrl,
+            maintenanceReason: su.maintenanceReason,
+            maintenanceBy: su.maintenanceBy,
+            maintenanceAt: su.maintenanceAt
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
@@ -518,6 +531,18 @@ export const ManagerDashboard: React.FC = () => {
       return
     }
 
+    // Nếu kho đang Trống -> Mở modal yêu cầu nhập Lý do bảo trì & Người bảo trì
+    if (selectedUnit.status === 'Available') {
+      const roleLabel = role === 'STAFF' ? 'Nhân viên cơ sở' : role === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : 'Quản trị viên'
+      const defaultMaintainer = `${user?.fullName || user?.username || 'Nhân sự cơ sở'} (${roleLabel})`
+      setMaintenanceByInput(defaultMaintainer)
+      setMaintenanceReasonInput('')
+      setMaintenanceError('')
+      setMaintenanceModalUnit(selectedUnit)
+      return
+    }
+
+    // Nếu kho đang Bảo trì -> Hoàn tất bảo trì (Mở lại kho)
     try {
       if (selectedUnit.backendId) {
         const updated = await storageUnitService.toggleMaintenance(selectedUnit.backendId)
@@ -532,9 +557,12 @@ export const ManagerDashboard: React.FC = () => {
               status: nextStatus,
               rawStatus: updated.status,
               color: nextColor,
-              tenant: isNowMaint ? 'ĐANG BẢO TRÌ SỬA CHỮA' : 'Chưa có khách',
-              contract: isNowMaint ? 'TICKET-MAINTENANCE' : 'Trống',
-              due: isNowMaint ? 'Dự kiến hôm nay' : '--'
+              tenant: 'Kho trống',
+              contract: 'Chưa có hợp đồng',
+              due: '—',
+              maintenanceReason: undefined,
+              maintenanceBy: undefined,
+              maintenanceAt: undefined,
             }
           }
           return u
@@ -546,9 +574,12 @@ export const ManagerDashboard: React.FC = () => {
             status: nextStatus,
             rawStatus: updated.status,
             color: nextColor,
-            tenant: isNowMaint ? 'ĐANG BẢO TRÌ SỬA CHỮA' : 'Chưa có khách',
-            contract: isNowMaint ? 'TICKET-MAINTENANCE' : 'Trống',
-            due: isNowMaint ? 'Dự kiến hôm nay' : '--'
+            tenant: 'Kho trống',
+            contract: 'Chưa có hợp đồng',
+            due: '—',
+            maintenanceReason: undefined,
+            maintenanceBy: undefined,
+            maintenanceAt: undefined,
           }
         })
 
@@ -557,10 +588,91 @@ export const ManagerDashboard: React.FC = () => {
           void fetchUnits(targetFac)
         }
 
-        triggerAction(`Đã cập nhật trạng thái kho #${selectedUnit.id} thành ${isNowMaint ? 'Bảo trì kỹ thuật' : 'Sẵn sàng'}!`)
+        triggerAction(`Đã hoàn tất bảo trì và mở lại kho #${selectedUnit.id} về trạng thái Sẵn sàng!`)
       }
     } catch (err: any) {
       triggerAction(`Không thể đổi trạng thái: ${err?.response?.data?.message || 'Kho đang có người thuê hoặc lỗi hệ thống'}`)
+    }
+  }
+
+  const handleConfirmEnterMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!maintenanceModalUnit || !maintenanceModalUnit.backendId) return
+
+    const trimmedBy = maintenanceByInput.trim()
+    const trimmedReason = maintenanceReasonInput.trim()
+
+    if (!trimmedBy) {
+      setMaintenanceError('Vui lòng nhập họ tên / vai trò người thực hiện hoặc phụ trách bảo trì.')
+      return
+    }
+    if (!trimmedReason) {
+      setMaintenanceError('Vui lòng ghi rõ lý do bảo trì kỹ thuật cho ngăn kho này.')
+      return
+    }
+
+    try {
+      setIsSubmittingMaintenance(true)
+      setMaintenanceError('')
+      const updated = await storageUnitService.toggleMaintenance(maintenanceModalUnit.backendId, {
+        reason: trimmedReason,
+        maintenanceBy: trimmedBy,
+      })
+      const maintReason = updated.maintenanceReason || trimmedReason
+      const maintBy = updated.maintenanceBy || trimmedBy
+      const maintAt = updated.maintenanceAt || new Date().toISOString()
+      const formattedMaintAt = new Date(maintAt).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+
+      setUnits(prev => prev.map(u => {
+        if (u.id === maintenanceModalUnit.id) {
+          return {
+            ...u,
+            status: 'Maintenance',
+            rawStatus: updated.status || 'UNDER_MAINTENANCE',
+            color: 'purple',
+            tenant: maintBy,
+            contract: maintReason,
+            due: formattedMaintAt,
+            maintenanceReason: maintReason,
+            maintenanceBy: maintBy,
+            maintenanceAt: maintAt,
+          }
+        }
+        return u
+      }))
+
+      setSelectedUnit(prev => {
+        if (!prev || prev.id !== maintenanceModalUnit.id) return prev
+        return {
+          ...prev,
+          status: 'Maintenance',
+          rawStatus: updated.status || 'UNDER_MAINTENANCE',
+          color: 'purple',
+          tenant: maintBy,
+          contract: maintReason,
+          due: formattedMaintAt,
+          maintenanceReason: maintReason,
+          maintenanceBy: maintBy,
+          maintenanceAt: maintAt,
+        }
+      })
+
+      setMaintenanceModalUnit(null)
+      const targetFac = selectedFacilityId || user?.facilityId
+      if (targetFac) {
+        void fetchUnits(targetFac)
+      }
+      triggerAction(`Đã chuyển kho #${maintenanceModalUnit.id} sang Bảo trì kỹ thuật (Phụ trách: ${maintBy})!`)
+    } catch (err: any) {
+      setMaintenanceError(err?.response?.data?.message || 'Không thể chuyển trạng thái bảo trì. Vui lòng thử lại.')
+    } finally {
+      setIsSubmittingMaintenance(false)
     }
   }
 
@@ -1064,6 +1176,7 @@ export const ManagerDashboard: React.FC = () => {
       </section>
 
       {/* 7 MANAGEMENT-LEVEL SUMMARIES: TABS NAVIGATION */}
+      {role !== 'STAFF' && (
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1">
         <button
           type="button"
@@ -1145,7 +1258,6 @@ export const ManagerDashboard: React.FC = () => {
           </span>
         </button>
 
-        {role !== 'STAFF' && (
           <>
             <button
               type="button"
@@ -1173,8 +1285,8 @@ export const ManagerDashboard: React.FC = () => {
               <span>5. Chính Sách Vận Hành Cơ Sở</span>
             </button>
           </>
-        )}
       </div>
+      )}
 
       {/* ============================================================== */}
       {/* TAB 1: SƠ ĐỒ KHO & GIÁM SÁT THIẾT BỊ (SUMMARY 1) */}
@@ -1185,74 +1297,186 @@ export const ManagerDashboard: React.FC = () => {
           {/* FLOOR MATRIX CANVAS (xl:col-span-8) */}
           <div className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             {/* Controls Toolbar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
-              {/* Floor Selector Tabs */}
-              <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                <button 
-                  type="button" 
-                  onClick={() => setSelectedFloor('floor1')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer ${
-                    selectedFloor === 'floor1' 
-                      ? 'bg-slate-900 text-white shadow-xs' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>{facilityProfile.floor1Name}</span>
-                  <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                    selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
-                  </span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setSelectedFloor('floor2')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer ${
-                    selectedFloor === 'floor2' 
-                      ? 'bg-slate-900 text-white shadow-xs' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>{facilityProfile.floor2Name}</span>
-                  <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                    selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
-                  </span>
-                </button>
-              </div>
-
-              {/* Filter and Search Matrix */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <select 
-                  value={sizeFilter}
-                  onChange={(e) => setSizeFilter(e.target.value as any)}
-                  className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
-                >
-                  <option value="all">Tất cả kích thước</option>
-                  <option value="s">Kho nhỏ S (≤ 6.5m²)</option>
-                  <option value="m">Kho vừa M (8m² - 12m²)</option>
-                  <option value="l">Kho lớn L (15m² - 20m²)</option>
-                </select>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
-                  <input 
-                    type="text" 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Tìm mã kho (#A-101), khách..." 
-                    className="pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs w-44 sm:w-52 font-mono"
-                  />
-                </div>
-                {statusFilter !== 'all' && (
+            <div className="flex flex-col gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+              {/* Row 1: Floor Selector + Size Dropdown + Status Dropdown + Search Box */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                {/* Floor Selector Tabs */}
+                <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs shrink-0 self-start">
                   <button 
                     type="button" 
-                    onClick={() => setStatusFilter('all')}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-xs font-semibold cursor-pointer"
-                    title="Xóa lọc"
+                    onClick={() => setSelectedFloor('floor1')}
+                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
+                      selectedFloor === 'floor1' 
+                        ? 'bg-slate-900 text-white shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
                   >
-                    <span>Lọc: {statusFilter}</span>
-                    <span className="material-symbols-outlined text-[13px]">close</span>
+                    <span className="whitespace-nowrap">{facilityProfile.floor1Name}</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                      selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
+                    </span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setSelectedFloor('floor2')}
+                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
+                      selectedFloor === 'floor2' 
+                        ? 'bg-slate-900 text-white shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">{facilityProfile.floor2Name}</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                      selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Dropdowns & Search Input */}
+                <div className="flex items-center gap-2 flex-wrap flex-1 lg:justify-end">
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
+                  >
+                    <option value="all">Tất cả trạng thái ({totalUnitsCount})</option>
+                    <option value="Available">Kho trống ({availableUnitsCount})</option>
+                    <option value="Rented">Đang thuê ({rentedUnitsCount})</option>
+                    <option value="Pending">Chờ bàn giao ({pendingUnitsCount})</option>
+                    <option value="Overdue">Quá hạn ({overdueUnitsCount})</option>
+                    <option value="Maintenance">Bảo trì ({maintenanceUnitsCount})</option>
+                  </select>
+
+                  <select 
+                    value={sizeFilter}
+                    onChange={(e) => setSizeFilter(e.target.value as any)}
+                    className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
+                  >
+                    <option value="all">Tất cả kích thước</option>
+                    <option value="s">Kho nhỏ S (≤ 6.5m²)</option>
+                    <option value="m">Kho vừa M (8m² - 12m²)</option>
+                    <option value="l">Kho lớn L (15m² - 20m²)</option>
+                  </select>
+
+                  <div className="relative flex-1 sm:flex-initial min-w-[210px] sm:w-60">
+                    <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
+                    <input 
+                      type="text" 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Tìm mã kho (#A-101), khách..." 
+                      className="w-full pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 2: Quick Status Filter Chips (Tất cả, Kho trống, Đang thuê, Chờ bàn giao, Quá hạn, Bảo trì) */}
+              <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-200/70">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[11px] font-semibold text-slate-500 mr-1">Lọc nhanh:</span>
+
+                  {/* Tất cả */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                      statusFilter === 'all'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    <span>Tất cả ({totalUnitsCount})</span>
+                  </button>
+
+                  {/* Kho trống */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(prev => prev === 'Available' ? 'all' : 'Available')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                      statusFilter === 'Available'
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Available' ? 'bg-white' : 'bg-emerald-500'}`}></span>
+                    <span>Kho trống ({availableUnitsCount})</span>
+                  </button>
+
+                  {/* Đang thuê */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(prev => prev === 'Rented' ? 'all' : 'Rented')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                      statusFilter === 'Rented'
+                        ? 'bg-blue-600 text-white border-blue-700 shadow-2xs'
+                        : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Rented' ? 'bg-white' : 'bg-blue-600'}`}></span>
+                    <span>Đang thuê ({rentedUnitsCount})</span>
+                  </button>
+
+                  {/* Chờ bàn giao */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(prev => prev === 'Pending' ? 'all' : 'Pending')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                      statusFilter === 'Pending'
+                        ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                        : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Pending' ? 'bg-white' : 'bg-amber-500'}`}></span>
+                    <span>Chờ bàn giao ({pendingUnitsCount})</span>
+                  </button>
+
+                  {/* Quá hạn */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(prev => prev === 'Overdue' ? 'all' : 'Overdue')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                      statusFilter === 'Overdue'
+                        ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
+                        : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Overdue' ? 'bg-white' : 'bg-rose-500'}`}></span>
+                    <span>Quá hạn ({overdueUnitsCount})</span>
+                  </button>
+
+                  {/* Bảo trì */}
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter(prev => prev === 'Maintenance' ? 'all' : 'Maintenance')}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
+                      statusFilter === 'Maintenance'
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
+                        : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-200'
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Maintenance' ? 'bg-white' : 'bg-purple-600'}`}></span>
+                    <span>Bảo trì ({maintenanceUnitsCount})</span>
+                  </button>
+                </div>
+
+                {isAnyFilterActive && (
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setStatusFilter('all')
+                      setSizeFilter('all')
+                      setSearchQuery('')
+                    }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                    title="Đặt lại toàn bộ bộ lọc"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                    <span>Xóa bộ lọc</span>
                   </button>
                 )}
               </div>
@@ -1362,19 +1586,69 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="text-slate-500">Diện tích:</span>
                   <span className="font-mono font-bold text-slate-900">{selectedUnit.size}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Khách thuê:</span>
-                  <span className="font-semibold text-slate-900">{selectedUnit.tenant}</span>
+                <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/50">
+                  <span className="text-slate-500 shrink-0">
+                    {selectedUnit.status === 'Maintenance' ? 'Người bảo trì:' : 'Khách thuê:'}
+                  </span>
+                  <span className={`font-semibold text-right ${selectedUnit.status === 'Maintenance' ? 'text-purple-700' : 'text-slate-900'}`}>
+                    {selectedUnit.status === 'Maintenance'
+                      ? (selectedUnit.maintenanceBy || selectedUnit.tenant || 'Kỹ thuật viên cơ sở')
+                      : selectedUnit.tenant}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Mã hợp đồng:</span>
-                  <span className="font-mono font-bold text-blue-600">{selectedUnit.contract}</span>
+                <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/50">
+                  <span className="text-slate-500 shrink-0">
+                    {selectedUnit.status === 'Maintenance' ? 'Lý do bảo trì:' : 'Mã hợp đồng:'}
+                  </span>
+                  <span className={`font-bold text-right ${selectedUnit.status === 'Maintenance' ? 'text-purple-900' : 'font-mono text-blue-600'}`}>
+                    {selectedUnit.status === 'Maintenance'
+                      ? (selectedUnit.maintenanceReason || selectedUnit.contract || 'Bảo trì kỹ thuật định kỳ')
+                      : selectedUnit.contract}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-slate-500">Thời hạn:</span>
-                  <span className="font-mono text-slate-800">{selectedUnit.due}</span>
+                <div className="flex items-center justify-between gap-2 py-1">
+                  <span className="text-slate-500 shrink-0">
+                    {selectedUnit.status === 'Maintenance' ? 'Bắt đầu bảo trì:' : 'Thời hạn:'}
+                  </span>
+                  <span className="font-mono text-slate-800 text-right">
+                    {selectedUnit.status === 'Maintenance' && selectedUnit.maintenanceAt
+                      ? new Date(selectedUnit.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                      : selectedUnit.due}
+                  </span>
                 </div>
               </div>
+
+              {/* Dedicated Maintenance Info Card when Unit is in Maintenance */}
+              {selectedUnit.status === 'Maintenance' && (
+                <div className="p-3.5 bg-purple-50/90 rounded-xl border border-purple-200 flex flex-col gap-2 text-xs shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-purple-800 font-bold uppercase tracking-wide text-[11px] pb-1.5 border-b border-purple-200/70">
+                    <span className="material-symbols-outlined text-[16px] text-purple-600">engineering</span>
+                    <span>Hồ Sơ Bảo Trì Kỹ Thuật</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-purple-700/80 font-medium shrink-0">Người bảo trì:</span>
+                      <span className="font-bold text-purple-950 text-right">
+                        {selectedUnit.maintenanceBy || selectedUnit.tenant || 'Kỹ thuật viên cơ sở'}
+                      </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-purple-700/80 font-medium shrink-0">Lý do bảo trì:</span>
+                      <span className="font-semibold text-purple-900 text-right">
+                        {selectedUnit.maintenanceReason || selectedUnit.contract || 'Bảo trì kỹ thuật định kỳ'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-purple-200/50 text-[11px]">
+                      <span className="text-purple-700/80">Thời điểm chuyển:</span>
+                      <span className="font-mono font-semibold text-purple-900">
+                        {selectedUnit.maintenanceAt
+                          ? new Date(selectedUnit.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                          : selectedUnit.due}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* SmartLock Telemetry */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
@@ -2508,6 +2782,144 @@ export const ManagerDashboard: React.FC = () => {
         }}
         onClose={() => setEarlyConfirmState(null)}
       />
+
+      {/* 13. Technical Maintenance Reason & Maintainer Modal */}
+      {maintenanceModalUnit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-purple-100 bg-purple-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-[22px]">build</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-purple-700 block">
+                    Lập phiếu bảo trì ngăn kho
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Chuyển Bảo Trì Kỹ Thuật — Kho #{maintenanceModalUnit.id}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMaintenanceModalUnit(null)}
+                className="w-8 h-8 rounded-lg hover:bg-purple-100 text-slate-500 flex items-center justify-center transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmEnterMaintenance} className="p-5 space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Mã ngăn kho</span>
+                  <span className="font-mono font-bold text-slate-900 text-sm">#{maintenanceModalUnit.id}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Vị trí</span>
+                  <span className="font-semibold text-slate-800">{maintenanceModalUnit.floorLevel} · Khu {getUnitZone(maintenanceModalUnit)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Diện tích</span>
+                  <span className="font-mono font-bold text-slate-800">{maintenanceModalUnit.size}</span>
+                </div>
+              </div>
+
+              {maintenanceError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-medium flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] shrink-0">error</span>
+                  <span>{maintenanceError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Người thực hiện / Phụ trách bảo trì <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                    engineering
+                  </span>
+                  <input
+                    type="text"
+                    value={maintenanceByInput}
+                    onChange={(e) => setMaintenanceByInput(e.target.value)}
+                    placeholder="Nhập tên kỹ thuật viên hoặc nhân sự phụ trách..."
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 outline-none font-medium text-slate-900"
+                    required
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Mặc định ghi nhận tài khoản đang thao tác, có thể sửa thành tên kỹ thuật viên trực tiếp xử lý.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Lý do bảo trì kỹ thuật <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    'Thay pin / sửa chữa khóa điện tử SmartLock',
+                    'Vệ sinh khử khuẩn & bảo dưỡng định kỳ',
+                    'Sửa chữa bản lề / ray trượt cửa cuốn',
+                    'Kiểm tra cảm biến nhiệt ẩm / PCCC',
+                    'Sơn dặm & chống thấm vách ngăn kho',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setMaintenanceReasonInput(preset)}
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition cursor-pointer ${
+                        maintenanceReasonInput === preset
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                          : 'bg-slate-50 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border-slate-200'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  rows={3}
+                  value={maintenanceReasonInput}
+                  onChange={(e) => setMaintenanceReasonInput(e.target.value)}
+                  placeholder="Mô tả cụ thể tình trạng kỹ thuật hoặc hạng mục cần bảo trì, sửa chữa..."
+                  className="w-full p-3 rounded-xl border border-slate-300 focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 outline-none font-medium text-slate-900 resize-none"
+                  required
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+                <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0 mt-0.5">info</span>
+                <span>
+                  Khi chuyển sang trạng thái <strong>Đang bảo trì</strong>, ngăn kho này sẽ tạm khóa đặt chỗ mới cho đến khi hoàn tất bảo trì.
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setMaintenanceModalUnit(null)}
+                  disabled={isSubmittingMaintenance}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold transition cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingMaintenance}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">build_circle</span>
+                  <span>{isSubmittingMaintenance ? 'Đang lưu...' : 'Xác nhận chuyển bảo trì'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   )

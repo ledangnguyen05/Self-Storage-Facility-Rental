@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Booking, BookingCancelResponse } from '../../types'
+import { Booking, BookingCancelResponse, BookingCancellationPreview } from '../../types'
 import { bookingService } from '../../services/bookingService'
 
 interface BookingCancelModalProps {
@@ -29,6 +29,8 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [successResult, setSuccessResult] = useState<BookingCancelResponse | null>(null)
+  const [preview, setPreview] = useState<BookingCancellationPreview | null>(null)
+  const [loadingPreview, setLoadingPreview] = useState(false)
 
   useEffect(() => {
     if (!isOpen || !booking) {
@@ -36,11 +38,56 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
       setCustomReason('')
       setSubmitError(null)
       setSuccessResult(null)
+      setPreview(null)
+      setLoadingPreview(false)
       setIsSubmitting(false)
+      return
+    }
+
+    // Reset state for new modal opening
+    setSelectedReason('')
+    setCustomReason('')
+    setSubmitError(null)
+    setSuccessResult(null)
+
+    // If real booking, fetch cancellation preview from backend
+    if (booking.id && !booking.id.startsWith('LOCAL-RES-')) {
+      setLoadingPreview(true)
+      bookingService
+        .getCancellationPreview(booking.id)
+        .then((res) => {
+          setPreview(res)
+        })
+        .catch((err) => {
+          console.warn('Failed to load cancellation preview:', err)
+          setPreview(null)
+        })
+        .finally(() => {
+          setLoadingPreview(false)
+        })
+    } else {
+      setPreview(null)
+      setLoadingPreview(false)
     }
   }, [isOpen, booking])
 
   if (!isOpen || !booking) return null
+
+  // Determine whether the booking is actually paid
+  const isPaid =
+    booking.paymentStatus === 'PAID' ||
+    Number(booking.depositPaid || 0) > 0 ||
+    Number(preview?.depositPaid || 0) > 0 ||
+    (booking.status || '').toUpperCase() === 'PAID_CONFIRMED' ||
+    (booking.status || '').toUpperCase() === 'PAID_AND_SIGNED' ||
+    (booking.status || '').toUpperCase() === 'PAID_PENDING_ASSIGNMENT' ||
+    preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ||
+    preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ||
+    preview?.milestoneStage === 'STAGE_3_NO_REFUND'
+
+  const depositAmount = preview?.depositPaid ?? booking.depositPaid ?? 0
+  const refundAmount = preview?.refundAmount ?? 0
+  const penaltyAmount = preview?.penaltyAmount ?? (isPaid ? depositAmount : 0)
 
   const handleConfirmCancel = async () => {
     const finalReason = customReason.trim() || selectedReason || 'Khách hàng yêu cầu hủy đơn'
@@ -130,7 +177,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 <span className="material-symbols-outlined text-[36px]">check_circle</span>
               </div>
               <div>
-                <h4 className="text-base font-bold text-slate-900 dark:text-white">Đã Hủy Đơn Đặt Giữ Chỗ Thành Công</h4>
+                <h4 className="text-base font-bold text-slate-900 dark:text-white">Đã Hủy Đơn Đặt Kho Thành Công</h4>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
                   {successResult.message || `Đơn đặt chỗ #${booking.bookingCode} đã được hủy theo yêu cầu. Vị trí giữ chỗ đã được giải phóng trên hệ thống.`}
                 </p>
@@ -152,8 +199,18 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                   <strong className="text-emerald-700 dark:text-emerald-400 font-semibold">✓ Đã chuyển về trống (Sẵn sàng)</strong>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700">
-                  <span className="text-slate-500 dark:text-slate-400">Chi phí phát sinh / Phí phạt:</span>
-                  <strong className="font-mono font-bold text-slate-800 dark:text-slate-200">0 ₫ (Miễn phí)</strong>
+                  <span className="text-slate-500 dark:text-slate-400">Tiền cọc hoàn trả dự kiến:</span>
+                  <strong className={`font-mono font-bold ${successResult.refundAmount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                    {successResult.refundAmount > 0
+                      ? `${Number(successResult.refundAmount).toLocaleString('vi-VN')} ₫`
+                      : '0 ₫ (Không hoàn cọc)'}
+                  </strong>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700">
+                  <span className="text-slate-500 dark:text-slate-400">Phí hủy / Khấu trừ:</span>
+                  <strong className="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {Number(successResult.penaltyAmount || 0).toLocaleString('vi-VN')} ₫
+                  </strong>
                 </div>
                 <div className="flex justify-between items-center py-1">
                   <span className="text-slate-500 dark:text-slate-400">Lý do hủy:</span>
@@ -175,24 +232,75 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Notice Box: No Deposit / No Refund on Reservation Cancellation */}
-              <div className="p-4 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-blue-950 dark:text-blue-200 space-y-2">
-                <div className="flex items-center gap-2 font-bold text-xs text-blue-900 dark:text-blue-300">
-                  <span className="material-symbols-outlined text-[18px] text-blue-600 dark:text-blue-400">info</span>
-                  <span>Đặt Giữ Chỗ Miễn Phí &amp; Không Có Hoàn Cọc</span>
+              {loadingPreview ? (
+                <div className="p-6 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 text-center space-y-2">
+                  <span className="material-symbols-outlined text-2xl text-blue-600 animate-spin">progress_activity</span>
+                  <p className="text-xs text-slate-500">Đang kiểm tra chính sách hoàn tiền &amp; thời hạn hủy đơn...</p>
                 </div>
-                <p className="text-xs leading-relaxed text-blue-900/90 dark:text-blue-300/90">
-                  Đơn đặt giữ chỗ của quý khách là dịch vụ đặt trước trực tuyến hoàn toàn <strong>miễn phí</strong> (chưa phát sinh giao dịch thanh toán nào). Khi quý khách xác nhận hủy:
-                </p>
-                <ul className="list-disc pl-5 space-y-1 text-[11px] text-blue-900/80 dark:text-blue-300/80">
-                  <li><strong>Không có hoàn cọc</strong> vì quý khách chưa thanh toán tiền cọc khi tạo đơn đặt chỗ.</li>
-                  <li><strong>Không phát sinh bất kỳ khoản phí phạt</strong> nào.</li>
-                  <li>Vị trí ngăn kho giữ chỗ sẽ được giải phóng ngay lập tức cho khách hàng khác trên hệ thống.</li>
-                </ul>
-                <div className="pt-1.5 text-[11px] text-blue-800/80 dark:text-blue-400/80 italic border-t border-blue-200/60 dark:border-blue-800/60">
-                  * Tiền cọc và tiền thuê chỉ thanh toán trực tiếp tại quầy khi quý khách đến check-in và ký hợp đồng cùng nhân viên.
+              ) : isPaid ? (
+                /* PAID BOOKING: Policy & Refund Milestone Box */
+                <div className="p-4 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 text-indigo-950 dark:text-indigo-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs text-indigo-900 dark:text-indigo-300">
+                      <span className="material-symbols-outlined text-[18px] text-indigo-600 dark:text-indigo-400">verified</span>
+                      <span>Chính Sách Hủy Đơn &amp; Hoàn Tiền Cọc</span>
+                    </div>
+                    {preview?.timeRemainingLabel && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300">
+                        {preview.timeRemainingLabel}
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-xs leading-relaxed text-indigo-900/90 dark:text-indigo-200/90">
+                    Đơn hàng đã thanh toán trực tuyến tiền cọc và tiền thuê. Quy định hoàn tiền theo 3 mốc thời gian:
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center font-medium">
+                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ? 'bg-emerald-100 border-emerald-400 text-emerald-900 font-bold dark:bg-emerald-950 dark:text-emerald-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 1 (≥ 48h)</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">Hoàn 100% cọc</div>
+                    </div>
+                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold dark:bg-amber-950 dark:text-amber-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 2 (24h - 48h)</div>
+                      <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn 50% cọc</div>
+                    </div>
+                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_3_NO_REFUND' ? 'bg-rose-100 border-rose-400 text-rose-900 font-bold dark:bg-rose-950 dark:text-rose-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 3 (&lt; 24h)</div>
+                      <div className="font-bold text-rose-600 dark:text-rose-400 mt-0.5">Không hoàn cọc</div>
+                    </div>
+                  </div>
+
+                  {preview?.policyDescription && (
+                    <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-indigo-100 dark:border-indigo-900 text-[11px] text-indigo-950 dark:text-indigo-200 leading-relaxed">
+                      <strong>Áp dụng cho đơn này:</strong> {preview.policyDescription}
+                    </div>
+                  )}
+
+                  <div className="text-[11px] text-indigo-800/80 dark:text-indigo-400/80 italic border-t border-indigo-200/60 dark:border-indigo-800/60 pt-1.5">
+                    * Yêu cầu hoàn tiền (nếu có) sẽ được chuyển đến bộ phận tài chính giải ngân qua chuyển khoản theo đúng quy định.
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* UNPAID BOOKING: Notice Box */
+                <div className="p-4 rounded-xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900/60 text-blue-950 dark:text-blue-200 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-xs text-blue-900 dark:text-blue-300">
+                    <span className="material-symbols-outlined text-[18px] text-blue-600 dark:text-blue-400">info</span>
+                    <span>Đặt Giữ Chỗ Miễn Phí &amp; Không Có Hoàn Cọc</span>
+                  </div>
+                  <p className="text-xs leading-relaxed text-blue-900/90 dark:text-blue-300/90">
+                    Đơn đặt giữ chỗ của quý khách là dịch vụ đặt trước trực tuyến hoàn toàn <strong>miễn phí</strong> (chưa phát sinh giao dịch thanh toán nào). Khi quý khách xác nhận hủy:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1 text-[11px] text-blue-900/80 dark:text-blue-300/80">
+                    <li><strong>Không có hoàn cọc</strong> vì quý khách chưa thanh toán tiền cọc khi tạo đơn đặt chỗ.</li>
+                    <li><strong>Không phát sinh bất kỳ khoản phí phạt</strong> nào.</li>
+                    <li>Vị trí ngăn kho giữ chỗ sẽ được giải phóng ngay lập tức cho khách hàng khác trên hệ thống.</li>
+                  </ul>
+                  <div className="pt-1.5 text-[11px] text-blue-800/80 dark:text-blue-400/80 italic border-t border-blue-200/60 dark:border-blue-800/60">
+                    * Tiền cọc và tiền thuê chỉ thanh toán trực tiếp tại quầy khi quý khách đến check-in và ký hợp đồng cùng nhân viên.
+                  </div>
+                </div>
+              )}
 
               {/* Booking Summary Box */}
               <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl space-y-2 text-xs">
@@ -205,9 +313,9 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{booking.facilityName}</span>
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-500 dark:text-slate-400">Vị trí kho dự kiến:</span>
+                  <span className="text-slate-500 dark:text-slate-400">Vị trí buồng kho:</span>
                   <span className="font-medium text-slate-700 dark:text-slate-300">
-                    {booking.unitCode ? `Kho #${booking.unitCode}` : 'Vị trí xác nhận khi nhận kho'}
+                    {booking.unitCode ? `Kho #${booking.unitCode}` : 'Vị trí chọn khi nhận kho tại quầy'}
                   </span>
                 </div>
                 {expectedDate && (
@@ -220,13 +328,27 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 )}
                 <div className="flex justify-between items-center py-1 border-t border-slate-200/60 dark:border-slate-700">
                   <span className="text-slate-500 dark:text-slate-400">Tình trạng thanh toán:</span>
-                  <span className="font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 text-[11px]">
-                    Chưa thanh toán (Thanh toán tại quầy khi check-in)
-                  </span>
+                  {isPaid ? (
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 text-[11px]">
+                      ✓ Đã thanh toán (Cọc: {Number(depositAmount).toLocaleString('vi-VN')} ₫)
+                    </span>
+                  ) : (
+                    <span className="font-semibold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800 text-[11px]">
+                      Chưa thanh toán (Thanh toán tại quầy khi check-in)
+                    </span>
+                  )}
                 </div>
                 <div className="flex justify-between items-center py-0.5">
-                  <span className="text-slate-500 dark:text-slate-400">Phí hủy đơn:</span>
-                  <strong className="text-emerald-700 dark:text-emerald-400 font-bold text-xs">0 ₫ (Miễn phí)</strong>
+                  <span className="text-slate-500 dark:text-slate-400">Tiền cọc hoàn trả dự kiến:</span>
+                  <strong className={`font-mono font-bold text-xs ${refundAmount > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                    {isPaid ? (refundAmount > 0 ? `${Number(refundAmount).toLocaleString('vi-VN')} ₫ (${preview?.refundPercentage || 0}%)` : '0 ₫ (Khấu trừ)') : '0 ₫ (Không phát sinh)'}
+                  </strong>
+                </div>
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500 dark:text-slate-400">Phí hủy đơn / Khấu trừ:</span>
+                  <strong className="text-slate-800 dark:text-slate-200 font-mono font-bold text-xs">
+                    {isPaid ? `${Number(penaltyAmount).toLocaleString('vi-VN')} ₫` : '0 ₫ (Miễn phí)'}
+                  </strong>
                 </div>
               </div>
 
@@ -322,3 +444,4 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
 }
 
 export default BookingCancelModal
+

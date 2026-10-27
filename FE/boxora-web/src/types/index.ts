@@ -122,6 +122,12 @@ export interface StorageUnit {
   bookingId?: string
   startDate?: string
   dueDate?: string
+  imageUrl?: string
+  images?: string[]
+  primaryImageUrl?: string
+  maintenanceReason?: string
+  maintenanceBy?: string
+  maintenanceAt?: string
 }
 
 export type BookingStatusType =
