@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { Booking } from '../../../types'
+import { Booking, StorageUnit } from '../../../types'
+import { storageUnitService } from '../../../services/storageUnitService'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
 import { useAuth } from '../../../context/AuthContext'
@@ -14,6 +15,7 @@ export interface BookingChecklist {
 
 export interface BookingWorkbenchSession {
   bookingId: string
+  assignedUnitCode?: string
   activeStepTab: 'audit' | 'checklist' | 'pin'
   checklist: BookingChecklist
   photoDoor: string
@@ -76,9 +78,11 @@ export const persistSessions = (sessions: Record<string, BookingWorkbenchSession
 export const createInitialSession = (
   bookingId: string,
   isAlreadyActive = false,
-  existingPin = ''
+  existingPin = '',
+  initialUnitCode = ''
 ): BookingWorkbenchSession => ({
   bookingId,
+  assignedUnitCode: initialUnitCode || undefined,
   activeStepTab: 'audit',
   checklist: { ...defaultChecklist },
   photoDoor: '',
@@ -132,6 +136,80 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const activeSelectionRequestIdRef = useRef<number>(0)
 
   // Transient UI interaction states (not tied to booking session)
+  // Step 2: Unit Selection & Assignment (Flow 2)
+  const [isUnitPickerOpen, setIsUnitPickerOpen] = useState(false)
+  const [availableUnits, setAvailableUnits] = useState<StorageUnit[]>([])
+  const [isLoadingUnits, setIsLoadingUnits] = useState(false)
+  const [isAssigningUnit, setIsAssigningUnit] = useState(false)
+  const [selectedNewUnitCode, setSelectedNewUnitCode] = useState<string>('')
+  const [unitSearchFilter, setUnitSearchFilter] = useState<string>('')
+
+  const handleOpenUnitPicker = async () => {
+    if (!currentBooking) return
+    setIsUnitPickerOpen(true)
+    setIsLoadingUnits(true)
+    setSelectedNewUnitCode(unitDisplayCode !== 'N/A' ? unitDisplayCode : '')
+    setUnitSearchFilter('')
+    try {
+      const facId = currentBooking?.facilityId || facilityId || (currentBooking as any)?.storageUnit?.facilityId
+      const allUnits = await storageUnitService.getUnits({
+        facilityId: facId,
+        status: 'AVAILABLE'
+      })
+      const targetUnitTypeId =
+        currentBooking.unitTypeId ||
+        (currentBooking as any)?.storageUnit?.unitTypeId ||
+        (currentBooking as any)?.unitType?.id
+
+      const matching = (allUnits || []).filter((u) => {
+        if (targetUnitTypeId && u.unitTypeId) {
+          return u.unitTypeId === targetUnitTypeId
+        }
+        return true
+      })
+      setAvailableUnits(matching)
+    } catch (err: any) {
+      console.error('Failed to load available units for assignment:', err)
+      setDispatchFeedback({ text: 'Không thể tải danh sách ô kho trống tại cơ sở.', isError: true })
+    } finally {
+      setIsLoadingUnits(false)
+    }
+  }
+
+  const handleConfirmUnitAssignment = async () => {
+    if (!selectedBookingId || !selectedNewUnitCode) return
+    if (selectedNewUnitCode === unitDisplayCode) {
+      setIsUnitPickerOpen(false)
+      return
+    }
+    setIsAssigningUnit(true)
+    try {
+      const updatedPrereq = await handoverService.assignUnit(selectedBookingId, selectedNewUnitCode)
+      updateCurrentSession({ assignedUnitCode: selectedNewUnitCode })
+      setPrerequisitesCache((prev) => ({ ...prev, [selectedBookingId]: updatedPrereq }))
+      setDispatchFeedback({ text: `Đã gán ô kho vật lý #${selectedNewUnitCode} thành công cho khách hàng!` })
+      setIsUnitPickerOpen(false)
+      if (onRefreshArrivals) {
+        onRefreshArrivals()
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Lỗi khi gán ô kho cho đơn đặt.'
+      setCheckInError(msg)
+    } finally {
+      setIsAssigningUnit(false)
+    }
+  }
+
+  const filteredAvailableUnits = useMemo(() => {
+    if (!unitSearchFilter.trim()) return availableUnits
+    const q = unitSearchFilter.trim().toLowerCase()
+    return availableUnits.filter(
+      (u) =>
+        (u.unitCode || '').toLowerCase().includes(q) ||
+        (u.floorLevel || '').toLowerCase().includes(q)
+    )
+  }, [availableUnits, unitSearchFilter])
+
   const [pinCopied, setPinCopied] = useState(false)
   const [isSendingEmail, setIsSendingEmail] = useState(false)
   const [isSendingWebPush, setIsSendingWebPush] = useState(false)
@@ -365,9 +443,28 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     currentPrerequisites?.customerEmail ||
     ''
   const unitDisplayCode =
+    currentSession?.assignedUnitCode ||
     currentBooking?.unitCode ||
     currentPrerequisites?.unitCode ||
     'N/A'
+  const customerCccd =
+    currentPrerequisites?.idCardNumber ||
+    currentPrerequisites?.registeredIdCardNumber ||
+    currentBooking?.identityCardNumber ||
+    (currentBooking as any)?.customer?.identityCardNumber ||
+    ''
+  const unitTypeName =
+    currentPrerequisites?.unitTypeName ||
+    currentBooking?.unitTypeName ||
+    (currentBooking as any)?.storageUnit?.unitTypeName ||
+    (currentBooking as any)?.unitType?.typeName ||
+    'Kho tiêu chuẩn'
+  const unitArea =
+    currentPrerequisites?.areaSqMeters ||
+    currentBooking?.areaSqMeters ||
+    (currentBooking as any)?.storageUnit?.areaSqMeters ||
+    (currentBooking as any)?.unitType?.areaSqm ||
+    '---'
   const bookingDisplayCode =
     currentBooking?.bookingCode ||
     currentPrerequisites?.bookingCode ||
@@ -787,6 +884,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     try {
       const res = await handoverService.checkIn({
         bookingId: currentBooking.id,
+        requestedUnitCode: currentSession?.assignedUnitCode || (unitDisplayCode !== 'N/A' ? unitDisplayCode : undefined),
         recordType: 'CHECK_IN',
         rfidCardNumber: currentSession.rfidCard.trim() || undefined,
         notes: currentSession.handoverNotes
@@ -1031,6 +1129,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 >
                   Trạng thái: {currentBooking?.status === 'ACTIVE' ? 'Đã nhận kho (ACTIVE)' : currentBooking?.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ cọc'}
                 </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full border text-[10px] font-mono font-bold flex items-center gap-1 ${
+                    (isDepositMet && isRentMet)
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[13px]">
+                    {(isDepositMet && isRentMet) ? 'check_circle' : 'pending'}
+                  </span>
+                  {(isDepositMet && isRentMet) ? 'Thanh toán: PAID (Đã TT)' : 'Thanh toán: PENDING_PAYMENT (Tại quầy)'}
+                </span>
                 {currentSession.isCompleted && (
                   <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-mono text-[10px] font-bold flex items-center gap-1">
                     <span className="material-symbols-outlined text-[13px]">check_circle</span>
@@ -1038,19 +1148,40 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </span>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-slate-600 text-xs">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-slate-600 text-xs">
                 <span className="flex items-center gap-1 font-mono tabular-nums">
                   <span className="material-symbols-outlined text-[15px] text-slate-400">call</span>
                   {customerDisplayPhone}
+                </span>
+                <span className="flex items-center gap-1 font-mono text-slate-700">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">badge</span>
+                  CCCD: <strong className="font-mono text-slate-900">{customerCccd || 'Chưa cung cấp'}</strong>
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="material-symbols-outlined text-[15px] text-slate-400">domain</span>
                   {facilityDisplayName}
                 </span>
-                <span className="flex items-center gap-1 font-mono font-bold text-cyan-700">
-                  <span className="material-symbols-outlined text-[15px]">meeting_room</span>
-                  Kho #{unitDisplayCode}
+                <span className="flex items-center gap-1 text-slate-700">
+                  <span className="material-symbols-outlined text-[15px] text-slate-400">inventory_2</span>
+                  Loại kho: <strong className="text-slate-900">{unitTypeName}</strong> ({unitArea} m²)
                 </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="flex items-center gap-1 font-mono font-bold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded border border-cyan-200">
+                    <span className="material-symbols-outlined text-[15px]">meeting_room</span>
+                    Kho #{unitDisplayCode}
+                  </span>
+                  {!currentSession.isCompleted && (
+                    <button
+                      type="button"
+                      onClick={handleOpenUnitPicker}
+                      className="px-2 py-0.5 text-[11px] font-bold text-cyan-700 bg-white border border-cyan-300 hover:bg-cyan-50 rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-colors"
+                      title="Chọn hoặc đổi vị trí ô kho vật lý (Bước 2)"
+                    >
+                      <span className="material-symbols-outlined text-[13px]">swap_horiz</span>
+                      Chọn/Đổi Ô Kho
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

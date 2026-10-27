@@ -133,6 +133,9 @@ export interface Booking {
   customerEmail: string
   customerPhone: string
   storageUnitId: string
+  unitTypeId?: string
+  unitTypeName?: string
+  areaSqMeters?: number
   unitCode: string
   facilityId?: string
   facilityName: string

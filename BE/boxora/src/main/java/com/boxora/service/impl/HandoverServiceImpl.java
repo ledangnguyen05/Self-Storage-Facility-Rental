@@ -271,6 +271,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .customerPhone(customer != null ? customer.getPhone() : "N/A")
                 .customerEmail(customer != null ? customer.getEmail() : "N/A")
                 .unitCode(unit != null ? unit.getUnitCode() : "N/A")
+                .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getTypeName() : "Kho tiêu chuẩn")
+                .areaSqMeters(unit != null && unit.getUnitType() != null ? unit.getUnitType().getAreaSqm() : null)
                 .facilityName((unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "N/A")
                 .depositSatisfied(depositSatisfied)
                 .depositPaid(depositPaid)
@@ -313,6 +315,88 @@ public class HandoverServiceImpl implements HandoverService {
      * Thực hiện Check-in và bàn giao kho vật lý (BR-RULE-005 và BR-RULE-006):
      * Bắt buộc thỏa mãn đồng thời cả 4 điều kiện.
      */
+    @Transactional
+    @Override
+    public HandoverPrerequisitesResponse assignUnitToBooking(UUID bookingId, String unitCode) {
+        if (unitCode == null || unitCode.trim().isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã kho không được để trống.");
+        }
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (booking.getStatus() == BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Đơn đặt kho đã hoàn tất check-in nhận kho, không thể đổi mã kho.");
+        }
+
+        StorageUnit previousUnit = booking.getStorageUnit();
+        if (previousUnit == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        }
+        UUID facilityId = previousUnit.getFacility() != null ? previousUnit.getFacility().getId() : null;
+        if (facilityId == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        }
+        facilityAccessGuard.checkFacilityAccess(facilityId);
+
+        String cleanUnitCode = unitCode.trim();
+        StorageUnit selectedUnit = storageUnitRepository
+                .findWithDetailsByFacilityAndUnitCodeForUpdate(facilityId, cleanUnitCode)
+                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND,
+                        "Không tìm thấy vị trí kho khách hàng chọn tại cơ sở này."));
+
+        if (selectedUnit.getUnitType() == null || previousUnit.getUnitType() == null
+                || !selectedUnit.getUnitType().getId().equals(previousUnit.getUnitType().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Vị trí khách hàng chọn không cùng loại kho với đơn đặt chỗ.");
+        }
+
+        boolean isOriginalUnit = selectedUnit.getId().equals(previousUnit.getId());
+        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
+                || (isOriginalUnit && selectedUnit.getStatus() == UnitStatus.RESERVED);
+        if (!selectedUnitReady) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
+        }
+
+        boolean hasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                selectedUnit.getId(),
+                List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                        BookingStatus.PENDING_APPROVAL),
+                booking.getId());
+        if (hasOtherReservation) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn đã được đặt bởi một đơn khác.");
+        }
+
+        if (!isOriginalUnit) {
+            booking.setStorageUnit(selectedUnit);
+            bookingRepository.save(booking);
+
+            if (previousUnit.getStatus() == UnitStatus.RESERVED) {
+                boolean previousUnitHasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                        previousUnit.getId(),
+                        List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                                BookingStatus.PENDING_APPROVAL),
+                        booking.getId());
+                if (!previousUnitHasOtherReservation) {
+                    previousUnit.setStatus(UnitStatus.AVAILABLE);
+                    storageUnitRepository.save(previousUnit);
+                    storageUnitLockService.releaseLock(previousUnit.getId());
+                }
+            }
+
+            selectedUnit.setStatus(UnitStatus.RESERVED);
+            storageUnitRepository.save(selectedUnit);
+
+            rentalContractRepository.findByBookingId(booking.getId()).ifPresent(contract -> {
+                contract.setUnit(selectedUnit);
+                rentalContractRepository.save(contract);
+            });
+        }
+
+        return getCheckInPrerequisites(booking.getId());
+    }
+
     @Override
     public HandoverResponse checkIn(HandoverRequest request) {
         Booking booking = bookingRepository.findByIdForUpdate(request.getBookingId())

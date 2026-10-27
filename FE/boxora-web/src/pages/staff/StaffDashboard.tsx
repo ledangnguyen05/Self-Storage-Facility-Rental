@@ -831,7 +831,7 @@ export const StaffDashboard: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, mã đặt chỗ #RES-XXXX, hoặc mã số kho..."
+            placeholder="Tìm kiếm nhanh tên khách hàng, SĐT, CCCD, mã đặt chỗ #RES-XXXX, hoặc mã số kho..."
             className="w-full pl-10 pr-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-xl border border-slate-200 focus:outline-none focus:bg-white focus:border-blue-600 transition-all"
           />
         </div>

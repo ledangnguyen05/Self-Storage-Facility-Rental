@@ -90,7 +90,7 @@ export function resolveBookingFloor(
 
 /**
  * Filters arrivals list based on:
- * - Search query (customerName, customerPhone, bookingCode, unitCode)
+ * - Search query (customerName, customerPhone, bookingCode, unitCode, identityCardNumber / CCCD)
  * - Selected floor ('all' or '1', '2', '3', etc.)
  * - Selected shift / timeframe ('current' | 'today' | 'past' | 'future' | 'all')
  * - Optional fromDateStr / toDateStr ('YYYY-MM-DD')
@@ -119,7 +119,8 @@ export function filterArrivals(
       const matchPhone = (b.customerPhone || '').toLowerCase().includes(q)
       const matchBookingCode = (b.bookingCode || '').toLowerCase().includes(q)
       const matchUnitCode = (b.unitCode || '').toLowerCase().includes(q)
-      if (!matchName && !matchPhone && !matchBookingCode && !matchUnitCode) return false
+      const matchCccd = (b.identityCardNumber || (b as any).customer?.identityCardNumber || '').toLowerCase().includes(q)
+      if (!matchName && !matchPhone && !matchBookingCode && !matchUnitCode && !matchCccd) return false
     }
 
     // 2. Floor filter

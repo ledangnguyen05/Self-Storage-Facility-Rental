@@ -3,6 +3,7 @@ import { HandoverRecord } from '../types'
 
 export interface HandoverPayload {
   bookingId: string
+  requestedUnitCode?: string
   staffId?: string
   recordType?: 'CHECK_IN' | 'RETURN'
   idCardNumber?: string
@@ -54,6 +55,8 @@ export interface HandoverPrerequisites {
   customerPhone?: string
   customerEmail?: string
   unitCode?: string
+  unitTypeName?: string
+  areaSqMeters?: number
   facilityName?: string
   depositSatisfied: boolean
   depositPaid?: number
@@ -271,6 +274,13 @@ export const handoverService = {
       fileSize: number
       uploadedAt: string
     }
+  },
+
+  async assignUnit(bookingId: string, unitCode: string): Promise<HandoverPrerequisites> {
+    const response = await api.post(`/api/v1/handovers/booking/${bookingId}/assign-unit`, null, {
+      params: { unitCode }
+    })
+    return response.data?.data as HandoverPrerequisites
   },
 
   async viewAuthorizedDocument(bookingId: string, fileUrl: string): Promise<string> {

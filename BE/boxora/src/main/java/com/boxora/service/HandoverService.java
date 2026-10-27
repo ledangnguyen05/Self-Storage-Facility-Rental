@@ -21,6 +21,11 @@ public interface HandoverService {
      */
     HandoverPrerequisitesResponse getCheckInPrerequisites(UUID bookingId);
 
+    /**
+     * Bước 2: Nhân viên chọn và gán vị trí ô kho vật lý (Unit Selection & Assignment)
+     */
+    HandoverPrerequisitesResponse assignUnitToBooking(UUID bookingId, String unitCode);
+
     HandoverResponse checkIn(HandoverRequest request);
 
     /**
