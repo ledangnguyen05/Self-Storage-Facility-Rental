@@ -26,7 +26,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
 
   // If not logged in, redirect to /login
   if (!isAuthenticated || !user) {
-    return <Navigate to={`/login?redirect=${encodeURIComponent(`${location.pathname}${location.search}`)}`} replace />
+    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />
   }
 
   // If allowedRoles is specified and current role is not permitted, automatically route them to their proper portal
@@ -44,9 +44,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
         case 'CUSTOMER':
         default: {
           const access = checkCustomerPortalAccess(user)
-          return access.hasAccess ? '/portal/customer' : '/my-bookings'
+          return access.hasAccess ? '/portal/customer' : '/#units'
         }
-
       }
     }
     return <Navigate to={getTargetPortal(role)} replace />
@@ -59,8 +58,6 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ allowedRoles, ch
       return <Navigate to="/my-bookings" replace />
     }
   }
-
-
   return children
 }
 

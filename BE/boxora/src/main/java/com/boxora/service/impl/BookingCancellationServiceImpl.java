@@ -98,10 +98,6 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 ? policy.getCancellationPartialRefundPercent() : 50.0;
 
         String unitCode = booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null;
-        if ("CUSTOMER".equalsIgnoreCase(requestContext != null ? requestContext.currentUserRole() : null)
-                && booking.getHandoverTime() == null) {
-            unitCode = null;
-        }
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
@@ -130,7 +126,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .refundPercentage(0.0)
                     .refundAmount(BigDecimal.ZERO)
                     .penaltyAmount(BigDecimal.ZERO)
-                    .policyDescription("Đơn giữ chỗ trực tuyến chưa thanh toán tiền cọc. Hủy đơn hoàn toàn miễn phí và không có hoàn cọc (tiền cọc chỉ thanh toán khi nhận kho).")
+                    .policyDescription("Đơn đặt kho đang chờ thanh toán. Hủy đơn không phát sinh chi phí và không hoàn tiền.")
                     .refundable(false)
                     .build();
         }

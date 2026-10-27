@@ -8,7 +8,6 @@ import com.boxora.dto.response.VNPayPaymentResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.Payment;
 import com.boxora.entity.RentalContract;
-import com.boxora.entity.StorageUnit;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
@@ -59,7 +58,6 @@ public class PaymentServiceImpl implements PaymentService {
     private final PaymentRepository paymentRepository;
     private final RentalContractRepository rentalContractRepository;
     private final BookingRepository bookingRepository;
-    private final StorageUnitRepository storageUnitRepository;
     private final PaymentMapper paymentMapper;
     private final VNPayService vnPayService;
     private final ActivityLogService activityLogService;
@@ -69,6 +67,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.ContractSigningService> contractSigningServiceProvider;
     private final com.boxora.service.StorageUnitLockService storageUnitLockService;
     private final com.boxora.repository.RefundRequestRepository refundRequestRepository;
+    private final com.boxora.repository.StorageUnitRepository storageUnitRepository;
     private final com.boxora.config.DocuSealConfig docuSealConfig;
 
     private UUID extractFacilityId(Payment payment) {
@@ -784,9 +783,6 @@ public class PaymentServiceImpl implements PaymentService {
                     PaymentStatus.PENDING,
                     PaymentStatus.FAILED
             );
-            payment = paymentRepository.save(payment);
-            cancelUnpaidBookingAfterPaymentFailure(payment.getBooking(), txnRef);
-            return paymentMapper.toResponse(payment);
         }
 
         payment = paymentRepository.save(payment);
@@ -904,9 +900,6 @@ public class PaymentServiceImpl implements PaymentService {
                     payment.getId(),
                     "IPN VNPAY xac nhan that bai cho txnRef=" + txnRef + ", responseCode=" + responseCode
             );
-            payment = paymentRepository.save(payment);
-            cancelUnpaidBookingAfterPaymentFailure(payment.getBooking(), txnRef);
-            return VNPayIpnResponse.success();
         }
 
         paymentRepository.save(payment);

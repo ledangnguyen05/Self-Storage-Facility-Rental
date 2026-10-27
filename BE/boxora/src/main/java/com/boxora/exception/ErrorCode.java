@@ -241,8 +241,8 @@ public enum ErrorCode {
     REFUND_ALREADY_RECONCILED(2008, "Yêu cầu hoàn tiền đã được đối soát hoàn tất", HttpStatus.BAD_REQUEST),
     NOTIFICATION_NOT_FOUND(2100, "Bản ghi thông báo không tồn tại", HttpStatus.NOT_FOUND),
     CONTRACT_NOT_SIGNED(1535, "Hợp đồng chưa được ký hoặc chưa có hồ sơ scan giấy", HttpStatus.BAD_REQUEST),
-    INVALID_PAYMENT_METHOD(756, "Phương thức thanh toán không hợp lệ (chỉ chấp nhận CASH hoặc BANK_TRANSFER)", HttpStatus.BAD_REQUEST),
-    CHECKIN_STEP_NOT_SATISFIED(729, "Chưa thỏa mãn đầy đủ 4 điều kiện đối soát để chuyển bước", HttpStatus.BAD_REQUEST),
+    INVALID_PAYMENT_METHOD(756, "Phương thức thanh toán không hợp lệ (chỉ chấp nhận VNPAY trực tuyến hoặc BANK_TRANSFER tại quầy)", HttpStatus.BAD_REQUEST),
+    CHECKIN_STEP_NOT_SATISFIED(729, "Chưa thỏa mãn đầy đủ 3 điều kiện đối soát để chuyển bước", HttpStatus.BAD_REQUEST),
     SMARTLOCK_INTEGRATION_UNAVAILABLE(2200, "Hệ thống khóa thông minh SmartLock tạm thời chưa khả dụng; chưa có lệnh mở khóa nào được gửi đi", HttpStatus.SERVICE_UNAVAILABLE);
 
     private final int code;

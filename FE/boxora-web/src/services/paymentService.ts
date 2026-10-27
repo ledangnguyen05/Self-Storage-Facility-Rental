@@ -23,7 +23,7 @@ export interface PaymentItem {
   amount: number
   paymentType: PaymentType | string
   status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUND_PENDING' | 'REFUNDED' | string
-  paymentMethod?: 'VNPAY' | 'BANK_TRANSFER' | 'MOMO' | string
+  paymentMethod?: 'VNPAY' | 'BANK_TRANSFER' | string
   paymentTime?: string
   createdAt?: string
 }

@@ -32,6 +32,8 @@ import com.boxora.service.ContractSigningService;
 import com.boxora.service.EmailService;
 import com.boxora.service.EncryptionService;
 import com.boxora.util.VNPayUtil;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -233,6 +235,41 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             if (status != null) {
                 predicates.add(cb.equal(root.get("status"), status));
             }
+            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())) {
+                Join<RentalContract, Booking> bookingJoin = root.join("booking", JoinType.LEFT);
+
+                // 1. Đối với hợp đồng làm thủ tục tại cơ sở (IN_PERSON):
+                // Chưa hoàn tất check-in & ký giấy tại cơ sở (paperContractUrl null và PENDING_SIGNATURE) thì không hiển thị cho khách
+                Predicate isUnverifiedInPerson = cb.or(
+                        cb.and(
+                                cb.equal(cb.upper(root.get("signingMethod")), "IN_PERSON"),
+                                cb.isNull(root.get("paperContractUrl")),
+                                cb.equal(root.get("status"), RentalContractStatus.PENDING_SIGNATURE)
+                        ),
+                        cb.and(
+                                cb.isNotNull(root.get("booking")),
+                                cb.equal(cb.upper(bookingJoin.get("signingMethod")), "IN_PERSON"),
+                                cb.isNull(root.get("paperContractUrl")),
+                                cb.equal(root.get("status"), RentalContractStatus.PENDING_SIGNATURE)
+                        )
+                );
+                predicates.add(cb.not(isUnverifiedInPerson));
+
+                // 2. Đối với hợp đồng trực tuyến (ONLINE):
+                // Trạng thái PENDING_SIGNATURE chỉ hiển thị cho khách hàng nếu đơn đặt kho đã thanh toán (PAID hoặc depositPaid > 0)
+                Predicate isUnpaidOnlinePending = cb.and(
+                        cb.isNotNull(root.get("booking")),
+                        cb.notEqual(cb.upper(root.get("signingMethod")), "IN_PERSON"),
+                        cb.notEqual(cb.upper(bookingJoin.get("signingMethod")), "IN_PERSON"),
+                        cb.equal(root.get("status"), RentalContractStatus.PENDING_SIGNATURE),
+                        cb.notEqual(cb.upper(bookingJoin.get("paymentStatus")), "PAID"),
+                        cb.or(
+                                cb.isNull(bookingJoin.get("depositPaid")),
+                                cb.lessThanOrEqualTo(bookingJoin.get("depositPaid"), BigDecimal.ZERO)
+                        )
+                );
+                predicates.add(cb.not(isUnpaidOnlinePending));
+            }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
 
@@ -273,6 +310,17 @@ public class ContractSigningServiceImpl implements ContractSigningService {
 
         if (contract.getBooking() != null && isBookingAwaitingOrCompletedRefund(contract.getBooking())) {
             throw new AppException(ErrorCode.INVALID_REQUEST);
+        }
+
+        if ("IN_PERSON".equalsIgnoreCase(contract.getSigningMethod())
+                || (contract.getBooking() != null && "IN_PERSON".equalsIgnoreCase(contract.getBooking().getSigningMethod()))) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hợp đồng này được chọn hình thức ký giấy trực tiếp tại cơ sở Boxora khi nhận kho, không áp dụng ký số trực tuyến.");
+        }
+
+        if (contract.getBooking() != null
+                && !"PAID".equalsIgnoreCase(contract.getBooking().getPaymentStatus())
+                && (contract.getBooking().getDepositPaid() == null || contract.getBooking().getDepositPaid().compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Quý khách vui lòng hoàn tất thanh toán tiền cọc trước khi thực hiện ký hợp đồng điện tử.");
         }
 
         // Nếu đã có slug tạo trước đó và chưa ký, có thể tái sử dụng signing URL
@@ -870,7 +918,12 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         try {
             List<Booking> bookings = bookingRepository.findByCustomer_Id(customerId);
             for (Booking booking : bookings) {
-                if (booking.getStatus() == BookingStatus.CONFIRMED || booking.getStatus() == BookingStatus.ACTIVE) {
+                boolean isOnlinePaid = !"IN_PERSON".equalsIgnoreCase(booking.getSigningMethod())
+                        && ("PAID".equalsIgnoreCase(booking.getPaymentStatus())
+                                || (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0));
+                boolean isAlreadyActive = booking.getStatus() == BookingStatus.ACTIVE;
+
+                if (isAlreadyActive || (booking.getStatus() == BookingStatus.CONFIRMED && isOnlinePaid)) {
                     if (rentalContractRepository.findByBookingId(booking.getId()).isEmpty()) {
                         ensureContractForBooking(booking);
                     }

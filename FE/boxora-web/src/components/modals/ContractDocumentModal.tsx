@@ -218,7 +218,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 3.1. Tiền đặt cọc được lưu ký an toàn tại tài khoản bảo chứng Boxora Cloud và được hoàn trả cho Bên B sau khi thanh lý hợp đồng và nghiệm thu hoàn trả kho nguyên trạng.
               </p>
               <p className="text-justify leading-relaxed pl-7 mt-1">
-                3.2. Phương thức thanh toán: Cổng thanh toán trực tuyến bảo mật / Thẻ thanh toán quốc tế / Chuyển khoản QR.
+                3.2. Phương thức thanh toán: Cổng thanh toán trực tuyến bảo mật / Thẻ thanh toán quốc tế / Chuyển khoản QR Napas.
               </p>
             </div>
 

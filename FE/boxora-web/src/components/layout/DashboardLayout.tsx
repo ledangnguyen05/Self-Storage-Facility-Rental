@@ -413,6 +413,67 @@ export const DashboardLayout: React.FC = () => {
                   to="/portal/staff"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                     isCurrentPath('/portal/staff')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">badge</span>
+                  <span>{t('VẬN HÀNH QUẦY BÀN GIAO')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/cashier"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/cashier')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
+                  <span>{t('BÁO CÁO THU NGÂN')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/tickets"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/tickets')
+                      ? 'bg-slate-100 text-slate-900'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">build_circle</span>
+                  <span>{t('XỬ LÝ SỰ CỐ TẠI CHỖ')}</span>
+                </Link>
+              </nav>
+            </div>
+          )}
+
+          {/* FACILITY_MANAGER NAVIGATION (QUẢN LÝ CƠ SỞ ĐỒNG BỘ) */}
+          {role === 'FACILITY_MANAGER' && (
+            <div>
+              <div className="px-3 pb-2">
+                <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                  Quản Lý Cơ Sở
+                </span>
+              </div>
+              <nav className="flex flex-col gap-1 text-left">
+                <Link
+                  to="/portal/facility-manager"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/facility-manager') && (!location.search || location.search === '?tab=overview')
+                      ? 'bg-slate-100 text-slate-900 font-semibold'
+
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                  <span>{t('SƠ ĐỒ CƠ SỞ KHO')}</span>
+                </Link>
+
+                <Link
+                  to="/portal/staff"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+                    isCurrentPath('/portal/staff')
                       ? 'bg-slate-100 text-slate-900 font-semibold'
                       : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                   }`}

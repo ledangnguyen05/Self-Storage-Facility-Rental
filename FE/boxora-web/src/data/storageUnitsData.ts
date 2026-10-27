@@ -10,15 +10,18 @@ export interface StorageUnitType {
   monthlyPriceNumeric: number
   depositAmountNumeric?: number
   status: 'Sẵn sàng' | 'Đang thuê' | 'Bảo trì' | 'Chờ duyệt'
-  isAvailable: boolean
+  isAvailable?: boolean
   facilityId: string
   facilityName: string
   facilityAddress: string
   floorLevel?: string
-  floorLocation: string
+  floorLocation?: string
   coords?: { lat: number; lng: number } | null
   distanceKm?: number
   imageUrl?: string
+  images?: string[]
+  primaryImageUrl?: string
+  availableUnitCount?: number
 }
 
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {

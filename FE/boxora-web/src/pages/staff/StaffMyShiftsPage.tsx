@@ -4,10 +4,12 @@ import {
   staffAssignmentService,
   StaffAssignmentResponse,
   ShiftSwapRequest,
-  ShiftHandover
+  ShiftHandover,
+  isShiftAbsent
 } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
+import { canCheckInShift, BOXORA_SHIFTS } from '../../constants/shiftConstants'
 import {
   Calendar,
   Clock,
@@ -26,7 +28,8 @@ import {
   CalendarDays,
   CalendarRange,
   Check,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react'
 
 // Utilities for date handling
@@ -75,7 +78,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }
   ASSIGNED: { label: 'Chờ trực', color: 'text-slate-700', bg: 'bg-slate-100 border-slate-300' },
   CHECKED_IN: { label: 'Đang trực', color: 'text-emerald-700', bg: 'bg-emerald-50 border-emerald-300 animate-pulse' },
   COMPLETED: { label: 'Hoàn thành', color: 'text-blue-700', bg: 'bg-blue-50 border-blue-200' },
-  ABSENT: { label: 'Vắng mặt', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
+  ABSENT: { label: 'Không đi làm', color: 'text-rose-700', bg: 'bg-rose-50 border-rose-200' },
   CANCELLED: { label: 'Đã hủy', color: 'text-slate-500', bg: 'bg-slate-50 border-slate-200' }
 }
 
@@ -139,7 +142,14 @@ export const StaffMyShiftsPage: React.FC = () => {
   } | null>(null)
   const [swapResponseNote, setSwapResponseNote] = useState('')
   const [isRespondingSwap, setIsRespondingSwap] = useState(false)
+  const [cancelSwapTarget, setCancelSwapTarget] = useState<ShiftSwapRequest | null>(null)
+  const [isCancellingSwap, setIsCancellingSwap] = useState(false)
   const todayStr = useMemo(() => formatYMD(new Date()), [])
+
+  // Reject Handover Modal state
+  const [rejectHandoverTarget, setRejectHandoverTarget] = useState<ShiftHandover | null>(null)
+  const [rejectHandoverReason, setRejectHandoverReason] = useState('')
+  const [isRejectingHandover, setIsRejectingHandover] = useState(false)
 
   const showToast = (msg: string) => {
     setToastMsg(msg)
@@ -295,25 +305,30 @@ export const StaffMyShiftsPage: React.FC = () => {
   }, [mySwaps, user])
 
   const pendingIncomingCount = useMemo(() => {
-    return incomingSwaps.filter(s => s.status === 'MANAGER_APPROVED').length
-  }, [incomingSwaps])
+    return incomingSwaps.filter(s => {
+      const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+      return s.status === 'MANAGER_APPROVED' && !isPast
+    }).length
+  }, [incomingSwaps, todayStr])
 
   // KPIs calculated from real data
   const kpis = useMemo(() => {
-    const todayStr = formatYMD(new Date())
     const upcoming = assignments.filter(a => a.status === 'ASSIGNED' && a.assignedDate >= todayStr).length
     const active = assignments.filter(a => a.status === 'CHECKED_IN').length
     const completed = assignments.filter(a => a.status === 'COMPLETED').length
-    const pendingSwaps = pendingIncomingCount + outgoingSwaps.filter(s => s.status === 'PENDING' || s.status === 'MANAGER_APPROVED').length
+    const pendingSwaps = pendingIncomingCount + outgoingSwaps.filter(s => {
+      const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+      return (s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && !isPast
+    }).length
 
     return { upcoming, active, completed, pendingSwaps, pendingIncomingCount }
-  }, [assignments, pendingIncomingCount, outgoingSwaps])
+  }, [assignments, pendingIncomingCount, outgoingSwaps, todayStr])
 
   // Check-In Action
   const handleConfirmCheckIn = async () => {
     if (!checkInModalShift) return
-    if (checkInModalShift.assignedDate !== todayStr) {
-      showToast('Chỉ có thể điểm danh vào ca trực của ngày hôm nay.')
+    if (!canCheckInShift(checkInModalShift)) {
+      showToast('Chỉ có thể điểm danh trong khung giờ của ca trực được phân công.')
       setCheckInModalShift(null)
       return
     }
@@ -348,15 +363,19 @@ export const StaffMyShiftsPage: React.FC = () => {
     }
   }
 
-  // Cancel Swap Action
-  const handleCancelSwap = async (swapId: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn hủy yêu cầu đổi ca này?')) return
+  // Cancel Swap Action (Triggered from modal confirm)
+  const handleConfirmCancelSwap = async () => {
+    if (!cancelSwapTarget) return
+    setIsCancellingSwap(true)
     try {
-      await staffAssignmentService.cancelSwapRequest(swapId)
-      showToast('Đã hủy yêu cầu đổi ca.')
+      await staffAssignmentService.cancelSwapRequest(cancelSwapTarget.id)
+      showToast('Đã hủy yêu cầu đổi ca thành công.')
+      setCancelSwapTarget(null)
       await fetchData()
     } catch (err: any) {
       showToast(err?.response?.data?.message || 'Không thể hủy yêu cầu.')
+    } finally {
+      setIsCancellingSwap(false)
     }
   }
 
@@ -395,6 +414,30 @@ export const StaffMyShiftsPage: React.FC = () => {
       await fetchData()
     } catch (err: any) {
       showToast(err?.response?.data?.message || 'Không thể tiếp nhận ca.')
+    }
+  }
+
+  // Reject Handover Action
+  const handleRejectHandover = async () => {
+    if (!rejectHandoverTarget) return
+    if (!rejectHandoverReason.trim()) {
+      showToast('Vui lòng nhập lý do từ chối nhận bàn giao ca.')
+      return
+    }
+    setIsRejectingHandover(true)
+    try {
+      await staffAssignmentService.acknowledgeHandover(rejectHandoverTarget.id, {
+        status: 'REJECTED',
+        notes: rejectHandoverReason.trim()
+      })
+      showToast('Đã từ chối nhận ca và thông báo lại cho người bàn giao!')
+      setRejectHandoverTarget(null)
+      setRejectHandoverReason('')
+      await fetchData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Không thể từ chối nhận ca.')
+    } finally {
+      setIsRejectingHandover(false)
     }
   }
 
@@ -481,9 +524,18 @@ export const StaffMyShiftsPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-slate-400 font-mono hidden sm:inline-block">
-            Cập nhật: {lastUpdated.toLocaleTimeString('vi-VN')}
-          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setShiftForSwap(null)
+              setShowSwapModal(true)
+            }}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-2xs transition active:scale-95 cursor-pointer"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Xin đổi ca trực</span>
+          </button>
+
           <button
             type="button"
             disabled={isLoading}
@@ -772,8 +824,10 @@ export const StaffMyShiftsPage: React.FC = () => {
                       </tr>
                     ) : (
                       assignments.map(item => {
+                        const isAbsent = isShiftAbsent(item)
+                        const effectiveStatus = isAbsent ? 'ABSENT' : item.status
                         const shiftInfo = SHIFT_LABELS[item.shift] || { label: item.shift, time: '', color: 'text-slate-700', bg: 'bg-slate-50' }
-                        const statusInfo = STATUS_LABELS[item.status] || { label: item.status, color: 'text-slate-700', bg: 'bg-slate-50' }
+                        const statusInfo = STATUS_LABELS[effectiveStatus] || { label: effectiveStatus, color: 'text-slate-700', bg: 'bg-slate-50' }
                         return (
                           <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                             <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
@@ -806,13 +860,13 @@ export const StaffMyShiftsPage: React.FC = () => {
                             </td>
 
                             <td className="py-3.5 px-4 text-[11px] font-mono">
-                              <div>Vào: <strong className="text-slate-800">{item.checkedInAt ? formatDateTime(item.checkedInAt) : 'Chưa điểm danh'}</strong></div>
-                              <div className="mt-0.5">Ra: <strong className="text-slate-800">{item.checkedOutAt ? formatDateTime(item.checkedOutAt) : 'Chưa kết thúc'}</strong></div>
+                              <div>Vào: <strong className="text-slate-800">{item.checkedInAt ? formatDateTime(item.checkedInAt) : (isAbsent ? 'Không điểm danh' : 'Chưa điểm danh')}</strong></div>
+                              <div className="mt-0.5">Ra: <strong className="text-slate-800">{item.checkedOutAt ? formatDateTime(item.checkedOutAt) : (isAbsent ? 'Không điểm danh' : 'Chưa kết thúc')}</strong></div>
                             </td>
 
                             <td className="py-3.5 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                                {item.status === 'ASSIGNED' && item.assignedDate === todayStr && (
+                                {item.status === 'ASSIGNED' && !isAbsent && canCheckInShift(item) && (
                                   <button
                                     type="button"
                                     onClick={() => setCheckInModalShift(item)}
@@ -836,14 +890,14 @@ export const StaffMyShiftsPage: React.FC = () => {
                                   </button>
                                 )}
 
-                                {item.status === 'ASSIGNED' && (
+                                {item.status === 'ASSIGNED' && !isAbsent && item.assignedDate >= todayStr && (
                                   <button
                                     type="button"
                                     onClick={() => {
                                       setShiftForSwap(item)
                                       setShowSwapModal(true)
                                     }}
-                                    className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs inline-flex items-center gap-1"
+                                    className="px-2 py-1 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-xs inline-flex items-center gap-1 cursor-pointer"
                                     title="Gửi yêu cầu xin đổi ca trực"
                                   >
                                     <Send className="w-3 h-3" />
@@ -851,7 +905,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                                   </button>
                                 )}
 
-                                {(item.status === 'CHECKED_IN' || item.status === 'COMPLETED') && (
+                                {!isAbsent && (item.status === 'CHECKED_IN' || item.status === 'COMPLETED') && (
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -955,8 +1009,10 @@ export const StaffMyShiftsPage: React.FC = () => {
                           </div>
                         ) : (
                           dayShifts.map(s => {
+                            const isAbsent = isShiftAbsent(s)
+                            const effectiveStatus = isAbsent ? 'ABSENT' : s.status
                             const shiftInfo = SHIFT_LABELS[s.shift] || { label: s.shift, color: 'text-slate-700', bg: 'bg-slate-100' }
-                            const statusInfo = STATUS_LABELS[s.status] || { label: s.status, color: 'text-slate-700', bg: 'bg-slate-100' }
+                            const statusInfo = STATUS_LABELS[effectiveStatus] || { label: effectiveStatus, color: 'text-slate-700', bg: 'bg-slate-100' }
                             return (
                               <div
                                 key={s.id}
@@ -1105,8 +1161,10 @@ export const StaffMyShiftsPage: React.FC = () => {
                           <span className="text-xs font-bold text-blue-700">
                             {SHIFT_LABELS[s.shift]?.label || s.shift}
                           </span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                            {STATUS_LABELS[s.status]?.label || s.status}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isShiftAbsent(s) ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-700'
+                          }`}>
+                            {STATUS_LABELS[isShiftAbsent(s) ? 'ABSENT' : s.status]?.label || s.status}
                           </span>
                         </div>
                         <p className="text-xs text-slate-500 font-mono mt-1">
@@ -1134,7 +1192,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                   type="button"
                   id="btn-staff-xin-doi-ca"
                   onClick={() => {
-                    const upcoming = assignments.find(a => a.status !== 'COMPLETED' && a.status !== 'CANCELLED')
+                    const upcoming = assignments.find(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr)
                     setShiftForSwap(upcoming || null)
                     setShowSwapModal(true)
                   }}
@@ -1230,9 +1288,12 @@ export const StaffMyShiftsPage: React.FC = () => {
                         const isManagerApproved = swap.status === 'MANAGER_APPROVED'
                         const isApproved = swap.status === 'APPROVED'
                         const isRejected = swap.status === 'REJECTED'
+                        const isPast = Boolean(swap.assignmentDate && swap.assignmentDate < todayStr)
+                        const isOverdue = (isPast && (swap.status === 'PENDING' || swap.status === 'MANAGER_APPROVED')) ||
+                          (swap.status === 'CANCELLED' && (Boolean(swap.managerNotes?.includes('Quá hạn')) || isPast))
 
                         return (
-                          <tr key={swap.id} className={`transition-colors ${isManagerApproved ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/80'}`}>
+                          <tr key={swap.id} className={`transition-colors ${isManagerApproved && !isOverdue ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-slate-50/80'}`}>
                             <td className="py-3 px-4">
                               <strong className="text-slate-900 block text-xs">{swap.requesterName || swap.requesterUsername}</strong>
                               {swap.requesterEmail && <span className="text-slate-400 text-[11px] block">{swap.requesterEmail}</span>}
@@ -1249,6 +1310,9 @@ export const StaffMyShiftsPage: React.FC = () => {
                             </td>
 
                             <td className="py-3 px-4 text-[11px] text-slate-600 max-w-xs">
+                              {isOverdue && !swap.managerNotes && (
+                                <p className="italic text-slate-500 mb-0.5">Hệ thống tự động hủy: Quá hạn ngày đổi ca trực</p>
+                              )}
                               {swap.reviewedByName && (
                                 <div>Duyệt bởi: <strong className="text-slate-800">{swap.reviewedByName}</strong></div>
                               )}
@@ -1262,7 +1326,9 @@ export const StaffMyShiftsPage: React.FC = () => {
 
                             <td className="py-3 px-4">
                               <span className={`inline-block px-2.5 py-1 rounded-full text-[11px] font-bold border ${
-                                isManagerApproved
+                                isOverdue
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : isManagerApproved
                                   ? 'bg-amber-50 text-amber-800 border-amber-300'
                                   : isApproved
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -1270,7 +1336,9 @@ export const StaffMyShiftsPage: React.FC = () => {
                                   ? 'bg-rose-50 text-rose-700 border-rose-200'
                                   : 'bg-slate-50 text-slate-600 border-slate-200'
                               }`}>
-                                {isManagerApproved
+                                {isOverdue
+                                  ? 'Quá hạn đổi'
+                                  : isManagerApproved
                                   ? 'Quản lý đã duyệt • Chờ bạn xác nhận'
                                   : isApproved
                                   ? 'Bạn đã chấp nhận • Đổi ca thành công'
@@ -1284,7 +1352,9 @@ export const StaffMyShiftsPage: React.FC = () => {
                             </td>
 
                             <td className="py-3 px-4 text-right">
-                              {isManagerApproved ? (
+                              {isOverdue ? (
+                                <span className="text-[11px] text-slate-400 italic">Quá hạn</span>
+                              ) : isManagerApproved ? (
                                 <div className="flex items-center justify-end gap-1.5">
                                   <button
                                     type="button"
@@ -1316,6 +1386,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                           </tr>
                         )
                       })}
+
                     </tbody>
                   </table>
                 </div>
@@ -1356,6 +1427,10 @@ export const StaffMyShiftsPage: React.FC = () => {
                         const isRejected = swap.status === 'REJECTED'
                         const isCancelled = swap.status === 'CANCELLED'
 
+                        const isPast = Boolean(swap.assignmentDate && swap.assignmentDate < todayStr)
+                        const isOverdue = (isPast && (isPending || isManagerApproved)) ||
+                          (isCancelled && (Boolean(swap.managerNotes?.includes('Quá hạn')) || isPast))
+
                         return (
                           <tr key={swap.id} className="hover:bg-slate-50/80">
                             <td className="py-3 px-4 font-mono font-bold text-slate-900">
@@ -1374,24 +1449,29 @@ export const StaffMyShiftsPage: React.FC = () => {
                             </td>
                             <td className="py-3 px-4">
                               <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                isOverdue ? 'bg-slate-100 text-slate-700 border-slate-300' :
                                 isPending ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                 isManagerApproved ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                 isApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                 isRejected ? 'bg-rose-50 text-rose-700 border-rose-200' :
                                 'bg-slate-50 text-slate-600 border-slate-200'
                               }`}>
-                                {isPending ? 'Chờ Quản lý duyệt' :
+                                {isOverdue ? 'Quá hạn đổi' :
+                                 isPending ? 'Chờ Quản lý duyệt' :
                                  isManagerApproved ? 'Quản lý đã duyệt • Chờ đồng nghiệp phản hồi' :
                                  isApproved ? 'Đồng nghiệp đã nhận • Đổi ca thành công' :
                                  isRejected ? 'Bị từ chối' : 'Đã hủy'}
                               </span>
                             </td>
                             <td className="py-3 px-4 text-[11px] text-slate-500">
+                              {isOverdue && !swap.managerNotes && (
+                                <p className="italic text-slate-500 mb-0.5">Hệ thống tự động hủy: Quá hạn ngày đổi ca trực</p>
+                              )}
                               {swap.reviewedByName && (
                                 <div>Quản lý duyệt: <strong className="text-slate-800">{swap.reviewedByName}</strong></div>
                               )}
                               {swap.managerNotes && (
-                                <p className="italic text-slate-600 mt-0.5">Ý kiến QL: {swap.managerNotes}</p>
+                                <p className="italic text-slate-600 mt-0.5">{swap.managerNotes}</p>
                               )}
                               {swap.targetStaffNotes && (
                                 <p className="italic text-blue-600 mt-0.5">Ghi chú đồng nghiệp: {swap.targetStaffNotes}</p>
@@ -1401,19 +1481,22 @@ export const StaffMyShiftsPage: React.FC = () => {
                               )}
                             </td>
                             <td className="py-3 px-4 text-right">
-                              {(isPending || isManagerApproved) && (
+                              {(isPending || isManagerApproved) && !isOverdue ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleCancelSwap(swap.id)}
+                                  onClick={() => setCancelSwapTarget(swap)}
                                   className="px-2.5 py-1 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold cursor-pointer transition-colors"
                                 >
                                   Hủy yêu cầu
                                 </button>
+                              ) : (
+                                <span className="text-slate-300 font-mono text-xs">—</span>
                               )}
                             </td>
                           </tr>
                         )
                       })}
+
                     </tbody>
                   </table>
                 </div>
@@ -1463,25 +1546,66 @@ export const StaffMyShiftsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {handovers.map(h => {
                 const isIncoming = user?.id === h.incomingStaffId
+                const isMyOwn = user?.id === h.outgoingStaffId
+                const isAck = h.status === 'ACKNOWLEDGED'
+                const isPendingDispatch = h.status === 'PENDING_DISPATCH'
+                const isDiscrepancy = h.status === 'DISCREPANCY'
                 const isSubmitted = h.status === 'SUBMITTED'
+                const isRejected = h.status === 'REJECTED'
+
+                const handoverTypeLabel =
+                  h.handoverType === 'EMERGENCY' ? 'Bàn giao đột xuất' :
+                  h.handoverType === 'RESPONSIBILITY_TRANSFER' ? 'Chuyển giao trách nhiệm' :
+                  'Định kỳ đổi ca'
+
+                const handoverTypeClass =
+                  h.handoverType === 'EMERGENCY' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                  h.handoverType === 'RESPONSIBILITY_TRANSFER' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                  'bg-blue-50 text-blue-700 border-blue-200'
+
                 return (
                   <div key={h.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
                     <div>
-                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5 flex-wrap gap-2">
                         <div>
-                          <span className="text-xs font-bold text-slate-900">
-                            {SHIFT_LABELS[h.shift]?.label || h.shift} · {formatVN(h.handoverDate)}
-                          </span>
-                          <p className="text-[11px] text-slate-500">{h.facilityName}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900">
+                              {SHIFT_LABELS[h.shift]?.label || h.shift} · {formatVN(h.handoverDate)}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${handoverTypeClass}`}>
+                              {handoverTypeLabel}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{h.facilityName}</p>
                         </div>
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          h.status === 'ACKNOWLEDGED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          h.status === 'SUBMITTED' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                          isAck ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                          isPendingDispatch ? 'bg-amber-50 text-amber-800 border-amber-300 animate-pulse' :
+                          isDiscrepancy ? 'bg-rose-50 text-rose-700 border-rose-300' :
+                          isSubmitted ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          isRejected ? 'bg-rose-100 text-rose-800 border-rose-300' :
                           'bg-slate-100 text-slate-700 border-slate-200'
                         }`}>
-                          {h.status === 'ACKNOWLEDGED' ? 'Đã tiếp nhận' : h.status === 'SUBMITTED' ? 'Chờ tiếp nhận' : h.status}
+                          {isAck ? 'Đã tiếp nhận' :
+                           isPendingDispatch ? 'Chờ điều phối' :
+                           isDiscrepancy ? 'Có chênh lệch' :
+                           isSubmitted ? 'Chờ tiếp nhận' :
+                           isRejected ? 'Đã từ chối nhận' : h.status}
                         </span>
                       </div>
+
+                      {h.emergencyReason && (
+                        <div className="mt-2.5 p-2 rounded-lg bg-rose-50/70 border border-rose-200 text-xs text-rose-800">
+                          <span className="font-bold block text-[10px] uppercase text-rose-600">Lý do khẩn cấp:</span>
+                          <p>{h.emergencyReason}</p>
+                        </div>
+                      )}
+
+                      {h.transferScope && (
+                        <div className="mt-2 text-[11px] text-purple-700 font-medium">
+                          Phạm vi chuyển giao: <strong className="font-mono">{h.transferScope}</strong>
+                        </div>
+                      )}
 
                       <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                         <div>
@@ -1490,19 +1614,35 @@ export const StaffMyShiftsPage: React.FC = () => {
                         </div>
                         <div>
                           <span className="text-slate-400 text-[10px] block uppercase">Người nhận ca</span>
-                          <strong className="text-slate-800">{h.incomingStaffName || h.incomingStaffUsername || 'Chưa chỉ định'}</strong>
+                          <strong className="text-slate-800">
+                            {h.incomingStaffName || h.incomingStaffUsername || (
+                              <span className="text-amber-700 italic">Chờ Quản lý điều phối</span>
+                            )}
+                          </strong>
                         </div>
                         <div>
-                          <span className="text-slate-400 text-[10px] block uppercase">Tiền mặt tại quầy</span>
+                          <span className="text-slate-400 text-[10px] block uppercase">Tiền sổ sách</span>
                           <strong className="text-blue-700 font-mono">{Number(h.cashInDrawer || 0).toLocaleString('vi-VN')} ₫</strong>
                         </div>
                         <div>
-                          <span className="text-slate-400 text-[10px] block uppercase">Checklist an ninh</span>
-                          <span className={`inline-block font-semibold ${h.checklistCompleted ? 'text-emerald-700' : 'text-amber-700'}`}>
-                            {h.checklistCompleted ? '✓ Đã hoàn tất' : 'Chưa hoàn tất'}
-                          </span>
+                          <span className="text-slate-400 text-[10px] block uppercase">Tiền thực đếm</span>
+                          <strong className="text-slate-800 font-mono">
+                            {h.cashCounted !== undefined && h.cashCounted !== null ? `${Number(h.cashCounted).toLocaleString('vi-VN')} ₫` : 'Chưa đối soát'}
+                          </strong>
                         </div>
                       </div>
+
+                      {Boolean(h.cashDiscrepancy && h.cashDiscrepancy !== 0) && (
+                        <div className="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
+                          <span className="font-bold text-[10px] uppercase block text-rose-600">Cảnh báo chênh lệch két quầy:</span>
+                          <span className="font-mono font-bold">
+                            {(h.cashDiscrepancy ?? 0) > 0 ? `+${Number(h.cashDiscrepancy).toLocaleString('vi-VN')} ₫ (Thừa)` : `${Number(h.cashDiscrepancy).toLocaleString('vi-VN')} ₫ (Thiếu)`}
+                          </span>
+                          {h.cashDiscrepancyReason && (
+                            <p className="mt-0.5 italic text-[11px] text-rose-700">Giải trình: {h.cashDiscrepancyReason}</p>
+                          )}
+                        </div>
+                      )}
 
                       {h.pendingTasks && (
                         <div className="mt-3 p-2.5 rounded-lg bg-white border border-slate-200 text-xs">
@@ -1518,12 +1658,24 @@ export const StaffMyShiftsPage: React.FC = () => {
                       )}
                     </div>
 
-                    {isIncoming && isSubmitted && (
-                      <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end">
+                    {(isIncoming || (!h.incomingStaffId && !isMyOwn)) && (isSubmitted || isDiscrepancy) && (
+                      <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRejectHandoverTarget(h)
+                            setRejectHandoverReason('')
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs inline-flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Từ chối nhận</span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => handleAcknowledgeHandover(h.id)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1 shadow-2xs"
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>Xác nhận tiếp nhận ca</span>
@@ -1642,7 +1794,9 @@ export const StaffMyShiftsPage: React.FC = () => {
               </div>
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Trạng thái</span>
-                <p className="font-bold text-emerald-700 mt-0.5">{STATUS_LABELS[selectedShiftForDetail.status]?.label || selectedShiftForDetail.status}</p>
+                <p className={`font-bold mt-0.5 ${isShiftAbsent(selectedShiftForDetail) ? 'text-rose-700' : 'text-emerald-700'}`}>
+                  {STATUS_LABELS[isShiftAbsent(selectedShiftForDetail) ? 'ABSENT' : selectedShiftForDetail.status]?.label || selectedShiftForDetail.status}
+                </p>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
                 <span className="text-slate-400 block text-[10px] uppercase font-bold">Cơ sở kho</span>
@@ -1922,6 +2076,155 @@ export const StaffMyShiftsPage: React.FC = () => {
                 }`}
               >
                 {isRespondingSwap ? 'Đang xử lý...' : (swapResponseModal.accept ? 'Xác nhận nhận ca' : 'Xác nhận từ chối')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 7: CANCEL SWAP CONFIRM MODAL */}
+      {cancelSwapTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 text-left relative flex flex-col gap-4 animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Xác nhận hủy yêu cầu đổi ca</h3>
+                <p className="text-xs text-slate-500">Thao tác này sẽ hủy bỏ đề xuất đổi ca bạn đã gửi</p>
+              </div>
+            </div>
+
+            {/* Info Card */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Ngày ca cần đổi:</span>
+                <span className="font-mono font-bold text-slate-900">{formatVN(cancelSwapTarget.assignmentDate)}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Ca trực:</span>
+                <span className="font-semibold text-blue-700">
+                  {cancelSwapTarget.assignmentShift || 'Ca trực'}
+                  {cancelSwapTarget.assignedZone ? ` • ${cancelSwapTarget.assignedZone}` : ''}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Đồng nghiệp tiếp nhận:</span>
+                <strong className="text-slate-800">{cancelSwapTarget.targetStaffName || cancelSwapTarget.targetStaffUsername}</strong>
+              </div>
+              <div className="flex items-start justify-between gap-2 pt-1 border-t border-slate-200/60">
+                <span className="text-slate-500 shrink-0">Lý do xin đổi:</span>
+                <span className="text-slate-700 text-right italic">{cancelSwapTarget.reason}</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50/70 border border-amber-200 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Sau khi hủy, yêu cầu đổi ca sẽ chuyển sang trạng thái <strong>Đã hủy</strong> và đồng nghiệp cũng như Quản lý không thể tiếp tục xử lý đơn này.
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isCancellingSwap}
+                onClick={() => setCancelSwapTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-50 cursor-pointer transition-colors"
+              >
+                Không, giữ lại
+              </button>
+              <button
+                type="button"
+                disabled={isCancellingSwap}
+                onClick={handleConfirmCancelSwap}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer transition-colors inline-flex items-center gap-1.5"
+              >
+                {isCancellingSwap ? 'Đang hủy...' : 'Xác nhận hủy yêu cầu'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REJECT HANDOVER MODAL */}
+      {rejectHandoverTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-rose-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Từ Chối Nhận Bàn Giao Ca</h3>
+                  <p className="text-xs text-slate-500">
+                    Biên bản {SHIFT_LABELS[rejectHandoverTarget.shift]?.label || rejectHandoverTarget.shift} · {formatVN(rejectHandoverTarget.handoverDate)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectHandoverTarget(null)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 space-y-1">
+                <div>Người bàn giao: <strong>{rejectHandoverTarget.outgoingStaffName || rejectHandoverTarget.outgoingStaffUsername}</strong></div>
+                <div>Cơ sở: <strong>{rejectHandoverTarget.facilityName}</strong></div>
+                <div>Tiền sổ sách: <strong className="font-mono text-blue-700">{Number(rejectHandoverTarget.cashInDrawer || 0).toLocaleString('vi-VN')} ₫</strong></div>
+                <div>Tiền thực đếm: <strong className="font-mono text-slate-900">{rejectHandoverTarget.cashCounted !== undefined && rejectHandoverTarget.cashCounted !== null ? `${Number(rejectHandoverTarget.cashCounted).toLocaleString('vi-VN')} ₫` : 'Chưa đối soát'}</strong></div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1.5">
+                  Lý do từ chối nhận ca <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  value={rejectHandoverReason}
+                  onChange={(e) => setRejectHandoverReason(e.target.value)}
+                  placeholder="Ví dụ: Chênh lệch quỹ tiền mặt thực tế chưa được giải trình rõ, thiếu chìa khóa tủ kho, trang thiết bị bàn giao bị hư hỏng..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 outline-hidden transition text-xs"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Lý do này sẽ được ghi vào biên bản bàn giao để gửi lại người giao ca và Quản lý cơ sở nắm bắt.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectHandoverTarget(null)}
+                className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold transition text-xs cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isRejectingHandover || !rejectHandoverReason.trim()}
+                onClick={handleRejectHandover}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold transition text-xs inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                {isRejectingHandover ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <>
+                    <X className="w-3.5 h-3.5" />
+                    <span>Xác nhận từ chối</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

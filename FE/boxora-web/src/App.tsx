@@ -35,7 +35,7 @@ import { ErrorBoundary } from './components/common/ErrorBoundary'
 
 // Root redirect handler based on user role
 function RootRedirect() {
-  const { isAuthenticated, role, isLoading } = useAuth()
+  const { isAuthenticated, role, user, isLoading } = useAuth()
 
   if (isLoading) {
     return (
@@ -60,8 +60,14 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default:
+    default: {
+      const access = checkCustomerPortalAccess(user)
+      if (!access.hasAccess) {
+        return <Navigate to="/my-bookings" replace />
+      }
+
       return <Navigate to="/portal/customer" replace />
+    }
   }
 }
 
@@ -97,7 +103,7 @@ function MainContent() {
           <Route
             path="/online-booking-contract"
             element={
-              <ProtectedRoute allowedRoles={['CUSTOMER']}>
+              <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
                 <OnlineBookingContractPage />
               </ProtectedRoute>
             }
@@ -158,7 +164,7 @@ function MainContent() {
               }
             />
 
-            {/* 3. Facility operations and storage diagram */}
+            {/* 3. Facility Manager Portal: Facility Manager, Business Manager, Admin */}
             <Route
               path="facility-manager"
               element={

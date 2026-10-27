@@ -109,6 +109,9 @@ export interface ShiftHandover {
   incomingStaffId?: string
   incomingStaffName?: string
   incomingStaffUsername?: string
+  dispatchedById?: string
+  dispatchedByName?: string
+  dispatchedAt?: string
   outgoingAssignmentId?: string
   incomingAssignmentId?: string
   emergencyReason?: string
@@ -117,10 +120,13 @@ export interface ShiftHandover {
   pendingTicketsCount: number
   unresolvedBookingsCount: number
   cashInDrawer: number
+  cashCounted?: number | null
+  cashDiscrepancy?: number | null
+  cashDiscrepancyReason?: string | null
   facilityStatusNote?: string
   checklistCompleted: boolean
   notes?: string
-  status: 'SUBMITTED' | 'ACKNOWLEDGED' | 'REJECTED'
+  status: 'DRAFT' | 'PENDING_DISPATCH' | 'SUBMITTED' | 'DISCREPANCY' | 'ACKNOWLEDGED' | 'REJECTED' | string
   acknowledgedAt?: string
   createdAt?: string
   updatedAt?: string

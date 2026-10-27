@@ -37,6 +37,7 @@ import com.boxora.entity.RentalContract;
 import com.boxora.entity.StaffAssignment;
 import com.boxora.enums.RentalContractStatus;
 import com.boxora.enums.StaffAssignmentStatus;
+import com.boxora.enums.StaffShift;
 import com.boxora.repository.BookingRescheduleHistoryRepository;
 import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.StaffAssignmentRepository;
@@ -694,7 +695,19 @@ public class BookingServiceImpl implements BookingService {
                     ? booking.getStorageUnit().getFacility().getId()
                     : null;
 
-            List<StaffAssignment> myAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, checkInDate);
+            List<StaffAssignment> myAssignments = new ArrayList<>(
+                    staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, checkInDate));
+            List<StaffAssignment> prevDayAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(
+                    currentUserId, checkInDate.minusDays(1));
+            for (StaffAssignment prev : prevDayAssignments) {
+                boolean isOvernight = prev.getShift() == StaffShift.NIGHT
+                        || (prev.getStartTime() != null && prev.getEndTime() != null
+                            && !prev.getEndTime().isAfter(prev.getStartTime()));
+                if (isOvernight) {
+                    myAssignments.add(prev);
+                }
+            }
+
             boolean hasCheckedInShift = myAssignments.stream().anyMatch(a -> {
                 boolean facMatch = facId == null || a.getFacility() == null || facId.equals(a.getFacility().getId());
                 boolean checkedIn = a.getStatus() == StaffAssignmentStatus.CHECKED_IN

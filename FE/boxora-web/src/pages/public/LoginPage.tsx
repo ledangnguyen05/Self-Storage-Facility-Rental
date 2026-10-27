@@ -16,7 +16,8 @@ import {
   ChevronRight,
   AlertCircle,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  Home
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { authService } from '../../services/authService'
@@ -261,8 +262,19 @@ export const LoginPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Language & Theme Controls */}
-        <QuickThemeLanguageToggle />
+        <div className="flex items-center gap-2">
+          <QuickThemeLanguageToggle />
+        {/* Back to Home Button */}
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 rounded-2xl bg-white/90 hover:bg-white text-slate-700 hover:text-teal-700 backdrop-blur-md border border-white/80 hover:border-teal-200 shadow-xs hover:shadow-md font-bold text-xs sm:text-sm transition-all group cursor-pointer"
+          title="Quay lại trang chủ Boxora"
+        >
+          <Home className="w-4 h-4 text-teal-600 group-hover:-translate-x-0.5 transition-transform" />
+          <span>Về trang chủ</span>
+        </Link>
+
+        </div>
       </header>
 
       {/* ============================================================ */}
@@ -548,10 +560,10 @@ export const LoginPage: React.FC = () => {
               </div>
             )}
 
-            {/* Registration Direct Link */}
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Chưa có tài khoản lưu kho?{' '}
+            {/* Registration Direct Link & Back to Home */}
+            <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+              <span className="text-slate-600">
+                Chưa có tài khoản?{' '}
                 <Link
                   to="/register"
                   className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline inline-flex items-center gap-1"
@@ -560,6 +572,13 @@ export const LoginPage: React.FC = () => {
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </span>
+              <Link
+                to="/"
+                className="text-slate-500 hover:text-teal-700 hover:underline inline-flex items-center gap-1 font-medium"
+              >
+                <Home className="w-3.5 h-3.5 text-teal-600" />
+                <span>Về trang chủ</span>
+              </Link>
             </div>
 
           </div>

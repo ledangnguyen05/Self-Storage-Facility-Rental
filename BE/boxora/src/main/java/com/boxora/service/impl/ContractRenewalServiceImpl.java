@@ -722,12 +722,12 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
         // Ghi nhận thanh toán tại quầy nếu chưa có Payment hoàn tất
         Payment payment = renewal.getPayment();
         String payMethod = request.getPaymentMethod() != null && !request.getPaymentMethod().isBlank() 
-                ? request.getPaymentMethod().toUpperCase() : (renewal.getPaymentMethod() != null ? renewal.getPaymentMethod() : "CASH");
+                ? request.getPaymentMethod().toUpperCase() : (renewal.getPaymentMethod() != null ? renewal.getPaymentMethod() : "BANK_TRANSFER");
         String voucherCode = request.getReceiptVoucherCode() != null && !request.getReceiptVoucherCode().isBlank()
-                ? request.getReceiptVoucherCode().trim() : ("VCH-" + System.currentTimeMillis() % 1000000);
+                ? request.getReceiptVoucherCode().trim() : ("REF-" + System.currentTimeMillis() % 1000000);
 
         if (payment == null || payment.getStatus() != PaymentStatus.PAID) {
-            String txnRef = "CSH-" + System.currentTimeMillis() + "-" + voucherCode;
+            String txnRef = "BANK-" + System.currentTimeMillis() + "-" + voucherCode;
             payment = Payment.builder()
                     .transactionId(txnRef)
                     .contract(contract)
@@ -960,7 +960,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
             staff = userRepository.findById(currentUserId).orElse(null);
         }
 
-        String txnRef = "CSH-" + System.currentTimeMillis() + "-" + (request.getReceiptVoucherCode() != null && !request.getReceiptVoucherCode().isBlank() ? request.getReceiptVoucherCode() : "VCH");
+        String txnRef = "BANK-" + System.currentTimeMillis() + "-" + (request.getReceiptVoucherCode() != null && !request.getReceiptVoucherCode().isBlank() ? request.getReceiptVoucherCode() : "REF");
 
         Payment payment = Payment.builder()
                 .transactionId(txnRef)
@@ -969,7 +969,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
                 .paymentType(PaymentType.RENEWAL_FEE)
                 .renewalMonths(renewal.getCycleMonths())
                 .status(PaymentStatus.PAID)
-                .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod().toUpperCase() : "CASH")
+                .paymentMethod(request.getPaymentMethod() != null ? request.getPaymentMethod().toUpperCase() : "BANK_TRANSFER")
                 .receiptVoucherCode(request.getReceiptVoucherCode())
                 .collectedByStaff(staff)
                 .paymentTime(LocalDateTime.now())

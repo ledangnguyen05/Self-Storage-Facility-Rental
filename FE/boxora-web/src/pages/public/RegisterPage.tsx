@@ -20,7 +20,8 @@ import {
   Eye,
   EyeOff,
   X,
-  ExternalLink
+  ExternalLink,
+  Home
 } from 'lucide-react'
 import { authService } from '../../services/authService'
 import { useAuth } from '../../context/AuthContext'
@@ -253,8 +254,19 @@ export const RegisterPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Language & Theme Controls */}
-        <QuickThemeLanguageToggle />
+        <div className="flex items-center gap-2">
+          <QuickThemeLanguageToggle />
+        {/* Back to Home Button */}
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 rounded-2xl bg-white/90 hover:bg-white text-slate-700 hover:text-teal-700 backdrop-blur-md border border-white/80 hover:border-teal-200 shadow-xs hover:shadow-md font-bold text-xs sm:text-sm transition-all group cursor-pointer"
+          title="Quay lại trang chủ Boxora"
+        >
+          <Home className="w-4 h-4 text-teal-600 group-hover:-translate-x-0.5 transition-transform" />
+          <span>Về trang chủ</span>
+        </Link>
+
+        </div>
       </header>
 
       {/* ============================================================ */}

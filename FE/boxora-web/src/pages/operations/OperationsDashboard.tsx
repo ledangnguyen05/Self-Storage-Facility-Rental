@@ -205,7 +205,7 @@ export const OperationsDashboard: React.FC = () => {
     return Math.max(...monthlyRevenueData.map((m) => m.total), 1)
   }, [monthlyRevenueData])
 
-  // Preserve unknown payment methods as a visible residual instead of attributing them.
+  // 2 Official Payment Methods: VNPAY (Online) and BANK_TRANSFER (Counter Check-in)
   const paymentMethodStats = useMemo(() => {
     const methodCounts = revenueData?.paymentsByMethod ?? []
     const countForMethod = (method: string) => methodCounts
@@ -213,10 +213,9 @@ export const OperationsDashboard: React.FC = () => {
       .reduce((total, entry) => total + entry.paymentCount, 0)
     const vnpayCount = countForMethod('VNPAY')
     const bankCount = countForMethod('BANK_TRANSFER')
-    const momoCount = countForMethod('MOMO')
-    const knownCount = vnpayCount + bankCount + momoCount
+    const knownCount = vnpayCount + bankCount
     const otherMethodCount = methodCounts
-      .filter((entry) => !['VNPAY', 'BANK_TRANSFER', 'MOMO'].includes(entry.paymentMethod?.trim().toUpperCase() ?? ''))
+      .filter((entry) => !['VNPAY', 'BANK_TRANSFER'].includes(entry.paymentMethod?.trim().toUpperCase() ?? ''))
       .reduce((total, entry) => total + entry.paymentCount, 0)
     const totalCount = paymentCountForScope ?? methodCounts.reduce((total, entry) => total + entry.paymentCount, 0)
     const otherCount = otherMethodCount + Math.max(0, totalCount - knownCount - otherMethodCount)
@@ -225,10 +224,8 @@ export const OperationsDashboard: React.FC = () => {
     return {
       vnpayPercent: percent(vnpayCount),
       bankPercent: percent(bankCount),
-      momoPercent: percent(momoCount),
       vnpayCount,
       bankCount,
-      momoCount,
       otherCount,
       totalCount,
       isAvailable: Array.isArray(revenueData?.paymentsByMethod),
@@ -826,36 +823,27 @@ export const OperationsDashboard: React.FC = () => {
                 strokeLinecap="round" 
                 strokeWidth="14"
               />
-              <circle
-                className="text-amber-500"
-                cx="80"
-                cy="80"
-                fill="transparent"
-                r="64"
-                stroke="currentColor"
-                strokeDasharray={`${402 * paymentMethodStats.momoPercent / 100} 402`}
-                strokeDashoffset={-402 * (paymentMethodStats.vnpayPercent + paymentMethodStats.bankPercent) / 100}
-                strokeLinecap="round"
-                strokeWidth="14"
-              />
-              <circle
-                className="text-slate-400"
-                cx="80"
-                cy="80"
-                fill="transparent"
-                r="64"
-                stroke="currentColor"
-                strokeDasharray={`${402 * paymentMethodStats.otherCount / Math.max(paymentMethodStats.totalCount, 1)} 402`}
-                strokeDashoffset={-402 * (paymentMethodStats.vnpayPercent + paymentMethodStats.bankPercent + paymentMethodStats.momoPercent) / 100}
-                strokeLinecap="round"
-                strokeWidth="14"
-              />
+              {/* Other segment if residual */}
+              {paymentMethodStats.otherCount > 0 && (
+                <circle
+                  className="text-slate-300"
+                  cx="80"
+                  cy="80"
+                  fill="transparent"
+                  r="64"
+                  stroke="currentColor"
+                  strokeDasharray={`${402 * paymentMethodStats.otherCount / Math.max(paymentMethodStats.totalCount, 1)} 402`}
+                  strokeDashoffset={-402 * (paymentMethodStats.vnpayPercent + paymentMethodStats.bankPercent) / 100}
+                  strokeLinecap="round"
+                  strokeWidth="14"
+                />
+              )}
             </svg>
             <div className="absolute flex flex-col items-center justify-center text-center">
               <span className="text-3xl font-extrabold font-mono text-slate-900 leading-none">
                 {paymentMethodStats.totalCount}
               </span>
-                    <span className="text-[10px] uppercase font-semibold text-slate-400 mt-1">{tr('Giao dịch PAID', 'PAID payments')}</span>
+              <span className="text-[10px] uppercase font-semibold text-slate-400 mt-1">{tr('Giao dịch PAID', 'PAID payments')}</span>
             </div>
           </div>
 
@@ -863,39 +851,32 @@ export const OperationsDashboard: React.FC = () => {
             <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
               <span className="flex items-center gap-2 text-xs text-slate-700">
                 <span className="h-2.5 w-2.5 rounded-full bg-blue-600"></span>
-                {tr('Cổng VNPay (Thẻ / QR)', 'VNPay (card / QR)')}
+                {tr('Cổng VNPay (Trực tuyến)', 'VNPay (Online)')}
               </span>
               <span className="font-mono text-xs font-bold text-slate-900">
                 {paymentMethodStats.vnpayCount} GD ({paymentMethodStats.vnpayPercent}%)
               </span>
             </div>
             <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
-              <span className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="h-2.5 w-2.5 rounded-full bg-slate-400"></span>
-                {tr('Khác / chưa xác định', 'Other / unknown')}
-              </span>
-              <span className="font-mono text-xs font-bold text-slate-900">
-                {paymentMethodStats.otherCount} GD ({paymentMethodStats.totalCount ? Math.round(paymentMethodStats.otherCount / paymentMethodStats.totalCount * 1000) / 10 : 0}%)
-              </span>
-            </div>
-            <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
               <span className="flex items-center gap-2 text-xs text-slate-700">
                 <span className="h-2.5 w-2.5 rounded-full bg-slate-900"></span>
-                {tr('Chuyển khoản ngân hàng', 'Bank transfer')}
+                {tr('Chuyển khoản ngân hàng (Tại quầy)', 'Bank transfer (At counter)')}
               </span>
               <span className="font-mono text-xs font-bold text-slate-900">
                 {paymentMethodStats.bankCount} GD ({paymentMethodStats.bankPercent}%)
               </span>
             </div>
-            <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
-              <span className="flex items-center gap-2 text-xs text-slate-500">
-                <span className="h-2.5 w-2.5 rounded-full bg-amber-500"></span>
-                {tr('Ví MoMo', 'MoMo wallet')}
-              </span>
-              <span className="font-mono text-xs font-bold text-slate-900">
-                {paymentMethodStats.momoCount} GD ({paymentMethodStats.momoPercent}%)
-              </span>
-            </div>
+            {paymentMethodStats.otherCount > 0 && (
+              <div className="flex items-center justify-between p-2 rounded bg-slate-50 border border-slate-200">
+                <span className="flex items-center gap-2 text-xs text-slate-500">
+                  <span className="h-2.5 w-2.5 rounded-full bg-slate-400"></span>
+                  {tr('Khác / chưa xác định', 'Other / unknown')}
+                </span>
+                <span className="font-mono text-xs font-bold text-slate-900">
+                  {paymentMethodStats.otherCount} GD ({paymentMethodStats.totalCount ? Math.round(paymentMethodStats.otherCount / paymentMethodStats.totalCount * 1000) / 10 : 0}%)
+                </span>
+              </div>
+            )}
           </div> : (
             <div className="py-6 text-center text-xs text-slate-500">
                 {isReportsLoading

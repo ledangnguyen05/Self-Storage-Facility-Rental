@@ -35,8 +35,8 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
-    @Operation(summary = "Record check-in and issue an access PIN; physical SmartLock state is not verified by Boxora")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Thực hiện check-in bàn giao kho vật lý và cấp mã PIN SmartLock")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Bàn giao nhận kho và cấp mã PIN truy cập thành công", handoverService.checkIn(request)));
@@ -125,11 +125,16 @@ public class HandoverController {
     }
 
     @GetMapping("/booking/{bookingId}/documents/view")
-    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER') or hasRole('FACILITY_STAFF') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER') or hasRole('ADMIN')")
     @Operation(summary = "Xem / tải tài liệu hợp đồng giấy hoặc chứng từ thanh toán có kiểm tra phân quyền theo cơ sở và chủ sở hữu")
-    public ResponseEntity<org.springframework.core.io.Resource> viewAuthorizedDocument(
+    public ResponseEntity<?> viewAuthorizedDocument(
             @PathVariable UUID bookingId,
             @RequestParam("fileUrl") String fileUrl) {
+        if (fileUrl != null && (fileUrl.startsWith("http://") || fileUrl.startsWith("https://"))) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(java.net.URI.create(fileUrl))
+                    .build();
+        }
         java.nio.file.Path path = handoverService.getAuthorizedHandoverDocumentPath(bookingId, fileUrl);
         try {
             org.springframework.core.io.Resource resource = new org.springframework.core.io.UrlResource(path.toUri());

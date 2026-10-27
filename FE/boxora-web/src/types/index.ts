@@ -202,6 +202,7 @@ export interface BookingRescheduleEligibility {
   bookingId: string
   bookingCode: string
   unitCode: string | null
+  unitTypeName?: string | null
   facilityName: string | null
   eligible: boolean
   reasonIfNotEligible: string | null
