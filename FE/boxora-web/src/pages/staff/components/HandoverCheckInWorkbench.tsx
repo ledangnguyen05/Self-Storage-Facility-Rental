@@ -1590,10 +1590,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 
                 {/* Điều kiện 1: Hợp Đồng Thuê Kho (Ký Điện Tử hoặc Ký Giấy Tại Quầy) */}
-                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3 min-w-0 overflow-hidden">
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                             isContractMet
@@ -1607,15 +1607,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             {currentPrerequisites?.contractSigningMethod === 'PAPER' ? 'contract' : 'draw'}
                           </span>
                         </div>
-                        <div>
-                          <span className="font-bold text-slate-900 text-xs block">1. Hợp Đồng Thuê Kho</span>
-                          <span className="text-[11px] text-slate-500 font-mono">
-                            {currentPrerequisites?.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Kho' : '✍️ Ký Điện Tử Trực Tuyến'}
-                          </span>
-                        </div>
+                        <span className="font-bold text-slate-900 text-xs leading-snug whitespace-nowrap">
+                          1. Hợp Đồng Thuê Kho
+                        </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 whitespace-nowrap ${
                           isContractMet
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION'
@@ -1626,61 +1623,66 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         {isContractMet
                           ? (currentPrerequisites?.contractSigningMethod === 'PAPER' ? '✓ ĐÃ KÝ & XÁC MINH' : '✓ ĐÃ KÝ ĐIỆN TỬ')
                           : currentPrerequisites?.contractVerificationStatus === 'PENDING_VERIFICATION'
-                          ? '⏳ CHỜ XÁC MINH HỢP ĐỒNG GIẤY'
+                          ? '⏳ CHỜ XÁC MINH HĐ GIẤY'
                           : currentPrerequisites?.contractSigningMethod === 'PAPER'
                           ? 'CHƯA TẢI HĐ GIẤY'
                           : 'CHƯA KÝ ONLINE'}
                       </span>
                     </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500 font-mono leading-snug">
+                      {currentPrerequisites?.contractSigningMethod === 'PAPER' ? '🏢 Ký Giấy Tại Kho' : '✍️ Ký Điện Tử Trực Tuyến'}
+                    </p>
 
-                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Mã hợp đồng:</span>
-                        <strong className="font-mono text-slate-800">{currentPrerequisites?.contractCode || 'Chưa khởi tạo'}</strong>
+                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] space-y-1.5 min-w-0">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-slate-500 shrink-0 whitespace-nowrap">Mã hợp đồng:</span>
+                        <strong className="font-mono text-slate-800 text-right ml-auto break-all sm:break-normal">
+                          {currentPrerequisites?.contractCode || 'Chưa khởi tạo'}
+                        </strong>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Phương thức:</span>
-                        <span className="font-medium text-slate-700">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-slate-500 shrink-0 whitespace-nowrap">Phương thức:</span>
+                        <span className="font-medium text-slate-700 text-right ml-auto">
                           {currentPrerequisites?.contractSigningMethod === 'PAPER' ? 'Ký bản cứng tại quầy cơ sở' : 'Ký số điện tử trực tuyến'}
                         </span>
                       </div>
                       {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER' && (
-                        <div className="flex justify-between items-center text-emerald-700 font-medium">
-                          <span>Xác thực:</span>
-                          <span className="inline-flex items-center gap-1 font-bold">
-                            <span className="material-symbols-outlined text-[14px]">verified</span>
-                            Đã ký số xác thực trực tuyến
+                        <div className="flex items-center justify-between gap-2 flex-wrap text-emerald-700 font-medium">
+                          <span className="shrink-0 whitespace-nowrap">Xác thực:</span>
+                          <span className="inline-flex items-center gap-1 font-bold text-right ml-auto">
+                            <span className="material-symbols-outlined text-[14px] shrink-0">verified</span>
+                            <span>Đã ký số xác thực trực tuyến</span>
                           </span>
                         </div>
                       )}
                       {currentPrerequisites?.contractSignedAt && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Thời điểm ký:</span>
-                          <span className="font-mono text-slate-700">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-slate-500 shrink-0 whitespace-nowrap">Thời điểm ký:</span>
+                          <span className="font-mono text-slate-700 text-right ml-auto whitespace-nowrap">
                             {new Date(currentPrerequisites.contractSignedAt).toLocaleString('vi-VN')}
                           </span>
                         </div>
                       )}
                       {currentPrerequisites?.paperOriginalLocation && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Vị trí lưu bản cứng:</span>
-                          <span className="font-medium text-slate-700">{currentPrerequisites.paperOriginalLocation}</span>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-slate-500 shrink-0 whitespace-nowrap">Vị trí lưu bản cứng:</span>
+                          <span className="font-medium text-slate-700 text-right ml-auto">{currentPrerequisites.paperOriginalLocation}</span>
                         </div>
                       )}
                       {currentPrerequisites?.paperVerifiedByName && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Nhân viên xác minh:</span>
-                          <span className="font-bold text-emerald-700">{currentPrerequisites.paperVerifiedByName}</span>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-slate-500 shrink-0 whitespace-nowrap">Nhân viên xác minh:</span>
+                          <span className="font-bold text-emerald-700 text-right ml-auto">{currentPrerequisites.paperVerifiedByName}</span>
                         </div>
                       )}
                       {currentPrerequisites?.paperContractUrl && (
-                        <div className="pt-1 flex items-center justify-between border-t border-slate-200/60">
-                          <span className="text-slate-500">Bản scan hợp đồng:</span>
+                        <div className="pt-1 flex items-center justify-between gap-2 flex-wrap border-t border-slate-200/60">
+                          <span className="text-slate-500 shrink-0 whitespace-nowrap">Bản scan hợp đồng:</span>
                           <button
                             type="button"
                             onClick={() => handleOpenAuthorizedDocument(currentPrerequisites.paperContractUrl!)}
                             disabled={openingDocumentUrl === currentPrerequisites.paperContractUrl}
-                            className="text-cyan-700 hover:text-cyan-800 font-bold inline-flex items-center gap-1 cursor-pointer"
+                            className="text-cyan-700 hover:text-cyan-800 font-bold inline-flex items-center gap-1 cursor-pointer ml-auto shrink-0"
                           >
                             <span className="material-symbols-outlined text-[14px]">
                               {openingDocumentUrl === currentPrerequisites.paperContractUrl ? 'hourglass_top' : 'attachment'}
@@ -1698,15 +1700,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     {isContractMet && currentPrerequisites?.contractSigningMethod !== 'PAPER' ? (
                       <div className="w-full flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-1.5 text-emerald-700 text-[11px] font-bold">
-                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                          <span className="material-symbols-outlined text-[16px] shrink-0">task_alt</span>
                           <span>Hợp đồng điện tử hợp lệ (không bắt buộc tải HĐ giấy)</span>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <button
                             type="button"
                             onClick={handleViewElectronicContract}
                             disabled={isLoadingContract}
-                            className="px-2.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs flex items-center gap-1 cursor-pointer border border-cyan-200 transition-colors"
+                            className="px-2.5 py-1.5 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 font-bold text-xs flex items-center gap-1 cursor-pointer border border-cyan-200 transition-colors shrink-0"
                           >
                             <span className="material-symbols-outlined text-[15px]">
                               {isLoadingContract ? 'hourglass_top' : 'description'}
@@ -1750,13 +1752,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     ) : (
                       /* TH3: Chọn ký online nhưng khách chưa hoàn tất ký */
                       <div className="w-full flex items-center justify-between gap-2 flex-wrap">
-                        <span className="text-[11px] text-amber-700 font-medium">
+                        <span className="text-[11px] text-amber-700 font-medium leading-snug">
                           Chờ khách ký trực tuyến hoặc hướng dẫn chuyển sang ký tại quầy.
                         </span>
                         <button
                           type="button"
                           onClick={handleOpenPaperContractModal}
-                          className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer border border-amber-300"
+                          className="px-3 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer border border-amber-300 shrink-0"
                         >
                           <span className="material-symbols-outlined text-[15px]">edit_document</span>
                           <span>Chuyển Sang Ký Giấy Tại Quầy</span>
@@ -1767,10 +1769,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </div>
 
                 {/* Điều kiện 2: Bằng Chứng Chuyển Khoản Toàn Bộ Tiền Cọc & Thuê Trong Toàn Bộ Thời Hạn */}
-                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3 min-w-0 overflow-hidden">
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                             isPaymentMet ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
@@ -1778,17 +1780,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         >
                           <span className="material-symbols-outlined text-[20px]">payments</span>
                         </div>
-                        <div>
-                          <span className="font-bold text-slate-900 text-xs block leading-tight">
-                            2. Chuyển Khoản Toàn Bộ Tiền Cọc &amp; Thuê
-                          </span>
-                          <span className="text-[10px] text-slate-500 leading-tight block mt-0.5">
-                            Bằng chứng chuyển khoản toàn bộ cọc &amp; tiền thuê toàn hạn
-                          </span>
-                        </div>
+                        <span className="font-bold text-slate-900 text-xs leading-snug">
+                          2. Chuyển Khoản Toàn Bộ Tiền Cọc &amp; Thuê
+                        </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 whitespace-nowrap ${
                           isPaymentMet
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-rose-50 text-rose-700 border border-rose-200'
@@ -1799,25 +1796,28 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           : `CÒN THIẾU ${((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)).toLocaleString('vi-VN')}đ`}
                       </span>
                     </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500 leading-snug">
+                      Bằng chứng chuyển khoản toàn bộ cọc &amp; tiền thuê toàn hạn
+                    </p>
 
                     {/* Financial summary: 3 columns */}
-                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Tổng phải thu</span>
-                        <strong className="font-mono text-slate-800 text-[11px]">
+                    <div className="mt-3 p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-[11px] grid grid-cols-3 gap-1.5 text-center">
+                      <div className="min-w-0">
+                        <span className="text-slate-500 block text-[10px] whitespace-nowrap truncate">Tổng phải thu</span>
+                        <strong className="font-mono text-slate-800 text-[11px] block truncate mt-0.5">
                           {((currentPrerequisites?.requiredDeposit ?? 0) + (currentPrerequisites?.requiredFirstMonthRent ?? 0)).toLocaleString('vi-VN')}đ
                         </strong>
                       </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Đã xác nhận</span>
-                        <strong className="font-mono text-emerald-700 text-[11px]">
+                      <div className="min-w-0">
+                        <span className="text-slate-500 block text-[10px] whitespace-nowrap truncate">Đã xác nhận</span>
+                        <strong className="font-mono text-emerald-700 text-[11px] block truncate mt-0.5">
                           {((currentPrerequisites?.depositPaid ?? 0) + (currentPrerequisites?.firstMonthRentPaid ?? 0)).toLocaleString('vi-VN')}đ
                         </strong>
                       </div>
-                      <div>
-                        <span className="text-slate-400 block text-[10px]">Còn thiếu</span>
+                      <div className="min-w-0">
+                        <span className="text-slate-500 block text-[10px] whitespace-nowrap truncate">Còn thiếu</span>
                         <strong
-                          className={`font-mono text-[11px] ${
+                          className={`font-mono text-[11px] block truncate mt-0.5 ${
                             ((currentPrerequisites?.depositRemaining ?? 0) + (currentPrerequisites?.firstMonthRentRemaining ?? 0)) > 0
                               ? 'text-rose-600'
                               : 'text-slate-700'
@@ -1829,13 +1829,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     </div>
 
                     {/* Breakdown cọc vs thuê */}
-                    <div className="mt-2 space-y-1 text-[11px] bg-slate-50/60 p-2 rounded-lg border border-slate-100">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                          Tiền cọc giữ chỗ:
+                    <div className="mt-2 space-y-1.5 text-[11px] bg-slate-50/60 p-2.5 rounded-lg border border-slate-100">
+                      <div className="flex items-center justify-between gap-x-2 gap-y-0.5 flex-wrap">
+                        <span className="text-slate-600 flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+                          <span>Tiền cọc giữ chỗ:</span>
                         </span>
-                        <span className="font-mono font-bold text-slate-700">
+                        <span className="font-mono font-bold text-slate-700 ml-auto text-right whitespace-nowrap">
                           {(currentPrerequisites?.depositPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredDeposit ?? 0).toLocaleString('vi-VN')}đ
                           {isDepositMet ? (
                             <span className="text-emerald-600 ml-1">✓</span>
@@ -1844,12 +1844,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           )}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
-                          Tiền thuê trọn kỳ:
+                      <div className="flex items-center justify-between gap-x-2 gap-y-0.5 flex-wrap">
+                        <span className="text-slate-600 flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 shrink-0"></span>
+                          <span>Tiền thuê trọn kỳ:</span>
                         </span>
-                        <span className="font-mono font-bold text-slate-700">
+                        <span className="font-mono font-bold text-slate-700 ml-auto text-right whitespace-nowrap">
                           {(currentPrerequisites?.firstMonthRentPaid ?? 0).toLocaleString('vi-VN')}đ / {(currentPrerequisites?.requiredFirstMonthRent ?? 0).toLocaleString('vi-VN')}đ
                           {isRentMet ? (
                             <span className="text-emerald-600 ml-1">✓</span>
@@ -1862,16 +1862,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
                     {/* Newly uploaded proof feedback banner */}
                     {uploadedPaymentProofUrl && (
-                      <div className="mt-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1 font-medium">
-                          <span className="material-symbols-outlined text-[15px] text-emerald-600">task_alt</span>
-                          Ảnh chuyển khoản đã tải lên
+                      <div className="mt-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center justify-between gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1 font-medium shrink-0">
+                          <span className="material-symbols-outlined text-[15px] text-emerald-600 shrink-0">task_alt</span>
+                          <span>Ảnh chuyển khoản đã tải lên</span>
                         </span>
                         <button
                           type="button"
                           onClick={() => handleOpenAuthorizedDocument(uploadedPaymentProofUrl)}
                           disabled={openingDocumentUrl === uploadedPaymentProofUrl}
-                          className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                          className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] inline-flex items-center gap-1 cursor-pointer ml-auto shrink-0"
                         >
                           <span className="material-symbols-outlined text-[12px]">visibility</span>
                           <span>{openingDocumentUrl === uploadedPaymentProofUrl ? '...' : 'Xem ảnh'}</span>
@@ -1883,18 +1883,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     {currentPrerequisites?.paymentHistory && currentPrerequisites.paymentHistory.length > 0 && (
                       <div className="mt-2 space-y-1.5 max-h-28 overflow-y-auto pr-0.5">
                         {currentPrerequisites.paymentHistory.map((p) => (
-                          <div key={p.id} className="p-1.5 rounded bg-slate-100/70 text-[10px] flex items-center justify-between">
-                            <div className="flex items-center gap-1">
-                              <span className={`px-1 py-0.2 rounded font-mono font-bold text-[9px] ${
+                          <div key={p.id} className="p-1.5 rounded bg-slate-100/70 text-[10px] flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className={`px-1 py-0.2 rounded font-mono font-bold text-[9px] shrink-0 ${
                                 p.paymentType === 'DEPOSIT' ? 'bg-blue-100 text-blue-800' : 'bg-cyan-100 text-cyan-800'
                               }`}>
                                 {p.paymentType === 'DEPOSIT' ? 'CỌC' : 'THUÊ'}
                               </span>
-                              <span className="font-mono font-bold text-slate-700">
+                              <span className="font-mono font-bold text-slate-700 truncate">
                                 {p.paymentMethod} • {p.amount.toLocaleString('vi-VN')}đ
                               </span>
                             </div>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 ml-auto shrink-0">
                               {p.proofDocumentUrl && (
                                 <button
                                   type="button"
@@ -1908,7 +1908,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                                 </button>
                               )}
                               <span
-                                className={`px-1.5 py-0.2 rounded font-bold ${
+                                className={`px-1.5 py-0.2 rounded font-bold whitespace-nowrap ${
                                   p.status === 'PAID'
                                     ? 'bg-emerald-100 text-emerald-800'
                                     : p.status === 'PENDING' || p.status === 'REFUND_PENDING'
@@ -1940,19 +1940,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       disabled={isUploadingPaymentProof}
                       className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                     >
-                      <span className="material-symbols-outlined text-[16px]">
+                      <span className="material-symbols-outlined text-[16px] shrink-0">
                         {isUploadingPaymentProof ? 'hourglass_top' : 'upload_file'}
                       </span>
-                      <span>{isUploadingPaymentProof ? 'Đang Tải Ảnh...' : 'Tải Lên / Upload Ảnh Chuyển Khoản'}</span>
+                      <span className="truncate">{isUploadingPaymentProof ? 'Đang Tải Ảnh...' : 'Tải Lên / Upload Ảnh Chuyển Khoản'}</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Điều kiện 3: Đối Chiếu CCCD / Passport Gốc */}
-                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
+                <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs flex flex-col justify-between gap-3 min-w-0 overflow-hidden">
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                             isIdMet ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
@@ -1960,13 +1960,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         >
                           <span className="material-symbols-outlined text-[20px]">badge</span>
                         </div>
-                        <div>
-                          <span className="font-bold text-slate-900 text-xs block">3. Đối Chiếu CCCD / Hộ Chiếu Gốc</span>
-                          <span className="text-[11px] text-slate-500">Xác minh danh tính khách hàng trực tiếp</span>
-                        </div>
+                        <span className="font-bold text-slate-900 text-xs leading-snug">
+                          3. Đối Chiếu CCCD / Hộ Chiếu Gốc
+                        </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                        className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 whitespace-nowrap ${
                           isIdMet
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-amber-50 text-amber-700 border border-amber-200'
@@ -1975,39 +1974,42 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         {isIdMet ? '✓ ĐÃ ĐỐI SOÁT GỐC' : 'CHƯA ĐỐI SOÁT'}
                       </span>
                     </div>
+                    <p className="mt-1.5 text-[11px] text-slate-500 leading-snug">
+                      Xác minh danh tính khách hàng trực tiếp
+                    </p>
 
                     {isIdMet ? (
-                      <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] space-y-1">
-                        <div className="flex justify-between">
-                          <span className="text-emerald-900">Loại giấy tờ:</span>
-                          <strong className="font-mono text-emerald-950">{currentPrerequisites?.idCardType || 'CCCD'}</strong>
+                      <div className="mt-3 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 text-[11px] space-y-1.5 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-emerald-900 shrink-0 whitespace-nowrap">Loại giấy tờ:</span>
+                          <strong className="font-mono text-emerald-950 ml-auto">{currentPrerequisites?.idCardType || 'CCCD'}</strong>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-emerald-900">Số giấy tờ:</span>
-                          <strong className="font-mono text-emerald-950">{currentPrerequisites?.idCardNumber}</strong>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-emerald-900 shrink-0 whitespace-nowrap">Số giấy tờ:</span>
+                          <strong className="font-mono text-emerald-950 ml-auto">{currentPrerequisites?.idCardNumber}</strong>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-emerald-900">Nhân viên đối chiếu:</span>
-                          <span className="font-bold text-emerald-900">{currentPrerequisites?.identityVerifiedByName || 'Quầy tiếp đón'}</span>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-emerald-900 shrink-0 whitespace-nowrap">Nhân viên đối chiếu:</span>
+                          <span className="font-bold text-emerald-900 ml-auto text-right">{currentPrerequisites?.identityVerifiedByName || 'Quầy tiếp đón'}</span>
                         </div>
                         {currentPrerequisites?.identityVerifiedAt && (
-                          <div className="flex justify-between">
-                            <span className="text-emerald-900">Thời điểm:</span>
-                            <span className="font-mono text-emerald-800">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <span className="text-emerald-900 shrink-0 whitespace-nowrap">Thời điểm:</span>
+                            <span className="font-mono text-emerald-800 ml-auto whitespace-nowrap">
                               {new Date(currentPrerequisites.identityVerifiedAt).toLocaleString('vi-VN')}
                             </span>
                           </div>
                         )}
                       </div>
                     ) : (
-                      <div className="mt-2.5 space-y-2 text-xs">
+                      <div className="mt-3 space-y-2.5 text-xs min-w-0">
                         {Boolean(currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber) && (
-                          <div className="p-2 rounded-lg bg-blue-50/90 border border-blue-200/80 flex items-center justify-between text-[11px]">
-                            <span className="text-blue-900 font-semibold flex items-center gap-1">
-                              <span className="material-symbols-outlined text-[15px] text-blue-700">info</span>
-                              CCCD đăng ký trong đơn:
+                          <div className="p-2.5 rounded-lg bg-blue-50/90 border border-blue-200/80 flex items-center justify-between gap-x-2 gap-y-1 flex-wrap text-[11px]">
+                            <span className="text-blue-900 font-semibold flex items-center gap-1 shrink-0 whitespace-nowrap">
+                              <span className="material-symbols-outlined text-[15px] text-blue-700 shrink-0">info</span>
+                              <span>CCCD đăng ký trong đơn:</span>
                             </span>
-                            <span className="font-mono font-bold text-blue-950">
+                            <span className="font-mono font-bold text-blue-950 ml-auto whitespace-nowrap">
                               {currentPrerequisites?.registeredIdCardNumber || currentPrerequisites?.idCardNumber}
                               <span className="ml-1 text-[10px] text-blue-700 font-sans">
                                 ({currentPrerequisites?.registeredIdCardType || currentPrerequisites?.idCardType || 'CCCD'})
@@ -2015,11 +2017,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             </span>
                           </div>
                         )}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 w-full min-w-0">
                           <select
                             value={idCardType}
                             onChange={(e) => setIdCardType(e.target.value)}
-                            className="p-1.5 bg-slate-50 border border-slate-200 rounded text-slate-900 font-bold text-xs focus:outline-none"
+                            className="p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-bold text-xs focus:outline-none focus:border-cyan-600 shrink-0"
                           >
                             <option value="CCCD">Căn Cước</option>
                             <option value="PASSPORT">Hộ Chiếu</option>
@@ -2032,15 +2034,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                               if (checkInError) setCheckInError(null)
                             }}
                             placeholder="Nhập 9-12 chữ số..."
-                            className="flex-1 p-1.5 bg-slate-50 border border-slate-200 rounded text-slate-900 font-mono text-xs focus:outline-none focus:border-cyan-600"
+                            className="min-w-0 flex-1 w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 font-mono text-xs focus:outline-none focus:border-cyan-600"
                           />
                         </div>
-                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700 p-1.5 bg-slate-50 rounded border border-slate-100">
+                        <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700 p-2 bg-slate-50 rounded-lg border border-slate-100 leading-snug">
                           <input
                             type="checkbox"
                             checked={idOriginalSeen}
                             onChange={(e) => setIdOriginalSeen(e.target.checked)}
-                            className="mt-0.5 rounded text-cyan-600"
+                            className="mt-0.5 rounded text-cyan-600 shrink-0"
                           />
                           <span>Tôi xác nhận đã xem và đối chiếu thẻ căn cước / hộ chiếu gốc của khách hàng tại quầy.</span>
                         </label>
@@ -2049,7 +2051,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   </div>
 
                   {/* Actions for Identity */}
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                     {!isIdMet ? (
                       <button
                         type="button"
@@ -2057,7 +2059,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         disabled={isVerifyingIdentity}
                         className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
                       >
-                        <span className="material-symbols-outlined text-[15px]">verified_user</span>
+                        <span className="material-symbols-outlined text-[15px] shrink-0">verified_user</span>
                         <span>{isVerifyingIdentity ? 'Đang lưu đối soát...' : 'Xác Nhận Đối Chiếu Gốc'}</span>
                       </button>
                     ) : (
@@ -2069,7 +2071,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         Đối soát lại
                       </button>
                     )}
-                    <span className="text-[11px] text-slate-400 font-mono">Bản gốc</span>
+                    <span className="text-[11px] text-slate-400 font-mono shrink-0 ml-auto">Bản gốc</span>
                   </div>
                 </div>
 

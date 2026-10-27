@@ -1843,24 +1843,24 @@ export const StaffDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Full-Width Handover & Check-in Operator Workbench */}
+      <HandoverCheckInWorkbench
+        arrivals={arrivals}
+        activeBookingId={activeBookingId}
+        onHandoverComplete={(bookingId) => {
+          setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
+          fetchArrivals()
+          fetchOccupancy()
+          loadActiveRentals()
+        }}
+      />
+
       {/* Main Dual Workspace: Check-in Queue + Return Inspections */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         
-        {/* Left Side: Live Check-in & Handover Stepper Card (Col 8) */}
-        <div className="xl:col-span-8 flex flex-col gap-6">
-          {/* Handover & Check-in Operator Workbench */}
-          <HandoverCheckInWorkbench
-            arrivals={arrivals}
-            activeBookingId={activeBookingId}
-            onHandoverComplete={(bookingId) => {
-              setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
-              fetchArrivals()
-              fetchOccupancy()
-              loadActiveRentals()
-            }}
-          />
-
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+        {/* Left Side: Upcoming Appointments & Return Requests (Col 8) */}
+        <div className="xl:col-span-8 flex flex-col gap-6 min-w-0">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 min-w-0">
 
             {/* Upcoming Appointments Table */}
             <div className="flex items-center justify-between mb-4">
@@ -2085,8 +2085,8 @@ export const StaffDashboard: React.FC = () => {
               {/* Target Contract Profile */}
               {activeRentals.length > 0 ? (
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl mb-4">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Hồ Sơ Cần Nghiệm Thu</span>
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+                    <span className="text-[10px] uppercase font-bold text-slate-400 shrink-0 whitespace-nowrap">Hồ Sơ Cần Nghiệm Thu</span>
                     <select
                       value={selectedReturnBookingId}
                       onChange={(e) => {

@@ -695,7 +695,7 @@ export const RegisterPage: React.FC = () => {
                       <RefreshCw className={`w-3.5 h-3.5 ${isCaptchaLoading ? 'animate-spin text-teal-700' : ''}`} />
                     </button>
 
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <input
                         type="text"
                         required
