@@ -111,6 +111,7 @@ export interface StorageUnit {
   pricePerMonth: number
   depositAmount?: number
   imageUrl?: string
+  images?: string[]
   areaSqMeters?: number
   batteryLevel?: string
   smartLockSerial?: string
@@ -163,6 +164,7 @@ export interface Booking {
   holdStartedAt?: string | null
   holdExpiresAt?: string | null
   expectedCheckInAt?: string | null
+  expectedArrivalAt?: string | null
   checkInTime?: string | null
   paymentStatus?: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID' | string
   holdGraceHours?: number
@@ -313,6 +315,8 @@ export interface RentalContract {
   depositHeld: number
   status: RentalContractStatus
   signedDocumentUrl?: string | null
+  paperContractUrl?: string | null
+  paperVerifiedAt?: string | null
   docusealSubmissionId?: string | null
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
