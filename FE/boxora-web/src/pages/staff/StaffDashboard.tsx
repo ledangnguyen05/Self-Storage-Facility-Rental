@@ -1620,22 +1620,30 @@ export const StaffDashboard: React.FC = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    const proceed = () => {
+                                      setActiveBookingId(b.id)
+                                      setStaffActiveTab('reception')
+                                      setSearchParams({ tab: 'reception' })
+                                      setTimeout(() => {
+                                        document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                      }, 100)
+                                    }
                                     const { isPremature } = isBookingBeforeCheckInTime(b)
                                     if (isPremature) {
                                       setEarlyConfirmState({
                                         booking: b,
-                                        actionType: 'ASSIGN_PHYSICAL_UNIT',
-                                        onConfirm: () => setAssignModalBooking(b),
+                                        actionType: 'ENTER_RECEPTION',
+                                        onConfirm: proceed,
                                       })
                                     } else {
-                                      setAssignModalBooking(b)
+                                      proceed()
                                     }
                                   }}
                                   className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm ring-2 ring-emerald-400/40"
-                                  title="Chọn ô kho vật lý đang trống để gán vào đơn và kích hoạt gửi mã PIN IoT qua email"
+                                  title="Chuyển sang Bàn Tiếp Đón &amp; Bàn Giao Kho"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">key</span>
-                                  <span>Gán kho &amp; Bàn giao</span>
+                                  <span className="material-symbols-outlined text-[16px]">desk</span>
+                                  <span>Tiếp nhận</span>
                                 </button>
                               ) : (s === 'PENDING_CONTACT' || (s as string) === 'PENDING_SIGNATURE') ? (
                                 <>
@@ -1724,7 +1732,7 @@ export const StaffDashboard: React.FC = () => {
                                   title="Chuyển sang Bàn Tiếp Đón &amp; Nghiệm Thu Bàn Giao Kho"
                                 >
                                   <span className="material-symbols-outlined text-[15px]">desk</span>
-                                  <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Vào Tiếp Đón'}</span>
+                                  <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Tiếp nhận'}</span>
                                 </button>
                               )}
                             </div>
