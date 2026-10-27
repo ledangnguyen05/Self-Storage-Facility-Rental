@@ -54,15 +54,10 @@ export const HomePage: React.FC = () => {
   const [faqFilter, setFaqFilter] = useState<FaqCategoryKey>('ALL')
   const [activeFaqIndex, setActiveFaqIndex] = useState<number | null>(0)
 
-  // Booking Navigation (Yêu cầu đăng nhập trước khi vào đặt kho)
+  // Booking Navigation
   const handleOpenBooking = (tier?: SizeTierKey) => {
     const selected = tier || selectedSizeTier
-    const targetUrl = `/booking?type=${selected}`
-    if (!isAuthenticated) {
-      navigate(`/login?redirect=${encodeURIComponent(targetUrl)}`)
-      return
-    }
-    navigate(targetUrl)
+    navigate(`/booking?type=${selected}`)
   }
 
   return (
@@ -149,14 +144,13 @@ export const HomePage: React.FC = () => {
                   >
                     {t('Đăng Nhập')}
                   </Link>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenBooking()}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs cursor-pointer"
+                  <Link
+                    to="/booking"
+                    className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
                   >
                     <span>{t('Thuê Kho Ngay')}</span>
                     <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                  </button>
+                  </Link>
                 </>
               )}
             </div>
