@@ -112,7 +112,7 @@ export const LoginPage: React.FC = () => {
         const isAllowed =
           (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
-          (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
+          (decoded.startsWith('/portal/facility-manager') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
@@ -220,7 +220,7 @@ export const LoginPage: React.FC = () => {
         const isAllowed =
           (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
-          (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
+          (decoded.startsWith('/portal/facility-manager') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))

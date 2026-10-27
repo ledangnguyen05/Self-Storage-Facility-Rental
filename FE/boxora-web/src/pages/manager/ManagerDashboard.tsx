@@ -66,7 +66,7 @@ export const ManagerDashboard: React.FC = () => {
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
     if (!tab) return false
     if (role === 'STAFF') {
-      return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets'
+      return tab === 'overview'
     }
     return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
   }
@@ -1064,6 +1064,7 @@ export const ManagerDashboard: React.FC = () => {
       </section>
 
       {/* 7 MANAGEMENT-LEVEL SUMMARIES: TABS NAVIGATION */}
+      {role !== 'STAFF' && (
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1">
         <button
           type="button"
@@ -1145,7 +1146,6 @@ export const ManagerDashboard: React.FC = () => {
           </span>
         </button>
 
-        {role !== 'STAFF' && (
           <>
             <button
               type="button"
@@ -1173,8 +1173,8 @@ export const ManagerDashboard: React.FC = () => {
               <span>5. Chính Sách Vận Hành Cơ Sở</span>
             </button>
           </>
-        )}
       </div>
+      )}
 
       {/* ============================================================== */}
       {/* TAB 1: SƠ ĐỒ KHO & GIÁM SÁT THIẾT BỊ (SUMMARY 1) */}
@@ -1224,6 +1224,20 @@ export const ManagerDashboard: React.FC = () => {
 
               {/* Filter and Search Matrix */}
               <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(prev => prev === 'Available' ? 'all' : 'Available')}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer border ${
+                    statusFilter === 'Available'
+                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                      : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                  }`}
+                  title="Lọc xem các ô kho đang còn trống"
+                >
+                  <span className={`w-2 h-2 rounded-full ${statusFilter === 'Available' ? 'bg-white' : 'bg-emerald-500'}`}></span>
+                  <span>Kho còn trống ({availableUnitsCount})</span>
+                </button>
+
                 <select 
                   value={sizeFilter}
                   onChange={(e) => setSizeFilter(e.target.value as any)}
