@@ -165,9 +165,11 @@ export const StaffDashboard: React.FC = () => {
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
   const [rejectingBooking, setRejectingBooking] = useState<Booking | null>(null)
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('')
+  const [rejectionError, setRejectionError] = useState<string>('')
   const [isRejectingSubmitting, setIsRejectingSubmitting] = useState<boolean>(false)
   const [confirmingBooking, setConfirmingBooking] = useState<Booking | null>(null)
   const [confirmingNotes, setConfirmingNotes] = useState<string>('')
+  const [confirmingError, setConfirmingError] = useState<string>('')
   const [isConfirmingSubmitting, setIsConfirmingSubmitting] = useState<boolean>(false)
   const [reviewDetailBooking, setReviewDetailBooking] = useState<Booking | null>(null)
   const [detailPrereq, setDetailPrereq] = useState<HandoverPrerequisites | null>(null)
@@ -883,11 +885,13 @@ export const StaffDashboard: React.FC = () => {
   const handleStaffConfirmBooking = (booking: Booking) => {
     setConfirmingBooking(booking)
     setConfirmingNotes('')
+    setConfirmingError('')
   }
 
   // Thực thi xác nhận đơn: gọi backend API chuyển trạng thái sang CONFIRMED và đồng bộ email
   const executeStaffConfirmBooking = async (booking: Booking, notes?: string) => {
     setIsConfirmingSubmitting(true)
+    setConfirmingError('')
     try {
       const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
       const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
@@ -897,7 +901,7 @@ export const StaffDashboard: React.FC = () => {
       const errMsg = err.response?.data?.message || err.message
       const isLocalOnly = !booking.id || booking.id.startsWith('LOCAL-RES-') || booking.id.startsWith('res_') || err?.response?.status === 404 || err?.response?.data?.errorCode === 'BOOKING_NOT_FOUND'
       if (!isLocalOnly) {
-        alert(`Không thể xác nhận đơn trên máy chủ: ${errMsg}`)
+        setConfirmingError(`Không thể xác nhận đơn trên máy chủ: ${errMsg}`)
         setIsConfirmingSubmitting(false)
         return
       }
@@ -923,6 +927,7 @@ export const StaffDashboard: React.FC = () => {
     setTimeout(() => setAttendanceSuccessMsg(null), 5000)
     setConfirmingBooking(null)
     setConfirmingNotes('')
+    setConfirmingError('')
     setReviewDetailBooking(null)
     setIsConfirmingSubmitting(false)
 
@@ -932,28 +937,34 @@ export const StaffDashboard: React.FC = () => {
 
   // Nhân viên từ chối đơn: có điền lý do, chuyển sang CANCELLED và gửi email đến khách hàng
   const handleStaffRejectBooking = async (booking: Booking, reason: string) => {
-    if (!reason.trim() || reason.trim().length < 5) {
-      alert('Vui lòng điền hoặc chọn chi tiết lý do từ chối đơn đặt giữ chỗ (tối thiểu 5 ký tự).')
+    const trimmed = (reason || '').trim()
+    if (!trimmed) {
+      setRejectionError('Vui lòng điền hoặc chọn lý do từ chối đơn đặt giữ chỗ.')
+      return
+    }
+    if (trimmed.length < 5) {
+      setRejectionError('Lý do từ chối quá ngắn. Vui lòng nhập tối thiểu 5 ký tự để gửi thông tin rõ ràng cho khách hàng.')
       return
     }
 
+    setRejectionError('')
     setIsRejectingSubmitting(true)
     try {
       const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
       const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
-      await bookingService.cancelBooking(targetIdOrCode, reason.trim())
+      await bookingService.cancelBooking(targetIdOrCode, trimmed)
     } catch (err: any) {
       console.error('Backend cancel booking error on reject:', err)
       const errMsg = err.response?.data?.message || err.message || 'Lỗi xử lý hủy đơn trên máy chủ'
       const isLocalOnly = !booking.id || booking.id.startsWith('LOCAL-RES-') || booking.id.startsWith('res_') || err?.response?.status === 404 || err?.response?.data?.errorCode === 'BOOKING_NOT_FOUND'
       if (!isLocalOnly) {
-        alert(`Không thể từ chối đơn trên máy chủ: ${errMsg}`)
+        setRejectionError(`Không thể từ chối đơn trên máy chủ: ${errMsg}`)
         setIsRejectingSubmitting(false)
         return
       }
     }
 
-    const res = reservationEmailService.rejectReservation(booking.bookingCode, reason, {
+    const res = reservationEmailService.rejectReservation(booking.bookingCode, trimmed, {
       id: user?.id,
       fullName: user?.fullName || 'Nhân viên trực ca Boxora',
     })
@@ -963,7 +974,7 @@ export const StaffDashboard: React.FC = () => {
         ? {
             ...b,
             status: 'CANCELLED' as any,
-            rejectionReason: reason.trim() as any,
+            rejectionReason: trimmed as any,
           }
         : b
     ))
@@ -971,6 +982,7 @@ export const StaffDashboard: React.FC = () => {
     setTimeout(() => setAttendanceSuccessMsg(null), 5000)
     setRejectingBooking(null)
     setRejectionReasonText('')
+    setRejectionError('')
     setReviewDetailBooking(null)
     setIsRejectingSubmitting(false)
 
@@ -983,6 +995,7 @@ export const StaffDashboard: React.FC = () => {
   const openRejectModal = (booking: Booking) => {
     setRejectingBooking(booking)
     setRejectionReasonText('')
+    setRejectionError('')
   }
 
   // Hủy đơn quá hạn 48h cho đơn đặt ký + thanh toán tại quầy
@@ -2933,7 +2946,10 @@ export const StaffDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={isRejectingSubmitting}
-                onClick={() => setRejectingBooking(null)}
+                onClick={() => {
+                  setRejectingBooking(null)
+                  setRejectionError('')
+                }}
                 className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 ✕
@@ -2948,16 +2964,47 @@ export const StaffDashboard: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <label className="font-bold text-slate-900 dark:text-white block text-xs">
-                  Điền lý do từ chối (Nội dung này sẽ được gửi email tới khách hàng): <span className="text-rose-600">*</span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-900 dark:text-white block text-xs">
+                    Điền lý do từ chối (Nội dung này sẽ được gửi email tới khách hàng): <span className="text-rose-600">*</span>
+                  </label>
+                  <span className={`text-[11px] font-mono font-medium ${
+                    rejectionReasonText.trim().length > 0 && rejectionReasonText.trim().length < 5
+                      ? 'text-rose-500 font-bold'
+                      : 'text-slate-400'
+                  }`}>
+                    {rejectionReasonText.trim().length}/5 ký tự tối thiểu
+                  </span>
+                </div>
                 <textarea
                   rows={3}
                   value={rejectionReasonText}
-                  onChange={(e) => setRejectionReasonText(e.target.value)}
-                  placeholder="Nhập chi tiết lý do từ chối đơn đặt kho..."
-                  className="w-full p-3 rounded-xl border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs outline-none focus:ring-2 focus:ring-rose-500 resize-none"
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setRejectionReasonText(val)
+                    if (rejectionError && val.trim().length >= 5) {
+                      setRejectionError('')
+                    }
+                  }}
+                  placeholder="Nhập chi tiết lý do từ chối đơn đặt kho (tối thiểu 5 ký tự)..."
+                  className={`w-full p-3 rounded-xl border bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-xs outline-none transition-all resize-none ${
+                    rejectionError
+                      ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/20 dark:bg-rose-950/20'
+                      : 'border-slate-300 dark:border-slate-700 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20'
+                  }`}
                 />
+
+                {/* Validate hiển thị trực tiếp trong form thay vì alert */}
+                {rejectionError && (
+                  <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs animate-in fade-in slide-in-from-top-1 duration-150 shadow-sm">
+                    <span className="material-symbols-outlined text-[18px] text-rose-600 shrink-0 mt-0.5">
+                      error
+                    </span>
+                    <span className="font-semibold leading-relaxed">
+                      {rejectionError}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Gợi ý lý do nhanh */}
@@ -2973,8 +3020,11 @@ export const StaffDashboard: React.FC = () => {
                     <button
                       key={preset}
                       type="button"
-                      onClick={() => setRejectionReasonText(preset)}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10.5px] cursor-pointer"
+                      onClick={() => {
+                        setRejectionReasonText(preset)
+                        setRejectionError('')
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10.5px] cursor-pointer hover:border-slate-300 border border-transparent transition"
                     >
                       + {preset}
                     </button>
@@ -2987,16 +3037,19 @@ export const StaffDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={isRejectingSubmitting}
-                onClick={() => setRejectingBooking(null)}
+                onClick={() => {
+                  setRejectingBooking(null)
+                  setRejectionError('')
+                }}
                 className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
-                disabled={isRejectingSubmitting || !rejectionReasonText.trim()}
+                disabled={isRejectingSubmitting}
                 onClick={() => handleStaffRejectBooking(rejectingBooking, rejectionReasonText)}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 transition flex items-center gap-1.5"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer disabled:opacity-50 transition flex items-center gap-1.5 active:scale-95"
               >
                 {isRejectingSubmitting ? (
                   <>
@@ -3029,7 +3082,10 @@ export const StaffDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={isConfirmingSubmitting}
-                onClick={() => setConfirmingBooking(null)}
+                onClick={() => {
+                  setConfirmingBooking(null)
+                  setConfirmingError('')
+                }}
                 className="w-8 h-8 rounded-full bg-emerald-800 hover:bg-emerald-900 text-white flex items-center justify-center transition-colors cursor-pointer"
               >
                 ✕
@@ -3054,6 +3110,18 @@ export const StaffDashboard: React.FC = () => {
                 </p>
               </div>
 
+              {/* Validate hiển thị trực tiếp trong form thay vì alert */}
+              {confirmingError && (
+                <div className="flex items-start gap-2 p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs animate-in fade-in slide-in-from-top-1 duration-150 shadow-sm">
+                  <span className="material-symbols-outlined text-[18px] text-rose-600 shrink-0 mt-0.5">
+                    error
+                  </span>
+                  <span className="font-semibold leading-relaxed">
+                    {confirmingError}
+                  </span>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="font-bold text-slate-900 dark:text-white block text-xs">
                   Ghi chú nội bộ nhân viên (tùy chọn):
@@ -3072,7 +3140,10 @@ export const StaffDashboard: React.FC = () => {
               <button
                 type="button"
                 disabled={isConfirmingSubmitting}
-                onClick={() => setConfirmingBooking(null)}
+                onClick={() => {
+                  setConfirmingBooking(null)
+                  setConfirmingError('')
+                }}
                 className="px-4 py-2.5 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
               >
                 Hủy bỏ
@@ -3333,6 +3404,7 @@ export const StaffDashboard: React.FC = () => {
                       setReviewDetailBooking(null);
                       setRejectingBooking(target);
                       setRejectionReasonText('');
+                      setRejectionError('');
                     }}
                     className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 text-xs font-bold cursor-pointer"
                   >

@@ -140,6 +140,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
   const [reviewBooking, setReviewBooking] = useState<any | null>(null)
   const [isRejecting, setIsRejecting] = useState<boolean>(false)
   const [rejectionReason, setRejectionReason] = useState<string>('')
+  const [rejectionError, setRejectionError] = useState<string>('')
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null)
   const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false)
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState<boolean>(false)
@@ -310,11 +311,17 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
   // Xử lý từ chối đơn: có điền lý do, chuyển trạng thái sang CANCELLED & gửi email cho khách
   const handleRejectReservationAction = async () => {
     if (!reviewBooking) return
-    const trimmedReason = rejectionReason.trim()
-    if (!trimmedReason || trimmedReason.length < 5) {
-      alert('Vui lòng điền lý do từ chối đơn đặt giữ chỗ (tối thiểu 5 ký tự).')
+    const trimmedReason = (rejectionReason || '').trim()
+    if (!trimmedReason) {
+      setRejectionError('Vui lòng điền hoặc chọn lý do từ chối đơn đặt giữ chỗ.')
       return
     }
+    if (trimmedReason.length < 5) {
+      setRejectionError('Lý do từ chối quá ngắn. Vui lòng nhập tối thiểu 5 ký tự để gửi giải thích cho khách hàng.')
+      return
+    }
+
+    setRejectionError('')
     setIsProcessingAction(true)
     try {
       const isBackendId = reviewBooking.id && !reviewBooking.id.startsWith('LOCAL-RES-')
@@ -331,12 +338,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
         cancelledAt: new Date().toISOString()
       }))
       setIsRejecting(false)
+      setRejectionReason('')
+      setRejectionError('')
       setActionSuccessMsg('Đã từ chối đơn đặt giữ chỗ thành công.')
       setTimeout(() => setActionSuccessMsg(null), 5000)
       window.dispatchEvent(new Event('boxora:storage-units-refresh'))
     } catch (err: any) {
       console.error('Reject booking error:', err)
-      alert(err.response?.data?.message || err.message || 'Không thể từ chối đơn trên máy chủ')
+      setRejectionError(err.response?.data?.message || err.message || 'Không thể từ chối đơn trên máy chủ')
     } finally {
       setIsProcessingAction(false)
     }
@@ -739,18 +748,45 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
               {/* Khối Điền lý do từ chối (khi nhân viên chọn Từ chối) */}
               {isRejecting && (
                 <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-800/80 space-y-3 animate-in fade-in">
-                  <div className="flex items-center gap-2 text-rose-900 dark:text-rose-200 font-bold text-xs">
-                    <AlertCircle size={16} className="text-rose-600" />
-                    <span>Lý do từ chối đơn đặt giữ chỗ (Bắt buộc):</span>
+                  <div className="flex items-center justify-between text-rose-900 dark:text-rose-200 font-bold text-xs">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle size={16} className="text-rose-600" />
+                      <span>Lý do từ chối đơn đặt giữ chỗ (Bắt buộc):</span>
+                    </div>
+                    <span className={`text-[11px] font-mono font-medium ${
+                      rejectionReason.trim().length > 0 && rejectionReason.trim().length < 5
+                        ? 'text-rose-600 font-bold'
+                        : 'text-slate-400'
+                    }`}>
+                      {rejectionReason.trim().length}/5 ký tự
+                    </span>
                   </div>
 
                   <textarea
                     rows={3}
                     value={rejectionReason}
-                    onChange={(e) => setRejectionReason(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setRejectionReason(val)
+                      if (rejectionError && val.trim().length >= 5) {
+                        setRejectionError('')
+                      }
+                    }}
                     placeholder="Nhập chi tiết lý do từ chối đơn (nội dung này sẽ được gửi email tới khách hàng)..."
-                    className="w-full p-3 rounded-xl border border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-rose-500 outline-none resize-none"
+                    className={`w-full p-3 rounded-xl border bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs outline-none transition-all resize-none ${
+                      rejectionError
+                        ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/30'
+                        : 'border-rose-300 dark:border-rose-700 focus:ring-2 focus:ring-rose-500'
+                    }`}
                   />
+
+                  {/* Validate hiển thị trực tiếp trong form thay vì alert */}
+                  {rejectionError && (
+                    <div className="flex items-start gap-2 p-2.5 rounded-xl bg-white dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs shadow-xs animate-in fade-in slide-in-from-top-1">
+                      <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                      <span className="font-semibold leading-relaxed">{rejectionError}</span>
+                    </div>
+                  )}
 
                   {/* Các lý do mẫu để chọn nhanh */}
                   <div className="space-y-1.5">
@@ -767,7 +803,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                         <button
                           key={preset}
                           type="button"
-                          onClick={() => setRejectionReason(preset)}
+                          onClick={() => {
+                            setRejectionReason(preset)
+                            setRejectionError('')
+                          }}
                           className="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 border border-rose-200 dark:border-rose-800 hover:bg-rose-100 text-slate-700 dark:text-slate-300 text-[10.5px] transition-colors cursor-pointer"
                         >
                           + {preset}
@@ -779,14 +818,17 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                   <div className="flex items-center justify-end gap-2 pt-1 border-t border-rose-200/60">
                     <button
                       type="button"
-                      onClick={() => setIsRejecting(false)}
+                      onClick={() => {
+                        setIsRejecting(false)
+                        setRejectionError('')
+                      }}
                       className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
                     >
                       Quay lại
                     </button>
                     <button
                       type="button"
-                      disabled={isProcessingAction || !rejectionReason.trim()}
+                      disabled={isProcessingAction}
                       onClick={handleRejectReservationAction}
                       className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold transition-all cursor-pointer shadow-md disabled:opacity-50 flex items-center gap-1.5"
                     >
@@ -810,7 +852,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
                   <>
                     <button
                       type="button"
-                      onClick={() => setIsRejecting(true)}
+                      onClick={() => {
+                        setIsRejecting(true)
+                        setRejectionError('')
+                      }}
                       className="px-4 py-2.5 rounded-xl border border-rose-300 hover:bg-rose-50 text-rose-700 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
                     >
                       <X size={15} />

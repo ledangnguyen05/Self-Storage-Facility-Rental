@@ -1095,7 +1095,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           }`}>
             1
           </span>
-          <span>1. Xác Thực Khách Hàng</span>
+          <span>Xác Thực Khách Hàng</span>
           {isIdMet && <CheckCircle2 size={14} className="text-emerald-600" />}
         </button>
 
@@ -1113,7 +1113,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           }`}>
             2
           </span>
-          <span>2. Gán Kho Vật Lý</span>
+          <span>Gán Kho Vật Lý</span>
           {isUnitAssigned && <CheckCircle2 size={14} className="text-emerald-600" />}
         </button>
 
@@ -1131,7 +1131,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           }`}>
             3
           </span>
-          <span>3. Hợp Đồng &amp; Thanh Toán</span>
+          <span>Hợp Đồng &amp; Thanh Toán</span>
           {isContractAndPaymentSatisfied && <CheckCircle2 size={14} className="text-emerald-600" />}
         </button>
 
@@ -1149,7 +1149,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           }`}>
             4
           </span>
-          <span>4. Cấp PIN &amp; Bàn Giao</span>
+          <span>Cấp PIN &amp; Bàn Giao</span>
           {currentSession.isCompleted && <CheckCircle2 size={14} className="text-emerald-600" />}
         </button>
       </div>
@@ -1348,13 +1348,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <CheckCircle2 size={16} className="text-emerald-600" />
                     <span>✓ Đã xác thực danh tính khách hàng thành công ({idCardInputNumber})</span>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => updateCurrentSession({ identityVerified: false })}
-                    className="text-xs font-semibold text-emerald-800 hover:underline cursor-pointer"
-                  >
-                    Đối chiếu lại
-                  </button>
                 </div>
               )}
             </div>
