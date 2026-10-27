@@ -9,6 +9,7 @@ import lombok.*;
 @Getter
 @Setter
 @Builder
+@AllArgsConstructor
 public class StorageUnit extends BaseEntity {
 
     public StorageUnit() {
