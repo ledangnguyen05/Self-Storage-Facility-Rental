@@ -6,6 +6,7 @@ import { reservationEmailService } from '../../services/reservationEmailService'
 import { bookingService } from '../../services/bookingService'
 import { useAuth } from '../../context/AuthContext'
 import { Check, X, Phone, Mail, Building2, Calendar, Clock, AlertCircle, FileText, Send, User, ChevronRight } from 'lucide-react'
+import { toast } from '../../utils/toast'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -302,7 +303,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
       window.dispatchEvent(new Event('boxora:storage-units-refresh'))
     } catch (err: any) {
       console.error('Confirm booking error:', err)
-      alert(err.response?.data?.message || err.message || 'Không thể xác nhận đơn trên máy chủ')
+      toast.error(err.response?.data?.message || err.message || 'Không thể xác nhận đơn trên máy chủ')
     } finally {
       setIsProcessingAction(false)
     }

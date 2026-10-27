@@ -10,6 +10,7 @@ import { userService } from '../../services/userService'
 import { facilityService } from '../../services/facilityService'
 import { useAuth } from '../../context/AuthContext'
 import { User, Facility } from '../../types'
+import { toast } from '../../utils/toast'
 
 export const IncidentTicketsPage: React.FC = () => {
   const { user, role } = useAuth()
@@ -207,7 +208,7 @@ export const IncidentTicketsPage: React.FC = () => {
       await supportTicketService.takeTicket(ticket.id)
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể tiếp nhận ticket')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể tiếp nhận ticket')
     }
   }
 
@@ -222,7 +223,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setResolutionText('')
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể cập nhật hoàn tất ticket')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể cập nhật hoàn tất ticket')
     } finally {
       setIsSubmittingResolve(false)
     }
@@ -263,7 +264,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setFmReopenReason('')
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể yêu cầu xử lý lại')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể yêu cầu xử lý lại')
     } finally {
       setIsSubmittingReopen(false)
     }
@@ -299,7 +300,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setAssigningTicket(null)
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể phân công ticket')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể phân công ticket')
     } finally {
       setIsSubmittingAssign(false)
     }
@@ -351,9 +352,9 @@ export const IncidentTicketsPage: React.FC = () => {
       setContactLogs(updatedLogs)
       setContactSummary('')
       setContactResult('')
-      alert('Đã lưu nhật ký liên hệ thành công. (Lưu ý: Không thay đổi trạng thái ticket)')
+      toast.success('Đã lưu nhật ký liên hệ thành công. (Lưu ý: Không thay đổi trạng thái ticket)')
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể lưu nhật ký liên hệ')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể lưu nhật ký liên hệ')
     } finally {
       setIsSubmittingContactLog(false)
     }
@@ -400,7 +401,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setNewDescription('')
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
     } finally {
       setIsSubmittingCreate(false)
     }

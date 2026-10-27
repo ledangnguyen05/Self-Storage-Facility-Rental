@@ -29,8 +29,8 @@ import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
 import { StaffShiftRosterPage } from './pages/staff/StaffShiftRosterPage'
-import { checkCustomerPortalAccess } from './utils/rentalAccess'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { ToastContainer } from './components/common/ToastContainer'
 
 // Dynamic shift roster routing based on role (Staff gets peer swap & personal roster, Manager gets full workforce control)
 const ShiftRosterRoute: React.FC = () => {
@@ -263,6 +263,7 @@ export function App() {
       <ErrorBoundary>
       <AuthProvider>
         <MainContent />
+        <ToastContainer />
       </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>

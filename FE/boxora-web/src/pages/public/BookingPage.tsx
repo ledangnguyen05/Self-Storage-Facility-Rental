@@ -53,6 +53,7 @@ import { LogoutConfirmModal } from '../../components/common/LogoutConfirmModal'
 import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
 import { useLanguage } from '../../context/LanguageContext'
+import { toast } from '../../utils/toast'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import {
   StorageSizeIsometric3D,
@@ -1239,7 +1240,9 @@ export const BookingPage: React.FC = () => {
     }
     if (currentStep === 3) {
       if (!isDurationValid) {
-        alert('Thời gian thuê ngắn hạn tối thiểu là 7 ngày. Vui lòng kiểm tra lại.')
+        toast.warning('Thời gian thuê ngắn hạn tối thiểu là 7 ngày. Vui lòng kiểm tra lại.', {
+          title: 'Thời gian thuê không hợp lệ',
+        })
         return
       }
 

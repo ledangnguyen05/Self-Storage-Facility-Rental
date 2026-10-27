@@ -26,6 +26,7 @@ import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShift
 import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType, getBookingScheduleInfo } from '../../components/modals/EarlyCheckInConfirmModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { getAssignmentWindow } from '../../constants/shiftConstants'
+import { toast } from '../../utils/toast'
 
 const localDateString = (date: Date) => {
   const year = date.getFullYear()
@@ -117,11 +118,14 @@ export const StaffDashboard: React.FC = () => {
       })
       if (res?.paymentUrl) {
         await navigator.clipboard.writeText(res.paymentUrl)
-        alert(`Đã tạo link thanh toán VNPay và sao chép vào bộ nhớ tạm:\n\n${res.paymentUrl}\n\nSau khi khách hàng thanh toán xong, đơn sẽ tự động chuyển sang trạng thái "ĐÃ THANH TOÁN - CHỜ GÁN KHO".`)
+        toast.success(`Đã tạo link thanh toán VNPay và tự động sao chép vào bộ nhớ tạm!\nSau khi khách hàng thanh toán xong, đơn sẽ tự động chuyển sang trạng thái "ĐÃ THANH TOÁN - CHỜ GÁN KHO".`, {
+          title: 'Tạo link thanh toán VNPay thành công',
+          duration: 6000,
+        })
       }
     } catch (err: any) {
       console.error('Create payment link error:', err)
-      alert(err?.response?.data?.message || 'Không thể tạo link thanh toán VNPay cho đơn này.')
+      toast.error(err?.response?.data?.message || 'Không thể tạo link thanh toán VNPay cho đơn này.')
     }
   }
   const [viewingContract, setViewingContract] = useState<RentalContract | null>(null)
@@ -241,7 +245,7 @@ export const StaffDashboard: React.FC = () => {
           notes: paymentWithProof.paymentNotes || 'Biên lai chuyển khoản / chứng từ nộp tiền tại quầy cơ sở Boxora.'
         })
       } catch {
-        alert('Không thể tải ảnh chứng từ thanh toán lúc này. Vui lòng thử lại.')
+        toast.error('Không thể tải ảnh chứng từ thanh toán lúc này. Vui lòng thử lại.')
       }
       return
     }
@@ -258,7 +262,7 @@ export const StaffDashboard: React.FC = () => {
       return
     }
 
-    alert('Đơn đặt kho này chưa có ảnh chứng từ thanh toán nào được tải lên.')
+    toast.warning('Đơn đặt kho này chưa có ảnh chứng từ thanh toán nào được tải lên.')
   }
 
   const handleViewSignedContractPhoto = async (booking: Booking, prereq?: HandoverPrerequisites | null, contract?: RentalContract | null) => {
@@ -287,7 +291,7 @@ export const StaffDashboard: React.FC = () => {
           notes: (contract as any)?.paperNotes || 'Bản scan / ảnh chụp văn bản Hợp đồng đã ký trực tiếp tại quầy cơ sở Boxora.'
         })
       } catch {
-        alert('Không thể tải ảnh hợp đồng đã ký lúc này. Vui lòng thử lại.')
+        toast.error('Không thể tải ảnh hợp đồng đã ký lúc này. Vui lòng thử lại.')
       }
       return
     }
@@ -329,10 +333,10 @@ export const StaffDashboard: React.FC = () => {
         setViewingContractBooking(booking)
         setViewingContract(contract)
       } else {
-        alert('Đơn đặt kho này chưa khởi tạo hợp đồng điện tử.')
+        toast.warning('Đơn đặt kho này chưa khởi tạo hợp đồng điện tử.')
       }
     } catch {
-      alert('Không thể tải văn bản hợp đồng lúc này. Vui lòng thử lại.')
+      toast.error('Không thể tải văn bản hợp đồng lúc này. Vui lòng thử lại.')
     } finally {
       setLoadingContractBookingId(null)
     }
@@ -1060,7 +1064,7 @@ export const StaffDashboard: React.FC = () => {
       fetchArrivals(selectedFacility !== 'ALL' ? selectedFacility : undefined)
     } catch (err: any) {
       console.error('Lỗi hủy đơn quá hạn:', err)
-      alert(err.message || 'Có lỗi xảy ra khi hủy đơn.')
+      toast.error(err.message || 'Có lỗi xảy ra khi hủy đơn.')
     }
   }
 
@@ -1336,7 +1340,7 @@ export const StaffDashboard: React.FC = () => {
 
   const handleExportShiftLedgerCsv = () => {
     if (!shiftPayments || shiftPayments.length === 0) {
-      alert('Không có dữ liệu giao dịch để xuất sổ thu ngân.')
+      toast.info('Không có dữ liệu giao dịch để xuất sổ thu ngân.')
       return
     }
     const headers = ['Mã GD', 'Khách hàng', 'Mã Kho', 'Cơ sở', 'Số tiền (VNĐ)', 'Phương thức', 'Loại thanh toán', 'Thời gian', 'Trạng thái']

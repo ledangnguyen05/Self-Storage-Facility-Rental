@@ -48,6 +48,7 @@ import { DocuSealSimulationModal } from '../modals/DocuSealSimulationModal'
 import { RentalContract, Booking as BookingType } from '../../types'
 import { geocodeAddressWithNominatim } from '../../services/nominatimGeocodingService'
 import { calculateDistanceKm } from '../../data/storageUnitsData'
+import { toast } from '../../utils/toast'
 import { useNavigate } from 'react-router-dom'
 
 export type SizeTierKey = 'LOCKER' | 'STANDARD' | 'LARGE' | 'ENTERPRISE'
@@ -486,7 +487,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const handleNextStep = () => {
     if (currentStep === 1) {
       if (!selectedFacility) {
-        alert('Vui lòng chọn một cơ sở kho lưu trữ để tiếp tục.')
+        toast.warning('Vui lòng chọn một cơ sở kho lưu trữ để tiếp tục.')
         return
       }
       setCurrentStep(2)

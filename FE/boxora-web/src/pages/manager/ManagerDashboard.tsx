@@ -23,6 +23,7 @@ import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActio
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 import { reservationEmailService } from '../../services/reservationEmailService'
+import { toast } from '../../utils/toast'
 
 interface InspectedUnit {
   id: string
@@ -637,7 +638,7 @@ export const ManagerDashboard: React.FC = () => {
         void fetchUnits(selectedFacilityId)
       }
     } catch (err: any) {
-      alert('Không thể hủy đơn: ' + (err.message || 'Lỗi không xác định'))
+      toast.error('Không thể hủy đơn: ' + (err.message || 'Lỗi không xác định'))
     }
   }
 

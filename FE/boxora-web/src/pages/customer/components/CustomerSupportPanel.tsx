@@ -5,6 +5,7 @@ import {
   SupportTicketRecord,
   SupportTicketCategory,
 } from '../../../services/supportTicketService'
+import { toast } from '../../../utils/toast'
 
 export interface CustomerSupportPanelProps {
   user: User | null
@@ -219,7 +220,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
         setSelectedTicket(prev => prev ? { ...prev, status: 'CLOSED' } : null)
       }
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Không thể đóng yêu cầu.')
+      toast.error(err?.response?.data?.message || 'Không thể đóng yêu cầu.')
     } finally {
       setIsActingOnTicket(false)
     }
@@ -228,7 +229,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   // Handle Reopen Ticket
   const handleReopenTicket = async (ticketId: string) => {
     if (!reopenReasonText.trim()) {
-      alert('Vui lòng nhập lý do yêu cầu xử lý lại sự cố.')
+      toast.warning('Vui lòng nhập lý do yêu cầu xử lý lại sự cố.')
       return
     }
     setIsActingOnTicket(true)
@@ -240,8 +241,9 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
       if (selectedTicket?.id === ticketId) {
         setSelectedTicket(prev => prev ? { ...prev, status: 'REOPENED', reopenReason: reopenReasonText.trim() } : null)
       }
+      toast.success('Đã gửi yêu cầu xử lý lại sự cố thành công.')
     } catch (err: any) {
-      alert(err?.response?.data?.message || 'Không thể mở lại yêu cầu.')
+      toast.error(err?.response?.data?.message || 'Không thể mở lại yêu cầu.')
     } finally {
       setIsActingOnTicket(false)
     }

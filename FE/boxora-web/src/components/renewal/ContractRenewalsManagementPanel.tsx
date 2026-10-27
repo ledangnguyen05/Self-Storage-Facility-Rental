@@ -4,6 +4,7 @@ import { contractService } from '../../services/contractService'
 import { userService } from '../../services/userService'
 import { staffAssignmentService } from '../../services/staffAssignmentService'
 import { useAuth } from '../../context/AuthContext'
+import { toast } from '../../utils/toast'
 
 interface ContractRenewalsManagementPanelProps {
   currentFacilityId?: string
@@ -393,7 +394,8 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
       await fetchRenewals()
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Phê duyệt thất bại. Vui lòng kiểm tra lại quyền hạn.'
-      alert(msg)
+      setErrorMsg(msg)
+      toast.error(msg)
     } finally {
       setIsSubmittingApproval(false)
     }

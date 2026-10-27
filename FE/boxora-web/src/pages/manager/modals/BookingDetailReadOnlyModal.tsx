@@ -3,6 +3,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { handoverService, HandoverPrerequisites } from '../../../services/handoverService'
 import { bookingService } from '../../../services/bookingService'
 import { Booking } from '../../../types'
+import { toast } from '../../../utils/toast'
 
 interface BookingDetailReadOnlyModalProps {
   isOpen: boolean
@@ -124,7 +125,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
       const blobUrl = await handoverService.viewAuthorizedDocument(activeBookingId, url)
       window.open(blobUrl, '_blank')
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể xem tài liệu đối soát.')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể xem tài liệu đối soát.')
     } finally {
       setOpeningDocUrl(null)
     }
