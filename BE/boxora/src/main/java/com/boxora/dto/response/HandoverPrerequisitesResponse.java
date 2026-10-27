@@ -19,6 +19,8 @@ public class HandoverPrerequisitesResponse {
     private String customerPhone;
     private String customerEmail;
     private String unitCode;
+    private String unitTypeName;
+    private Double areaSqMeters;
     private String facilityName;
 
     // ==========================================

@@ -109,6 +109,9 @@ export interface ShiftHandover {
   incomingStaffId?: string
   incomingStaffName?: string
   incomingStaffUsername?: string
+  dispatchedById?: string
+  dispatchedByName?: string
+  dispatchedAt?: string
   outgoingAssignmentId?: string
   incomingAssignmentId?: string
   emergencyReason?: string
@@ -117,17 +120,14 @@ export interface ShiftHandover {
   pendingTicketsCount: number
   unresolvedBookingsCount: number
   cashInDrawer: number
-  cashCounted?: number
-  cashDiscrepancy?: number
-  cashDiscrepancyReason?: string
+  cashCounted?: number | null
+  cashDiscrepancy?: number | null
+  cashDiscrepancyReason?: string | null
   facilityStatusNote?: string
   checklistCompleted: boolean
   notes?: string
-  status: 'DRAFT' | 'SUBMITTED' | 'PENDING_DISPATCH' | 'DISCREPANCY' | 'ACKNOWLEDGED' | 'REJECTED' | 'CANCELLED'
+  status: 'DRAFT' | 'PENDING_DISPATCH' | 'SUBMITTED' | 'DISCREPANCY' | 'ACKNOWLEDGED' | 'REJECTED' | string
   acknowledgedAt?: string
-  dispatchedById?: string
-  dispatchedByName?: string
-  dispatchedAt?: string
   createdAt?: string
   updatedAt?: string
 }
@@ -231,36 +231,22 @@ export const staffAssignmentService = {
     facilityId: string
     handoverDate: string
     shift: string
-    targetShift?: string
-    handoverType?: 'ROUTINE' | 'EMERGENCY' | 'RESPONSIBILITY_TRANSFER'
     incomingStaffId?: string
     outgoingAssignmentId?: string
     incomingAssignmentId?: string
-    emergencyReason?: string
-    transferScope?: string
     pendingTasks?: string
     pendingTicketsCount?: number
     unresolvedBookingsCount?: number
     cashInDrawer?: number
-    cashCounted?: number
-    cashDiscrepancy?: number
-    cashDiscrepancyReason?: string
     facilityStatusNote?: string
     checklistCompleted: boolean
     notes?: string
-    isDraft?: boolean
   }) {
     const response = await api.post('/api/v1/shift-handovers', data)
     return response.data?.data as ShiftHandover
   },
 
-  async acknowledgeHandover(id: string, data: {
-    status: 'ACKNOWLEDGED' | 'REJECTED' | 'DISCREPANCY'
-    cashCounted?: number
-    cashDiscrepancy?: number
-    cashDiscrepancyReason?: string
-    notes?: string
-  }) {
+  async acknowledgeHandover(id: string, data: { status: 'ACKNOWLEDGED' | 'REJECTED'; notes?: string }) {
     const response = await api.patch(`/api/v1/shift-handovers/${id}/acknowledge`, data)
     return response.data?.data as ShiftHandover
   },

@@ -34,7 +34,7 @@ public class ShiftHandoverController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
-    @Operation(summary = "Lập biên bản bàn giao ca trực mới (Định kỳ, Đột xuất hoặc Chuyển giao trách nhiệm)")
+    @Operation(summary = "Lập biên bản bàn giao ca trực mới")
     public ResponseEntity<ApiResponse<ShiftHandoverResponse>> createHandover(
             @Valid @RequestBody ShiftHandoverCreateRequest request
     ) {
@@ -44,7 +44,7 @@ public class ShiftHandoverController {
     }
 
     @PatchMapping("/{id}/acknowledge")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER')")
     @Operation(summary = "Tiếp nhận và xác nhận biên bản bàn giao ca từ ca trước")
     public ResponseEntity<ApiResponse<ShiftHandoverResponse>> acknowledgeHandover(
             @PathVariable UUID id,

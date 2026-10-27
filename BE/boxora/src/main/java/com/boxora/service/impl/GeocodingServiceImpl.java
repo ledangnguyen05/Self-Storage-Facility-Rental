@@ -13,19 +13,14 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.net.URI;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Service
 @Slf4j
@@ -38,28 +33,23 @@ public class GeocodingServiceImpl implements GeocodingService {
     private final String[] models = {
             "gemini-2.5-flash",
             "gemini-2.0-flash",
-            "gemini-1.5-flash"
+            "gemini-1.5-flash",
+            "gemini-2.5-flash-lite"
     };
 
     private final Map<String, Long> keyCooldowns = new ConcurrentHashMap<>();
     private final AtomicInteger lastWorkingKeyIdx = new AtomicInteger(0);
     private final AtomicInteger lastWorkingModelIdx = new AtomicInteger(0);
 
-    // Cache to prevent duplicate calls and ensure instant repeat queries
+    // Cache to prevent duplicate AI calls
     private final Map<String, List<GeocodeResponse>> geocodeCache = new ConcurrentHashMap<>();
-
-    private static final Pattern COORD_PATTERN = Pattern.compile("^\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*[,;\\s]\\s*([+-]?\\d+(?:\\.\\d+)?)\\s*$");
 
     public GeocodingServiceImpl(
             @Value("${gemini.api-keys:}") String configuredKeys,
             ObjectMapper objectMapper
     ) {
         this.objectMapper = objectMapper;
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(2500);
-        factory.setReadTimeout(4000);
-        this.restTemplate = new RestTemplate(factory);
-
+        this.restTemplate = new RestTemplate();
         if (configuredKeys != null && !configuredKeys.isBlank()) {
             this.apiKeys = Arrays.stream(configuredKeys.split(","))
                     .map(String::trim)
@@ -73,8 +63,8 @@ public class GeocodingServiceImpl implements GeocodingService {
 
     @Override
     public List<GeocodeResponse> geocode(GeocodeRequest request) {
-        String query = request.getQuery() != null ? request.getQuery().trim().replaceAll("\\s+", " ") : "";
-        if (query.isEmpty() || query.length() < 2) {
+        String query = request.getQuery() != null ? request.getQuery().trim() : "";
+        if (query.isEmpty()) {
             return Collections.emptyList();
         }
 
@@ -83,189 +73,76 @@ public class GeocodingServiceImpl implements GeocodingService {
             return geocodeCache.get(cacheKey);
         }
 
-        // 1. Direct Coordinate Detection (e.g. "10.8467, 106.7774")
-        Matcher coordMatcher = COORD_PATTERN.matcher(query);
-        if (coordMatcher.matches()) {
-            try {
-                double lat = Double.parseDouble(coordMatcher.group(1));
-                double lng = Double.parseDouble(coordMatcher.group(2));
-                if (isValidVietnamCoord(lat, lng)) {
-                    List<GeocodeResponse> coordResult = List.of(GeocodeResponse.builder()
-                            .latitude(BigDecimal.valueOf(lat).setScale(6, RoundingMode.HALF_UP))
-                            .longitude(BigDecimal.valueOf(lng).setScale(6, RoundingMode.HALF_UP))
-                            .displayName(String.format("Tọa độ GPS: %.6f, %.6f", lat, lng))
-                            .source("EXACT")
-                            .provider("coordinates")
-                            .confidence("Định vị tọa độ")
-                            .build());
-                    geocodeCache.put(cacheKey, coordResult);
-                    return coordResult;
-                }
-            } catch (Exception ignored) {}
+        if (apiKeys.length == 0) {
+            log.warn("No Gemini keys available for geocoding query: {}", query);
+            return Collections.emptyList();
         }
 
-        // 2. High-speed Gánh Mưu Sinh Geocoding API (sub-second, verified Vietnam Nominatim proxy)
-        List<GeocodeResponse> gmsResults = queryGanhMuuSinh(query);
-        if (!gmsResults.isEmpty()) {
-            geocodeCache.put(cacheKey, gmsResults);
-            return gmsResults;
-        }
-
-        // 3. Direct OpenStreetMap Nominatim lookup
-        List<GeocodeResponse> osmResults = queryNominatim(query);
-        if (!osmResults.isEmpty()) {
-            geocodeCache.put(cacheKey, osmResults);
-            return osmResults;
-        }
-
-        // 4. Gemini AI Geocoding fallback if external services fail
-        if (apiKeys.length > 0) {
-            List<GeocodeResponse> aiResults = queryGemini(query, cacheKey);
-            if (!aiResults.isEmpty()) {
-                geocodeCache.put(cacheKey, aiResults);
-                return aiResults;
-            }
-        }
-
-        return Collections.emptyList();
-    }
-
-    private List<GeocodeResponse> queryGanhMuuSinh(String query) {
-        try {
-            URI uri = UriComponentsBuilder.fromUriString("https://ganhmuusinh.com/api/v1/geocoding/search")
-                    .queryParam("query", query)
-                    .build()
-                    .encode()
-                    .toUri();
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-            headers.set("User-Agent", "BoxoraStorage-App/1.0");
-
-            ResponseEntity<String> response = restTemplate.exchange(uri, org.springframework.http.HttpMethod.GET, new HttpEntity<>(headers), String.class);
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                JsonNode root = objectMapper.readTree(response.getBody());
-                JsonNode resultsNode = root.path("results");
-                if (resultsNode.isArray() && !resultsNode.isEmpty()) {
-                    List<GeocodeResponse> list = new ArrayList<>();
-                    for (JsonNode item : resultsNode) {
-                        double lat = item.path("latitude").asDouble(0);
-                        double lng = item.path("longitude").asDouble(0);
-                        String name = item.path("display_name").asText("");
-                        String type = item.path("type").asText("Địa điểm");
-
-                        if (isValidVietnamCoord(lat, lng) && !name.isBlank()) {
-                            list.add(GeocodeResponse.builder()
-                                    .latitude(BigDecimal.valueOf(lat).setScale(6, RoundingMode.HALF_UP))
-                                    .longitude(BigDecimal.valueOf(lng).setScale(6, RoundingMode.HALF_UP))
-                                    .displayName(name)
-                                    .source("EXACT")
-                                    .provider("ganhmuusinh")
-                                    .confidence(type)
-                                    .build());
-                        }
-                    }
-                    if (!list.isEmpty()) {
-                        return list;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Gánh Mưu Sinh geocoding query failed: {}", e.getMessage());
-        }
-        return Collections.emptyList();
-    }
-
-    private List<GeocodeResponse> queryNominatim(String query) {
-        try {
-            URI uri = UriComponentsBuilder.fromUriString("https://nominatim.openstreetmap.org/search")
-                    .queryParam("q", query)
-                    .queryParam("format", "jsonv2")
-                    .queryParam("countrycodes", "vn")
-                    .queryParam("limit", 5)
-                    .queryParam("addressdetails", 1)
-                    .build()
-                    .encode()
-                    .toUri();
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
-            headers.set("User-Agent", "BoxoraStorage-App/1.0 (contact: info@boxora.vn)");
-
-            ResponseEntity<String> response = restTemplate.exchange(uri, org.springframework.http.HttpMethod.GET, new HttpEntity<>(headers), String.class);
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                JsonNode arr = objectMapper.readTree(response.getBody());
-                if (arr.isArray() && !arr.isEmpty()) {
-                    List<GeocodeResponse> list = new ArrayList<>();
-                    for (JsonNode item : arr) {
-                        double lat = item.path("lat").asDouble(0);
-                        double lng = item.path("lon").asDouble(0);
-                        String name = item.path("display_name").asText("");
-                        String type = item.path("type").asText("Địa điểm");
-
-                        if (isValidVietnamCoord(lat, lng) && !name.isBlank()) {
-                            list.add(GeocodeResponse.builder()
-                                    .latitude(BigDecimal.valueOf(lat).setScale(6, RoundingMode.HALF_UP))
-                                    .longitude(BigDecimal.valueOf(lng).setScale(6, RoundingMode.HALF_UP))
-                                    .displayName(name)
-                                    .source("EXACT")
-                                    .provider("nominatim")
-                                    .confidence(type)
-                                    .build());
-                        }
-                    }
-                    if (!list.isEmpty()) {
-                        return list;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Nominatim direct geocoding query failed: {}", e.getMessage());
-        }
-        return Collections.emptyList();
-    }
-
-    private List<GeocodeResponse> queryGemini(String query, String cacheKey) {
         String prompt = String.format(
-                "Bạn là hệ thống định vị & Geocoding bản đồ GPS Việt Nam có độ chính xác cao.\n" +
-                "Nhiệm vụ: Hãy tìm danh sách từ 2 đến 5 kết quả / gợi ý địa điểm GPS (vĩ độ lat, kinh độ lng) tại Việt Nam cho truy vấn sau:\n" +
+                "Bạn là hệ thống định vị & phân giải địa chỉ Việt Nam chuyên nghiệp. " +
+                "Hãy tìm danh sách từ 1 đến 5 địa điểm / gợi ý địa chỉ GPS (vĩ độ latitude, kinh độ longitude) phù hợp nhất với cụm từ sau:\n" +
                 "\"%s\"\n\n" +
-                "Tọa độ phải nằm trong lãnh thổ Việt Nam (Vĩ độ 8.5 đến 23.4, Kinh độ 102.1 đến 109.5).\n" +
-                "Trả về DUY NHẤT một mảng JSON các đối tượng (không dùng markdown code blocks):\n" +
+                "Quy tắc bắt buộc:\n" +
+                "1. Tọa độ phải nằm trong lãnh thổ Việt Nam (Vĩ độ 8.5 đến 23.4, Kinh độ 102.1 đến 109.5).\n" +
+                "2. Trả về DUY NHẤT một mảng JSON các đối tượng (không có markdown backticks, không dùng ```json hay ```), theo cấu trúc:\n" +
                 "[{\"lat\": number, \"lng\": number, \"displayName\": string, \"type\": string}]",
                 query
         );
 
         int totalKeys = apiKeys.length;
-        int keyIndex = lastWorkingKeyIdx.get() % totalKeys;
-        String apiKey = apiKeys[keyIndex];
-        String model = models[lastWorkingModelIdx.get() % models.length];
+        int totalModels = models.length;
+        int startKeyIdx = lastWorkingKeyIdx.get();
+        int startModelIdx = lastWorkingModelIdx.get();
 
-        try {
-            String url = String.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model);
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("x-goog-api-key", apiKey);
+        for (int keyOffset = 0; keyOffset < totalKeys; keyOffset++) {
+            int keyIndex = (startKeyIdx + keyOffset) % totalKeys;
+            String apiKey = apiKeys[keyIndex];
+            int modelStart = (keyOffset == 0) ? startModelIdx : 0;
 
-            ObjectNode root = objectMapper.createObjectNode();
-            ArrayNode contents = root.putArray("contents");
-            ObjectNode content = contents.addObject();
-            content.put("role", "user");
-            ArrayNode parts = content.putArray("parts");
-            parts.addObject().put("text", prompt);
+            for (int modelOffset = 0; modelOffset < totalModels; modelOffset++) {
+                int modelIndex = (modelStart + modelOffset) % totalModels;
+                String model = models[modelIndex];
+                String matrixKey = apiKey + "_" + model;
 
-            ObjectNode genConfig = root.putObject("generationConfig");
-            genConfig.put("temperature", 0.1);
-            genConfig.put("maxOutputTokens", 512);
+                Long cooldownUntil = keyCooldowns.get(matrixKey);
+                if (cooldownUntil != null && System.currentTimeMillis() < cooldownUntil) {
+                    continue;
+                }
 
-            HttpEntity<String> entity = new HttpEntity<>(objectMapper.writeValueAsString(root), headers);
-            ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+                try {
+                    String url = String.format("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent", model);
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setContentType(MediaType.APPLICATION_JSON);
+                    headers.set("x-goog-api-key", apiKey);
 
-            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                return parseGeminiListResponse(response.getBody(), query);
+                    ObjectNode root = objectMapper.createObjectNode();
+                    ArrayNode contents = root.putArray("contents");
+                    ObjectNode content = contents.addObject();
+                    content.put("role", "user");
+                    ArrayNode parts = content.putArray("parts");
+                    parts.addObject().put("text", prompt);
+
+                    ObjectNode genConfig = root.putObject("generationConfig");
+                    genConfig.put("temperature", 0.1);
+                    genConfig.put("maxOutputTokens", 512);
+
+                    HttpEntity<String> entity = new HttpEntity<>(objectMapper.writeValueAsString(root), headers);
+                    ResponseEntity<String> response = restTemplate.postForEntity(url, entity, String.class);
+
+                    if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                        List<GeocodeResponse> results = parseGeminiListResponse(response.getBody(), query);
+                        if (!results.isEmpty()) {
+                            lastWorkingKeyIdx.set(keyIndex);
+                            lastWorkingModelIdx.set(modelIndex);
+                            geocodeCache.put(cacheKey, results);
+                            return results;
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("Gemini geocoding failed (model={}, error={})", model, e.getMessage());
+                    keyCooldowns.put(matrixKey, System.currentTimeMillis() + 45000);
+                }
             }
-        } catch (Exception e) {
-            log.warn("Gemini geocoding attempt failed: {}", e.getMessage());
         }
 
         return Collections.emptyList();
@@ -284,6 +161,7 @@ public class GeocodingServiceImpl implements GeocodingService {
                         String clean = rawText.replaceAll("(?s)```json\\s*", "")
                                               .replaceAll("(?s)```\\s*", "")
                                               .trim();
+                        // Find first '[' or '{'
                         int startArr = clean.indexOf('[');
                         int endArr = clean.lastIndexOf(']');
                         int startObj = clean.indexOf('{');
@@ -303,7 +181,7 @@ public class GeocodingServiceImpl implements GeocodingService {
                                 String displayName = item.path("displayName").asText(originalQuery);
                                 String type = item.path("type").asText("Địa điểm");
 
-                                if (isValidVietnamCoord(lat, lng)) {
+                                if (lat >= 8.5 && lat <= 23.4 && lng >= 102.1 && lng <= 109.5) {
                                     results.add(GeocodeResponse.builder()
                                             .latitude(BigDecimal.valueOf(lat).setScale(6, RoundingMode.HALF_UP))
                                             .longitude(BigDecimal.valueOf(lng).setScale(6, RoundingMode.HALF_UP))
@@ -323,9 +201,4 @@ public class GeocodingServiceImpl implements GeocodingService {
         }
         return results;
     }
-
-    private boolean isValidVietnamCoord(double lat, double lng) {
-        return lat >= 8.5 && lat <= 23.4 && lng >= 102.1 && lng <= 109.5;
-    }
 }
-

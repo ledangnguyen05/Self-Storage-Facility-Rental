@@ -30,7 +30,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.LocalDate;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,12 +58,8 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
         StaffAssignment assignment = staffAssignmentRepository.findById(request.getAssignmentId())
                 .orElseThrow(() -> new AppException(ErrorCode.STAFF_ASSIGNMENT_NOT_FOUND));
 
-        if (assignment.getStatus() != StaffAssignmentStatus.ASSIGNED) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Chỉ có thể tạo yêu cầu đổi ca cho ca trực ở trạng thái ĐÃ PHÂN CÔNG (chưa bắt đầu/hoàn thành/hủy)");
-        }
-
-        if (assignment.getAssignedDate().isBefore(LocalDate.now())) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Không thể tạo yêu cầu đổi ca cho ca trực đã qua ngày");
+        if (assignment.getStatus() == StaffAssignmentStatus.COMPLETED || assignment.getStatus() == StaffAssignmentStatus.CANCELLED) {
+            throw new AppException(ErrorCode.SHIFT_SWAP_ALREADY_PROCESSED);
         }
 
         UUID currentUserId = requestContext.currentUserId();
@@ -107,9 +103,6 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
                     || targetAssignment.getStatus() == StaffAssignmentStatus.COMPLETED
                     || targetAssignment.getStatus() == StaffAssignmentStatus.CANCELLED) {
                 throw new AppException(ErrorCode.SHIFT_SWAP_INVALID_TARGET);
-            }
-            if (targetAssignment.getAssignedDate().isBefore(LocalDate.now())) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Không thể chọn ca trực đối ứng đã qua ngày");
             }
         }
 
@@ -166,14 +159,6 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
 
         if (swap.getStatus() != ShiftSwapStatus.PENDING) {
             throw new AppException(ErrorCode.SHIFT_SWAP_ALREADY_PROCESSED);
-        }
-
-        if (swap.getAssignment() != null && swap.getAssignment().getAssignedDate().isBefore(LocalDate.now())) {
-            swap.setStatus(ShiftSwapStatus.CANCELLED);
-            swap.setManagerNotes("Hệ thống tự động hủy: Quá hạn ngày đổi ca trực (" + swap.getAssignment().getAssignedDate() + ")");
-            swap.setReviewedAt(LocalDateTime.now());
-            shiftSwapRequestRepository.save(swap);
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Ca trực cần đổi đã quá hạn (" + swap.getAssignment().getAssignedDate() + "), hệ thống đã tự động hủy yêu cầu");
         }
 
         UUID reviewerId = requestContext.currentUserId();
@@ -252,13 +237,6 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
 
         if (swap.getStatus() != ShiftSwapStatus.MANAGER_APPROVED) {
             throw new AppException(ErrorCode.SHIFT_SWAP_ALREADY_PROCESSED, "Yêu cầu đổi ca chưa được Quản lý duyệt hoặc đã được xử lý trước đó");
-        }
-
-        if (swap.getAssignment() != null && swap.getAssignment().getAssignedDate().isBefore(LocalDate.now())) {
-            swap.setStatus(ShiftSwapStatus.CANCELLED);
-            swap.setManagerNotes("Hệ thống tự động hủy: Quá hạn ngày đổi ca trực (" + swap.getAssignment().getAssignedDate() + ")");
-            shiftSwapRequestRepository.save(swap);
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Ca trực cần đổi đã quá hạn (" + swap.getAssignment().getAssignedDate() + "), hệ thống đã tự động hủy yêu cầu");
         }
 
         swap.setTargetStaffRespondedAt(LocalDateTime.now());
@@ -350,27 +328,10 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public ShiftSwapResponse getById(UUID id) {
         ShiftSwapRequest swap = shiftSwapRequestRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.SHIFT_SWAP_REQUEST_NOT_FOUND));
-
-        if ((swap.getStatus() == ShiftSwapStatus.PENDING || swap.getStatus() == ShiftSwapStatus.MANAGER_APPROVED)
-                && swap.getAssignment() != null && swap.getAssignment().getAssignedDate().isBefore(LocalDate.now())) {
-            swap.setStatus(ShiftSwapStatus.CANCELLED);
-            String note = "Hệ thống tự động hủy: Quá hạn ngày đổi ca trực (" + swap.getAssignment().getAssignedDate() + ")";
-            if (swap.getManagerNotes() != null && !swap.getManagerNotes().isBlank()) {
-                if (!swap.getManagerNotes().contains("Quá hạn")) {
-                    swap.setManagerNotes(swap.getManagerNotes() + " | " + note);
-                }
-            } else {
-                swap.setManagerNotes(note);
-            }
-            if (swap.getReviewedAt() == null) {
-                swap.setReviewedAt(LocalDateTime.now());
-            }
-            swap = shiftSwapRequestRepository.save(swap);
-        }
 
         facilityAccessGuard.checkFacilityAccess(swap.getFacility().getId());
         if ("STAFF".equalsIgnoreCase(requestContext.currentUserRole())) {
@@ -388,7 +349,7 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public PageResponse<ShiftSwapResponse> getSwapRequests(
             UUID facilityId,
             ShiftSwapStatus status,
@@ -398,8 +359,6 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
             int page,
             int size
     ) {
-        autoCancelOverdueSwapRequests();
-
         if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "toDate must be on or after fromDate");
         }
@@ -452,10 +411,8 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public List<ShiftSwapResponse> getMySwapRequests() {
-        autoCancelOverdueSwapRequests();
-
         UUID currentUserId = requestContext.currentUserId();
         if (currentUserId == null) {
             return List.of();
@@ -465,28 +422,4 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
                 .map(shiftSwapMapper::toResponse)
                 .toList();
     }
-
-    private void autoCancelOverdueSwapRequests() {
-        LocalDate today = LocalDate.now();
-        List<ShiftSwapRequest> overdues = shiftSwapRequestRepository.findOverduePendingSwaps(today);
-        if (!overdues.isEmpty()) {
-            for (ShiftSwapRequest swap : overdues) {
-                swap.setStatus(ShiftSwapStatus.CANCELLED);
-                String note = "Hệ thống tự động hủy: Quá hạn ngày đổi ca trực (" + swap.getAssignment().getAssignedDate() + ")";
-                if (swap.getManagerNotes() != null && !swap.getManagerNotes().isBlank()) {
-                    if (!swap.getManagerNotes().contains("Quá hạn")) {
-                        swap.setManagerNotes(swap.getManagerNotes() + " | " + note);
-                    }
-                } else {
-                    swap.setManagerNotes(note);
-                }
-                if (swap.getReviewedAt() == null) {
-                    swap.setReviewedAt(LocalDateTime.now());
-                }
-            }
-            shiftSwapRequestRepository.saveAll(overdues);
-            log.info("Auto-cancelled {} overdue shift swap requests.", overdues.size());
-        }
-    }
 }
-

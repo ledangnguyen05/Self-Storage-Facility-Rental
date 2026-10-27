@@ -65,18 +65,15 @@ public class ShiftHandoverCreateRequest {
     @Builder.Default
     private Integer unresolvedBookingsCount = 0;
 
-    @Schema(description = "Tiền mặt ghi nhận trên sổ sách hệ thống", example = "1500000.00")
+    @Schema(description = "Tiền mặt tồn quỹ tại ngăn kéo thu ngân", example = "1500000.00")
     @Builder.Default
     private BigDecimal cashInDrawer = BigDecimal.ZERO;
 
-    @Schema(description = "Tiền mặt thực đếm tại quầy lúc bàn giao", example = "1500000.00")
     private BigDecimal cashCounted;
 
-    @Schema(description = "Chênh lệch tiền quỹ (thực tế - sổ sách)", example = "0.00")
     @Builder.Default
     private BigDecimal cashDiscrepancy = BigDecimal.ZERO;
 
-    @Schema(description = "Giải trình nguyên nhân chênh lệch tiền quỹ (nếu có)", example = "Khách hàng gửi lại tiền thừa 50,000 đ chưa nhập vào đơn")
     private String cashDiscrepancyReason;
 
     @Schema(description = "Tình trạng thiết bị cơ sở (camera, cảm biến, cửa từ, PCCC)", example = "Cửa từ hoạt động ổn định, điều hòa duy trì 24 độ C")

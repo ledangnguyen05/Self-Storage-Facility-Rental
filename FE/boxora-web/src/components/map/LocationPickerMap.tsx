@@ -17,14 +17,31 @@ interface LocationPickerMapProps {
 }
 
 /**
- * High-visibility Gánh Mưu Sinh CSS teardrop pin with exact pixel anchor
+ * High-visibility SVG pin with animated radar pulse
  */
-const pickerIcon = L.divIcon({
-  className: 'picker-marker-icon',
-  html: '<div class="gms-marker gms-marker--selected"><span></span></div>',
-  iconSize: [34, 42],
-  iconAnchor: [17, 42],
-})
+const createCustomPinIcon = () =>
+  L.divIcon({
+    className: 'boxora-map-pin',
+    html: `
+      <div style="position: relative; width: 36px; height: 46px; pointer-events: auto;">
+        <div class="boxora-pin-pulse"></div>
+        <svg width="36" height="46" viewBox="0 0 36 46" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: block; filter: drop-shadow(0 4px 10px rgba(2, 132, 199, 0.5));">
+          <path d="M18 0C8.05888 0 0 8.05888 0 18C0 30.5 18 46 18 46C18 46 36 30.5 36 18C36 8.05888 27.9411 0 18 0Z" fill="url(#boxoraPinGrad)"/>
+          <circle cx="18" cy="18" r="8" fill="#ffffff"/>
+          <circle cx="18" cy="18" r="4.5" fill="#0284c7"/>
+          <defs>
+            <linearGradient id="boxoraPinGrad" x1="0" y1="0" x2="36" y2="46" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#0284c7"/>
+              <stop offset="100%" stop-color="#0369a1"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    `,
+    iconSize: [36, 46],
+    iconAnchor: [18, 46],
+    popupAnchor: [0, -46],
+  })
 
 export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   latitude,
@@ -61,7 +78,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
 
     if (!markerRef.current) {
       const marker = L.marker([lat, lng], {
-        icon: pickerIcon,
+        icon: createCustomPinIcon(),
         draggable: true,
         zIndexOffset: 1000,
       }).addTo(map)
@@ -147,7 +164,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       event.preventDefault()
       event.stopPropagation()
     }
-    const cleanQuery = searchQuery.trim().replace(/\s+/g, ' ')
+    const cleanQuery = searchQuery.trim()
     if (cleanQuery.length < 2) {
       setSearchError('Vui lòng nhập ít nhất 2 ký tự để tìm vị trí.')
       setSearchResults([])
@@ -190,14 +207,35 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
     setSearchError('')
   }
 
-  // Geolocation (GPS browser high accuracy)
-  const locateCurrent = () => {
-    if (!navigator.geolocation) {
-      setLocationError('Trình duyệt không hỗ trợ định vị GPS.')
-      return
-    }
+  // Geolocation (GPS browser with IP fallback)
+  const locateCurrent = async () => {
     setIsLocating(true)
     setLocationError('')
+
+    const tryIpFallback = async (reason: string) => {
+      try {
+        const res = await fetch('https://ipwho.is/', { signal: AbortSignal.timeout(4000) })
+        const data = await res.json()
+        if (data && data.success && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+          const lat = Number(data.latitude.toFixed(6))
+          const lng = Number(data.longitude.toFixed(6))
+          updateMarkerAndMap(lat, lng)
+          onChange(lat, lng)
+          setLocationError(`Đã lấy vị trí gần đúng theo mạng (${data.city || data.region || 'Việt Nam'}). Bạn có thể kéo ghim để tinh chỉnh.`)
+          return true
+        }
+      } catch {
+        // Fallback failed
+      }
+      setLocationError(reason)
+      return false
+    }
+
+    if (!navigator.geolocation) {
+      await tryIpFallback('Trình duyệt không hỗ trợ GPS trực tiếp.')
+      setIsLocating(false)
+      return
+    }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -207,15 +245,14 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
         onChange(lat, lng)
         setIsLocating(false)
       },
-      (err) => {
-        setLocationError(
-          err.code === err.PERMISSION_DENIED
-            ? 'Bạn chưa cho phép truy cập vị trí trên trình duyệt.'
-            : 'Không thể xác định vị trí GPS hiện tại. Bạn có thể bấm trực tiếp lên bản đồ để đặt ghim.'
-        )
+      async (err) => {
+        const reason = err.code === err.PERMISSION_DENIED
+          ? 'Chưa được cấp quyền GPS trên trình duyệt.'
+          : 'Không thể xác định vị trí qua GPS vệ tinh.'
+        await tryIpFallback(reason)
         setIsLocating(false)
       },
-      { timeout: 8000, enableHighAccuracy: true }
+      { timeout: 5000, enableHighAccuracy: true }
     )
   }
 
@@ -284,27 +321,23 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
                 ✕
               </button>
             </div>
-            <ul className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60">
+            <ul className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60">
               {searchResults.map((result, idx) => (
                 <li key={idx}>
                   <button
                     type="button"
                     onClick={() => selectResult(result)}
-                    className="w-full text-left px-3.5 py-3 text-xs hover:bg-cyan-50/70 dark:hover:bg-cyan-950/50 transition cursor-pointer flex items-center justify-between gap-3 group"
+                    className="w-full text-left px-3.5 py-2.5 text-xs hover:bg-cyan-50/60 dark:hover:bg-cyan-950/40 transition cursor-pointer flex flex-col gap-0.5"
                   >
-                    <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100 group-hover:text-cyan-700 dark:group-hover:text-cyan-300">
-                        <span className="material-symbols-outlined text-[17px] text-cyan-600 shrink-0">location_on</span>
-                        <span className="truncate">{result.displayName}</span>
-                      </div>
-                      <span className="pl-6 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                        {result.type || 'Địa điểm'} • Tọa độ: {result.lat.toFixed(6)}, {result.lng.toFixed(6)}
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-100">
+                      <span className="material-symbols-outlined text-[16px] text-cyan-600 shrink-0">location_on</span>
+                      <span className="truncate">{result.displayName}</span>
+                    </div>
+                    {result.type && (
+                      <span className="pl-5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                        {result.type} • Tọa độ: {result.lat.toFixed(6)}, {result.lng.toFixed(6)}
                       </span>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-1 text-[11px] font-semibold text-cyan-700 bg-cyan-100/70 px-2.5 py-1 rounded-md group-hover:bg-cyan-600 group-hover:text-white transition dark:bg-cyan-950 dark:text-cyan-300">
-                      <span>Chọn vị trí</span>
-                      <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                    </div>
+                    )}
                   </button>
                 </li>
               ))}

@@ -139,7 +139,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
     try {
       const staff = staffList.find(s => s.id === selectedStaffId)
       const staffDisplayName = staff?.fullName || staff?.username || 'Nhân sự'
-      const shiftLabel = BOXORA_SHIFTS[shiftType]?.label || shiftType
+      const shiftLabel = shiftType === 'MORNING' ? 'Ca Sáng (06:00 - 14:00)' : shiftType === 'AFTERNOON' ? 'Ca Chiều (14:00 - 22:00)' : 'Ca Đêm (22:00 - 06:00)'
 
       await staffAssignmentService.createAssignment({
         staffId: selectedStaffId,

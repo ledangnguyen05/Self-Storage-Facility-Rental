@@ -58,9 +58,7 @@ export interface BookingPinData {
 export const bookingService = {
   async create(data: BookingCreatePayload) {
     const response = await api.post('/api/v1/bookings', data)
-    const booking = response.data?.data as Booking
-    window.dispatchEvent(new Event('boxora:notifications-refresh'))
-    return booking
+    return response.data?.data as Booking
   },
 
   async createBooking(data: BookingCreatePayload) {

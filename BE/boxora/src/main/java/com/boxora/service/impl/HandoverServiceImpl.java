@@ -1,5 +1,4 @@
 package com.boxora.service.impl;
-import com.boxora.dto.request.CheckInInspectionRequest;
 
 import com.boxora.dto.request.CheckInInspectionRequest;
 import com.boxora.dto.request.HandoverRequest;
@@ -7,7 +6,6 @@ import com.boxora.dto.request.IdentityVerifyRequest;
 import com.boxora.dto.request.ManualPaymentRecordRequest;
 import com.boxora.dto.request.PaperContractCreateRequest;
 import com.boxora.dto.response.HandoverPrerequisitesResponse;
-import com.boxora.dto.response.*;
 import com.boxora.dto.response.HandoverResponse;
 import com.boxora.dto.response.NotificationLogResponse;
 import com.boxora.dto.response.PaymentResponse;
@@ -239,7 +237,7 @@ public class HandoverServiceImpl implements HandoverService {
             } else if (today.isEqual(apptDate) && now.isBefore(expectedCheckIn)) {
                 checkInTimeMet = false;
                 checkInTimeStatus = "BEFORE_TIME";
-                checkInTimeMessage = String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
+                checkInTimeMessage = String.format("Chưa đến giờ check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
                         expectedCheckIn.format(CHECKIN_DT_FMT));
             } else if (today.isEqual(apptDate)) {
                 checkInTimeMet = true;
@@ -273,6 +271,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .customerPhone(customer != null ? customer.getPhone() : "N/A")
                 .customerEmail(customer != null ? customer.getEmail() : "N/A")
                 .unitCode(unit != null ? unit.getUnitCode() : "N/A")
+                .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getTypeName() : "Kho tiêu chuẩn")
+                .areaSqMeters(unit != null && unit.getUnitType() != null ? unit.getUnitType().getAreaSqm() : null)
                 .facilityName((unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "N/A")
                 .depositSatisfied(depositSatisfied)
                 .depositPaid(depositPaid)
@@ -315,6 +315,88 @@ public class HandoverServiceImpl implements HandoverService {
      * Thực hiện Check-in và bàn giao kho vật lý (BR-RULE-005 và BR-RULE-006):
      * Bắt buộc thỏa mãn đồng thời cả 4 điều kiện.
      */
+    @Transactional
+    @Override
+    public HandoverPrerequisitesResponse assignUnitToBooking(UUID bookingId, String unitCode) {
+        if (unitCode == null || unitCode.trim().isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã kho không được để trống.");
+        }
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (booking.getStatus() == BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Đơn đặt kho đã hoàn tất check-in nhận kho, không thể đổi mã kho.");
+        }
+
+        StorageUnit previousUnit = booking.getStorageUnit();
+        if (previousUnit == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        }
+        UUID facilityId = previousUnit.getFacility() != null ? previousUnit.getFacility().getId() : null;
+        if (facilityId == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        }
+        facilityAccessGuard.checkFacilityAccess(facilityId);
+
+        String cleanUnitCode = unitCode.trim();
+        StorageUnit selectedUnit = storageUnitRepository
+                .findWithDetailsByFacilityAndUnitCodeForUpdate(facilityId, cleanUnitCode)
+                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND,
+                        "Không tìm thấy vị trí kho khách hàng chọn tại cơ sở này."));
+
+        if (selectedUnit.getUnitType() == null || previousUnit.getUnitType() == null
+                || !selectedUnit.getUnitType().getId().equals(previousUnit.getUnitType().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Vị trí khách hàng chọn không cùng loại kho với đơn đặt chỗ.");
+        }
+
+        boolean isOriginalUnit = selectedUnit.getId().equals(previousUnit.getId());
+        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
+                || (isOriginalUnit && selectedUnit.getStatus() == UnitStatus.RESERVED);
+        if (!selectedUnitReady) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
+        }
+
+        boolean hasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                selectedUnit.getId(),
+                List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                        BookingStatus.PENDING_APPROVAL),
+                booking.getId());
+        if (hasOtherReservation) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn đã được đặt bởi một đơn khác.");
+        }
+
+        if (!isOriginalUnit) {
+            booking.setStorageUnit(selectedUnit);
+            bookingRepository.save(booking);
+
+            if (previousUnit.getStatus() == UnitStatus.RESERVED) {
+                boolean previousUnitHasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
+                        previousUnit.getId(),
+                        List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
+                                BookingStatus.PENDING_APPROVAL),
+                        booking.getId());
+                if (!previousUnitHasOtherReservation) {
+                    previousUnit.setStatus(UnitStatus.AVAILABLE);
+                    storageUnitRepository.save(previousUnit);
+                    storageUnitLockService.releaseLock(previousUnit.getId());
+                }
+            }
+
+            selectedUnit.setStatus(UnitStatus.RESERVED);
+            storageUnitRepository.save(selectedUnit);
+
+            rentalContractRepository.findByBookingId(booking.getId()).ifPresent(contract -> {
+                contract.setUnit(selectedUnit);
+                rentalContractRepository.save(contract);
+            });
+        }
+
+        return getCheckInPrerequisites(booking.getId());
+    }
+
     @Override
     public HandoverResponse checkIn(HandoverRequest request) {
         Booking booking = bookingRepository.findByIdForUpdate(request.getBookingId())
@@ -410,7 +492,7 @@ public class HandoverServiceImpl implements HandoverService {
                         log.warn("[CHECKIN-TIME] Handover check-in rejected for booking {}. Current time {} is before expected check-in time {}",
                                 booking.getBookingCode(), now, expectedCheckIn);
                         throw new AppException(ErrorCode.HANDOVER_BEFORE_CHECKIN_TIME,
-                                String.format("Chưa đến ngày check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
+                                String.format("Chưa đến giờ check-in. Thời điểm đúng để thực hiện tiếp nhận kho từ: %s.",
                                         expectedCheckIn.format(CHECKIN_DT_FMT)));
                     }
                 }
@@ -468,12 +550,8 @@ public class HandoverServiceImpl implements HandoverService {
                 && booking.getIdentityCardNumber() != null
                 && booking.getIdentityCardNumber().matches("^[A-Za-z0-9]{7,15}$");
 
-        boolean identityVerified = idAlreadyVerified
-                || (request.getIdCardNumber() != null && !request.getIdCardNumber().trim().isEmpty())
-                || Boolean.TRUE.equals(request.getIdentityVerified());
-
-        if (!identityVerified) {
-            missingPrerequisites.add("Chưa đối soát giấy tờ tùy thân / CCCD gốc của khách hàng tại quầy");
+        if (!idAlreadyVerified) {
+            missingPrerequisites.add("Nhân viên tại quầy chưa xác nhận hoàn tất đối soát giấy tờ tùy thân / CCCD gốc của khách hàng");
         }
 
         if (!missingPrerequisites.isEmpty()) {
@@ -1251,110 +1329,6 @@ public class HandoverServiceImpl implements HandoverService {
                 .collect(Collectors.toList());
     }
 
-    @Override
-    public void sendHandoverPinEmail(UUID bookingId, String customEmail) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-
-        StorageUnit unit = booking.getStorageUnit();
-        if (unit != null && unit.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
-        }
-
-        if (booking.getStatus() != BookingStatus.ACTIVE || booking.getAccessPin() == null || booking.getAccessPin().isBlank()) {
-            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
-        }
-
-        String unitCode = unit != null ? unit.getUnitCode() : "N/A";
-        String facilityName = (unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
-
-        String toEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
-        if (customEmail != null && !customEmail.isBlank()
-                && (toEmail == null || !toEmail.equalsIgnoreCase(customEmail.trim()))) {
-            throw new AppException(ErrorCode.INVALID_REQUEST,
-                    "The PIN can only be sent to the customer email on the booking.");
-        }
-
-        if (toEmail == null || toEmail.isBlank()) {
-            throw new AppException(ErrorCode.USER_NOT_FOUND);
-        }
-
-        String plainPin;
-        try {
-            plainPin = encryptionService.decrypt(booking.getAccessPin());
-        } catch (Exception e) {
-            plainPin = booking.getAccessPin();
-        }
-
-        String fullName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng Boxora";
-        emailService.sendHandoverPinEmail(toEmail, fullName, unitCode, booking.getBookingCode(), plainPin, facilityName);
-    }
-
-    @Override
-    public NotificationLogResponse sendHandoverWebNotification(UUID bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-
-        StorageUnit unit = booking.getStorageUnit();
-        if (unit != null && unit.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
-            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
-        }
-
-        if (booking.getStatus() != BookingStatus.ACTIVE || booking.getAccessPin() == null || booking.getAccessPin().isBlank()) {
-            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
-        }
-
-        String unitCode = unit != null ? unit.getUnitCode() : "N/A";
-        String facilityName = (unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
-
-        String plainPin;
-        try {
-            plainPin = encryptionService.decrypt(booking.getAccessPin());
-        } catch (Exception e) {
-            plainPin = booking.getAccessPin();
-        }
-
-        String custName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng";
-        String custEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
-        if (custEmail == null || custEmail.isBlank()) {
-            throw new AppException(ErrorCode.USER_NOT_FOUND, "The customer has no email address for the in-app notification record.");
-        }
-
-        NotificationLog logEntity = NotificationLog.builder()
-                .recipient(booking.getCustomer())
-                .recipientEmail(custEmail)
-                .recipientName(custName)
-                .facility(unit != null ? unit.getFacility() : null)
-                .channel(NotificationChannel.IN_APP)
-                .notificationType(NotificationType.HANDOVER_PIN)
-                .referenceType("BOOKING")
-                .referenceId(booking.getId())
-                .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unitCode))
-                .content(String.format("Kính gửi %s, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Boxora lưu mã PIN của bạn là: %s. Vui lòng xác nhận với nhân viên việc cài đặt mã trên khóa vật lý; Boxora chưa xác minh trạng thái thiết bị.",
-                        custName, unitCode, facilityName, plainPin))
-                .status("SENT")
-                .build();
-
-        logEntity = notificationLogRepository.save(logEntity);
-
-        return NotificationLogResponse.builder()
-                .id(logEntity.getId())
-                .recipientId(booking.getCustomer() != null ? booking.getCustomer().getId() : null)
-                .recipientEmail(custEmail)
-                .recipientName(custName)
-                .facilityId(unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null)
-                .facilityName(facilityName)
-                .channel(NotificationChannel.IN_APP)
-                .notificationType(NotificationType.HANDOVER_PIN)
-                .referenceType("BOOKING")
-                .referenceId(booking.getId())
-                .title(logEntity.getTitle())
-                .content(logEntity.getContent())
-                .status(logEntity.getStatus())
-                .createdAt(logEntity.getCreatedAt() != null ? logEntity.getCreatedAt() : LocalDateTime.now())
-                .build();
-    }
-
     private BigDecimal getRequiredDeposit(Booking booking, StorageUnit unit) {
         if (booking.getDepositAmount() != null && booking.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
             return booking.getDepositAmount();
@@ -1499,6 +1473,7 @@ public class HandoverServiceImpl implements HandoverService {
         return false;
     }
 
+
     private HandoverResponse mapToResponse(HandoverRecord r) {
         List<String> photos = (r.getEvidencePhotos() != null && !r.getEvidencePhotos().isBlank())
                 ? Arrays.asList(r.getEvidencePhotos().split(";"))
@@ -1567,6 +1542,110 @@ public class HandoverServiceImpl implements HandoverService {
             return userRepository.findById(requestContext.currentUserId()).orElse(null);
         }
         return null;
+    }
+
+    @Override
+    public void sendHandoverPinEmail(UUID bookingId, String customEmail) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        if (unit != null && unit.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
+
+        if (booking.getStatus() != BookingStatus.ACTIVE || booking.getAccessPin() == null || booking.getAccessPin().isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+
+        String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+        String facilityName = (unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
+
+        String toEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
+        if (customEmail != null && !customEmail.isBlank()
+                && (toEmail == null || !toEmail.equalsIgnoreCase(customEmail.trim()))) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "The PIN can only be sent to the customer email on the booking.");
+        }
+
+        if (toEmail == null || toEmail.isBlank()) {
+            throw new AppException(ErrorCode.USER_NOT_FOUND);
+        }
+
+        String plainPin;
+        try {
+            plainPin = encryptionService.decrypt(booking.getAccessPin());
+        } catch (Exception e) {
+            plainPin = booking.getAccessPin();
+        }
+
+        String fullName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng Boxora";
+        emailService.sendHandoverPinEmail(toEmail, fullName, unitCode, booking.getBookingCode(), plainPin, facilityName);
+    }
+
+    @Override
+    public NotificationLogResponse sendHandoverWebNotification(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        if (unit != null && unit.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+        }
+
+        if (booking.getStatus() != BookingStatus.ACTIVE || booking.getAccessPin() == null || booking.getAccessPin().isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
+        }
+
+        String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+        String facilityName = (unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
+
+        String plainPin;
+        try {
+            plainPin = encryptionService.decrypt(booking.getAccessPin());
+        } catch (Exception e) {
+            plainPin = booking.getAccessPin();
+        }
+
+        String custName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng";
+        String custEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
+        if (custEmail == null || custEmail.isBlank()) {
+            throw new AppException(ErrorCode.USER_NOT_FOUND, "The customer has no email address for the in-app notification record.");
+        }
+
+        NotificationLog logEntity = NotificationLog.builder()
+                .recipient(booking.getCustomer())
+                .recipientEmail(custEmail)
+                .recipientName(custName)
+                .facility(unit != null ? unit.getFacility() : null)
+                .channel(NotificationChannel.IN_APP)
+                .notificationType(NotificationType.HANDOVER_PIN)
+                .referenceType("BOOKING")
+                .referenceId(booking.getId())
+                .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unitCode))
+                .content(String.format("Kính gửi %s, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Boxora lưu mã PIN của bạn là: %s. Vui lòng xác nhận với nhân viên việc cài đặt mã trên khóa vật lý; Boxora chưa xác minh trạng thái thiết bị.",
+                        custName, unitCode, facilityName, plainPin))
+                .status("SENT")
+                .build();
+
+        logEntity = notificationLogRepository.save(logEntity);
+
+        return NotificationLogResponse.builder()
+                .id(logEntity.getId())
+                .recipientId(booking.getCustomer() != null ? booking.getCustomer().getId() : null)
+                .recipientEmail(custEmail)
+                .recipientName(custName)
+                .facilityId(unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null)
+                .facilityName(facilityName)
+                .channel(NotificationChannel.IN_APP)
+                .notificationType(NotificationType.HANDOVER_PIN)
+                .referenceType("BOOKING")
+                .referenceId(booking.getId())
+                .title(logEntity.getTitle())
+                .content(logEntity.getContent())
+                .status(logEntity.getStatus())
+                .createdAt(logEntity.getCreatedAt() != null ? logEntity.getCreatedAt() : LocalDateTime.now())
+                .build();
     }
 
     // =========================================================================
@@ -2083,7 +2162,7 @@ public class HandoverServiceImpl implements HandoverService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
         User staff = requireAuthorizedStaffOperator(null);
-        String stepLog = String.format("[%s] Hoàn tất đối soát 3 điều kiện bởi nhân viên %s. Chuyển sang bước Nghiệm thu hiện trường.\n",
+        String stepLog = String.format("[%s] Hoàn tất đối soát 4 điều kiện bởi nhân viên %s. Chuyển sang bước Nghiệm thu hiện trường.\n",
                 LocalDateTime.now(), staff.getFullName());
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + stepLog);
         bookingRepository.save(booking);

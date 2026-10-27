@@ -251,7 +251,7 @@ export const BookingRescheduleModal: React.FC<BookingRescheduleModalProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-400">
-                Đơn #{booking.bookingCode} · {booking.unitCode ? `Kho #${booking.unitCode}` : 'Vị trí kho xác nhận khi check-in'} · {booking.facilityName || 'Hệ thống Boxora'}
+                Đơn #{booking.bookingCode} · Kho #{booking.unitCode} · {booking.facilityName || 'Hệ thống Boxora'}
               </p>
             </div>
           </div>

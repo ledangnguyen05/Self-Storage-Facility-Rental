@@ -30,7 +30,15 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Facility, StorageUnit } from '../../types'
-import { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24, getPeriodForHour } from '../../utils/checkInTimeSlots'
+import {
+  CHECK_IN_PERIOD_GROUPS,
+  CHECK_IN_HOURS_24,
+  getPeriodForHour,
+  isPeriodInPast,
+  getFirstAvailablePeriod,
+  hasAvailablePeriods,
+  formatLocalDate,
+} from '../../utils/checkInTimeSlots'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
@@ -174,7 +182,13 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     d.setDate(d.getDate() + 1)
     return d.toISOString().split('T')[0]
   })
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('morning')
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => getFirstAvailablePeriod(checkInDate))
+
+  useEffect(() => {
+    if (isPeriodInPast(checkInDate, selectedPeriodId)) {
+      setSelectedPeriodId(getFirstAvailablePeriod(checkInDate))
+    }
+  }, [checkInDate, selectedPeriodId])
   const selectedPeriod = useMemo(() => {
     return CHECK_IN_PERIOD_GROUPS.find((g) => g.id === selectedPeriodId) || CHECK_IN_PERIOD_GROUPS[0]
   }, [selectedPeriodId])
@@ -1257,30 +1271,54 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {CHECK_IN_PERIOD_GROUPS.map((group) => {
-                      const isSelected = selectedPeriodId === group.id
+                      const isPast = isPeriodInPast(checkInDate, group.id)
+                      const isSelected = selectedPeriodId === group.id && !isPast
                       return (
                         <button
                           key={group.id}
                           type="button"
-                          onClick={() => setSelectedPeriodId(group.id)}
-                          className={`p-2.5 rounded-xl text-left border-2 transition-all cursor-pointer flex flex-col justify-between ${
-                            isSelected
-                              ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          disabled={isPast}
+                          onClick={() => {
+                            if (!isPast) setSelectedPeriodId(group.id)
+                          }}
+                          title={isPast ? 'Khung giờ này đã kết thúc đối với ngày đã chọn' : undefined}
+                          className={`p-2.5 rounded-xl text-left border-2 transition-all flex flex-col justify-between ${
+                            isPast
+                              ? 'opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 select-none'
+                              : isSelected
+                              ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20 cursor-pointer'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center justify-between w-full">
-                            <span className="text-lg">{group.icon}</span>
-                            {isSelected && <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}
+                            <span className={`text-lg ${isPast ? 'grayscale opacity-60' : ''}`}>{group.icon}</span>
+                            {isPast ? (
+                              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
+                                Đã qua
+                              </span>
+                            ) : isSelected ? (
+                              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                            ) : null}
                           </div>
                           <div className="mt-1">
-                            <strong className="block text-xs text-slate-900">{group.name}</strong>
+                            <strong className={`block text-xs ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{group.name}</strong>
                             <span className="block text-[10px] text-slate-500 font-mono leading-tight">{group.rangeText}</span>
                           </div>
                         </button>
                       )
                     })}
                   </div>
+                  {formErrors.checkInTime && (
+                    <p className="text-xs text-red-500 flex items-center gap-1 mt-1 font-medium">
+                      <AlertCircle size={12} /> {formErrors.checkInTime}
+                    </p>
+                  )}
+                  {!hasAvailablePeriods(checkInDate) && (
+                    <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200 flex items-center gap-1.5 mt-1 font-medium">
+                      <AlertCircle size={14} className="shrink-0 text-amber-600" />
+                      Tất cả các ca tiếp đón trong ngày đã chọn đã kết thúc. Vui lòng chọn ngày nhận kho từ ngày mai.
+                    </p>
+                  )}
 
                 {/* Special Notes */}
                 <div className="space-y-1 pt-2">

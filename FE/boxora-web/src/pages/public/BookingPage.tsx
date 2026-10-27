@@ -305,6 +305,10 @@ import {
   CHECK_IN_PERIOD_GROUPS,
   CHECK_IN_HOURS_24,
   CheckInPeriodGroup,
+  isPeriodInPast,
+  getFirstAvailablePeriod,
+  hasAvailablePeriods,
+  formatLocalDate,
 } from '../../utils/checkInTimeSlots'
 
 export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24 }
@@ -423,7 +427,13 @@ export const BookingPage: React.FC = () => {
     }
   }, [checkInDate])
 
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('morning')
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => getFirstAvailablePeriod(checkInDate))
+
+  useEffect(() => {
+    if (isPeriodInPast(checkInDate, selectedPeriodId)) {
+      setSelectedPeriodId(getFirstAvailablePeriod(checkInDate))
+    }
+  }, [checkInDate, selectedPeriodId])
   const selectedPeriod = useMemo(() => {
     return CHECK_IN_PERIOD_GROUPS.find((g) => g.id === selectedPeriodId) || CHECK_IN_PERIOD_GROUPS[0]
   }, [selectedPeriodId])
@@ -960,6 +970,11 @@ export const BookingPage: React.FC = () => {
       errors.policyAccepted = 'Quý khách vui lòng đồng ý với chính sách và quy chế giữ chỗ kho của Boxora'
     }
 
+    // 7. Khung giờ tiếp đón không thuộc quá khứ
+    if (isPeriodInPast(checkInDate, selectedPeriodId)) {
+      errors.checkInTime = 'Khung giờ tiếp đón bạn chọn đã kết thúc. Vui lòng chọn khung giờ khác hoặc ngày tiếp theo.'
+    }
+
     setFormErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -970,6 +985,12 @@ export const BookingPage: React.FC = () => {
 
     if (!customerName.trim() || !customerPhone.trim() || !customerIdCard.trim()) {
       setSubmitError('Vui lòng kiểm tra và điền đầy đủ Họ tên, Số điện thoại và Số CCCD.')
+      setCurrentStep(3)
+      return
+    }
+
+    if (isPeriodInPast(checkInDate, selectedPeriodId)) {
+      setSubmitError('Khung giờ tiếp đón bạn chọn đã kết thúc. Vui lòng chọn khung giờ khác hoặc ngày tiếp theo.')
       setCurrentStep(3)
       return
     }
@@ -2210,6 +2231,7 @@ export const BookingPage: React.FC = () => {
                       </label>
                       <input
                         type="date"
+                        min={formatLocalDate()}
                         value={checkInDate}
                         onChange={(e) => setCheckInDate(e.target.value)}
                         className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
@@ -2230,28 +2252,44 @@ export const BookingPage: React.FC = () => {
 
                   {/* Time Slot Selector */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                      Khung giờ hẹn đến cơ sở
-                    </label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
+                        Khung giờ hẹn đến cơ sở
+                      </label>
+                      <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                        {selectedPeriod.name} ({selectedPeriod.rangeText})
+                      </span>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {CHECK_IN_PERIOD_GROUPS.map((group) => {
-                        const isSelected = selectedPeriodId === group.id
+                        const isPast = isPeriodInPast(checkInDate, group.id)
+                        const isSelected = selectedPeriodId === group.id && !isPast
                         return (
                           <button
                             key={group.id}
                             type="button"
-                            onClick={() => setSelectedPeriodId(group.id)}
-                            className={`p-2 sm:p-2.5 rounded-lg text-left border transition-all cursor-pointer flex flex-col justify-between gap-1 ${
-                              isSelected
-                                ? 'bg-blue-50/90 dark:bg-blue-950/60 border-blue-600 text-blue-950 dark:text-blue-100 ring-2 ring-blue-500/15'
-                                : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            disabled={isPast}
+                            onClick={() => {
+                              if (!isPast) setSelectedPeriodId(group.id)
+                            }}
+                            title={isPast ? 'Khung giờ này đã kết thúc đối với ngày đã chọn' : undefined}
+                            className={`p-2 sm:p-2.5 rounded-lg text-left border transition-all flex flex-col justify-between gap-1 ${
+                              isPast
+                                ? 'opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-800/30 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 select-none'
+                                : isSelected
+                                ? 'bg-blue-50/90 dark:bg-blue-950/60 border-blue-600 text-blue-950 dark:text-blue-100 ring-2 ring-blue-500/15 cursor-pointer'
+                                : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer'
                             }`}
                           >
                             <div className="flex items-center justify-between w-full">
-                              <span className="font-bold text-xs text-slate-900 dark:text-white">
+                              <span className={`font-bold text-xs ${isPast ? 'text-slate-400 dark:text-slate-500 line-through' : 'text-slate-900 dark:text-white'}`}>
                                 {group.name}
                               </span>
-                              {isSelected ? (
+                              {isPast ? (
+                                <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">
+                                  Đã qua
+                                </span>
+                              ) : isSelected ? (
                                 <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center">
                                   <Check size={9} strokeWidth={3} />
                                 </span>
@@ -2266,6 +2304,17 @@ export const BookingPage: React.FC = () => {
                         )
                       })}
                     </div>
+                    {formErrors.checkInTime && (
+                      <p className="text-xs text-red-500 flex items-center gap-1 mt-1">
+                        <AlertCircle size={12} /> {formErrors.checkInTime}
+                      </p>
+                    )}
+                    {!hasAvailablePeriods(checkInDate) && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200 dark:border-amber-800">
+                        <AlertCircle size={13} className="shrink-0" />
+                        Tất cả các ca tiếp đón trong ngày đã chọn đã kết thúc. Quý khách vui lòng chọn ngày nhận kho từ ngày mai.
+                      </p>
+                    )}
                   </div>
                 </div>
 

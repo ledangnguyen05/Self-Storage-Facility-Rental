@@ -26,12 +26,8 @@ export interface PaymentItem {
   paymentMethod?: 'VNPAY' | 'BANK_TRANSFER' | string
   paymentTime?: string
   createdAt?: string
-  proofDocumentUrl?: string
-  receiptVoucherCode?: string
-  collectedById?: string
-  collectedByName?: string
-  referenceCode?: string
-  paymentNotes?: string
+  proofDocumentUrl?: string | null
+  receiptVoucherCode?: string | null
 }
 
 export interface PaymentPage {

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useOutletContext } from 'react-router-dom'
 import {
   supportTicketService,
   SupportTicketRecord,
@@ -9,23 +8,10 @@ import {
 } from '../../services/supportTicketService'
 import { userService } from '../../services/userService'
 import { facilityService } from '../../services/facilityService'
-import { storageUnitService } from '../../services/storageUnitService'
 import { useAuth } from '../../context/AuthContext'
-import { User, Facility, StorageUnit } from '../../types'
-
-interface DashboardContextType {
-  selectedFacility?: string
-  setSelectedFacility?: (facId: string) => void
-  facilities?: Facility[]
-}
+import { User, Facility } from '../../types'
 
 export const IncidentTicketsPage: React.FC = () => {
-  const {
-    selectedFacility: contextFacilityId,
-    setSelectedFacility: setContextFacilityId,
-    facilities: contextFacilities = []
-  } = useOutletContext<DashboardContextType>() || {}
-
   const { user, role } = useAuth()
   const effectiveRole = role || (typeof user?.role === 'string' ? user.role : user?.role?.name) || 'STAFF'
   const isStaff = effectiveRole === 'STAFF'
@@ -36,25 +22,17 @@ export const IncidentTicketsPage: React.FC = () => {
 
   // Task 3: Strictly enforce facility scope.
   // - Staff is always confined to assigned facility.
-  // - Facility Manager is strictly confined to assigned facility.
-  // - Facility filter dropdown is hidden for Staff & Facility Manager to avoid redundancy.
+  // - Facility Manager assigned to a facility is strictly confined to that facility.
   // - "Tất cả cơ sở" option is only available to Admin & BOM (Business Operations Manager).
-  const isFacilityScoped = isStaff || isFacilityManager || Boolean(user?.facilityId && !isAdmin && !isBusinessManager)
+  const isFacilityScoped = isStaff || (isFacilityManager && Boolean(user?.facilityId))
   const canSelectAllFacilities = !isFacilityScoped && (isAdmin || isBusinessManager)
 
   // Tickets & data
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
-  const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
+  const [facilities, setFacilities] = useState<Facility[]>([])
   const [stats, setStats] = useState<SupportTicketStats | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
-
-  // Synchronize facility list from Outlet context if available
-  useEffect(() => {
-    if (contextFacilities && contextFacilities.length > 0) {
-      setFacilities(contextFacilities)
-    }
-  }, [contextFacilities])
 
   // Accessible facilities according to role permission
   const accessibleFacilities = useMemo(() => {
@@ -81,29 +59,8 @@ export const IncidentTicketsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>(() => {
     if (isFacilityScoped && user?.facilityId) return user.facilityId
-    if (contextFacilityId !== undefined) {
-      return (!contextFacilityId || contextFacilityId.toUpperCase() === 'ALL') ? 'ALL' : contextFacilityId
-    }
     return canSelectAllFacilities ? 'ALL' : (user?.facilityId || 'ALL')
   })
-
-  // Synchronize with topbar facility selector ("Cơ sở trực thuộc")
-  useEffect(() => {
-    if (isFacilityScoped) return
-    if (contextFacilityId !== undefined) {
-      const nextScope = (!contextFacilityId || contextFacilityId.toUpperCase() === 'ALL') ? 'ALL' : contextFacilityId
-      if (nextScope !== selectedFacilityFilter) {
-        setSelectedFacilityFilter(nextScope)
-      }
-    }
-  }, [contextFacilityId, isFacilityScoped, selectedFacilityFilter])
-
-  const handleFacilityFilterChange = (facId: string) => {
-    if (isFacilityScoped) return
-    setSelectedFacilityFilter(facId)
-    setContextFacilityId?.(facId)
-    setCurrentPage(1)
-  }
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
@@ -126,11 +83,6 @@ export const IncidentTicketsPage: React.FC = () => {
   const [newDescription, setNewDescription] = useState('')
   const [newFacilityId, setNewFacilityId] = useState<string>('')
   const [isSubmittingCreate, setIsSubmittingCreate] = useState(false)
-
-  // Facility units for autocomplete suggest & live validation
-  const [facilityUnits, setFacilityUnits] = useState<StorageUnit[]>([])
-  const [isLoadingUnits, setIsLoadingUnits] = useState(false)
-  const [showUnitSuggest, setShowUnitSuggest] = useState(false)
 
   // Assign Modal (FM only)
   const [assigningTicket, setAssigningTicket] = useState<SupportTicketRecord | null>(null)
@@ -194,11 +146,7 @@ export const IncidentTicketsPage: React.FC = () => {
       ])
 
       if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value)) {
-        let list = queueRes.value
-        if (effectiveFacilityId) {
-          list = list.filter(t => t.facilityId === effectiveFacilityId)
-        }
-        setTickets(list)
+        setTickets(queueRes.value)
       } else {
         setTickets([])
         if (queueRes.status === 'rejected') {
@@ -251,66 +199,6 @@ export const IncidentTicketsPage: React.FC = () => {
       }
     }
   }, [isFacilityScoped, canSelectAllFacilities, user?.facilityId, facilities, selectedFacilityFilter])
-
-  // Effective facility for create modal
-  const effectiveModalFacilityId = isFacilityScoped && user?.facilityId
-    ? user.facilityId
-    : (newFacilityId || (selectedFacilityFilter !== 'ALL' ? selectedFacilityFilter : (facilities[0]?.id || '')))
-
-  // Fetch all storage units of the target facility for suggest and validation
-  useEffect(() => {
-    if (!isCreateModalOpen) return
-    const targetFacId = effectiveModalFacilityId
-    if (!targetFacId) return
-
-    let isSubscribed = true
-    setIsLoadingUnits(true)
-    storageUnitService.getUnits({ facilityId: targetFacId })
-      .then((units) => {
-        if (isSubscribed && Array.isArray(units)) {
-          setFacilityUnits(units)
-        }
-      })
-      .catch((err) => {
-        console.warn('Failed to load facility units for suggest:', err)
-        if (isSubscribed) setFacilityUnits([])
-      })
-      .finally(() => {
-        if (isSubscribed) setIsLoadingUnits(false)
-      })
-
-    return () => {
-      isSubscribed = false
-    }
-  }, [isCreateModalOpen, effectiveModalFacilityId])
-
-  // Filter suggestions based on typed unit code
-  const filteredSuggestedUnits = useMemo(() => {
-    const query = newUnitCode.trim().toUpperCase()
-    if (!query) return facilityUnits.slice(0, 8)
-    return facilityUnits.filter((u) => u.unitCode.toUpperCase().includes(query)).slice(0, 10)
-  }, [facilityUnits, newUnitCode])
-
-  // Real-time validation of entered unitCode
-  const unitValidation = useMemo(() => {
-    const trimmed = newUnitCode.trim().toUpperCase()
-    if (!trimmed) {
-      return { status: 'EMPTY' as const, message: '', unit: null }
-    }
-    const match = facilityUnits.find((u) => u.unitCode.toUpperCase() === trimmed)
-    if (match) {
-      return {
-        status: 'VALID' as const,
-        message: `Mã kho hợp lệ (${match.floorLevel || 'Tầng 1'} • ${match.tenantName ? 'Đang thuê bởi: ' + match.tenantName : 'Kho chưa có khách thuê / Kho trống'})`,
-        unit: match
-      }
-    }
-    return {
-      status: 'INVALID' as const,
-      message: `Mã kho "${newUnitCode}" không tồn tại tại cơ sở này. Vui lòng kiểm tra lại hoặc chọn từ danh sách gợi ý!`,
-      unit: null
-    }
-  }, [facilityUnits, newUnitCode])
 
   // Handle Take Ticket (Staff / FM)
   const handleTakeTicket = async (ticket: SupportTicketRecord) => {
@@ -497,13 +385,6 @@ export const IncidentTicketsPage: React.FC = () => {
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isReadOnly || !newTitle.trim()) return
-
-    // Validate unit code if entered
-    if (newUnitCode.trim() && unitValidation.status === 'INVALID') {
-      alert(`Mã kho "${newUnitCode}" không tồn tại tại cơ sở này! Vui lòng chọn mã kho hợp lệ từ danh sách gợi ý.`)
-      return
-    }
-
     setIsSubmittingCreate(true)
     try {
       await supportTicketService.createTicket({
@@ -511,15 +392,12 @@ export const IncidentTicketsPage: React.FC = () => {
         title: newTitle.trim(),
         description: newDescription.trim() || 'Báo cáo sự cố tại hiện trường',
         priority: newPriority,
-        facilityId: effectiveModalFacilityId || undefined,
-        unitCode: unitValidation.unit ? unitValidation.unit.unitCode : (newUnitCode.trim().toUpperCase() || undefined),
-        storageUnitId: unitValidation.unit?.id || undefined
+        facilityId: newFacilityId || user?.facilityId || undefined
       })
       setIsCreateModalOpen(false)
       setNewTitle('')
       setNewUnitCode('')
       setNewDescription('')
-      setShowUnitSuggest(false)
       await fetchTicketsAndData()
     } catch (err: any) {
       alert(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
@@ -803,20 +681,24 @@ export const IncidentTicketsPage: React.FC = () => {
               />
             </div>
 
-            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & BOM, hidden for Staff & Facility Manager) */}
-            {!isFacilityScoped && (
-              <select
-                value={selectedFacilityFilter}
-                onChange={(e) => handleFacilityFilterChange(e.target.value)}
-                title="Chọn cơ sở cần lọc"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
-              >
-                {canSelectAllFacilities && <option value="ALL">Tất cả cơ sở</option>}
-                {accessibleFacilities.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-            )}
+            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & BOM, Scoped roles locked to assigned facility) */}
+            <select
+              value={selectedFacilityFilter}
+              onChange={(e) => {
+                if (isFacilityScoped) return
+                setSelectedFacilityFilter(e.target.value)
+              }}
+              disabled={isFacilityScoped}
+              title={isFacilityScoped ? 'Bạn đang xem dữ liệu cơ sở được phân công' : 'Chọn cơ sở cần lọc'}
+              className={`px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none ${
+                isFacilityScoped ? 'opacity-80 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
+              }`}
+            >
+              {canSelectAllFacilities && <option value="ALL">Tất cả cơ sở</option>}
+              {accessibleFacilities.map(f => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
 
             {/* Category filter */}
             <select
@@ -963,21 +845,8 @@ export const IncidentTicketsPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-3.5">
                         <div className="text-slate-800 font-medium text-xs">{t.facilityName || 'N/A'}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {t.unitCode ? (
-                            <span className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                              <span className="material-symbols-outlined text-[12px]">warehouse</span>
-                              <span>#{t.unitCode}</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-500 text-[11px]">Khu vực chung</span>
-                          )}
-                          {t.isStaffRecorded && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200" title={`Ghi nhận bởi nhân sự: ${t.createdByStaffName || 'Đội ngũ kho'}`}>
-                              <span className="material-symbols-outlined text-[10px]">engineering</span>
-                              <span>Đội ngũ kho</span>
-                            </span>
-                          )}
+                        <div className="text-slate-500 text-[11px] mt-0.5">
+                          {t.unitCode ? `Kho #${t.unitCode}` : 'Khu vực chung'}
                         </div>
                       </td>
                       <td className="py-3 px-3.5 text-center">
@@ -994,31 +863,11 @@ export const IncidentTicketsPage: React.FC = () => {
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">Chưa phân công</span>
                         )}
-                        <div className="mt-1 space-y-0.5 text-[10px]">
-                          {t.createdByStaffName && (
-                            <div className="text-slate-600 flex items-center gap-1">
-                              <span className="text-slate-400">Tạo bởi:</span>
-                              <span className="font-semibold text-slate-700">{t.createdByStaffName}</span>
-                            </div>
-                          )}
-                          {t.unitCode ? (
-                            t.customerName && t.customerId !== t.createdByStaffId ? (
-                              <div className="text-blue-700 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[11px]">person</span>
-                                <span>Khách: {t.customerName}</span>
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center gap-0.5 text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-medium">
-                                <span className="material-symbols-outlined text-[11px]">lock_open</span>
-                                <span>Sự cố nội bộ / Kho chưa thuê</span>
-                              </div>
-                            )
-                          ) : (
-                            t.customerName && (
-                              <div className="text-slate-500">Khách: {t.customerName}</div>
-                            )
-                          )}
-                        </div>
+                        {t.customerName && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Khách: {t.customerName}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-3.5 text-slate-500 text-[11px] whitespace-nowrap">
                         <div>{t.createdAt ? new Date(t.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</div>
@@ -1684,30 +1533,13 @@ export const IncidentTicketsPage: React.FC = () => {
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                   <span className="text-[10px] text-slate-400 block">Vị trí / Ngăn kho:</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <strong className="text-slate-800">{detailTicket.unitCode ? `Kho #${detailTicket.unitCode}` : 'Khu vực chung'}</strong>
-                    {detailTicket.isStaffRecorded && (
-                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold">
-                        Đội ngũ ghi nhận
-                      </span>
-                    )}
-                  </div>
+                  <strong className="text-slate-800">{detailTicket.unitCode ? `Kho #${detailTicket.unitCode}` : 'Khu vực chung'}</strong>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-400 block">Người tạo phiếu:</span>
-                  <strong className="text-slate-800">
-                    {detailTicket.createdByStaffName ? `${detailTicket.createdByStaffName} (${detailTicket.createdByStaffRole || 'Nhân sự kho'})` : (detailTicket.customerName || 'Khách hàng')}
-                  </strong>
+                  <span className="text-[10px] text-slate-400 block">Người báo cáo:</span>
+                  <strong className="text-slate-800">{detailTicket.customerName || 'Nhân viên cơ sở'}</strong>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-400 block">Đối tượng / Khách thuê:</span>
-                  <strong className="text-slate-800">
-                    {detailTicket.customerName && detailTicket.customerId !== detailTicket.createdByStaffId
-                      ? `Khách thuê: ${detailTicket.customerName}`
-                      : 'Sự cố nội bộ (Kho chưa có khách thuê)'}
-                  </strong>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 col-span-2">
                   <span className="text-[10px] text-slate-400 block">Nhân viên phụ trách:</span>
                   <strong className="text-slate-800">{detailTicket.assignedStaffName || 'Chưa phân công'}</strong>
                 </div>
@@ -1851,165 +1683,26 @@ export const IncidentTicketsPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Cơ sở xảy ra sự cố</label>
-                  {isFacilityScoped ? (
-                    <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-700 font-semibold flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">store</span>
-                      <span>{facilities.find(f => f.id === newFacilityId)?.name || user?.facilityName || 'Cơ sở được phân công'}</span>
-                    </div>
-                  ) : (
-                    <select
-                      value={newFacilityId}
-                      onChange={(e) => setNewFacilityId(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      {facilities.map((f) => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
-                  )}
+                  <select
+                    value={newFacilityId}
+                    onChange={(e) => setNewFacilityId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none cursor-pointer"
+                  >
+                    {facilities.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700">Mã kho liên quan</label>
-                    <span className="text-[10px] text-slate-400 font-normal">Gợi ý từ dữ liệu cơ sở</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={newUnitCode}
-                      onFocus={() => setShowUnitSuggest(true)}
-                      onChange={(e) => {
-                        setNewUnitCode(e.target.value)
-                        setShowUnitSuggest(true)
-                      }}
-                      placeholder="Ví dụ: A-102, B-205..."
-                      className={`w-full px-3 py-2 pr-16 bg-slate-50 border rounded-xl text-xs text-slate-900 focus:outline-none font-mono uppercase transition-colors ${
-                        unitValidation.status === 'VALID'
-                          ? 'border-emerald-400 bg-emerald-50/20 focus:ring-1 focus:ring-emerald-500'
-                          : unitValidation.status === 'INVALID'
-                          ? 'border-rose-400 bg-rose-50/20 focus:ring-1 focus:ring-rose-500'
-                          : 'border-slate-200 focus:ring-1 focus:ring-rose-500'
-                      }`}
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      {newUnitCode.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewUnitCode('')
-                            setShowUnitSuggest(false)
-                          }}
-                          className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                          title="Xóa mã kho"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
-                      )}
-                      {isLoadingUnits ? (
-                        <span className="material-symbols-outlined animate-spin text-[16px] text-slate-400">progress_activity</span>
-                      ) : unitValidation.status === 'VALID' ? (
-                        <span className="material-symbols-outlined text-[16px] text-emerald-600" title="Mã kho hợp lệ trong cơ sở">check_circle</span>
-                      ) : unitValidation.status === 'INVALID' ? (
-                        <span className="material-symbols-outlined text-[16px] text-rose-500" title="Mã kho không tồn tại tại cơ sở này">error</span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {/* Backdrop overlay for closing dropdown */}
-                  {showUnitSuggest && (
-                    <div
-                      className="fixed inset-0 z-20 cursor-default"
-                      onClick={() => setShowUnitSuggest(false)}
-                    />
-                  )}
-
-                  {/* Suggest Dropdown */}
-                  {showUnitSuggest && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-30 max-h-52 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
-                      <div className="p-2 bg-slate-50 text-[11px] font-semibold text-slate-500 flex items-center justify-between sticky top-0 border-b border-slate-100">
-                        <span>Kho thuộc cơ sở ({filteredSuggestedUnits.length}/{facilityUnits.length})</span>
-                        <span className="text-[10px] text-slate-400">Chọn để điền</span>
-                      </div>
-                      {isLoadingUnits ? (
-                        <div className="p-3 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
-                          <span className="material-symbols-outlined animate-spin text-[16px] text-slate-400">progress_activity</span>
-                          <span>Đang tải danh sách kho cơ sở...</span>
-                        </div>
-                      ) : filteredSuggestedUnits.length === 0 ? (
-                        <div className="p-3 text-center text-xs text-slate-400 italic">
-                          Không tìm thấy kho nào có mã khớp "{newUnitCode}"
-                        </div>
-                      ) : (
-                        filteredSuggestedUnits.map((u) => {
-                          const isRented = Boolean(u.tenantName) || u.status === 'OCCUPIED' || u.status === 'RESERVED'
-                          return (
-                            <button
-                              key={u.id}
-                              type="button"
-                              onClick={() => {
-                                setNewUnitCode(u.unitCode)
-                                setShowUnitSuggest(false)
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-rose-50/60 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-bold text-xs text-slate-800 group-hover:text-rose-600">
-                                  #{u.unitCode}
-                                </span>
-                                <span className="text-[11px] text-slate-400">
-                                  {u.floorLevel || 'Tầng 1'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                {isRented ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200" title={`Khách thuê: ${u.tenantName || 'Có khách thuê'}`}>
-                                    Đang thuê {u.tenantName ? `(${u.tenantName})` : ''}
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Kho trống
-                                  </span>
-                                )}
-                              </div>
-                            </button>
-                          )
-                        })
-                      )}
-                    </div>
-                  )}
-
-                  {/* Validation message banner */}
-                  <div className="mt-1">
-                    {unitValidation.status === 'VALID' && (
-                      <div className="text-[11px] text-emerald-700 bg-emerald-50 p-2 rounded-lg border border-emerald-200 flex items-start gap-1.5 leading-tight">
-                        <span className="material-symbols-outlined text-[14px] text-emerald-600 shrink-0 mt-0.5">check_circle</span>
-                        <span>
-                          <strong>Kho hợp lệ:</strong> {unitValidation.message}
-                          {unitValidation.unit?.tenantName ? (
-                            <span className="block text-[10px] text-emerald-800 mt-0.5">
-                              → Sự cố sẽ được lưu vào lịch sử của khách hàng kèm ghi chú "Do đội ngũ kho ghi nhận".
-                            </span>
-                          ) : (
-                            <span className="block text-[10px] text-emerald-800 mt-0.5">
-                              → Sự cố nội bộ (Kho chưa có khách thuê), chỉ hiển thị trên dashboard của đội ngũ Boxora.
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    )}
-                    {unitValidation.status === 'INVALID' && (
-                      <div className="text-[11px] text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-start gap-1.5 leading-tight">
-                        <span className="material-symbols-outlined text-[14px] text-rose-600 shrink-0 mt-0.5">warning</span>
-                        <span>{unitValidation.message}</span>
-                      </div>
-                    )}
-                    {unitValidation.status === 'EMPTY' && (
-                      <span className="text-[10px] text-slate-400 block italic">
-                        * Để trống nếu sự cố xảy ra tại khu vực chung (sảnh, thang máy, bãi đỗ...)
-                      </span>
-                    )}
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Vị trí / Mã kho liên quan</label>
+                  <input
+                    type="text"
+                    value={newUnitCode}
+                    onChange={(e) => setNewUnitCode(e.target.value)}
+                    placeholder="Ví dụ: A-102, B-205..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none font-mono"
+                  />
                 </div>
               </div>
 
@@ -2034,7 +1727,7 @@ export const IncidentTicketsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingCreate || !newTitle.trim() || unitValidation.status === 'INVALID'}
+                  disabled={isSubmittingCreate || !newTitle.trim()}
                   className="px-5 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">save</span>

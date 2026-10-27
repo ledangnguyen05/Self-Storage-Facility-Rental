@@ -9,11 +9,13 @@ import lombok.*;
 @Getter
 @Setter
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class StorageUnit extends BaseEntity {
 
-    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth) {
+    public StorageUnit() {
+        super();
+    }
+
+    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth, String imageUrl) {
         super();
         this.unitCode = unitCode;
         this.floorLevel = floorLevel;
@@ -21,6 +23,7 @@ public class StorageUnit extends BaseEntity {
         this.facility = facility;
         this.unitType = unitType;
         this.pricePerMonth = pricePerMonth;
+        this.imageUrl = imageUrl;
     }
 
     @Column(name = "unit_code", nullable = false, length = 30)

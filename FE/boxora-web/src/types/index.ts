@@ -20,8 +20,6 @@ export interface User {
   isActive?: boolean
   createdAt?: string
   updatedAt?: string
-  identityCardNumber?: string
-  identityCardType?: string
 }
 
 export interface Facility {
@@ -44,46 +42,24 @@ export interface Facility {
   status?: string
 }
 
-export interface FloorOperationPoint {
-  id: string
-  name: string
-}
-
-export interface FloorFunctionalZone {
-  id: string
-  code: string
-  name: string
-  description?: string
-}
-
-export interface FacilityFloorConfig {
-  id: string
-  floorNumber: number
-  name: string
-  totalArea?: string
-  operationPoints: FloorOperationPoint[]
-  zones: FloorFunctionalZone[]
-}
-
 export interface FacilityLayoutConfig {
   title: string
-  floors?: FacilityFloorConfig[]
-  floor1Name?: string
-  floor2Name?: string
-  zoneAName?: string
-  zoneADesc?: string
-  zoneBName?: string
-  zoneBDesc?: string
-  zoneCName?: string
-  zoneCDesc?: string
-  loadingBayFloor1?: string
-  corridorNorth?: string
-  exitFloor1?: string
-  loadingBayFloor2?: string
-  corridorClimate?: string
-  exitFloor2?: string
-  totalAreaFloor1?: string
-  totalAreaFloor2?: string
+  floor1Name: string
+  floor2Name: string
+  zoneAName: string
+  zoneADesc: string
+  zoneBName: string
+  zoneBDesc: string
+  zoneCName: string
+  zoneCDesc: string
+  loadingBayFloor1: string
+  corridorNorth: string
+  exitFloor1: string
+  loadingBayFloor2: string
+  corridorClimate: string
+  exitFloor2: string
+  totalAreaFloor1: string
+  totalAreaFloor2: string
 }
 
 export interface UnitType {
@@ -124,7 +100,7 @@ export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANC
 
 export interface StorageUnit {
   id: string
-  unitCode: string
+  unitCode: string // e.g. "A-102"
   floorLevel: string // e.g. "Floor 1"
   status: UnitStatusType
   facilityId: string
@@ -134,6 +110,8 @@ export interface StorageUnit {
   unitTypeName: string
   pricePerMonth: number
   depositAmount?: number
+  imageUrl?: string
+  images?: string[]
   areaSqMeters?: number
   batteryLevel?: string
   smartLockSerial?: string
@@ -144,8 +122,6 @@ export interface StorageUnit {
   bookingId?: string
   startDate?: string
   dueDate?: string
-  imageUrl?: string
-  images?: string[]
   primaryImageUrl?: string
   maintenanceReason?: string
   maintenanceBy?: string
@@ -176,7 +152,8 @@ export interface Booking {
   storageUnitId?: string | null
   unitCode?: string | null
   unitTypeId?: string | null
-  unitTypeName?: string
+  unitTypeName?: string | null
+  areaSqMeters?: number | null
   facilityId?: string
   facilityName: string
   floorLevel?: string
@@ -335,7 +312,6 @@ export interface RentalContract {
   storageUnitId?: string
   facilityId?: string
   unitCode: string
-  unitTypeName?: string | null
   facilityName: string
   startDate: string
   endDate: string
@@ -343,18 +319,15 @@ export interface RentalContract {
   depositHeld: number
   status: RentalContractStatus
   signedDocumentUrl?: string | null
+  paperContractUrl?: string | null
+  paperVerifiedAt?: string | null
   docusealSubmissionId?: string | null
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
-  signingMethod?: 'ONLINE' | 'IN_PERSON' | string
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
   signatureData?: string | null
+  unitTypeName?: string | null
   unitPricePerMonth?: number | null
-  paperContractUrl?: string | null
-  paperOriginalLocation?: string | null
-  paperVerifiedById?: string | null
-  paperVerifiedByName?: string | null
-  paperVerifiedAt?: string | null
-  paperNotes?: string | null
 }
 
 export type ContractRenewalStatus =
@@ -375,7 +348,6 @@ export interface ContractRenewal {
   facilityId?: string
   facilityName: string
   unitCode: string
-  unitTypeName?: string
   oldEndDate: string
   newEndDate: string
   cycleMonths: number
@@ -451,7 +423,6 @@ export interface HandoverRecord {
   bookingCode: string
   customerName: string
   unitCode: string
-  unitTypeName?: string
   staffName: string
   recordType: 'CHECK_IN' | 'RETURN'
   status?: 'PENDING_CHECKIN' | 'HANDED_OVER' | 'RETURN_INSPECTED'
@@ -664,7 +635,6 @@ export interface OverdueDebtItem {
   customerEmail?: string
   unitId?: string
   unitCode: string
-  unitTypeName?: string
   facilityId?: string
   facilityName?: string
   startDate?: string

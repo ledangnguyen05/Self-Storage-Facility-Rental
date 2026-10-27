@@ -92,6 +92,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
         boolean isStaffOrManager = "STAFF".equalsIgnoreCase(currentUserRole) || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole);
 
+        User customer;
         User currentStaffOrManager = null;
         if (isStaffOrManager) {
             currentStaffOrManager = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
@@ -104,119 +105,17 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                         currentUserRole, currentUserId, request.getFacilityId());
                 throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
             }
-        }
-
-        // 1. Resolve facility
-        Facility facility = null;
-        if (isStaffOrManager) {
-            facility = currentStaffOrManager.getFacility();
-        } else if (request.getFacilityId() != null) {
-            facility = facilityRepository.findById(request.getFacilityId()).orElse(null);
-        }
-        if (facility == null && !isStaffOrManager) {
-            facility = facilityRepository.findAllByOrderByCreatedAtAsc().stream().findFirst().orElse(null);
-        }
-
-        // 2. Resolve and validate storageUnit
-        StorageUnit storageUnit = null;
-        if (request.getStorageUnitId() != null) {
-            storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
-                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy thông tin ngăn kho"));
-        } else if (request.getUnitCode() != null && !request.getUnitCode().trim().isEmpty()) {
-            String code = request.getUnitCode().trim();
-            if (facility == null) {
-                throw new AppException(ErrorCode.FACILITY_NOT_FOUND, "Không xác định được cơ sở lưu trữ để kiểm tra mã kho");
-            }
-            String targetFacilityName = facility.getName();
-            storageUnit = storageUnitRepository.findByFacility_IdAndUnitCodeIgnoreCase(facility.getId(), code)
-                    .orElseThrow(() -> new AppException(ErrorCode.TICKET_UNIT_NOT_IN_FACILITY,
-                            "Mã ngăn kho \"" + code + "\" không tồn tại tại cơ sở " + targetFacilityName));
-        }
-
-        if (storageUnit != null && facility != null && !storageUnit.getFacility().getId().equals(facility.getId())) {
-            throw new AppException(ErrorCode.TICKET_UNIT_NOT_IN_FACILITY,
-                    "Mã ngăn kho " + storageUnit.getUnitCode() + " không thuộc cơ sở " + facility.getName());
-        }
-
-        // 3. Resolve associated booking and renting customer
-        Booking booking = null;
-        User rentingCustomer = null;
-
-        if (request.getBookingId() != null) {
-            booking = bookingRepository.findById(request.getBookingId())
-                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-            if (storageUnit == null && booking.getStorageUnit() != null) {
-                storageUnit = booking.getStorageUnit();
-            }
-            if (booking.getCustomer() != null) {
-                rentingCustomer = booking.getCustomer();
-            }
-            Facility bookingFacility = booking.getStorageUnit() != null ? booking.getStorageUnit().getFacility() : null;
-            if (isStaffOrManager && (bookingFacility == null
-                    || currentStaffOrManager.getFacility() == null
-                    || !bookingFacility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
-                log.warn("[SECURITY] {} {} attempted to create ticket for booking {} outside assigned facility",
-                        currentUserRole, currentUserId, booking.getId());
-                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
-            }
-            if (facility == null && bookingFacility != null) {
-                facility = bookingFacility;
-            }
-        }
-
-        // If storageUnit is identified but rentingCustomer not yet resolved, query active contracts or bookings
-        if (storageUnit != null && rentingCustomer == null) {
-            List<RentalContractStatus> activeContractStatuses = List.of(
-                    RentalContractStatus.ACTIVE,
-                    RentalContractStatus.OVERDUE,
-                    RentalContractStatus.PENDING_SIGNATURE
-            );
-            Optional<RentalContract> activeContractOpt = rentalContractRepository
-                    .findFirstByUnit_IdAndStatusInOrderByCreatedAtDesc(storageUnit.getId(), activeContractStatuses);
-
-            if (activeContractOpt.isPresent()) {
-                RentalContract activeContract = activeContractOpt.get();
-                rentingCustomer = activeContract.getCustomer();
-                if (booking == null && activeContract.getBooking() != null) {
-                    booking = activeContract.getBooking();
-                }
-            } else {
-                List<BookingStatus> activeBookingStatuses = List.of(
-                        BookingStatus.ACTIVE,
-                        BookingStatus.CONFIRMED,
-                        BookingStatus.CHECKOUT_REQUESTED,
-                        BookingStatus.OVERDUE
-                );
-                Optional<Booking> activeBookingOpt = bookingRepository
-                        .findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(storageUnit.getId(), activeBookingStatuses);
-                if (activeBookingOpt.isPresent()) {
-                    booking = activeBookingOpt.get();
-                    rentingCustomer = booking.getCustomer();
-                }
-            }
-        }
-
-        // 4. Determine final customer, createdByStaff, and isStaffRecorded flag
-        User customer;
-        User createdByStaff = null;
-        boolean isStaffRecorded = false;
-
-        if (isStaffOrManager) {
-            createdByStaff = currentStaffOrManager;
-            isStaffRecorded = true;
-
-            if (rentingCustomer != null) {
-                // Kho đang được thuê bởi khách hàng: gắn ticket cho khách để hiển thị trong lịch sử Hỗ trợ & sự cố của họ
-                customer = rentingCustomer;
-            } else if (request.getCustomerId() != null) {
+            if (request.getCustomerId() != null) {
                 customer = userRepository.findById(request.getCustomerId())
                         .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-            } else {
-                // Kho trống/chưa có khách thuê: ticket nội bộ thuộc về nhân sự tạo, chỉ hiển thị trên dashboard Boxora
+            } else if (currentStaffOrManager != null) {
+                // If staff creates an on-site operational incident, customer defaults to staff/self
                 customer = currentStaffOrManager;
+            } else {
+                throw new AppException(ErrorCode.USER_NOT_FOUND);
             }
         } else {
-            // Khách hàng tự tạo ticket
+            // Customer role: principal must be authenticated customer
             if (currentUserId == null) {
                 throw new AppException(ErrorCode.UNAUTHORIZED);
             }
@@ -226,12 +125,64 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             }
             customer = userRepository.findById(currentUserId)
                     .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        }
 
-            if (booking != null && (booking.getCustomer() == null || !booking.getCustomer().getId().equals(customer.getId()))) {
-                throw new AppException(ErrorCode.FORBIDDEN);
+        // Resolve associated booking and facility
+        Booking booking = null;
+        Facility facility = null;
+        StorageUnit storageUnit = null;
+        User createdByStaff = isStaffOrManager ? currentStaffOrManager : null;
+        Boolean isStaffRecorded = isStaffOrManager;
+
+        if (request.getBookingId() != null) {
+            booking = bookingRepository.findById(request.getBookingId())
+                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+            if (!isStaffOrManager) {
+                if (booking.getCustomer() == null || !booking.getCustomer().getId().equals(customer.getId())) {
+                    log.warn("[SECURITY] Customer {} attempted to link support ticket to booking {} owned by {}",
+                            customer.getId(), booking.getId(), booking.getCustomer() != null ? booking.getCustomer().getId() : "null");
+                    throw new AppException(ErrorCode.FORBIDDEN);
+                }
             }
-            createdByStaff = null;
-            isStaffRecorded = false;
+
+            if (booking.getStorageUnit() != null) {
+                storageUnit = booking.getStorageUnit();
+                facility = booking.getStorageUnit().getFacility();
+            }
+            if (isStaffOrManager && (facility == null
+                    || !facility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
+                log.warn("[SECURITY] {} {} attempted to create ticket for booking {} outside assigned facility",
+                        currentUserRole, currentUserId, booking.getId());
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
+        }
+
+        // If facility not resolved from booking, attempt to resolve from request or user
+        if (facility == null && request.getFacilityId() != null) {
+            facility = facilityRepository.findById(request.getFacilityId()).orElse(null);
+        }
+        if (isStaffOrManager) {
+            facility = currentStaffOrManager.getFacility();
+        }
+        if (facility == null && !isStaffOrManager) {
+            facility = facilityRepository.findAllByOrderByCreatedAtAsc().stream().findFirst().orElse(null);
+        }
+
+        if (request.getStorageUnitId() != null) {
+            storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+        } else if (storageUnit == null && request.getUnitCode() != null && facility != null) {
+            storageUnit = storageUnitRepository.findByFacility_IdAndUnitCodeIgnoreCase(
+                    facility.getId(), request.getUnitCode().trim()
+            ).orElse(null);
+        }
+
+        if (storageUnit != null && storageUnit.getFacility() != null) {
+            if (facility != null && !facility.getId().equals(storageUnit.getFacility().getId())) {
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
+            facility = storageUnit.getFacility();
         }
 
         String ticketCode = generateUniqueTicketCode();
@@ -282,17 +233,14 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .refundStatus(initialRefundStatus)
                 .build();
 
-        SupportTicket savedTicket = supportTicketRepository.save(ticket);
-        if (savedTicket != null) {
-            ticket = savedTicket;
-        }
+        ticket = supportTicketRepository.save(ticket);
 
         // Audit log
-        logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus() != null ? ticket.getStatus().name() : "OPEN",
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus().name(),
                 "Tạo phiếu báo cáo sự cố mới " + ticketCode + " (" + category + ", " + priority + ")");
 
-        log.info("Created support ticket {} for customer {} (staffRecorded={}) at facility {}", ticketCode, customer.getId(),
-                isStaffRecorded, facility != null ? facility.getCode() : "UNKNOWN");
+        log.info("Created support ticket {} for customer {} at facility {}", ticketCode, customer.getId(),
+                facility != null ? facility.getCode() : "UNKNOWN");
         return mapToResponse(ticket);
     }
 
@@ -1248,8 +1196,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .customerName(t.getCustomer() != null ? t.getCustomer().getFullName() : "Khách hàng Boxora")
                 .customerPhone(t.getCustomer() != null ? t.getCustomer().getPhone() : "")
                 .bookingId(t.getBooking() != null ? t.getBooking().getId() : null)
-                .unitCode(unitCodeDisplay)
-                .storageUnitId(storageUnitId)
+                .unitCode(t.getBooking() != null && t.getBooking().getStorageUnit() != null
+                        ? t.getBooking().getStorageUnit().getUnitCode()
+                        : "Chung")
                 .facilityId(t.getFacility() != null ? t.getFacility().getId() : null)
                 .facilityName(t.getFacility() != null ? t.getFacility().getName() : "Boxora Facility")
                 .facilityCode(t.getFacility() != null ? t.getFacility().getCode() : "BOXORA")

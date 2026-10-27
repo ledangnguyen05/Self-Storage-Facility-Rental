@@ -208,6 +208,16 @@ public class HandoverController {
                 handoverService.verifyIdentity(request)));
     }
 
+    @PostMapping("/booking/{bookingId}/assign-unit")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Bước 2: Chọn và gán vị trí ô kho vật lý cho đơn đặt kho")
+    public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> assignUnit(
+            @PathVariable UUID bookingId,
+            @RequestParam String unitCode) {
+        return ResponseEntity.ok(ApiResponse.success("Gán ô kho vật lý thành công",
+                handoverService.assignUnitToBooking(bookingId, unitCode)));
+    }
+
     @PostMapping("/booking/{bookingId}/complete-step-1")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
     @Operation(summary = "Hoàn tất Bước 1: Kiểm tra đủ 4 điều kiện đối soát và chuyển sang Bước 2 Nghiệm thu hiện trường")

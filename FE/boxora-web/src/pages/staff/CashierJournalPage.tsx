@@ -58,57 +58,7 @@ export const CashierJournalPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'FAILED' | 'EXPIRED' | 'REFUND_PENDING' | 'REFUNDED'>('ALL')
   const [periodStart, setPeriodStart] = useState(() => localDateInput(new Date()))
   const [periodEnd, setPeriodEnd] = useState(() => localDateInput(new Date()))
-  const [datePreset, setDatePreset] = useState<DatePreset>('TODAY')
   const [fetchError, setFetchError] = useState<string | null>(null)
-
-  const applyDatePreset = (preset: DatePreset) => {
-    setDatePreset(preset)
-    const today = new Date()
-
-    switch (preset) {
-      case 'TODAY': {
-        const s = localDateInput(today)
-        setPeriodStart(s)
-        setPeriodEnd(s)
-        break
-      }
-      case 'THIS_WEEK': {
-        const r = getWeekRange(today)
-        setPeriodStart(r.from)
-        setPeriodEnd(r.to)
-        break
-      }
-      case 'LAST_WEEK': {
-        const d = new Date(today)
-        d.setDate(today.getDate() - 7)
-        const r = getWeekRange(d)
-        setPeriodStart(r.from)
-        setPeriodEnd(r.to)
-        break
-      }
-      case 'THIS_MONTH': {
-        const first = new Date(today.getFullYear(), today.getMonth(), 1)
-        const last = new Date(today.getFullYear(), today.getMonth() + 1, 0)
-        setPeriodStart(localDateInput(first))
-        setPeriodEnd(localDateInput(last))
-        break
-      }
-      case 'LAST_MONTH': {
-        const first = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-        const last = new Date(today.getFullYear(), today.getMonth(), 0)
-        setPeriodStart(localDateInput(first))
-        setPeriodEnd(localDateInput(last))
-        break
-      }
-      case 'ALL': {
-        setPeriodStart('')
-        setPeriodEnd('')
-        break
-      }
-      case 'CUSTOM':
-        break
-    }
-  }
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -148,8 +98,8 @@ export const CashierJournalPage: React.FC = () => {
           page,
           size: 100,
           facilityId: activeFacilityId,
-          fromDate: periodStart ? `${periodStart}T00:00:00` : undefined,
-          toDate: periodEnd ? `${periodEnd}T23:59:59` : undefined
+          fromDate: `${periodStart}T00:00:00`,
+          toDate: `${periodEnd}T23:59:59`
         })
         allPayments.push(...(result?.content || []))
         totalPages = result?.totalPages || 0
@@ -247,6 +197,9 @@ export const CashierJournalPage: React.FC = () => {
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                 Báo Cáo Doanh Thu, Dòng Tiền Cơ Sở &amp; Thu Ngân
               </h1>
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                {currentFacilityName}
+              </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">Nhật ký thanh toán trong kỳ. Trạng thái chờ, thất bại và hoàn tiền được hạch toán tách biệt với thực nhận.</p>
           </div>
@@ -362,122 +315,55 @@ export const CashierJournalPage: React.FC = () => {
       {fetchError && <div role="alert" className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">{fetchError}</div>}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col gap-4">
         {/* Controls Toolbar */}
-        <div className="flex flex-col gap-3">
-          {/* Quick Date Range Shortcut Pills */}
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mr-1 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[15px] text-emerald-600">date_range</span>
-                Bộ lọc thời gian:
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap flex-1">
+            <div className="relative flex-1 min-w-[240px] max-w-md">
+              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                search
               </span>
-              {[
-                { id: 'ALL', label: 'Tất cả' },
-                { id: 'LAST_MONTH', label: 'Tháng trước' },
-                { id: 'THIS_MONTH', label: 'Tháng này' },
-                { id: 'LAST_WEEK', label: 'Tuần trước' },
-                { id: 'THIS_WEEK', label: 'Tuần này' },
-                { id: 'TODAY', label: 'Hôm nay' }
-              ].map(btn => (
-                <button
-                  key={btn.id}
-                  type="button"
-                  onClick={() => applyDatePreset(btn.id as DatePreset)}
-                  className={`px-3 py-1 text-xs rounded-lg font-semibold transition cursor-pointer ${
-                    datePreset === btn.id
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {btn.label}
-                </button>
-              ))}
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm mã GD, mã kho (#A-101), khách hàng..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white font-mono"
+              />
             </div>
 
-            {datePreset === 'ALL' ? (
-              <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                Toàn bộ thời gian
-              </span>
-            ) : periodStart && periodEnd ? (
-              <span className="text-xs font-mono font-bold text-slate-700 bg-slate-50 px-2.5 py-0.5 rounded-lg border border-slate-200">
-                {periodStart} → {periodEnd}
-              </span>
-            ) : null}
-          </div>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+              Từ ngày
+              <input type="date" value={periodStart} max={periodEnd} onChange={(e) => setPeriodStart(e.target.value)} className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg" />
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+              Đến ngày
+              <input type="date" value={periodEnd} min={periodStart} onChange={(e) => setPeriodEnd(e.target.value)} className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg" />
+            </label>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as any)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Tất cả loại giao dịch</option>
+              <option value="RENTAL">Tiền thuê, gia hạn &amp; phụ phí</option>
+              <option value="DEPOSIT">Tiền cọc</option>
+              <option value="BOOKING_PAYMENT">Thanh toán đơn đặt</option>
+            </select>
 
-          {/* Inputs Row */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-wrap flex-1">
-              <div className="relative flex-1 min-w-[240px] max-w-md">
-                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
-                  search
-                </span>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm mã GD, mã kho (#A-101), khách hàng..."
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white font-mono"
-                />
-              </div>
-
-              {/* Option Filter Dropdown */}
-              
-
-              <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                Từ ngày
-                <input
-                  type="date"
-                  value={periodStart}
-                  max={periodEnd || undefined}
-                  onChange={(e) => {
-                    setPeriodStart(e.target.value)
-                    setDatePreset('CUSTOM')
-                  }}
-                  className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                />
-              </label>
-              <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
-                Đến ngày
-                <input
-                  type="date"
-                  value={periodEnd}
-                  min={periodStart || undefined}
-                  onChange={(e) => {
-                    setPeriodEnd(e.target.value)
-                    setDatePreset('CUSTOM')
-                  }}
-                  className="px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-                />
-              </label>
-
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value as any)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">Tất cả loại giao dịch</option>
-                <option value="RENTAL">Tiền thuê, gia hạn &amp; phụ phí</option>
-                <option value="DEPOSIT">Tiền cọc</option>
-                <option value="BOOKING_PAYMENT">Thanh toán đơn đặt</option>
-              </select>
-
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">Tất cả trạng thái</option>
-                <option value="PAID">Đã thanh toán / Đã thu</option>
-                <option value="PENDING">Đang chờ xử lý</option>
-                <option value="FAILED">Thất bại</option>
-                <option value="EXPIRED">Hết hạn</option>
-                <option value="REFUND_PENDING">Chờ hoàn tiền</option>
-                <option value="REFUNDED">Đã hoàn tiền</option>
-              </select>
-            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Tất cả trạng thái</option>
+              <option value="PAID">Đã thanh toán / Đã thu</option>
+              <option value="PENDING">Đang chờ xử lý</option>
+              <option value="FAILED">Thất bại</option>
+              <option value="EXPIRED">Hết hạn</option>
+              <option value="REFUND_PENDING">Chờ hoàn tiền</option>
+              <option value="REFUNDED">Đã hoàn tiền</option>
+            </select>
           </div>
         </div>
-
 
         {/* Real Ledger Table */}
         <div className="overflow-x-auto rounded-xl border border-slate-200">
