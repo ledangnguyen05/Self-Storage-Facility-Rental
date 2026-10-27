@@ -1209,7 +1209,7 @@ export const StaffDashboard: React.FC = () => {
           {/* 4 Stats Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div
-              onClick={() => setPendingFilterStatus('PENDING_CONFIRMATION')}
+              onClick={() => setPendingFilterStatus(prev => prev === 'PENDING_CONFIRMATION' ? 'ALL' : 'PENDING_CONFIRMATION')}
               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                 pendingFilterStatus === 'PENDING_CONFIRMATION'
                   ? 'bg-amber-50/80 border-amber-400 ring-2 ring-amber-400/50 shadow-sm'
@@ -1236,7 +1236,7 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
             <div
-              onClick={() => setPendingFilterStatus('CONFIRMED')}
+              onClick={() => setPendingFilterStatus(prev => prev === 'CONFIRMED' ? 'ALL' : 'CONFIRMED')}
               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                 pendingFilterStatus === 'CONFIRMED'
                   ? 'bg-cyan-50/80 border-cyan-400 ring-2 ring-cyan-400/50 shadow-sm'
@@ -1263,7 +1263,7 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
             <div
-              onClick={() => setPendingFilterStatus('CANCELLED')}
+              onClick={() => setPendingFilterStatus(prev => prev === 'CANCELLED' ? 'ALL' : 'CANCELLED')}
               className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                 pendingFilterStatus === 'CANCELLED'
                   ? 'bg-rose-50/80 border-rose-400 ring-2 ring-rose-400/50 shadow-sm'
@@ -1317,9 +1317,8 @@ export const StaffDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Search & Filter Controls */}
+          {/* Search Box */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-            {/* Search Box */}
             <div className="relative flex-1 max-w-md">
               <span className="material-symbols-outlined text-[18px] text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
                 search
@@ -1344,29 +1343,16 @@ export const StaffDashboard: React.FC = () => {
                 </button>
               )}
             </div>
-
-            {/* Quick Status Buttons */}
-            <div className="flex items-center gap-1.5 overflow-x-auto">
-              {[
-                { id: 'PENDING_CONFIRMATION', label: `Chờ xác nhận (${arrivalStatusCounts.pendingConfirmation})`, active: 'bg-amber-600 text-white' },
-                { id: 'CONFIRMED', label: `Chờ check in (${arrivalStatusCounts.confirmedCheckIn})`, active: 'bg-cyan-600 text-white' },
-                { id: 'CANCELLED', label: `Đã từ chối (${arrivalStatusCounts.cancelled})`, active: 'bg-rose-600 text-white' },
-                { id: 'ALL', label: `Tất cả (${arrivals.length})`, active: 'bg-slate-900 text-white' },
-              ].map((btn) => (
-                <button
-                  key={btn.id}
-                  type="button"
-                  onClick={() => setPendingFilterStatus(btn.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
-                    pendingFilterStatus === btn.id
-                      ? `${btn.active} shadow-xs font-bold`
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
-                  }`}
-                >
-                  {btn.label}
-                </button>
-              ))}
-            </div>
+            {pendingFilterStatus !== 'ALL' && (
+              <button
+                type="button"
+                onClick={() => setPendingFilterStatus('ALL')}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer self-start sm:self-auto"
+              >
+                <span>Đang lọc: <strong>{pendingFilterStatus === 'PENDING_CONFIRMATION' ? 'Chờ xác nhận' : pendingFilterStatus === 'CONFIRMED' ? 'Chờ check in' : 'Đã từ chối'}</strong></span>
+                <span className="underline ml-1">(Hiển thị tất cả)</span>
+              </button>
+            )}
           </div>
 
           {/* Orders Table */}
