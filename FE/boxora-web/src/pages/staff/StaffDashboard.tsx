@@ -762,7 +762,6 @@ export const StaffDashboard: React.FC = () => {
       else if (s === 'ACTIVE') active++
       else if (isPaidCheckIn(b)) confirmedCheckIn++
       else if (isPendingContact(b)) pendingContact++
-      else pendingContact++
     })
     return {
       total: arrivals.length,
@@ -785,7 +784,6 @@ export const StaffDashboard: React.FC = () => {
 
       if (tab1Filter === 'PENDING_CONTACT' && !isContact) return false
       if (tab1Filter === 'CANCELLED' && !isCancelled) return false
-      if (tab1Filter === 'ALL' && !isContact && !isCancelled) return false
 
       if (pendingSearchTerm.trim()) {
         const q = pendingSearchTerm.trim().toLowerCase()
