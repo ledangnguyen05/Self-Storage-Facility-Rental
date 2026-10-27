@@ -264,6 +264,24 @@ public class HandoverServiceImpl implements HandoverService {
                 .map(paymentMapper::toResponse)
                 .collect(Collectors.toList());
 
+        UnitType effectiveUnitType = null;
+        if (unit != null && unit.getUnitType() != null) {
+            effectiveUnitType = unit.getUnitType();
+        } else if (booking.getUnitType() != null) {
+            effectiveUnitType = booking.getUnitType();
+        } else if (contractOpt.isPresent() && contractOpt.get().getUnit() != null && contractOpt.get().getUnit().getUnitType() != null) {
+            effectiveUnitType = contractOpt.get().getUnit().getUnitType();
+        }
+
+        Facility effectiveFacility = null;
+        if (unit != null && unit.getFacility() != null) {
+            effectiveFacility = unit.getFacility();
+        } else if (booking.getFacility() != null) {
+            effectiveFacility = booking.getFacility();
+        } else if (contractOpt.isPresent() && contractOpt.get().getFacility() != null) {
+            effectiveFacility = contractOpt.get().getFacility();
+        }
+
         return HandoverPrerequisitesResponse.builder()
                 .bookingId(booking.getId())
                 .bookingCode(booking.getBookingCode())
@@ -271,9 +289,10 @@ public class HandoverServiceImpl implements HandoverService {
                 .customerPhone(customer != null ? customer.getPhone() : "N/A")
                 .customerEmail(customer != null ? customer.getEmail() : "N/A")
                 .unitCode(unit != null ? unit.getUnitCode() : "N/A")
-                .unitTypeName(unit != null && unit.getUnitType() != null ? unit.getUnitType().getTypeName() : "Kho tiêu chuẩn")
-                .areaSqMeters(unit != null && unit.getUnitType() != null ? unit.getUnitType().getAreaSqm() : null)
-                .facilityName((unit != null && unit.getFacility() != null) ? unit.getFacility().getName() : "N/A")
+                .unitTypeName(effectiveUnitType != null ? effectiveUnitType.getTypeName() : null)
+                .areaSqMeters(effectiveUnitType != null ? effectiveUnitType.getAreaSqm() : null)
+                .unitSize(effectiveUnitType != null ? (effectiveUnitType.getDimensions() != null ? effectiveUnitType.getDimensions() : effectiveUnitType.getTypeName()) : null)
+                .facilityName(effectiveFacility != null ? effectiveFacility.getName() : "N/A")
                 .depositSatisfied(depositSatisfied)
                 .depositPaid(depositPaid)
                 .requiredDeposit(requiredDeposit)
@@ -329,12 +348,19 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         StorageUnit previousUnit = booking.getStorageUnit();
-        if (previousUnit == null) {
-            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+        UUID facilityId = null;
+        if (previousUnit != null && previousUnit.getFacility() != null) {
+            facilityId = previousUnit.getFacility().getId();
+        } else if (booking.getFacility() != null) {
+            facilityId = booking.getFacility().getId();
+        } else {
+            Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+            if (contractOpt.isPresent() && contractOpt.get().getFacility() != null) {
+                facilityId = contractOpt.get().getFacility().getId();
+            }
         }
-        UUID facilityId = previousUnit.getFacility() != null ? previousUnit.getFacility().getId() : null;
         if (facilityId == null) {
-            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND);
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không xác định được cơ sở của đơn đặt kho.");
         }
         facilityAccessGuard.checkFacilityAccess(facilityId);
 
@@ -344,13 +370,26 @@ public class HandoverServiceImpl implements HandoverService {
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND,
                         "Không tìm thấy vị trí kho khách hàng chọn tại cơ sở này."));
 
-        if (selectedUnit.getUnitType() == null || previousUnit.getUnitType() == null
-                || !selectedUnit.getUnitType().getId().equals(previousUnit.getUnitType().getId())) {
-            throw new AppException(ErrorCode.INVALID_REQUEST,
-                    "Vị trí khách hàng chọn không cùng loại kho với đơn đặt chỗ.");
+        UUID contractedTypeId = null;
+        if (previousUnit != null && previousUnit.getUnitType() != null) {
+            contractedTypeId = previousUnit.getUnitType().getId();
+        } else if (booking.getUnitType() != null) {
+            contractedTypeId = booking.getUnitType().getId();
+        } else {
+            Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+            if (contractOpt.isPresent() && contractOpt.get().getUnit() != null && contractOpt.get().getUnit().getUnitType() != null) {
+                contractedTypeId = contractOpt.get().getUnit().getUnitType().getId();
+            }
         }
 
-        boolean isOriginalUnit = selectedUnit.getId().equals(previousUnit.getId());
+        if (contractedTypeId != null) {
+            if (selectedUnit.getUnitType() == null || !contractedTypeId.equals(selectedUnit.getUnitType().getId())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Vị trí khách hàng chọn không cùng loại kho với đơn đặt chỗ.");
+            }
+        }
+
+        boolean isOriginalUnit = previousUnit != null && selectedUnit.getId().equals(previousUnit.getId());
         boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
                 || (isOriginalUnit && selectedUnit.getStatus() == UnitStatus.RESERVED);
         if (!selectedUnitReady) {
@@ -372,7 +411,7 @@ public class HandoverServiceImpl implements HandoverService {
             booking.setStorageUnit(selectedUnit);
             bookingRepository.save(booking);
 
-            if (previousUnit.getStatus() == UnitStatus.RESERVED) {
+            if (previousUnit != null && previousUnit.getStatus() == UnitStatus.RESERVED) {
                 boolean previousUnitHasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
                         previousUnit.getId(),
                         List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
@@ -1940,8 +1979,8 @@ public class HandoverServiceImpl implements HandoverService {
                     ? request.getPaymentMethod().trim().toUpperCase()
                     : "BANK_TRANSFER";
 
-            if (!"BANK_TRANSFER".equals(method)) {
-                throw new AppException(ErrorCode.INVALID_PAYMENT_METHOD, "Hệ thống chỉ chấp nhận phương thức chuyển khoản ngân hàng (BANK_TRANSFER) tại quầy");
+            if (!"BANK_TRANSFER".equals(method) && !"CASH".equals(method)) {
+                throw new AppException(ErrorCode.INVALID_PAYMENT_METHOD, "Hệ thống chỉ chấp nhận phương thức tiền mặt (CASH) hoặc chuyển khoản ngân hàng (BANK_TRANSFER) tại quầy");
             }
 
             // Kiểm tra nghĩa vụ còn thiếu để chống thu trùng / cộng tiền 2 lần
@@ -1963,55 +2002,87 @@ public class HandoverServiceImpl implements HandoverService {
                         String.format("Số tiền thu (%s VNĐ) vượt quá số tiền còn thiếu (%s VNĐ)", request.getAmount(), remainingAmount));
             }
 
-            // Khi chuyển khoản ngân hàng: Bắt buộc có mã tham chiếu giao dịch và chứng từ upload hợp lệ
-            String cleanRefCode;
-            if (request.getReferenceCode() != null && !request.getReferenceCode().isBlank()) {
-                cleanRefCode = request.getReferenceCode().trim();
-            } else if (request.getReceiptVoucherCode() != null && !request.getReceiptVoucherCode().isBlank()) {
-                cleanRefCode = request.getReceiptVoucherCode().trim();
+            Payment payment;
+            if ("CASH".equals(method)) {
+                String cleanVoucherCode = request.getReceiptVoucherCode() != null && !request.getReceiptVoucherCode().isBlank()
+                        ? request.getReceiptVoucherCode().trim()
+                        : null;
+                if (cleanVoucherCode == null) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Thu tiền mặt bắt buộc nhập mã phiếu thu");
+                }
+                if (paymentRepository.existsByReceiptVoucherCodeIgnoreCase(cleanVoucherCode)) {
+                    throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Mã phiếu thu " + cleanVoucherCode + " đã tồn tại trong hệ thống");
+                }
+                String txnId = "CASH-" + booking.getBookingCode() + "-" + System.currentTimeMillis()
+                        + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase();
+                payment = Payment.builder()
+                        .transactionId(txnId)
+                        .booking(booking)
+                        .amount(request.getAmount())
+                        .paymentType(request.getPaymentType())
+                        .paymentMethod("CASH")
+                        .paymentTime(LocalDateTime.now())
+                        .collectedByStaff(staff)
+                        .receiptVoucherCode(cleanVoucherCode)
+                        .referenceCode(null)
+                        .proofDocumentUrl(null)
+                        .paymentNotes(request.getNotes() != null ? request.getNotes().trim() : null)
+                        .status(PaymentStatus.PAID)
+                        .confirmedByStaff(staff)
+                        .confirmedAt(LocalDateTime.now())
+                        .build();
             } else {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lòng nhập mã tham chiếu giao dịch chuyển khoản ngân hàng (Ref Code)");
-            }
+                // Khi chuyển khoản ngân hàng: Bắt buộc có mã tham chiếu giao dịch và chứng từ upload hợp lệ
+                String cleanRefCode;
+                if (request.getReferenceCode() != null && !request.getReferenceCode().isBlank()) {
+                    cleanRefCode = request.getReferenceCode().trim();
+                } else if (request.getReceiptVoucherCode() != null && !request.getReceiptVoucherCode().isBlank()) {
+                    cleanRefCode = request.getReceiptVoucherCode().trim();
+                } else {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lòng nhập mã tham chiếu giao dịch chuyển khoản ngân hàng (Ref Code)");
+                }
 
-            if (cleanRefCode.length() > 100) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Mã tham chiếu ngân hàng không được vượt quá 100 ký tự");
-            }
-            if (paymentRepository.existsByReferenceCodeIgnoreCase(cleanRefCode)) {
-                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Mã tham chiếu ngân hàng " + cleanRefCode + " đã tồn tại trong hệ thống");
-            }
-            String cleanProofUrl = validateStoredDocumentUrl(rawProofUrl, "Chứng từ chuyển khoản ngân hàng");
+                if (cleanRefCode.length() > 100) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Mã tham chiếu ngân hàng không được vượt quá 100 ký tự");
+                }
+                if (paymentRepository.existsByReferenceCodeIgnoreCase(cleanRefCode)) {
+                    throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Mã tham chiếu ngân hàng " + cleanRefCode + " đã tồn tại trong hệ thống");
+                }
+                String cleanProofUrl = validateStoredDocumentUrl(rawProofUrl, "Chứng từ chuyển khoản ngân hàng");
 
-            String txnId = "BANK-" + booking.getBookingCode() + "-" + System.currentTimeMillis()
-                    + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase();
+                String txnId = "BANK-" + booking.getBookingCode() + "-" + System.currentTimeMillis()
+                        + "-" + UUID.randomUUID().toString().substring(0, 4).toUpperCase();
 
-            Payment payment = Payment.builder()
-                    .transactionId(txnId)
-                    .booking(booking)
-                    .amount(request.getAmount())
-                    .paymentType(request.getPaymentType())
-                    .paymentMethod("BANK_TRANSFER")
-                    .paymentTime(LocalDateTime.now())
-                    .collectedByStaff(staff)
-                    .receiptVoucherCode(null)
-                    .referenceCode(cleanRefCode)
-                    .proofDocumentUrl(cleanProofUrl)
-                    .paymentNotes(request.getNotes() != null ? request.getNotes().trim() : null)
-                    .status(PaymentStatus.PENDING)
-                    .confirmedByStaff(null)
-                    .confirmedAt(null)
-                    .build();
+                payment = Payment.builder()
+                        .transactionId(txnId)
+                        .booking(booking)
+                        .amount(request.getAmount())
+                        .paymentType(request.getPaymentType())
+                        .paymentMethod("BANK_TRANSFER")
+                        .paymentTime(LocalDateTime.now())
+                        .collectedByStaff(staff)
+                        .receiptVoucherCode(null)
+                        .referenceCode(cleanRefCode)
+                        .proofDocumentUrl(cleanProofUrl)
+                        .paymentNotes(request.getNotes() != null ? request.getNotes().trim() : null)
+                        .status(PaymentStatus.PENDING)
+                        .confirmedByStaff(null)
+                        .confirmedAt(null)
+                        .build();
+            }
 
             payment = paymentRepository.save(payment);
 
             UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+            String refOrVoucher = payment.getReferenceCode() != null ? payment.getReferenceCode() : payment.getReceiptVoucherCode();
             activityLogService.record(
                     facilityId,
                     ActivityAction.PAYMENT_INITIATED,
                     "Payment",
                     payment.getId(),
-                    String.format("Ghi nhận khoản thu chuyển khoản %s %s VNĐ cho đơn %s do nhân viên %s thực hiện (Mã giao dịch: %s)",
-                            request.getPaymentType(), request.getAmount(), booking.getBookingCode(),
-                            staff.getFullName(), cleanRefCode),
+                    String.format("Ghi nhận khoản thu %s %s VNĐ cho đơn %s do nhân viên %s thực hiện (Mã: %s)",
+                            payment.getPaymentMethod(), request.getAmount(), booking.getBookingCode(),
+                            staff.getFullName(), refOrVoucher),
                     null,
                     payment.getStatus()
             );

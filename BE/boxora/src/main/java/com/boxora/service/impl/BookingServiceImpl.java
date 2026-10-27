@@ -1969,6 +1969,10 @@ public class BookingServiceImpl implements BookingService {
             }
         }
 
+        UnitType effectiveType = (b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null)
+                ? b.getStorageUnit().getUnitType()
+                : b.getUnitType();
+
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -1977,8 +1981,11 @@ public class BookingServiceImpl implements BookingService {
                 .customerPhone(b.getCustomer() != null ? b.getCustomer().getPhone() : null)
                 .customerEmail(b.getCustomer() != null ? b.getCustomer().getEmail() : null)
                 .storageUnitId(b.getStorageUnit() != null ? b.getStorageUnit().getId() : null)
-                .unitTypeId(b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null ? b.getStorageUnit().getUnitType().getId() : (b.getUnitType() != null ? b.getUnitType().getId() : null))
-                .unitTypeName(b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null ? b.getStorageUnit().getUnitType().getTypeName() : (b.getUnitType() != null ? b.getUnitType().getTypeName() : null))
+                .unitTypeId(effectiveType != null ? effectiveType.getId() : null)
+                .unitTypeName(effectiveType != null ? effectiveType.getTypeName() : null)
+                .unitSize(effectiveType != null ? (effectiveType.getDimensions() != null ? effectiveType.getDimensions() : effectiveType.getTypeName()) : null)
+                .areaSqMeters(effectiveType != null ? effectiveType.getAreaSqm() : null)
+                .dimensions(effectiveType != null ? effectiveType.getDimensions() : null)
                 .unitCode(b.getStorageUnit() != null ? b.getStorageUnit().getUnitCode() : null)
                 .facilityId(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
                         ? b.getStorageUnit().getFacility().getId()
@@ -2032,6 +2039,20 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE, "Ô kho vật lý được chọn không khả dụng (status != AVAILABLE).");
         }
 
+        UUID bookingFacilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+        if (bookingFacilityId != null && unit.getFacility() != null && !bookingFacilityId.equals(unit.getFacility().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ô kho được chọn không thuộc cùng cơ sở của đơn đặt chỗ.");
+        }
+
+        UUID contractedTypeId = booking.getStorageUnit() != null && booking.getStorageUnit().getUnitType() != null
+                ? booking.getStorageUnit().getUnitType().getId()
+                : (booking.getUnitType() != null ? booking.getUnitType().getId() : null);
+        if (contractedTypeId != null && unit.getUnitType() != null && !contractedTypeId.equals(unit.getUnitType().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ô kho được chọn không đúng loại hoặc kích thước kho đã đăng ký/ký trong hợp đồng.");
+        }
+
         unit.setStatus(UnitStatus.RESERVED);
         storageUnitRepository.save(unit);
 
@@ -2063,33 +2084,8 @@ public class BookingServiceImpl implements BookingService {
             contract = rentalContractRepository.save(contract);
         }
 
-        String customerEmail = booking.getCustomer() != null ? booking.getCustomer().getEmail() : null;
-        String customerName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Quý khách";
-        String facilityName = unit.getFacility() != null ? unit.getFacility().getName() : (booking.getFacility() != null ? booking.getFacility().getName() : "Boxora Facility");
-        if (customerEmail != null && !customerEmail.isBlank()) {
-            try {
-                String contractCode = contract != null ? contract.getContractCode() : ("HD-" + booking.getBookingCode());
-                String startDateStr = booking.getStartDate() != null ? booking.getStartDate().toString() : "";
-                String endDateStr = booking.getEndDate() != null ? booking.getEndDate().toString() : "";
-                String feeStr = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee().toString() : "0";
-                String contractUrl = "/online-booking-contract?bookingId=" + booking.getId();
-                emailService.sendHandoverWithContractEmail(
-                        customerEmail,
-                        customerName,
-                        unit.getUnitCode(),
-                        booking.getBookingCode(),
-                        pin,
-                        facilityName,
-                        contractCode,
-                        startDateStr,
-                        endDateStr,
-                        feeStr,
-                        contractUrl
-                );
-            } catch (Exception ex) {
-                log.warn("Lỗi gửi email bàn giao mã PIN IoT va Hop dong hoan chinh cho don {}: {}", booking.getBookingCode(), ex.getMessage());
-            }
-        }
+        // Note: Do NOT dispatch handover email here at Step 2 unit assignment.
+        // Handover email is only dispatched at Step 4 upon completion of inspection & check-in.
 
         activityLogService.record(
                 unit.getFacility() != null ? unit.getFacility().getId() : null,

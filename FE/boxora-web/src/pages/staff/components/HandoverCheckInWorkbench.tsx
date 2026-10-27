@@ -27,6 +27,8 @@ import { handoverService, HandoverPrerequisites } from '../../../services/handov
 import { bookingService } from '../../../services/bookingService'
 import { paymentService } from '../../../services/paymentService'
 import { EarlyCheckInConfirmModal } from '../../../components/modals/EarlyCheckInConfirmModal'
+import { ContractDocumentModal } from '../../../components/modals/ContractDocumentModal'
+import { contractService, RentalContract } from '../../../services/contractService'
 import { useAuth } from '../../../context/AuthContext'
 
 export interface BookingChecklist {
@@ -259,7 +261,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [loadingAvailableUnits, setLoadingAvailableUnits] = useState<boolean>(false)
   const [assignFloorFilter, setAssignFloorFilter] = useState<string>('ALL')
   const [assignSearchTerm, setAssignSearchTerm] = useState<string>('')
-  const [assignShowAllSizes, setAssignShowAllSizes] = useState<boolean>(false)
+  const [facilityFloors, setFacilityFloors] = useState<string[]>([])
+  const [showContractModal, setShowContractModal] = useState<boolean>(false)
+  const [activeContract, setActiveContract] = useState<RentalContract | null>(null)
+  const [loadingContract, setLoadingContract] = useState<boolean>(false)
   const [selectedAssignUnitId, setSelectedAssignUnitId] = useState<string>('')
   const [isAssigningPhysicalUnit, setIsAssigningPhysicalUnit] = useState<boolean>(false)
   const [isChangingAssignedUnit, setIsChangingAssignedUnit] = useState<boolean>(false)
@@ -470,14 +475,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     currentBooking?.unitTypeName ||
     (currentBooking as any)?.storageUnit?.unitTypeName ||
     (currentBooking as any)?.unitType?.typeName ||
-    'Kho tiêu chuẩn'
+    ''
 
   const unitArea =
-    currentPrerequisites?.areaSqMeters ||
-    currentBooking?.areaSqMeters ||
-    (currentBooking as any)?.storageUnit?.areaSqMeters ||
-    (currentBooking as any)?.unitType?.areaSqm ||
-    '---'
+    currentPrerequisites?.areaSqMeters ??
+    currentBooking?.areaSqMeters ??
+    (currentBooking as any)?.storageUnit?.areaSqMeters ??
+    (currentBooking as any)?.unitType?.areaSqm ??
+    null
 
   const bookingDisplayCode =
     currentBooking?.bookingCode ||
@@ -552,7 +557,26 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       })
   }, [selectedBookingId, targetFacilityId])
 
-  // Filter available units for assignment
+  // Fetch actual distinct floors for the booking's facility
+  useEffect(() => {
+    if (!targetFacilityId) {
+      setFacilityFloors([])
+      return
+    }
+    storageUnitService
+      .getUnits({ facilityId: targetFacilityId })
+      .then((allUnits) => {
+        const floors = Array.from(
+          new Set((allUnits || []).map((u) => u.floorLevel).filter((f): f is string => Boolean(f && f.trim())))
+        ).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+        setFacilityFloors(floors)
+      })
+      .catch((err) => {
+        console.warn('Could not fetch facility floors:', err)
+      })
+  }, [targetFacilityId])
+
+  // Filter available units for assignment (Task 8.1 & 8.3: lock type/size to contracted booking)
   const filteredAvailableUnits = useMemo(() => {
     return availableUnits.filter((u) => {
       if (assignFloorFilter !== 'ALL' && u.floorLevel !== assignFloorFilter) {
@@ -564,20 +588,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         const nameMatch = (u.unitTypeName || '').toLowerCase().includes(term)
         if (!codeMatch && !nameMatch) return false
       }
-      if (!assignShowAllSizes) {
-        return isUnitMatchingBookedSize(u, bookedUnitTypeId, bookedUnitTypeName)
-      }
-      return true
+      return isUnitMatchingBookedSize(u, bookedUnitTypeId, bookedUnitTypeName)
     })
-  }, [availableUnits, assignFloorFilter, assignSearchTerm, assignShowAllSizes, bookedUnitTypeId, bookedUnitTypeName])
+  }, [availableUnits, assignFloorFilter, assignSearchTerm, bookedUnitTypeId, bookedUnitTypeName])
 
-  // Step Tab Navigation Guards
+  // Step Tab Navigation Guards (Task 8.4: Allow signed & paid bookings to review Step 3 directly)
   const handleSelectTab = (tab: 'verify' | 'assign' | 'contract_payment' | 'pin') => {
+    const isSignedAndPaid = Boolean(isDepositMet && isRentMet && isContractMet)
+
     if (tab === 'assign' && !isIdMet) {
       setCheckInError('Cần xác minh CCCD/Hộ chiếu gốc của khách hàng tại quầy ở Bước 1 trước khi chuyển sang chọn ô kho.')
       return
     }
-    if (tab === 'contract_payment' && (!isIdMet || !isUnitAssigned)) {
+    if (tab === 'contract_payment' && !isSignedAndPaid && (!isIdMet || !isUnitAssigned)) {
       if (!isIdMet) {
         setCheckInError('Cần xác minh CCCD khách hàng ở Bước 1 trước khi tiếp tục.')
         return
@@ -794,25 +817,63 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
-  // Direct Contract View Handler
+  // Direct Contract View Handler (Task 8.5: Display full contract modal reusing Customer Portal component)
   const handleViewContractDocument = async () => {
     if (!selectedBookingId) return
-    const docUrl = currentPrerequisites?.signedDocumentUrl || currentPrerequisites?.paperContractUrl
-    if (docUrl) {
-      try {
-        const blobUrl = await handoverService.viewAuthorizedDocument(selectedBookingId, docUrl)
-        window.open(blobUrl, '_blank')
-      } catch {
-        window.open(docUrl, '_blank')
+    setLoadingContract(true)
+    try {
+      let contractData = await contractService.getContractByBookingId(selectedBookingId)
+      if (!contractData && currentBooking?.contractId) {
+        contractData = await contractService.getContractById(currentBooking.contractId)
       }
-    } else {
-      setShowPdfModal(true)
+      if (!contractData) {
+        contractData = {
+          id: currentBooking?.contractId || selectedBookingId,
+          contractCode: currentPrerequisites?.contractCode || currentBooking?.contractCode || `CTR-${bookingDisplayCode}`,
+          customerName: customerDisplayName,
+          customerEmail: customerDisplayEmail,
+          customerPhone: customerDisplayPhone,
+          customerId: currentBooking?.customerId || 'CUST-GENERAL',
+          facilityName: facilityDisplayName,
+          unitCode: unitDisplayCode || currentPrerequisites?.unitCode || currentBooking?.unitCode || 'Chờ gán',
+          startDate: currentBooking?.startDate || new Date().toISOString().split('T')[0],
+          endDate: currentBooking?.endDate || new Date().toISOString().split('T')[0],
+          monthlyFee: Number(currentBooking?.totalRentalFee || 0) / (currentBooking?.rentalMonths || 1),
+          depositHeld: Number(currentPrerequisites?.depositPaid || currentBooking?.depositPaid || currentBooking?.depositAmount || 0),
+          status: (currentPrerequisites?.contractStatus || currentBooking?.contractStatus || (isContractMet ? 'ACTIVE' : 'PENDING_SIGNATURE')) as any,
+          signedAt: currentPrerequisites?.contractSignedAt || (isContractMet ? new Date().toISOString() : undefined),
+          docusealSubmissionId: (currentPrerequisites as any)?.docusealSubmissionId || undefined,
+        }
+      }
+      setActiveContract(contractData)
+      setShowContractModal(true)
+    } catch (err) {
+      console.warn('Error fetching contract, using synthesized data:', err)
+      setActiveContract({
+        id: currentBooking?.contractId || selectedBookingId,
+        contractCode: currentPrerequisites?.contractCode || currentBooking?.contractCode || `CTR-${bookingDisplayCode}`,
+        customerName: customerDisplayName,
+        customerEmail: customerDisplayEmail,
+        customerPhone: customerDisplayPhone,
+        customerId: currentBooking?.customerId || 'CUST-GENERAL',
+        facilityName: facilityDisplayName,
+        unitCode: unitDisplayCode || currentPrerequisites?.unitCode || currentBooking?.unitCode || 'Chờ gán',
+        startDate: currentBooking?.startDate || new Date().toISOString().split('T')[0],
+        endDate: currentBooking?.endDate || new Date().toISOString().split('T')[0],
+        monthlyFee: Number(currentBooking?.totalRentalFee || 0) / (currentBooking?.rentalMonths || 1),
+        depositHeld: Number(currentPrerequisites?.depositPaid || currentBooking?.depositPaid || currentBooking?.depositAmount || 0),
+        status: (currentPrerequisites?.contractStatus || currentBooking?.contractStatus || (isContractMet ? 'ACTIVE' : 'PENDING_SIGNATURE')) as any,
+        signedAt: currentPrerequisites?.contractSignedAt || (isContractMet ? new Date().toISOString() : undefined),
+      })
+      setShowContractModal(true)
+    } finally {
+      setLoadingContract(false)
     }
   }
 
   // --- STEP 4: COMPLETE HANDOVER & PIN ACTIVATION ---
   const handleCompleteHandover = async () => {
-    if (!currentBooking) return
+    if (!currentBooking || isSubmitting) return
 
     if (!isIdMet) {
       setCheckInError('Bước 1: Cần xác thực CCCD/Hộ chiếu khách hàng trước khi bàn giao!')
@@ -872,18 +933,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       if (!generatedPin) throw new Error('Check-in hoàn tất nhưng máy chủ không trả về mã PIN SmartLock.')
       const nowIso = new Date().toISOString()
 
-      let emailSentSuccess = false
+      // Backend check-in automatically dispatches the PIN & handover completion email (Task 8.6)
+      let emailSentSuccess = true
       let webPushSentSuccess = false
 
-      // 1. Tự động gửi Email chứa mã PIN cho khách hàng
-      try {
-        await handoverService.sendPinEmail(currentBooking.id)
-        emailSentSuccess = true
-      } catch (eErr) {
-        console.warn('Send PIN email failed:', eErr)
-      }
-
-      // 2. Tự động bắn thông báo web vào mục thông báo trên hệ thống
+      // Tự động bắn thông báo web vào mục thông báo trên hệ thống
       try {
         await handoverService.sendWebNotification(currentBooking.id)
         webPushSentSuccess = true
@@ -1207,7 +1261,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Gói &amp; Diện Tích Đặt</span>
                 <span className="font-bold text-slate-800 block mt-0.5">
-                  {unitTypeName} • {unitArea}m²
+                  {unitTypeName ? `${unitTypeName} • ` : ''}
+                  {unitArea != null && unitArea !== '' && !isNaN(Number(unitArea))
+                    ? `${unitArea}m²`
+                    : 'Chưa cập nhật diện tích'}
                 </span>
               </div>
 
@@ -1422,7 +1479,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-emerald-800 block">Diện Tích</span>
-                  <span className="font-bold text-emerald-950 block mt-0.5">{unitArea}m²</span>
+                  <span className="font-bold text-emerald-950 block mt-0.5">
+                    {unitArea != null && unitArea !== '' && !isNaN(Number(unitArea))
+                      ? `${unitArea}m²`
+                      : 'Chưa cập nhật diện tích'}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-emerald-800 block">Trạng Thái Kho</span>
@@ -1438,7 +1499,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="flex-1">
                 <span className="font-bold block">Chưa gán ô kho vật lý</span>
                 <span>
-                  Vui lòng chọn một ô kho còn trống (AVAILABLE) đúng loại <strong>{bookedUnitTypeName} ({unitArea}m²)</strong> từ danh sách bên dưới và bấm nút <strong>"Gán kho"</strong>.
+                  Vui lòng chọn một ô kho còn trống (AVAILABLE) đúng loại <strong>{bookedUnitTypeName || unitTypeName || 'Gói đã đặt'} ({unitArea != null && unitArea !== '' && !isNaN(Number(unitArea)) ? `${unitArea}m²` : 'Chưa cập nhật diện tích'})</strong> từ danh sách bên dưới và bấm nút <strong>"Gán kho"</strong>.
                 </span>
               </div>
             </div>
@@ -1453,7 +1514,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <span>Danh Sách Ô Kho Khả Dụng ({bookedUnitTypeName || 'Gói đã đặt'})</span>
                 </h3>
                 <span className="text-xs text-slate-500 mt-0.5 block">
-                  Đang tìm kho trống tại <strong>{facilityDisplayName}</strong> • Gói đặt: <strong>{bookedUnitTypeName} ({unitArea}m²)</strong>
+                  Đang tìm kho trống tại <strong>{facilityDisplayName}</strong> • Gói đặt: <strong>{bookedUnitTypeName || unitTypeName || 'Gói đã đặt'} ({unitArea != null && unitArea !== '' && !isNaN(Number(unitArea)) ? `${unitArea}m²` : 'Chưa cập nhật diện tích'})</strong>
                 </span>
               </div>
             </div>
@@ -1464,14 +1525,24 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <span className="font-bold text-slate-600 text-[11px]">Tầng:</span>
                   <select
                     value={assignFloorFilter}
-                    onChange={(e) => setAssignFloorFilter(e.target.value)}
+                    onChange={(e) => {
+                      const nextFloor = e.target.value
+                      setAssignFloorFilter(nextFloor)
+                      if (selectedAssignUnitId) {
+                        const cur = availableUnits.find((u) => u.id === selectedAssignUnitId)
+                        if (cur && nextFloor !== 'ALL' && cur.floorLevel !== nextFloor) {
+                          setSelectedAssignUnitId('')
+                        }
+                      }
+                    }}
                     className="p-1.5 rounded-lg border border-slate-200 bg-white font-medium text-xs focus:outline-none"
                   >
-                    <option value="ALL">Tất cả tầng</option>
-                    <option value="Floor 1">Tầng 1</option>
-                    <option value="Floor 2">Tầng 2</option>
-                    <option value="Floor 3">Tầng 3</option>
-                    <option value="Basement">Tầng hầm</option>
+                    <option value="ALL">Tất cả tầng ({facilityFloors.length} tầng khả dụng)</option>
+                    {facilityFloors.map((fl) => (
+                      <option key={fl} value={fl}>
+                        {fl}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -1484,18 +1555,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 />
               </div>
 
-              <button
-                type="button"
-                onClick={() => setAssignShowAllSizes((prev) => !prev)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition cursor-pointer ${
-                  assignShowAllSizes
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                }`}
-              >
-                <Layers size={13} />
-                <span>{assignShowAllSizes ? 'Đang xem tất cả ô trống' : 'Chỉ xem đúng loại đã đặt'}</span>
-              </button>
+              <div className="text-xs font-medium text-slate-600 flex items-center gap-1.5 bg-white px-3 py-1 rounded-lg border border-slate-200">
+                <ShieldCheck size={14} className="text-blue-600" />
+                <span>Bắt buộc đúng loại & kích thước theo Hợp đồng</span>
+              </div>
             </div>
 
             {loadingAvailableUnits ? (
@@ -1510,18 +1573,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <span>Hiện không tìm thấy ô kho nào phù hợp với bộ lọc tại cơ sở này.</span>
                 </div>
                 <p className="text-amber-700">
-                  Thử chuyển sang chế độ "Xem tất cả ô trống" hoặc liên hệ quản lý cơ sở để bố trí buồng kho.
+                  Hiện không có ô kho trống phù hợp với đúng loại/kích thước đã ký hợp đồng ({bookedUnitTypeName || unitTypeName || 'Gói đã đặt'}) trên tầng này. Vui lòng chọn tầng khác hoặc liên hệ quản lý cơ sở.
                 </p>
-                {!assignShowAllSizes && (
-                  <button
-                    type="button"
-                    onClick={() => setAssignShowAllSizes(true)}
-                    className="mt-2 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer inline-flex items-center gap-1"
-                  >
-                    <Layers size={13} />
-                    <span>Xem tất cả ({availableUnits.length} ô kho trống)</span>
-                  </button>
-                )}
               </div>
             ) : (
               <div className="space-y-3">
@@ -1704,10 +1757,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <button
                     type="button"
                     onClick={handleViewContractDocument}
-                    className="mt-1 px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-900 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    disabled={loadingContract}
+                    className="mt-1 px-3 py-1.5 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-100 disabled:opacity-50 text-emerald-900 font-bold text-xs flex items-center gap-1 cursor-pointer"
                   >
                     <Eye size={14} />
-                    <span>Xem Hợp Đồng</span>
+                    <span>{loadingContract ? 'Đang mở hợp đồng...' : 'Xem Hợp Đồng'}</span>
                   </button>
                 </div>
 
@@ -2233,6 +2287,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       {/* =========================================================================
           HELPER MODALS
          ========================================================================= */}
+
+      {/* Modal: Văn Bản Hợp Đồng Thuê Đầy Đủ (Tái sử dụng giao diện Cổng Khách Hàng) */}
+      {showContractModal && activeContract && (
+        <ContractDocumentModal
+          contract={activeContract}
+          booking={currentBooking}
+          onClose={() => setShowContractModal(false)}
+        />
+      )}
 
       {/* Modal: In Biên Bản Bàn Giao (PDF Preview) */}
       {showPdfModal && (
