@@ -103,6 +103,7 @@ export const StaffDashboard: React.FC = () => {
   const [pendingSearchTerm, setPendingSearchTerm] = useState('')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
   const [assignModalBooking, setAssignModalBooking] = useState<Booking | null>(null)
+  const [receptionViewMode, setReceptionViewMode] = useState<'all' | 'check_in' | 'returns'>('all')
 
   const handleCreatePaymentLinkForCustomer = async (b: Booking) => {
     try {
@@ -1614,98 +1615,86 @@ export const StaffDashboard: React.FC = () => {
         </section>
       ) : (
         <>
-          {/* 2. 4 THẺ THỐNG KÊ / KPI QUẦY */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* 2 THẺ MỤC: CHỜ CHECK IN & YÊU CẦU TRẢ KHO */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Mục 1: Chờ check in */}
+            <div
+              onClick={() => setReceptionViewMode(prev => prev === 'check_in' ? 'all' : 'check_in')}
+              className={`p-5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
+                receptionViewMode === 'check_in'
+                  ? 'bg-cyan-50/90 border-cyan-400 ring-2 ring-cyan-400/40 shadow-sm'
+                  : 'bg-white border-slate-200 hover:border-cyan-300 hover:shadow-xs'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <span className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
+                  receptionViewMode === 'check_in'
+                    ? 'bg-cyan-600 text-white shadow-xs'
+                    : 'bg-cyan-50 border border-cyan-200 text-cyan-700'
+                }`}>
+                  <span className="material-symbols-outlined text-[24px]">how_to_reg</span>
+                </span>
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-cyan-800 font-mono block">
+                    Chờ check in
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-headline text-3xl font-extrabold text-cyan-900 tabular-nums">
+                      {checkInArrivals.length}
+                    </span>
+                    <span className="text-xs text-cyan-700 font-medium">khách đến nhận kho</span>
+                  </div>
+                  <span className="text-[11px] text-cyan-600 mt-1 block font-medium">
+                    ✓ Sẵn sàng tiếp đón &amp; bàn giao buồng kho
+                  </span>
+                </div>
+              </div>
+              <span className={`material-symbols-outlined text-[22px] transition-transform ${
+                receptionViewMode === 'check_in' ? 'text-cyan-600 font-bold scale-110' : 'text-slate-300'
+              }`}>
+                {receptionViewMode === 'check_in' ? 'check_circle' : 'chevron_right'}
+              </span>
+            </div>
 
-        
-        {/* Metric 1 */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
-              Lịch Check-in Ca Trực
-            </span>
-            <span className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
-              <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-            </span>
-          </div>
-          <div className="mt-4 flex items-baseline gap-1.5">
-            <span className="font-headline text-3xl font-extrabold text-slate-900 tabular-nums">{arrivals.length}</span>
-            <span className="text-xs text-slate-500">lịch hẹn</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-700 font-semibold">
-            <span className="h-2 w-2 rounded-full bg-blue-600"></span>
-            <span>{arrivals.filter(a => a.status === 'CONFIRMED').length} khách đã cọc giữ chỗ</span>
-          </div>
-        </div>
-
-        {/* Metric 2 */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
-              Kho Đang Thuê Hoạt Động
-            </span>
-            <span className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-700">
-              <span className="material-symbols-outlined text-[18px]">assignment_return</span>
-            </span>
-          </div>
-          <div className="mt-4 flex items-baseline gap-1.5">
-            <span className="font-headline text-3xl font-extrabold text-amber-700 tabular-nums">
-              {occupancyData?.systemSummary?.occupiedUnits ?? activeRentals.length}
-            </span>
-            <span className="text-xs text-slate-500">hợp đồng hiệu lực</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
-            <span>{activeRentals.length} hợp đồng quản lý trực ca</span>
-          </div>
-        </div>
-
-        {/* Metric 3 */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-rose-700 font-mono">
-              Sự Cố Tại Chỗ (On-site)
-            </span>
-            <span className="w-8 h-8 rounded-lg bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600">
-              <span className="material-symbols-outlined text-[18px]">warning</span>
-            </span>
-          </div>
-          <div className="mt-4 flex items-baseline gap-1.5">
-            <span className="font-headline text-3xl font-extrabold text-rose-600 tabular-nums">
-              {tickets.filter(t => t.status !== 'RESOLVED').length}
-            </span>
-            <span className="text-xs text-slate-500">ticket đang mở</span>
-          </div>
-          <div className="mt-3 flex items-center gap-1.5 text-xs text-rose-700 font-bold">
-            <span>{tickets.filter(t => t.priority === 'HIGH' && t.status !== 'RESOLVED').length} ca mức độ Cao</span>
-          </div>
-        </div>
-
-        {/* Metric 4 */}
-        <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 font-mono">
-              Tỷ Lệ Lấp Đầy Hiện Hữu
-            </span>
-            <span className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
-              <span className="material-symbols-outlined text-[18px]">pie_chart</span>
-            </span>
-          </div>
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="font-headline text-3xl font-extrabold text-slate-900 tabular-nums">
-              {occupancyRate.toFixed(1)}%
-            </span>
-            <span className="font-mono text-xs text-slate-500">
-              {occupiedFacilityUnits}/{totalFacilityUnits} KHO
-            </span>
-          </div>
-          <div className="mt-3 w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-            <div 
-              className="bg-blue-600 h-full rounded-full transition-all" 
-              style={{ width: `${occupancyRate}%` }}
-            ></div>
-          </div>
-        </div>
-      </section>
+            {/* Mục 2: Yêu cầu trả kho */}
+            <div
+              onClick={() => setReceptionViewMode(prev => prev === 'returns' ? 'all' : 'returns')}
+              className={`p-5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
+                receptionViewMode === 'returns'
+                  ? 'bg-amber-50/90 border-amber-400 ring-2 ring-amber-400/40 shadow-sm'
+                  : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-xs'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <span className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${
+                  receptionViewMode === 'returns'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-amber-50 border border-amber-200 text-amber-700'
+                }`}>
+                  <span className="material-symbols-outlined text-[24px]">assignment_return</span>
+                </span>
+                <div>
+                  <span className="text-[11px] uppercase tracking-wider font-bold text-amber-800 font-mono block">
+                    Yêu cầu trả kho
+                  </span>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-headline text-3xl font-extrabold text-amber-900 tabular-nums">
+                      {customerReturnRequests.length}
+                    </span>
+                    <span className="text-xs text-amber-700 font-medium">yêu cầu hoàn trả</span>
+                  </div>
+                  <span className="text-[11px] text-amber-600 mt-1 block font-medium">
+                    ⚡ Nghiệm thu trả kho &amp; đối soát thanh lý
+                  </span>
+                </div>
+              </div>
+              <span className={`material-symbols-outlined text-[22px] transition-transform ${
+                receptionViewMode === 'returns' ? 'text-amber-600 font-bold scale-110' : 'text-slate-300'
+              }`}>
+                {receptionViewMode === 'returns' ? 'check_circle' : 'chevron_right'}
+              </span>
+            </div>
+          </section>
 
       {/* 3. TACTICAL SEARCH & LOCATION FILTER RIBBON */}
       <div className="w-full bg-white border border-slate-200/90 rounded-2xl p-4 shadow-2xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
@@ -1759,10 +1748,21 @@ export const StaffDashboard: React.FC = () => {
               <option value="past">Lịch Sử Đã Qua</option>
             </select>
           </div>
+          {receptionViewMode !== 'all' && (
+            <button
+              type="button"
+              onClick={() => setReceptionViewMode('all')}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer self-start md:self-auto shrink-0"
+            >
+              <span>Đang lọc xem: <strong>{receptionViewMode === 'check_in' ? 'Chờ check in' : 'Yêu cầu trả kho'}</strong></span>
+              <span className="underline ml-1">(Hiển thị cả 2 mục)</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Full-Width Handover & Check-in Operator Workbench */}
+      {receptionViewMode !== 'returns' && (
       <HandoverCheckInWorkbench
         arrivals={workbenchArrivals}
         activeBookingId={activeBookingId}
@@ -1773,6 +1773,7 @@ export const StaffDashboard: React.FC = () => {
           loadActiveRentals()
         }}
       />
+      )}
 
       {/* Main Dual Workspace: Check-in Queue + Return Inspections */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -1782,6 +1783,8 @@ export const StaffDashboard: React.FC = () => {
           <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 min-w-0">
 
             {/* Upcoming Appointments Table: Chỉ hiển thị các đơn chờ Check-in */}
+            {receptionViewMode !== 'returns' && (
+            <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-600 text-[18px]">how_to_reg</span>
@@ -1893,10 +1896,12 @@ export const StaffDashboard: React.FC = () => {
                 </tbody>
               </table>
             </div>
-
+            </div>
+            )}
 
             {/* Yêu Cầu Hoàn Trả Kho Của Khách Hàng */}
-            <div className="mt-6 pt-4 border-t border-slate-100 space-y-3">
+            {receptionViewMode !== 'check_in' && (
+            <div className="mt-2 pt-4 border-t border-slate-100 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-[20px] text-amber-600">assignment_return</span>
@@ -1989,6 +1994,7 @@ export const StaffDashboard: React.FC = () => {
                 </div>
               )}
             </div>
+            )}
 
           </div>
         </div>
