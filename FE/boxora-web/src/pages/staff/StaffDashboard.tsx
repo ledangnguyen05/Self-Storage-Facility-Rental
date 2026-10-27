@@ -3177,11 +3177,12 @@ export const StaffDashboard: React.FC = () => {
 
       {/* MODAL XEM CHI TIẾT ĐƠN ĐẶT GIỮ CHỖ CỦA STAFF */}
       {reviewDetailBooking && (() => {
-        const s = String(reviewDetailBooking.status || '')
-        const isModalPaidPending = s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !reviewDetailBooking.storageUnitId)
-        const isModalConfirmed = (s === 'CONFIRMED' && Boolean(reviewDetailBooking.storageUnitId)) || s === 'AWAITING_CHECKIN'
-        const isModalContractSigned = Boolean(reviewDetailBooking.contractSigned) || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION' || reviewDetailBooking.contractStatus === 'ACTIVE'
-        const hasModalContract = Boolean(reviewDetailBooking.contractCode || reviewDetailBooking.contractId || reviewDetailBooking.paymentStatus === 'PAID' || isModalConfirmed || s === 'ACTIVE' || s === 'COMPLETED')
+        const s = String(reviewDetailBooking.status || '').toUpperCase()
+        const isCancelled = s === 'CANCELLED' || s === 'REJECTED'
+        const isModalPaidPending = !isCancelled && (s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !reviewDetailBooking.storageUnitId))
+        const isModalConfirmed = !isCancelled && ((s === 'CONFIRMED' && Boolean(reviewDetailBooking.storageUnitId)) || s === 'AWAITING_CHECKIN')
+        const isModalContractSigned = !isCancelled && (Boolean(reviewDetailBooking.contractSigned) || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION' || reviewDetailBooking.contractStatus === 'ACTIVE')
+        const hasModalContract = !isCancelled && Boolean(reviewDetailBooking.contractCode || reviewDetailBooking.contractId || reviewDetailBooking.paymentStatus === 'PAID' || isModalConfirmed || s === 'ACTIVE' || s === 'COMPLETED')
         const sched = getBookingScheduleInfo(reviewDetailBooking)
         const modalIsInPerson = reviewDetailBooking.signingMethod === 'IN_PERSON'
           || (reviewDetailBooking as any).signingMethod === 'in_person'
@@ -3219,7 +3220,9 @@ export const StaffDashboard: React.FC = () => {
               <div className="p-5 space-y-4 overflow-y-auto max-h-[70vh] text-xs sm:text-sm">
                 {/* Thông tin Hợp đồng & Trạng thái đơn */}
                 <div className={`p-4 rounded-2xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                  isModalPaidPending
+                  isCancelled
+                    ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-950 dark:text-rose-100'
+                    : isModalPaidPending
                     ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 text-emerald-950 dark:text-emerald-100'
                     : isModalConfirmed
                     ? 'bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200 text-cyan-900 dark:text-cyan-200'
@@ -3230,10 +3233,12 @@ export const StaffDashboard: React.FC = () => {
                   <div className="space-y-1">
                     <div className="font-bold flex items-center gap-1.5 text-[13px]">
                       <span className="material-symbols-outlined text-[17px]">
-                        {isModalContractSigned ? 'verified' : 'description'}
+                        {isCancelled ? 'cancel' : isModalContractSigned ? 'verified' : 'description'}
                       </span>
                       <span>
-                        {isModalPaidPending
+                        {isCancelled
+                          ? 'ĐÃ HỦY / TỪ CHỐI'
+                          : isModalPaidPending
                           ? 'Đã thanh toán · Sẵn sàng Check-in gán kho'
                           : isModalConfirmed
                           ? 'Đã ký HĐ điện tử · Chờ khách đến kho Check-in'
@@ -3244,9 +3249,18 @@ export const StaffDashboard: React.FC = () => {
                           : 'Chờ xác nhận'}
                       </span>
                     </div>
+                    {isCancelled && (reviewDetailBooking.rejectionReason || reviewDetailBooking.cancellationReason) && (
+                      <div className="text-[11.5px] text-rose-700 dark:text-rose-300 font-medium">
+                        Lý do từ chối: <span className="italic font-semibold">"{(reviewDetailBooking.rejectionReason || reviewDetailBooking.cancellationReason)}"</span>
+                      </div>
+                    )}
                     <div className="text-[11px] opacity-90 flex items-center gap-2 flex-wrap font-mono">
                       <span>Mã HĐ: <strong className="text-blue-700 dark:text-blue-400 font-bold">{reviewDetailBooking.contractCode || `CTR-${reviewDetailBooking.bookingCode}`}</strong></span>
-                      {isModalContractSigned ? (
+                      {isCancelled ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 font-sans font-semibold">
+                          ✕ Đã từ chối đơn
+                        </span>
+                      ) : isModalContractSigned ? (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-sans font-semibold">
                           ✓ Đã ký điện tử
                         </span>
@@ -3401,6 +3415,7 @@ export const StaffDashboard: React.FC = () => {
 
             <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
+                {!isCancelled && !modalIsActiveOrCompleted && (
                   <button
                     type="button"
                     onClick={() => {
@@ -3414,22 +3429,23 @@ export const StaffDashboard: React.FC = () => {
                   >
                     Từ chối đơn...
                   </button>
+                )}
 
-                  {modalIsOverdue48h && modalIsInPerson && !modalIsActiveOrCompleted && s !== 'CANCELLED' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const target = reviewDetailBooking;
-                        setReviewDetailBooking(null);
-                        handleCancelOverdueBooking(target);
-                      }}
-                      className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
-                      title="Quá hạn 48 giờ sau lịch hẹn check-in: Hủy đơn và giải phóng kho"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">event_busy</span>
-                      <span>Hủy đơn quá hạn</span>
-                    </button>
-                  )}
+                {!isCancelled && modalIsOverdue48h && modalIsInPerson && !modalIsActiveOrCompleted && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = reviewDetailBooking;
+                      setReviewDetailBooking(null);
+                      handleCancelOverdueBooking(target);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                    title="Quá hạn 48 giờ sau lịch hẹn check-in: Hủy đơn và giải phóng kho"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">event_busy</span>
+                    <span>Hủy đơn quá hạn</span>
+                  </button>
+                )}
               </div>
 
                 <div className="flex items-center gap-2">

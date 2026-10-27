@@ -189,6 +189,8 @@ export interface Booking {
   contractStatus?: string | null
   contractSigned?: boolean | null
   checkinOverdueReminderSentAt?: string | null
+  rejectionReason?: string | null
+  cancellationReason?: string | null
   createdAt?: string
   updatedAt?: string
 }
