@@ -18,6 +18,9 @@ import java.util.UUID;
 public class BookingCreateRequest {
     private UUID storageUnitId;
 
+    /** Mã đơn đặt chỗ (nếu đồng bộ từ phiếu giữ chỗ trước đó) */
+    private String bookingCode;
+
     /** ID cơ sở lưu trữ được khách chọn ở Bước 1 */
     private UUID facilityId;
 

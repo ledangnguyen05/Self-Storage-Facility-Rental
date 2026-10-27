@@ -116,6 +116,12 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
+        if (request.getBookingCode() != null && !request.getBookingCode().isBlank()) {
+            Optional<Booking> existingByCode = bookingRepository.findByBookingCode(request.getBookingCode().trim());
+            if (existingByCode.isPresent()) {
+                return mapToResponse(existingByCode.get());
+            }
+        }
         StorageUnit unit = null;
         Facility facility = null;
         UnitType unitType = null;
@@ -254,6 +260,9 @@ public class BookingServiceImpl implements BookingService {
         LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now(BUSINESS_ZONE);
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
+        if (startDate.isBefore(today) && request.getBookingCode() != null && !request.getBookingCode().isBlank()) {
+            startDate = today;
+        }
         if (startDate.isBefore(today)) {
             throw new AppException(ErrorCode.BOOKING_START_DATE_PAST);
         }
@@ -285,7 +294,35 @@ public class BookingServiceImpl implements BookingService {
                 || "STAFF".equalsIgnoreCase(requestContext.currentUserRole())
         );
 
+        String reqCustEmail = (request.getCustomerEmail() != null && !request.getCustomerEmail().isBlank())
+                ? request.getCustomerEmail().trim().toLowerCase()
+                : ((request.getEmail() != null && !request.getEmail().isBlank()) ? request.getEmail().trim().toLowerCase() : null);
+
         if (isStaffOrAdmin && request.getCustomerId() != null) {
+            customer = userRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        } else if (isStaffOrAdmin && reqCustEmail != null) {
+            final String targetEmail = reqCustEmail;
+            customer = userRepository.findByEmail(targetEmail).orElseGet(() -> {
+                Role customerRole = roleRepository.findByName("CUSTOMER").orElse(null);
+                String name = request.getCustomerName() != null && !request.getCustomerName().isBlank()
+                        ? request.getCustomerName().trim()
+                        : (request.getFullName() != null && !request.getFullName().isBlank() ? request.getFullName().trim() : "Khách hàng Boxora");
+                String phone = request.getCustomerPhone() != null && !request.getCustomerPhone().isBlank()
+                        ? request.getCustomerPhone().trim()
+                        : (request.getPhone() != null ? request.getPhone().trim() : "");
+                User newUser = User.builder()
+                        .email(targetEmail)
+                        .username(targetEmail)
+                        .fullName(name)
+                        .phone(phone)
+                        .password(new BCryptPasswordEncoder().encode(UUID.randomUUID().toString()))
+                        .role(customerRole)
+                        .isActive(true)
+                        .build();
+                return userRepository.save(newUser);
+            });
+        } else if (isStaffOrAdmin && request.getCustomerId() != null) {
             customer = userRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         } else if (requestContext != null && requestContext.currentUserId() != null) {
@@ -343,7 +380,9 @@ public class BookingServiceImpl implements BookingService {
             }
         }
 
-        String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
+        String code = (request.getBookingCode() != null && !request.getBookingCode().isBlank())
+                ? request.getBookingCode().trim()
+                : ("BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000)));
 
         LocalDateTime expectedCheckInAt = request.getExpectedCheckInAt();
         if (expectedCheckInAt == null && request.getCheckInTime() != null && !request.getCheckInTime().isBlank()) {

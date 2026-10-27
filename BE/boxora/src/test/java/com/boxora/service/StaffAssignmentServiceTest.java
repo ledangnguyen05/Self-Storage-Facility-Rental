@@ -497,6 +497,33 @@ class StaffAssignmentServiceTest {
             verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_ASSIGNMENT_UPDATE),
                     eq("StaffAssignment"), eq(assignmentId), any(), isNull(), any());
         }
+
+        @Test
+        @DisplayName("Lỗi khi cập nhật ca trực có thời gian đã trôi qua")
+        void shouldThrowWhenUpdatingPastAssignment() {
+            UUID assignmentId = UUID.randomUUID();
+            LocalDate yesterday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1);
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(yesterday)
+                    .shift(StaffShift.MORNING)
+                    .assignedZone("Zone A")
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            assignment.setId(assignmentId);
+
+            StaffAssignmentUpdateRequest updateRequest = StaffAssignmentUpdateRequest.builder()
+                    .shift(StaffShift.AFTERNOON)
+                    .assignedZone("Zone B")
+                    .build();
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> staffAssignmentService.updateAssignment(assignmentId, updateRequest));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_ASSIGNMENT_DATE);
+        }
     }
 
     @Nested

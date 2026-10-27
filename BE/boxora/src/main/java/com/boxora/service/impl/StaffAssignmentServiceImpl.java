@@ -145,6 +145,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         }
         java.time.LocalTime startTime = standardStart;
         java.time.LocalTime endTime = standardEnd;
+        validateShiftNotInPast(request.getAssignedDate(), startTime, endTime, request.getShift());
         ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
 
         // 7. Tạo thực thể phân công ca
@@ -231,8 +232,11 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             throw new AppException(ErrorCode.INVALID_REQUEST,
                     String.format("Giờ kết thúc cho ca %s phải là %s", effectiveShift.getDisplayName(), standardEnd));
         }
+
+
         java.time.LocalTime effectiveStartTime = standardStart;
         java.time.LocalTime effectiveEndTime = standardEnd;
+        validateShiftNotInPast(assignment.getAssignedDate(), effectiveStartTime, effectiveEndTime, effectiveShift);
 
         ensureNoOverlappingAssignment(
                 assignment.getStaff().getId(), assignment.getAssignedDate(),
@@ -669,6 +673,29 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (candidateStart.isBefore(existingEnd) && existingStart.isBefore(candidateEnd)) {
                 throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
             }
+        }
+    }
+
+    private void validateShiftNotInPast(
+            LocalDate assignedDate,
+            java.time.LocalTime startTime,
+            java.time.LocalTime endTime,
+            StaffShift shift
+    ) {
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        if (assignedDate == null || assignedDate.isBefore(today)) {
+            throw new AppException(ErrorCode.INVALID_ASSIGNMENT_DATE);
+        }
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(BUSINESS_ZONE);
+        java.time.LocalDateTime shiftEnd = assignedDate.atTime(endTime);
+        if (!endTime.isAfter(startTime)) {
+            shiftEnd = shiftEnd.plusDays(1);
+        }
+        if (!now.isBefore(shiftEnd)) {
+            String shiftName = shift != null ? shift.getDisplayName() : "Ca trực";
+            throw new AppException(ErrorCode.INVALID_ASSIGNMENT_DATE,
+                    String.format("Không thể phân công %s (%s - %s) ngày %s vì khung giờ ca trực này đã trôi qua. Chỉ được phân ca cho thời gian hiện tại đến tương lai.",
+                            shiftName, startTime, endTime, assignedDate));
         }
     }
 
