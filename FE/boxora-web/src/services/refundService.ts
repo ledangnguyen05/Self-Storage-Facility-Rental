@@ -14,12 +14,15 @@ export interface RefundCreatePayload {
 export interface RefundReviewPayload {
   approved: boolean
   reviewNotes?: string
+  rejectionReason?: string
 }
 
 export interface RefundProcessPayload {
   transactionReference: string
-  paymentMethod: string
+  paymentMethod?: string
   processNotes?: string
+  transferProofUrl?: string
+  recipientEmail?: string
 }
 
 export type RefundStatusType =
@@ -49,9 +52,15 @@ export interface RefundRequestItem {
   id: string
   requestCode: string
   bookingId?: string
+  bookingCode?: string
   contractId?: string
+  contractCode?: string
   customerId: string
   customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  facilityId?: string
+  facilityName?: string
   requestedAmount: number
   deductionAmount: number
   finalRefundAmount: number
@@ -63,9 +72,11 @@ export interface RefundRequestItem {
   reviewNotes?: string
   reviewedByName?: string
   reviewedAt?: string
+  rejectionReason?: string
   transactionReference?: string
   transferTxRef?: string
   transferEvidenceUrl?: string
+  transferProofUrl?: string
   customerConfirmedAt?: string
   customerConfirmationNotes?: string
   reconciledById?: string
@@ -75,10 +86,19 @@ export interface RefundRequestItem {
   processedByName?: string
   processedAt?: string
   createdAt: string
-  updatedAt: string
+  updatedAt?: string
 }
 
 export const refundService = {
+  async uploadProof(file: File): Promise<string> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const response = await api.post('/api/v1/refunds/upload-proof', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    return response.data?.data?.fileUrl || ''
+  },
+
   async createRefund(data: RefundCreatePayload): Promise<RefundRequestItem> {
     const response = await api.post('/api/v1/refunds', data)
     return response.data?.data as RefundRequestItem
@@ -125,4 +145,3 @@ export const refundService = {
     return response.data?.data as RefundRequestItem
   },
 }
-

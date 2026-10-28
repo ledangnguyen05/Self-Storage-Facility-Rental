@@ -135,7 +135,28 @@ export function getBookingStage(b: Booking): BookingStageInfo {
   const status = (b.status || '').toUpperCase()
   const isCancelled = status === 'CANCELLED' || status === 'OVERDUE'
   if (isCancelled) {
-    const hasRefund = Number(b.depositPaid || 0) > 0 || Boolean((b as any).refundStatus) || Boolean((b as any).refundRequestCode)
+    const isRefunded =
+      b.paymentStatus === 'REFUNDED' ||
+      (b as any).refundStatus === 'PROCESSED' ||
+      (b as any).refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ||
+      (b as any).refundStatus === 'COMPLETED' ||
+      (b as any).refundStatus === 'RECONCILED'
+
+    if (isRefunded) {
+      return {
+        stage: 'CANCELLED',
+        label: 'Đã hoàn tiền thành công',
+        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800',
+        dotClass: 'bg-emerald-500',
+        description: 'Quản lý cơ sở đã hoàn tất chuyển khoản hoàn tiền vào tài khoản ngân hàng của quý khách.',
+        step: 0,
+        stepLabel: 'Đã hoàn tất',
+        priorityTag: '✓ Đã hoàn tiền',
+        priorityTagClass: 'text-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800',
+      }
+    }
+
+    const hasRefund = Number(b.depositPaid || 0) > 0 || Boolean((b as any).refundStatus) || Boolean((b as any).refundRequestCode) || b.paymentStatus === 'REFUND_PENDING'
     if (hasRefund) {
       return {
         stage: 'CANCELLED',
@@ -401,6 +422,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
       try {
         const myPayments = await paymentService.getMyPayments().catch(() => [])
         if (Array.isArray(myPayments) && myPayments.length > 0) {
+          const refundedBookingIds = new Set(
+            myPayments.filter((pm: any) => pm.status === 'REFUNDED').map((pm: any) => pm.bookingId).filter(Boolean)
+          )
+          const refundedBookingCodes = new Set(
+            myPayments.filter((pm: any) => pm.status === 'REFUNDED').map((pm: any) => pm.bookingCode).filter(Boolean)
+          )
+
           const paidBookingIds = new Set(
             myPayments.filter((pm: any) => pm.status === 'PAID' || pm.status === 'SUCCESS').map((pm: any) => pm.bookingId).filter(Boolean)
           )
@@ -408,8 +436,26 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
             myPayments.filter((pm: any) => pm.status === 'PAID' || pm.status === 'SUCCESS').map((pm: any) => pm.bookingCode).filter(Boolean)
           )
           list = list.map((bk) => {
+            const currentStatus = (bk.status || '').toUpperCase()
+            const isRefunded =
+              bk.paymentStatus === 'REFUNDED' ||
+              refundedBookingIds.has(bk.id) ||
+              (bk.bookingCode && refundedBookingCodes.has(bk.bookingCode))
+
+            if (isRefunded) {
+              return {
+                ...bk,
+                paymentStatus: 'REFUNDED',
+                status: 'CANCELLED',
+              }
+            }
+
+            // Đơn đã hủy hoặc đang chờ hoàn tiền thì không ép về PAID
+            if (currentStatus === 'CANCELLED' || bk.paymentStatus === 'REFUND_PENDING') {
+              return bk
+            }
+
             if (paidBookingIds.has(bk.id) || (bk.bookingCode && paidBookingCodes.has(bk.bookingCode))) {
-              const currentStatus = (bk.status || '').toUpperCase()
               return {
                 ...bk,
                 paymentStatus: 'PAID',
@@ -1083,8 +1129,18 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         <div className="font-bold text-slate-900 dark:text-white mt-0.5 font-mono">
                           {Number(b.totalRentalFee || 0).toLocaleString('vi-VN')} ₫
                         </div>
-                        <span className={`text-[10px] font-semibold block mt-0.5 ${isPaid ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {isPaid ? '✓ Đã thanh toán' : '• Ký & Thanh toán tại kho'}
+                        <span className={`text-[10px] font-semibold block mt-0.5 ${
+                          b.paymentStatus === 'REFUNDED'
+                            ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                            : isPaid
+                            ? 'text-emerald-600'
+                            : 'text-amber-600'
+                        }`}>
+                          {b.paymentStatus === 'REFUNDED'
+                            ? '✓ Đã hoàn tất hoàn tiền'
+                            : isPaid
+                            ? '✓ Đã thanh toán'
+                            : '• Ký & Thanh toán tại kho'}
                         </span>
                       </div>
                     </div>
@@ -1099,7 +1155,11 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           : stageInfo.stage === 'ACTIVE'
                           ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200'
                           : stageInfo.stage === 'CANCELLED'
-                          ? 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60 text-rose-950 dark:text-rose-200'
+                          ? (b.paymentStatus === 'REFUNDED'
+                              ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200'
+                              : stageInfo.label.includes('chờ')
+                              ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60 text-amber-950 dark:text-amber-200'
+                              : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60 text-rose-950 dark:text-rose-200')
                           : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60 text-amber-950 dark:text-amber-200'
                       }`}
                     >
@@ -1108,13 +1168,25 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         {stageInfo.stage === 'CONFIRMED' && <ShieldCheck size={14} className="text-cyan-600 shrink-0" />}
                         {stageInfo.stage === 'ACTIVE' && <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />}
                         {stageInfo.stage === 'PENDING_CONTACT' && <PhoneCall size={14} className="text-amber-600 shrink-0" />}
-                        {stageInfo.stage === 'CANCELLED' && <AlertCircle size={14} className="text-rose-600 shrink-0" />}
+                        {stageInfo.stage === 'CANCELLED' && (
+                          b.paymentStatus === 'REFUNDED'
+                            ? <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                            : stageInfo.label.includes('chờ')
+                            ? <Clock size={14} className="text-amber-600 shrink-0" />
+                            : <AlertCircle size={14} className="text-rose-600 shrink-0" />
+                        )}
                         <span>
                           {stageInfo.stage === 'PENDING_ASSIGNMENT' && 'Hợp đồng điện tử đã ký — Chờ chọn kho khi check-in'}
                           {stageInfo.stage === 'CONFIRMED' && `Đã xếp ô kho #${b.unitCode || 'thực tế'} sẵn sàng đón`}
                           {stageInfo.stage === 'ACTIVE' && 'Hợp đồng kho đang hoạt động 24/7'}
                           {stageInfo.stage === 'PENDING_CONTACT' && 'Ký HĐ & Thanh toán tại kho khi check-in'}
-                          {stageInfo.stage === 'CANCELLED' && 'Đơn đặt giữ chỗ đã hủy'}
+                          {stageInfo.stage === 'CANCELLED' && (
+                            b.paymentStatus === 'REFUNDED'
+                              ? 'Đã hoàn tất chuyển khoản tiền hoàn vào tài khoản ngân hàng'
+                              : stageInfo.label.includes('chờ')
+                              ? 'Đã gửi yêu cầu hủy — Đang chờ đối soát hoàn tiền'
+                              : 'Đơn đặt giữ chỗ đã hủy'
+                          )}
                         </span>
                       </div>
                       <p className="text-[11px] leading-relaxed opacity-90">

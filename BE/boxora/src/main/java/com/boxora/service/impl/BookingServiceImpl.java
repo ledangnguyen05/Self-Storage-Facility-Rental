@@ -49,6 +49,9 @@ import com.boxora.enums.StaffAssignmentStatus;
 import com.boxora.enums.StaffShift;
 import com.boxora.repository.BookingRescheduleHistoryRepository;
 import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.RefundRequestRepository;
+import com.boxora.enums.RefundStatus;
+import com.boxora.entity.RefundRequest;
 import com.boxora.repository.StaffAssignmentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -89,6 +92,7 @@ public class BookingServiceImpl implements BookingService {
     private final StorageUnitLockService storageUnitLockService;
     private final ActivityLogService activityLogService;
     private final PaymentRepository paymentRepository;
+    private final RefundRequestRepository refundRequestRepository;
     private final FacilityAccessGuard facilityAccessGuard;
     private final EncryptionService encryptionService;
     private final PricingService pricingService;
@@ -1031,10 +1035,19 @@ public class BookingServiceImpl implements BookingService {
             return bookings;
         }
         UUID assignedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        if (assignedFacilityId == null) {
+            return bookings;
+        }
         return bookings.stream()
-                .filter(booking -> booking.getStorageUnit() != null
-                        && booking.getStorageUnit().getFacility() != null
-                        && assignedFacilityId.equals(booking.getStorageUnit().getFacility().getId()))
+                .filter(booking -> {
+                    UUID facId = null;
+                    if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+                        facId = booking.getStorageUnit().getFacility().getId();
+                    } else if (booking.getFacility() != null) {
+                        facId = booking.getFacility().getId();
+                    }
+                    return assignedFacilityId.equals(facId);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -1786,7 +1799,24 @@ public class BookingServiceImpl implements BookingService {
     }
 
     private String resolveReconciledPaymentStatus(Booking booking) {
-        if (booking.getStatus() == BookingStatus.CANCELLED || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+        if ("REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return "REFUNDED";
+        }
+        if ("REFUND_PENDING".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return "REFUND_PENDING";
+        }
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+            if (payments != null) {
+                for (com.boxora.entity.Payment p : payments) {
+                    if (p.getStatus() == PaymentStatus.REFUNDED) {
+                        return "REFUNDED";
+                    }
+                    if (p.getStatus() == PaymentStatus.REFUND_PENDING) {
+                        return "REFUND_PENDING";
+                    }
+                }
+            }
             return "UNPAID";
         }
         List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
@@ -1926,7 +1956,23 @@ public class BookingServiceImpl implements BookingService {
         }
 
         String paymentStatus = b.getPaymentStatus();
-        if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)) {
+        if (b.getStatus() == BookingStatus.CANCELLED) {
+            try {
+                Optional<RefundRequest> refOpt = refundRequestRepository.findFirstByBooking_IdOrderByCreatedAtDesc(b.getId());
+                if (refOpt.isPresent()) {
+                    RefundStatus rSt = refOpt.get().getStatus();
+                    if (rSt == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION || rSt == RefundStatus.PROCESSED || rSt == RefundStatus.COMPLETED || rSt == RefundStatus.RECONCILED) {
+                        paymentStatus = "REFUNDED";
+                    } else if (rSt == RefundStatus.PENDING_REVIEW || rSt == RefundStatus.APPROVED || rSt == RefundStatus.PROCESSING_TRANSFER) {
+                        paymentStatus = "REFUND_PENDING";
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if ("REFUNDED".equalsIgnoreCase(paymentStatus) || "REFUND_PENDING".equalsIgnoreCase(paymentStatus)) {
+            // Keep refund statuses intact
+        } else if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)) {
             String reconciled = resolveReconciledPaymentStatus(b);
             if (!"UNPAID".equalsIgnoreCase(reconciled)) {
                 paymentStatus = reconciled;

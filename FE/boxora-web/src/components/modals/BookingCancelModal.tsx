@@ -56,14 +56,19 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
   const [customBankName, setCustomBankName] = useState('')
   const [bankAccountNumber, setBankAccountNumber] = useState('')
   const [bankAccountName, setBankAccountName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
 
-  // Xác định đơn hàng là Phương thức 1 (Thanh toán online qua VNPay, cọc > 0đ) hay Phương thức 2 (Trả sau tại cơ sở, 0đ)
-  const depositPaid = Number(booking?.depositPaid || 0)
+  // Xác định đơn hàng là Phương thức 1 (Thanh toán online qua VNPay, có cọc/tiền thuê cần hoàn) hay Phương thức 2 (Trả sau tại cơ sở, 0đ)
+  const depositPaid = Number(preview?.depositPaid ?? booking?.depositPaid ?? 0)
   const isOnlinePaidBooking = Boolean(
     booking &&
     depositPaid > 0 &&
     booking.signingMethod !== 'IN_PERSON' &&
+    booking.paymentStatus !== 'UNPAID' &&
     (booking.status || '').toUpperCase() !== 'PENDING_CONTACT' &&
+    (booking.status || '').toUpperCase() !== 'PENDING_PAYMENT' &&
+    (booking.status || '').toUpperCase() !== 'PENDING_SIGNATURE' &&
+    preview?.milestoneStage !== 'STAGE_PENDING_NO_PAYMENT' &&
     (
       booking.paymentStatus === 'PAID' ||
       (booking.status || '').toUpperCase() === 'PAID_CONFIRMED' ||
@@ -102,9 +107,16 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
     setCustomBankName('')
     setBankAccountNumber('')
     setBankAccountName(booking.customerName ? booking.customerName.toUpperCase() : '')
+    setContactEmail(booking.customerEmail || '')
 
     // CHỈ gọi API tính toán hoàn tiền nếu là đơn đã thanh toán online cọc (Phương thức 1)
-    const hasOnlineDeposit = Number(booking.depositPaid || 0) > 0 && booking.signingMethod !== 'IN_PERSON' && (booking.status || '').toUpperCase() !== 'PENDING_CONTACT'
+    const hasOnlineDeposit =
+      Number(booking.depositPaid || 0) > 0 &&
+      booking.signingMethod !== 'IN_PERSON' &&
+      booking.paymentStatus !== 'UNPAID' &&
+      (booking.status || '').toUpperCase() !== 'PENDING_CONTACT' &&
+      (booking.status || '').toUpperCase() !== 'PENDING_PAYMENT' &&
+      (booking.status || '').toUpperCase() !== 'PENDING_SIGNATURE'
     if (hasOnlineDeposit && booking.id && !booking.id.startsWith('LOCAL-RES-')) {
       setLoadingPreview(true)
       bookingService
@@ -128,8 +140,18 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
   if (!isOpen || !booking) return null
 
   const depositAmount = preview?.depositPaid ?? booking.depositPaid ?? 0
-  const refundAmount = preview?.refundAmount ?? depositAmount
-  const penaltyAmount = preview?.penaltyAmount ?? (depositAmount - refundAmount)
+  const rentalFee = preview?.totalRentalFee ?? booking.totalRentalFee ?? 0
+  const totalPaidOnline = Number(rentalFee) + Number(depositAmount)
+
+  // Tính toán minh bạch chi tiết tiền thuê & tiền cọc
+  const depositRefundPercent = preview?.refundPercentage ?? 100
+  const depositRefundAmount = Math.round(Number(depositAmount) * (depositRefundPercent / 100))
+  const depositPenaltyAmount = Math.max(0, Number(depositAmount) - depositRefundAmount)
+  const rentRefundAmount = Number(rentalFee) // Hoàn 100% tiền thuê do khách chưa nhận kho
+  const totalRefundAmount = preview?.refundAmount !== undefined && preview.refundAmount >= (rentRefundAmount + depositRefundAmount)
+    ? preview.refundAmount
+    : (rentRefundAmount + depositRefundAmount)
+  const penaltyAmount = preview?.penaltyAmount ?? depositPenaltyAmount
   const expectedDate = (booking as any).checkInDate || booking.expectedCheckInAt || booking.startDate
 
   const resolvedBankName = bankCode === 'OTHER'
@@ -196,9 +218,11 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
             bankName: resolvedBankName,
             bankAccountNumber: bankAccountNumber.trim(),
             bankAccountName: bankAccountName.trim().toUpperCase(),
+            customerEmail: contactEmail.trim() || booking.customerEmail || undefined,
           }
         : {
             cancellationReason: finalReason,
+            customerEmail: contactEmail.trim() || booking.customerEmail || undefined,
           }
 
       const res = await bookingService.cancelBooking(booking.id, payload)
@@ -314,9 +338,23 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 {isOnlinePaidBooking ? (
                   <>
                     <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700">
-                      <span className="text-slate-500 dark:text-slate-400">Tiền cọc hoàn trả dự kiến:</span>
+                      <span className="text-slate-500 dark:text-slate-400">Tiền thuê kho hoàn trả:</span>
                       <strong className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                        {Number(successResult.refundAmount || refundAmount).toLocaleString('vi-VN')} ₫ ({preview?.refundPercentage || 100}%)
+                        {Number(rentRefundAmount).toLocaleString('vi-VN')} ₫ (100% chưa nhận kho)
+                      </strong>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700">
+                      <span className="text-slate-500 dark:text-slate-400">Tiền cọc hoàn trả:</span>
+                      <strong className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                        {Number(depositRefundAmount).toLocaleString('vi-VN')} ₫ ({depositRefundPercent}%)
+                      </strong>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1 border-b border-slate-200/60 dark:border-slate-700 bg-emerald-50/60 dark:bg-emerald-950/30 px-2 rounded-lg">
+                      <span className="text-slate-700 dark:text-slate-200 font-bold">Tổng tiền hoàn trả thực tế:</span>
+                      <strong className="font-mono font-black text-sm text-emerald-700 dark:text-emerald-400">
+                        {Number(successResult.refundAmount || totalRefundAmount).toLocaleString('vi-VN')} ₫
                       </strong>
                     </div>
 
@@ -482,6 +520,22 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                           />
                         </div>
                       </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Email nhận thư xác nhận hoàn tiền:
+                        </label>
+                        <input
+                          type="email"
+                          value={contactEmail}
+                          onChange={(e) => setContactEmail(e.target.value)}
+                          placeholder="Nhập email của quý khách (VD: email@gmail.com)..."
+                          className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Quản lý cơ sở sẽ gửi email ủy nhiệm chi kèm ảnh biên lai đến hòm thư này.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -525,7 +579,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                   <span className="text-slate-500 dark:text-slate-400">Tình trạng thanh toán:</span>
                   {isOnlinePaidBooking ? (
                     <span className="font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 text-[11px]">
-                      ✓ Đã thanh toán (Cọc: {Number(depositAmount).toLocaleString('vi-VN')} ₫)
+                      ✓ Đã thanh toán trực tuyến qua VNPay
                     </span>
                   ) : (
                     <span className="font-semibold text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 text-[11px]">
@@ -537,16 +591,61 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 {isOnlinePaidBooking && (
                   <>
                     <div className="flex justify-between items-center py-0.5">
-                      <span className="text-slate-500 dark:text-slate-400">Tiền cọc hoàn trả dự kiến:</span>
-                      <strong className="font-mono font-bold text-xs text-emerald-700 dark:text-emerald-400">
-                        {Number(refundAmount).toLocaleString('vi-VN')} ₫ ({preview?.refundPercentage || 100}%)
+                      <span className="text-slate-500 dark:text-slate-400">Tiền thuê kho đã thanh toán:</span>
+                      <strong className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">
+                        {Number(rentalFee).toLocaleString('vi-VN')} ₫
+                        {booking.rentalMonths ? ` (${booking.rentalMonths} tháng)` : ''}
                       </strong>
                     </div>
+
                     <div className="flex justify-between items-center py-0.5">
-                      <span className="text-slate-500 dark:text-slate-400">Phí hủy đơn / Khấu trừ:</span>
-                      <strong className="text-slate-800 dark:text-slate-200 font-mono font-bold text-xs">
-                        {Number(penaltyAmount).toLocaleString('vi-VN')} ₫
+                      <span className="text-slate-500 dark:text-slate-400">Tiền cọc bảo đảm đã thanh toán:</span>
+                      <strong className="font-mono font-bold text-slate-800 dark:text-slate-200 text-xs">
+                        {Number(depositAmount).toLocaleString('vi-VN')} ₫
                       </strong>
+                    </div>
+
+                    <div className="flex justify-between items-center py-1 border-t border-slate-200/60 dark:border-slate-700">
+                      <span className="text-slate-600 dark:text-slate-300 font-semibold">Tổng chi phí đã thanh toán:</span>
+                      <strong className="font-mono font-black text-xs text-slate-900 dark:text-white">
+                        {Number(totalPaidOnline).toLocaleString('vi-VN')} ₫
+                      </strong>
+                    </div>
+
+                    <div className="pt-2 mt-1 border-t border-dashed border-slate-200 dark:border-slate-700 space-y-1.5 bg-emerald-50/50 dark:bg-emerald-950/20 p-2.5 rounded-xl border border-emerald-100 dark:border-emerald-900/50">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                        Chi tiết hoàn tiền theo chính sách
+                      </div>
+
+                      <div className="flex justify-between items-center py-0.5 text-[11px]">
+                        <span className="text-slate-600 dark:text-slate-400">• Hoàn tiền thuê kho (100% chưa nhận kho):</span>
+                        <strong className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                          +{Number(rentRefundAmount).toLocaleString('vi-VN')} ₫
+                        </strong>
+                      </div>
+
+                      <div className="flex justify-between items-center py-0.5 text-[11px]">
+                        <span className="text-slate-600 dark:text-slate-400">• Hoàn tiền cọc ({depositRefundPercent}%):</span>
+                        <strong className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                          +{Number(depositRefundAmount).toLocaleString('vi-VN')} ₫
+                        </strong>
+                      </div>
+
+                      {depositPenaltyAmount > 0 && (
+                        <div className="flex justify-between items-center py-0.5 text-[11px]">
+                          <span className="text-rose-600 dark:text-rose-400">• Khấu trừ phí giữ chỗ ({100 - depositRefundPercent}% cọc):</span>
+                          <strong className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                            -{Number(depositPenaltyAmount).toLocaleString('vi-VN')} ₫
+                          </strong>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center pt-1 border-t border-emerald-200/70 dark:border-emerald-800">
+                        <span className="font-bold text-emerald-900 dark:text-emerald-200 text-xs">Tổng tiền hoàn trả dự kiến:</span>
+                        <strong className="font-mono font-black text-sm text-emerald-700 dark:text-emerald-400">
+                          {Number(totalRefundAmount).toLocaleString('vi-VN')} ₫
+                        </strong>
+                      </div>
                     </div>
                   </>
                 )}
@@ -557,7 +656,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 text-blue-900 dark:text-blue-300 text-[11px] flex items-start gap-2">
                   <span className="material-symbols-outlined text-[16px] text-blue-700 dark:text-blue-400 shrink-0 mt-0.5">info</span>
                   <p className="leading-relaxed">
-                    Yêu cầu hủy đơn và hoàn tiền sẽ được gửi trực tiếp đến <strong>Quản lý cơ sở ({booking.facilityName})</strong>. Quản lý sẽ kiểm tra đối soát và chuyển trạng thái đơn sang <strong>Hủy đơn hoàn tiền chờ xác nhận</strong> để hoàn tất chuyển tiền cọc cho quý khách.
+                    Yêu cầu hủy đơn và hoàn tiền sẽ được gửi trực tiếp đến <strong>Quản lý cơ sở ({booking.facilityName})</strong>. Quản lý sẽ kiểm tra đối soát và chuyển trạng thái đơn sang <strong>Hủy đơn hoàn tiền chờ xác nhận</strong> để hoàn tất chuyển khoản <strong>{Number(totalRefundAmount).toLocaleString('vi-VN')} ₫</strong> (bao gồm tiền thuê kho và tiền cọc hoàn trả) cho quý khách.
                   </p>
                 </div>
               ) : (

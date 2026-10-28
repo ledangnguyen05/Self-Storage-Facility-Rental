@@ -509,6 +509,18 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
+                  to="/portal/facility-manager?tab=refunds"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                    isCurrentPath('/portal/facility-manager') && new URLSearchParams(location.search).get('tab') === 'refunds'
+                      ? 'bg-amber-50 text-amber-900 font-bold border border-amber-200 shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px] text-amber-600">account_balance</span>
+                  <span>{t('XỬ LÝ HOÀN TIỀN HỦY ĐƠN')}</span>
+                </Link>
+
+                <Link
                   to="/portal/overdue"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/overdue')

@@ -2,7 +2,10 @@ package com.boxora.service.impl;
 
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.*;
+import com.boxora.dto.response.FileUploadResponse;
 import com.boxora.dto.response.RefundRequestResponse;
+import com.boxora.service.FileStorageService;
+import org.springframework.web.multipart.MultipartFile;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
 import com.boxora.exception.AppException;
@@ -36,6 +39,12 @@ import java.util.UUID;
 @Slf4j
 public class RefundServiceImpl implements RefundService {
 
+    @Override
+    public FileUploadResponse uploadProofImage(MultipartFile file) {
+        return fileStorageService.storeFile(file, "refunds");
+    }
+
+
     private final RefundRequestRepository refundRequestRepository;
     private final BookingRepository bookingRepository;
     private final RentalContractRepository rentalContractRepository;
@@ -46,6 +55,7 @@ public class RefundServiceImpl implements RefundService {
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
     private final RequestContext requestContext;
+    private final FileStorageService fileStorageService;
 
     @Override
     @Transactional
@@ -134,6 +144,8 @@ public class RefundServiceImpl implements RefundService {
                 .build();
 
         refund = refundRequestRepository.save(refund);
+
+
 
         activityLogService.record(
                 facility != null ? facility.getId() : null,
@@ -285,10 +297,6 @@ public class RefundServiceImpl implements RefundService {
             throw new AppException(ErrorCode.REFUND_ALREADY_PROCESSED);
         }
 
-        if (refund.getStatus() != RefundStatus.APPROVED && refund.getStatus() != RefundStatus.PROCESSING_TRANSFER) {
-            throw new AppException(ErrorCode.REFUND_NOT_APPROVED, "Yêu cầu phải được duyệt (APPROVED) hoặc đang chuyển (PROCESSING_TRANSFER) mới có thể xác nhận đã chuyển tiền");
-        }
-
         if (refund.getFacility() != null && facilityAccessGuard.isFacilityScoped()) {
             facilityAccessGuard.checkFacilityAccess(refund.getFacility().getId());
         }
@@ -301,6 +309,14 @@ public class RefundServiceImpl implements RefundService {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
 
+        if (refund.getStatus() == RefundStatus.PENDING_REVIEW) {
+            refund.setReviewedBy(processor);
+            refund.setReviewedAt(LocalDateTime.now());
+            refund.setReviewNote("Quản lý cơ sở đối soát và thực hiện chi trả hoàn tiền trực tiếp");
+        } else if (refund.getStatus() != RefundStatus.APPROVED && refund.getStatus() != RefundStatus.PROCESSING_TRANSFER) {
+            throw new AppException(ErrorCode.REFUND_NOT_APPROVED, "Yêu cầu hoàn tiền không ở trạng thái hợp lệ để chi trả");
+        }
+
         RefundStatus oldStatus = refund.getStatus();
         // Sau khi kế toán/staff chuyển tiền và cung cấp mã giao dịch thực tế, chuyển sang AWAITING_CUSTOMER_CONFIRMATION
         refund.setStatus(RefundStatus.AWAITING_CUSTOMER_CONFIRMATION);
@@ -308,6 +324,9 @@ public class RefundServiceImpl implements RefundService {
         refund.setProcessedAt(LocalDateTime.now());
         refund.setTransactionReference(request.getTransactionReference().trim());
         refund.setProcessNotes(request.getProcessNotes());
+        if (request.getTransferProofUrl() != null && !request.getTransferProofUrl().isBlank()) {
+            refund.setTransferProofUrl(request.getTransferProofUrl().trim());
+        }
 
         refund = refundRequestRepository.save(refund);
 
@@ -338,37 +357,117 @@ public class RefundServiceImpl implements RefundService {
             paymentRepository.save(refundPayment);
         }
 
+        Booking linkedBooking = refund.getBooking();
+        if (linkedBooking != null) {
+            String logMsg = String.format("[%s] Quản lý cơ sở (%s) đã hoàn tất chuyển tiền hoàn cọc %s VNĐ vào STK %s (%s). Mã GD: %s\n",
+                    LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")),
+                    processor.getFullName() != null ? processor.getFullName() : processor.getUsername(),
+                    refund.getFinalRefundAmount() != null ? refund.getFinalRefundAmount().toPlainString() : "0",
+                    refund.getBankAccountNumber(), refund.getBankName(), refund.getTransactionReference());
+            linkedBooking.setStepTransitionHistory((linkedBooking.getStepTransitionHistory() != null ? linkedBooking.getStepTransitionHistory() : "") + logMsg);
+            linkedBooking.setPaymentStatus("REFUNDED");
+            linkedBooking.setStatus(BookingStatus.CANCELLED);
+            bookingRepository.save(linkedBooking);
+        }
+
         User customer = refund.getCustomer();
-        if (customer != null && customer.getEmail() != null) {
+        if (customer == null && refund.getBooking() != null) {
+            customer = refund.getBooking().getCustomer();
+        }
+
+        String customerEmail = customer != null ? customer.getEmail() : null;
+        String primaryEmail = (request.getRecipientEmail() != null && !request.getRecipientEmail().isBlank())
+                ? request.getRecipientEmail().trim()
+                : customerEmail;
+
+        String customerName = customer != null && customer.getFullName() != null
+                ? customer.getFullName()
+                : (customer != null ? customer.getUsername() : "Quý khách");
+
+        String bookingCode = refund.getBooking() != null ? refund.getBooking().getBookingCode() : null;
+        String facilityName = refund.getFacility() != null ? refund.getFacility().getName()
+                : (refund.getBooking() != null && refund.getBooking().getFacility() != null
+                        ? refund.getBooking().getFacility().getName() : "Hệ thống Boxora");
+
+        if (primaryEmail != null && !primaryEmail.isBlank()) {
             try {
-                emailService.sendRefundStatusEmail(
-                        customer.getEmail(),
-                        customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
-                        refund.getRequestCode(),
-                        RefundStatus.AWAITING_CUSTOMER_CONFIRMATION.name(),
-                        refund.getFinalRefundAmount(),
-                        refund.getBankName(),
-                        maskAccountNumber(refund.getBankAccountNumber()),
-                        refund.getTransactionReference(),
-                        refund.getProcessNotes()
-                );
+                if (bookingCode != null && !bookingCode.isBlank()) {
+                    emailService.sendBookingCancellationRefundSuccessEmail(
+                            primaryEmail,
+                            customerName,
+                            bookingCode,
+                            refund.getRequestCode(),
+                            facilityName,
+                            refund.getFinalRefundAmount(),
+                            refund.getBankName(),
+                            refund.getBankAccountNumber(),
+                            refund.getBankAccountName(),
+                            refund.getTransactionReference(),
+                            refund.getTransferProofUrl(),
+                            refund.getProcessNotes()
+                    );
+                    if (customerEmail != null && !customerEmail.isBlank() && !customerEmail.equalsIgnoreCase(primaryEmail)) {
+                        emailService.sendBookingCancellationRefundSuccessEmail(
+                                customerEmail,
+                                customerName,
+                                bookingCode,
+                                refund.getRequestCode(),
+                                facilityName,
+                                refund.getFinalRefundAmount(),
+                                refund.getBankName(),
+                                refund.getBankAccountNumber(),
+                                refund.getBankAccountName(),
+                                refund.getTransactionReference(),
+                                refund.getTransferProofUrl(),
+                                refund.getProcessNotes()
+                        );
+                    }
+                } else {
+                    emailService.sendRefundStatusEmail(
+                            primaryEmail,
+                            customerName,
+                            refund.getRequestCode(),
+                            RefundStatus.AWAITING_CUSTOMER_CONFIRMATION.name(),
+                            refund.getFinalRefundAmount(),
+                            refund.getBankName(),
+                            maskAccountNumber(refund.getBankAccountNumber()),
+                            refund.getTransactionReference(),
+                            refund.getProcessNotes()
+                    );
+                }
             } catch (Exception e) {
                 log.warn("Failed to send refund processed email: {}", e.getMessage());
             }
 
-            notificationLogRepository.save(NotificationLog.builder()
-                    .recipient(customer)
-                    .recipientEmail(customer.getEmail())
-                    .recipientName(customer.getFullName() != null ? customer.getFullName() : customer.getUsername())
-                    .facility(refund.getFacility())
-                    .channel(NotificationChannel.EMAIL)
-                    .notificationType(NotificationType.REFUND_STATUS)
-                    .referenceType("RefundRequest")
-                    .referenceId(refund.getId())
-                    .title("Chi trả tiền hoàn tất: " + refund.getRequestCode())
-                    .content("Khoản tiền hoàn " + refund.getFinalRefundAmount() + " VND đã được chi trả qua ngân hàng. Mã GD: " + refund.getTransactionReference() + ". Quý khách vui lòng kiểm tra tài khoản và xác nhận.")
-                    .status("SENT")
-                    .build());
+            if (customer != null) {
+                notificationLogRepository.save(NotificationLog.builder()
+                        .recipient(customer)
+                        .recipientEmail(primaryEmail)
+                        .recipientName(customerName)
+                        .facility(refund.getFacility())
+                        .channel(NotificationChannel.EMAIL)
+                        .notificationType(NotificationType.REFUND_PAYOUT_COMPLETED)
+                        .referenceType("RefundRequest")
+                        .referenceId(refund.getId())
+                        .title("Hoàn tiền hủy đơn thành công: " + (bookingCode != null ? "#" + bookingCode : refund.getRequestCode()))
+                        .content("Quản lý cơ sở " + facilityName + " đã chuyển khoản thành công " + refund.getFinalRefundAmount() + " VND hoàn tiền đơn " + (bookingCode != null ? "#" + bookingCode : "") + ". Mã GD: " + refund.getTransactionReference())
+                        .status("SENT")
+                        .build());
+
+                notificationLogRepository.save(NotificationLog.builder()
+                        .recipient(customer)
+                        .recipientEmail(primaryEmail)
+                        .recipientName(customerName)
+                        .facility(refund.getFacility())
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_PAYOUT_COMPLETED)
+                        .referenceType("RefundRequest")
+                        .referenceId(refund.getId())
+                        .title("✓ Đã hoàn tiền đơn hủy #" + (bookingCode != null ? bookingCode : refund.getRequestCode()))
+                        .content("Quản lý cơ sở " + facilityName + " đã hoàn tất chuyển khoản số tiền " + refund.getFinalRefundAmount() + " VNĐ vào tài khoản ngân hàng của quý khách. Mã GD: " + refund.getTransactionReference())
+                        .status("SENT")
+                        .build());
+            }
         }
 
         activityLogService.record(
@@ -528,6 +627,10 @@ public class RefundServiceImpl implements RefundService {
     }
 
     private RefundRequestResponse toResponse(RefundRequest r) {
+        boolean isPrivileged = requestContext.hasAnyRole("FACILITY_MANAGER", "STAFF", "BUSINESS_MANAGER", "ADMIN")
+                || (requestContext.currentUserId() != null && r.getCustomer() != null && requestContext.currentUserId().equals(r.getCustomer().getId()));
+        String bankAccountNum = isPrivileged ? r.getBankAccountNumber() : maskAccountNumber(r.getBankAccountNumber());
+
         return RefundRequestResponse.builder()
                 .id(r.getId())
                 .requestCode(r.getRequestCode())
@@ -545,7 +648,7 @@ public class RefundServiceImpl implements RefundService {
                 .deductionAmount(r.getDeductionAmount())
                 .finalRefundAmount(r.getFinalRefundAmount())
                 .bankName(r.getBankName())
-                .bankAccountNumber(maskAccountNumber(r.getBankAccountNumber()))
+                .bankAccountNumber(bankAccountNum)
                 .bankAccountName(r.getBankAccountName())
                 .reason(r.getReason())
                 .status(r.getStatus())
@@ -562,6 +665,7 @@ public class RefundServiceImpl implements RefundService {
                 .processedAt(r.getProcessedAt())
                 .transactionReference(r.getTransactionReference())
                 .processNotes(r.getProcessNotes())
+                .transferProofUrl(r.getTransferProofUrl())
                 .transferInitiatedById(r.getTransferInitiatedBy() != null ? r.getTransferInitiatedBy().getId() : null)
                 .transferInitiatedByName(r.getTransferInitiatedBy() != null ? r.getTransferInitiatedBy().getFullName() : null)
                 .transferInitiatedAt(r.getTransferInitiatedAt())

@@ -1275,6 +1275,118 @@ public class EmailServiceImpl implements EmailService {
         sendHtmlEmail(toEmail, subject, html, plainText);
     }
 
+    @Override
+    @Async
+    public void sendBookingCancellationRefundSuccessEmail(
+            String toEmail,
+            String fullName,
+            String bookingCode,
+            String requestCode,
+            String facilityName,
+            BigDecimal refundAmount,
+            String bankName,
+            String bankAccount,
+            String bankAccountName,
+            String transactionReference,
+            String transferProofUrl,
+            String processNotes
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeBookingCode = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeRequestCode = escape(requestCode != null ? requestCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Hệ thống Boxora");
+        String formattedAmount = formatVnd(refundAmount);
+        String safeBank = escape(bankName != null && !bankName.isBlank() ? bankName : "Ngân hàng thụ hưởng");
+        String safeAccount = escape(bankAccount != null && !bankAccount.isBlank() ? bankAccount : "N/A");
+        String safeAccountName = escape(bankAccountName != null && !bankAccountName.isBlank() ? bankAccountName : safeName);
+        String safeTxn = escape(transactionReference != null && !transactionReference.isBlank() ? transactionReference : "Đã chuyển khoản thành công");
+        String safeNotes = escape(processNotes != null && !processNotes.isBlank() ? processNotes : "Không có ghi chú thêm");
+
+        String subject = String.format("[Boxora] Xác nhận đã hoàn tiền hủy đơn đặt kho #%s - Thành công", safeBookingCode);
+
+        String badge = renderBadge("ĐÃ HOÀN TIỀN THÀNH CÔNG", "#ecfdf5", "#047857");
+        String intro = String.format(
+                "Quản lý cơ sở <strong>%s</strong> xác nhận đã hoàn tất chuyển khoản chi trả tiền hoàn cho đơn đặt giữ chỗ mã <strong>#%s</strong> của Quý khách.",
+                safeFacility, safeBookingCode
+        );
+
+        StringBuilder detailsBuilder = new StringBuilder("<table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;'>");
+        detailsBuilder.append(renderDetailRow("Mã đơn đặt chỗ", "<strong>#" + safeBookingCode + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Mã yêu cầu hoàn tiền", "<strong>#" + safeRequestCode + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Cơ sở xử lý", safeFacility));
+        detailsBuilder.append(renderDetailRow("Số tiền hoàn trả", "<span style='color: #047857; font-size: 16px; font-weight: 800;'>" + formattedAmount + "</span>"));
+        detailsBuilder.append(renderDetailRow("Ngân hàng thụ hưởng", safeBank));
+        detailsBuilder.append(renderDetailRow("Số tài khoản nhận", "<span style='font-family: monospace; font-weight: 700;'>" + safeAccount + "</span>"));
+        detailsBuilder.append(renderDetailRow("Tên chủ tài khoản", "<strong>" + safeAccountName + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Mã giao dịch / UNC", "<strong style='font-family: monospace; color: #1d4ed8;'>" + safeTxn + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Trạng thái", "<span style='color: #047857; font-weight: 700;'>✓ ĐÃ CHUYỂN KHOẢN THÀNH CÔNG</span>"));
+
+        if (transferProofUrl != null && !transferProofUrl.isBlank()) {
+            String fullProofUrl = transferProofUrl;
+            if (transferProofUrl.startsWith("/uploads/")) {
+                String baseUrl = (frontendUrl != null && !frontendUrl.isBlank()) ? frontendUrl.trim().replaceAll("/+$", "") : "http://localhost:8080";
+                fullProofUrl = baseUrl + transferProofUrl;
+            }
+            detailsBuilder.append(renderDetailRow("Chứng từ chuyển tiền", "<a href='" + escape(fullProofUrl) + "' target='_blank' style='color: #1d4ed8; font-weight: 600; text-decoration: underline;'>Xem ảnh ủy nhiệm chi chuyển tiền</a>"));
+        }
+
+        if (processNotes != null && !processNotes.isBlank()) {
+            detailsBuilder.append(renderDetailRow("Ghi chú đối soát", safeNotes));
+        }
+
+        detailsBuilder.append("</table>");
+
+        String alertBox = renderAlertBox(
+                "Thông báo giải ngân hoàn tất",
+                "Khoản tiền hoàn đã được Quản lý cơ sở giải ngân chuyển khoản về tài khoản ngân hàng của Quý khách. Thời gian tài khoản nhận được tiền phụ thuộc vào hệ thống chuyển tiền liên ngân hàng (thông thường từ 1 - 5 phút với Napas247). Quý khách vui lòng kiểm tra biến động số dư tài khoản ngân hàng.",
+                "#ecfdf5",
+                "#047857",
+                "#10b981"
+        );
+
+        String note = renderSecurityNote(
+                "Ban Quản Lý Cơ Sở " + safeFacility + " • Nếu Quý khách cần hỗ trợ thêm, vui lòng liên hệ hotline cơ sở hoặc gửi ticket trên cổng hỗ trợ khách hàng Boxora."
+        );
+
+        String html = buildMasterTemplate(
+                "Xác Nhận Hoàn Tiền Hủy Đơn",
+                badge,
+                "Xác Nhận Đã Chuyển Tiền Hoàn Đơn Hủy Đặt Chỗ",
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                detailsBuilder.toString(),
+                alertBox,
+                "",
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - XÁC NHẬN ĐÃ HOÀN TIỀN HỦY ĐƠN ĐẶT KHO
+                ==============================================
+                Kính gửi %s,
+
+                Quản lý cơ sở %s xác nhận đã hoàn tất chuyển khoản chi trả tiền hoàn cho đơn đặt giữ chỗ mã #%s của Quý khách.
+
+                Chi tiết hoàn tiền:
+                - Mã đơn đặt chỗ: #%s
+                - Mã yêu cầu hoàn tiền: #%s
+                - Cơ sở xử lý: %s
+                - Số tiền hoàn lại: %s
+                - Ngân hàng thụ hưởng: %s
+                - Số tài khoản nhận: %s
+                - Tên chủ tài khoản: %s
+                - Mã giao dịch ngân hàng / UNC: %s
+                - Ghi chú: %s
+
+                Khoản tiền hoàn đã được giải ngân về tài khoản của Quý khách. Vui lòng kiểm tra biến động số dư tài khoản ngân hàng.
+
+                Trân trọng,
+                Ban Quản Lý Cơ Sở %s - Boxora
+                """, safeName, safeFacility, safeBookingCode, safeBookingCode, safeRequestCode, safeFacility, formattedAmount, safeBank, safeAccount, safeAccountName, safeTxn, safeNotes, safeFacility);
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Internal Helper Methods & Master Layout Generator
     // ─────────────────────────────────────────────────────────────────────────

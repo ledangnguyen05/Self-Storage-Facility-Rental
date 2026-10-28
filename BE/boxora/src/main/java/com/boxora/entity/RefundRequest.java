@@ -93,6 +93,9 @@ public class RefundRequest extends BaseEntity {
     @Column(name = "process_notes", length = 500)
     private String processNotes;
 
+    @Column(name = "transfer_proof_url", columnDefinition = "TEXT")
+    private String transferProofUrl;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "transfer_initiated_by_id")
     private User transferInitiatedBy;

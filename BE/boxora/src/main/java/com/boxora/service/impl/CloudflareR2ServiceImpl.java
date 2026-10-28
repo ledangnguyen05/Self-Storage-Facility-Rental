@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -29,6 +30,9 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
 
     @Value("${app.r2.public-url:https://pub-e15c7d96a163417fa2a23d5b849ee035.r2.dev}")
     private String publicUrlBase;
+
+    @Value("${app.upload.dir:uploads}")
+    private String localUploadDir;
 
     private static final long MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
     private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of(
@@ -52,7 +56,7 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
         }
 
         if (file.getSize() > MAX_FILE_SIZE) {
-            log.warn("File size {} exceeds maximum 15MB limit for Cloudflare R2", file.getSize());
+            log.warn("File size {} exceeds maximum 15MB limit", file.getSize());
             throw new AppException(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED, "Kích thước ảnh vượt quá giới hạn 15MB");
         }
 
@@ -60,12 +64,12 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
         String extension = getFileExtension(originalFilename).toLowerCase();
 
         if (!ALLOWED_IMAGE_EXTENSIONS.contains(extension)) {
-            log.warn("Invalid file extension: {}. Only image formats allowed on Cloudflare R2.", extension);
-            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, PNG, WEBP, GIF, SVG");
+            log.warn("Invalid file extension: {}. Only image formats allowed.", extension);
+            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, PNG, WEBP, GIF, SVG, PDF");
         }
 
         String safeFolder = sanitizeFolder(folder, "units");
-        String uniqueFileName = String.format("unit-%s-%d.%s",
+        String uniqueFileName = String.format("evidence-%s-%d.%s",
                 UUID.randomUUID().toString().substring(0, 8),
                 System.currentTimeMillis(),
                 extension);
@@ -76,30 +80,42 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
             tempFile = Files.createTempFile("boxora-r2-", "." + extension);
             Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
 
-            log.info("Executing Cloudflare R2 remote upload for key: {} to bucket: {}", r2Key, bucketName);
             boolean uploadSuccess = executeWranglerR2Upload(bucketName, r2Key, tempFile.toFile());
 
-            if (!uploadSuccess) {
-                log.error("Failed to upload object {} to Cloudflare R2 bucket {}", r2Key, bucketName);
-                throw new AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể tải ảnh lên kho lưu trữ đám mây Cloudflare R2");
+            if (uploadSuccess) {
+                String publicCdnUrl = normalizePublicUrl(publicUrlBase) + "/" + r2Key;
+                log.info("Successfully uploaded image to Cloudflare R2 -> Public CDN URL: {}", publicCdnUrl);
+
+                return FileUploadResponse.builder()
+                        .fileName(uniqueFileName)
+                        .fileUrl(publicCdnUrl)
+                        .fileType(file.getContentType() != null ? file.getContentType() : "image/" + extension)
+                        .fileSize(file.getSize())
+                        .uploadedAt(LocalDateTime.now())
+                        .build();
+            } else {
+                log.info("Cloudflare R2 remote upload skipped or unavailable for key: {}. Falling back to local storage.", r2Key);
+                Path localDir = Paths.get(localUploadDir, safeFolder).toAbsolutePath().normalize();
+                Files.createDirectories(localDir);
+                Path localTarget = localDir.resolve(uniqueFileName);
+                Files.copy(tempFile, localTarget, StandardCopyOption.REPLACE_EXISTING);
+                String localUrl = "/uploads/" + safeFolder + "/" + uniqueFileName;
+                log.info("Saved uploaded file locally at {} -> URL: {}", localTarget, localUrl);
+
+                return FileUploadResponse.builder()
+                        .fileName(uniqueFileName)
+                        .fileUrl(localUrl)
+                        .fileType(file.getContentType() != null ? file.getContentType() : "image/" + extension)
+                        .fileSize(file.getSize())
+                        .uploadedAt(LocalDateTime.now())
+                        .build();
             }
-
-            String publicCdnUrl = normalizePublicUrl(publicUrlBase) + "/" + r2Key;
-            log.info("Successfully uploaded image to Cloudflare R2 -> Public CDN URL: {}", publicCdnUrl);
-
-            return FileUploadResponse.builder()
-                    .fileName(uniqueFileName)
-                    .fileUrl(publicCdnUrl)
-                    .fileType(file.getContentType() != null ? file.getContentType() : "image/" + extension)
-                    .fileSize(file.getSize())
-                    .uploadedAt(LocalDateTime.now())
-                    .build();
 
         } catch (AppException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Unexpected error during Cloudflare R2 upload: {}", e.getMessage(), e);
-            throw new AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Lỗi trong quá trình đẩy ảnh lên Cloudflare R2: " + e.getMessage());
+            log.error("Unexpected error during file upload: {}", e.getMessage(), e);
+            throw new AppException(ErrorCode.INTERNAL_SERVER_ERROR, "Lỗi trong quá trình xử lý tệp: " + e.getMessage());
         } finally {
             if (tempFile != null) {
                 try {
@@ -112,6 +128,12 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
 
     private boolean executeWranglerR2Upload(String bucket, String key, File file) {
         try {
+            String token = System.getenv("CLOUDFLARE_API_TOKEN");
+            if (token == null || token.isBlank()) {
+                log.info("CLOUDFLARE_API_TOKEN is not configured in environment; skipping Wrangler execution.");
+                return false;
+            }
+
             boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
             List<String> command = new ArrayList<>();
 

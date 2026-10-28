@@ -152,32 +152,36 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         BigDecimal penaltyAmount;
         String policyDescription;
 
+        BigDecimal depositRefund;
         if (hoursSinceBooking <= fullRefundHours) {
             // MỐC 1: Trong vòng 24h kể từ thời gian đặt kho -> Hoàn 100% tiền cọc
             milestoneStage = "STAGE_1_FULL_REFUND";
             refundPercentage = 100.0;
-            refundAmount = depositPaid;
+            depositRefund = depositPaid;
             penaltyAmount = BigDecimal.ZERO;
-            policyDescription = String.format("Mốc 1: Hủy trong vòng %d giờ kể từ thời gian đặt kho. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
+            policyDescription = String.format("Mốc 1: Hủy trong vòng %d giờ kể từ thời gian đặt kho. Hoàn 100%% tiền cọc và 100%% tiền thuê kho đã thanh toán.", fullRefundHours);
         } else if (hoursSinceBooking <= partialRefundHours) {
             // MỐC 2: Từ 24h đến 48h kể từ thời gian đặt kho -> Hoàn 70% tiền cọc
             milestoneStage = "STAGE_2_PARTIAL_REFUND";
             refundPercentage = partialRefundPercent;
-            refundAmount = depositPaid.multiply(BigDecimal.valueOf(partialRefundPercent / 100.0))
+            depositRefund = depositPaid.multiply(BigDecimal.valueOf(partialRefundPercent / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
-            penaltyAmount = depositPaid.subtract(refundAmount);
-            policyDescription = String.format("Mốc 2: Hủy trong khoảng từ %d đến %d giờ kể từ thời gian đặt kho. Hoàn %.0f%% tiền cọc, khấu trừ %.0f%% chi phí giữ chỗ.",
+            penaltyAmount = depositPaid.subtract(depositRefund);
+            policyDescription = String.format("Mốc 2: Hủy trong khoảng từ %d đến %d giờ kể từ thời gian đặt kho. Hoàn %.0f%% tiền cọc (khấu trừ %.0f%%) và 100%% tiền thuê kho.",
                     fullRefundHours, partialRefundHours, partialRefundPercent, 100.0 - partialRefundPercent);
         } else {
             // MỐC 3: Quá 48h kể từ thời gian đặt kho -> Hoàn 50% tiền cọc
             milestoneStage = "STAGE_3_OVER_48H_REFUND";
             refundPercentage = 50.0;
-            refundAmount = depositPaid.multiply(BigDecimal.valueOf(50.0 / 100.0))
+            depositRefund = depositPaid.multiply(BigDecimal.valueOf(50.0 / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
-            penaltyAmount = depositPaid.subtract(refundAmount);
-            policyDescription = String.format("Mốc 3: Hủy quá %d giờ kể từ thời gian đặt kho. Hoàn 50%% tiền cọc, khấu trừ 50%% chi phí cam kết giữ chỗ.",
+            penaltyAmount = depositPaid.subtract(depositRefund);
+            policyDescription = String.format("Mốc 3: Hủy quá %d giờ kể từ thời gian đặt kho. Hoàn 50%% tiền cọc (khấu trừ 50%%) và 100%% tiền thuê kho.",
                     partialRefundHours);
         }
+
+        // Tổng tiền hoàn trả = 100% tiền thuê kho (do chưa nhận kho) + tiền cọc hoàn trả theo mốc
+        refundAmount = depositRefund.add(totalRentalFee);
 
         boolean refundable = refundAmount.compareTo(BigDecimal.ZERO) > 0;
 
@@ -276,20 +280,33 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         // Nếu có hoàn tiền cọc (refundAmount > 0), khởi tạo RefundRequest chính thức thay vì ghi nhận thanh toán giả
         UUID refundRequestId = null;
         String refundRequestCode = null;
-        if (preview.getRefundAmount() != null && preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+        if ((preview.getRefundAmount() != null && preview.getRefundAmount().compareTo(BigDecimal.ZERO) > 0)
+                || (request != null && request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank())) {
             Facility facility = (unit != null) ? unit.getFacility() : null;
             if (facility == null && linkedContract != null) {
                 facility = linkedContract.getFacility();
             }
+            if (facility == null) {
+                facility = booking.getFacility();
+            }
 
             String bankName = (request != null && request.getBankName() != null && !request.getBankName().isBlank())
-                    ? request.getBankName().trim() : "CHỜ_CẬP_NHẬT";
+                    ? request.getBankName().trim() : "CHO_CAP_NHAT";
             String bankAccountNumber = (request != null && request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank())
-                    ? request.getBankAccountNumber().trim() : "CHỜ_CẬP_NHẬT";
+                    ? request.getBankAccountNumber().trim() : "CHO_CAP_NHAT";
             String bankAccountName = (request != null && request.getBankAccountName() != null && !request.getBankAccountName().isBlank())
                     ? request.getBankAccountName().trim()
                     : (booking.getCustomer() != null && booking.getCustomer().getFullName() != null
                     ? booking.getCustomer().getFullName() : "KHACH_HANG");
+
+            BigDecimal finalRefund = preview.getRefundAmount() != null ? preview.getRefundAmount() : BigDecimal.ZERO;
+            BigDecimal penalty = preview.getPenaltyAmount() != null ? preview.getPenaltyAmount() : BigDecimal.ZERO;
+            BigDecimal rentPaid = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
+            BigDecimal depPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+            BigDecimal requested = depPaid.add(rentPaid);
+            if (requested.compareTo(BigDecimal.ZERO) <= 0) {
+                requested = finalRefund;
+            }
 
             refundRequestCode = "REF-" + System.currentTimeMillis() + "-" + VNPayUtil.randomAlphaNumeric(4).toUpperCase();
             RefundRequest refundRequest = RefundRequest.builder()
@@ -298,14 +315,14 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .facility(facility)
                     .booking(booking)
                     .contract(linkedContract)
-                    .requestedAmount(booking.getDepositPaid() != null ? booking.getDepositPaid() : preview.getRefundAmount())
-                    .deductionAmount(preview.getPenaltyAmount())
-                    .finalRefundAmount(preview.getRefundAmount())
+                    .requestedAmount(requested)
+                    .deductionAmount(penalty)
+                    .finalRefundAmount(finalRefund)
                     .bankName(bankName)
                     .bankAccountNumber(bankAccountNumber)
                     .bankAccountName(bankAccountName)
-                    .reason(String.format("Hoàn cọc khi hủy đơn %s (%s). Lý do: %s",
-                            booking.getBookingCode(), preview.getMilestoneStage(), reason))
+                    .reason(String.format("Hoàn tiền khi hủy đơn %s (%s). Tiền thuê hoàn: %s đ, Cọc: %s đ (Khấu trừ: %s đ). Lý do: %s",
+                            booking.getBookingCode(), preview.getMilestoneStage(), rentPaid, depPaid.subtract(penalty), penalty, reason))
                     .status(RefundStatus.PENDING_REVIEW)
                     .requestedBy(cancelledByUser != null ? cancelledByUser : booking.getCustomer())
                     .build();

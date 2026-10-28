@@ -4,12 +4,17 @@ import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.RefundCreateRequest;
 import com.boxora.dto.request.RefundProcessRequest;
 import com.boxora.dto.request.RefundReviewRequest;
+import com.boxora.dto.response.FileUploadResponse;
 import com.boxora.dto.response.RefundRequestResponse;
 import com.boxora.enums.RefundStatus;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
 public interface RefundService {
+
+    /** Tải lên ảnh chứng từ / ủy nhiệm chi hoàn tiền. */
+    FileUploadResponse uploadProofImage(MultipartFile file);
 
     /** Khởi tạo yêu cầu hoàn tiền (PENDING_REVIEW). */
     RefundRequestResponse createRefundRequest(RefundCreateRequest request);

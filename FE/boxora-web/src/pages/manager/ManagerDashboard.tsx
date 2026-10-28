@@ -26,6 +26,8 @@ import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWor
 import { HandoverReturnWorkbench } from '../staff/components/HandoverReturnWorkbench'
 import { reservationEmailService } from '../../services/reservationEmailService'
 import { toast } from '../../utils/toast'
+import { RefundManagementWorkbench } from './components/RefundManagementWorkbench'
+import { refundService } from '../../services/refundService'
 
 interface InspectedUnit {
   id: string
@@ -51,7 +53,7 @@ interface InspectedUnit {
   maintenanceAt?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'performance' | 'policy'
+type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'refunds' | 'performance' | 'policy'
 
 const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[] => {
   let list = [...apiArrivals]
@@ -130,7 +132,7 @@ export const ManagerDashboard: React.FC = () => {
     if (role === 'STAFF') {
       return tab === 'overview'
     }
-    return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
+    return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'refunds' || tab === 'performance' || tab === 'policy'
   }
 
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
@@ -577,6 +579,29 @@ export const ManagerDashboard: React.FC = () => {
   }
 
   const [cancellingOverdueBooking, setCancellingOverdueBooking] = useState<Booking | null>(null)
+  const [pendingRefundCount, setPendingRefundCount] = useState<number>(0)
+
+  useEffect(() => {
+    const fetchPendingRefundCount = async () => {
+      try {
+        const targetFacId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : user?.facilityId
+        const data = await refundService.getAll({
+          facilityId: targetFacId,
+          status: 'PENDING_REVIEW'
+        })
+        if (data && typeof data.totalElements === 'number') {
+          setPendingRefundCount(data.totalElements)
+        } else if (data && Array.isArray(data.content)) {
+          setPendingRefundCount(data.content.length)
+        } else if (Array.isArray(data)) {
+          setPendingRefundCount(data.length)
+        }
+      } catch {
+        // silent fail
+      }
+    }
+    fetchPendingRefundCount()
+  }, [selectedFacilityId, user?.facilityId])
 
   const openManagerCancelOverdueModal = (booking: Booking) => {
     setCancellingOverdueBooking(booking)
@@ -1394,6 +1419,28 @@ export const ManagerDashboard: React.FC = () => {
           }`}>
             {renewalsCount} đơn
           </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('refunds')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'refunds'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">account_balance</span>
+          <span>Hoàn Tiền Hủy Đơn</span>
+          {pendingRefundCount > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'refunds'
+                ? 'bg-white text-amber-900'
+                : 'bg-amber-100 text-amber-800 animate-pulse'
+            }`}>
+              {pendingRefundCount} chờ chuyển
+            </span>
+          )}
         </button>
 
         <button
@@ -2663,6 +2710,16 @@ export const ManagerDashboard: React.FC = () => {
             </div>
           </div>
         </section>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB: YÊU CẦU HOÀN TIỀN HỦY ĐƠN ĐẶT CHỖ */}
+      {/* ============================================================== */}
+      {activeTab === 'refunds' && (
+        <RefundManagementWorkbench
+          facilityId={selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : user?.facilityId}
+          facilityName={currentFacilityName}
+        />
       )}
 
       {/* ============================================================== */}

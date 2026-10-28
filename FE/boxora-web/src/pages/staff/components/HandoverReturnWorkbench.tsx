@@ -475,7 +475,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       }
     } catch (err: any) {
       console.warn('Could not load return cases from backend:', err)
-      toast.error('Lỗi kết nối máy chủ khi nạp danh sách trả kho.')
+      if (showToast) {
+        toast.error('Lỗi kết nối máy chủ khi nạp danh sách trả kho.')
+      }
     } finally {
       setIsRefreshing(false)
     }
