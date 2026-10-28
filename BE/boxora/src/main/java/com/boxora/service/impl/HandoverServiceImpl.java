@@ -2384,13 +2384,13 @@ public class HandoverServiceImpl implements HandoverService {
             LocalDate dateFrom,
             LocalDate dateTo
     ) {
-        if (facilityId != null) {
-            facilityAccessGuard.checkFacilityAccess(facilityId);
-        } else if (facilityAccessGuard.isFacilityScoped()) {
-            User staff = resolveStaff(null);
-            if (staff != null && staff.getFacility() != null) {
-                facilityId = staff.getFacility().getId();
+        if (facilityAccessGuard.isFacilityScoped()) {
+            UUID userFacilityId = requestContext.currentUserFacilityId();
+            if (userFacilityId != null) {
+                facilityId = userFacilityId;
             }
+        } else if (facilityId != null) {
+            facilityAccessGuard.checkFacilityAccess(facilityId);
         }
 
         List<Booking> bookings = bookingRepository.findAll();
