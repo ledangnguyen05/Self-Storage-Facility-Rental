@@ -5,6 +5,7 @@ import { userService } from '../../services/userService'
 import { staffAssignmentService } from '../../services/staffAssignmentService'
 import { useAuth } from '../../context/AuthContext'
 import { toast } from '../../utils/toast'
+import { RenewalAddendumModal } from '../modals/RenewalAddendumModal'
 
 interface ContractRenewalsManagementPanelProps {
   currentFacilityId?: string
@@ -158,6 +159,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
 
   // Action Modals State
   const [selectedRenewalForDetail, setSelectedRenewalForDetail] = useState<ContractRenewal | null>(null)
+  const [selectedRenewalForAddendum, setSelectedRenewalForAddendum] = useState<ContractRenewal | null>(null)
 
   // 1. Phê duyệt (Approval)
   const [approvalTarget, setApprovalTarget] = useState<ContractRenewal | null>(null)
@@ -962,6 +964,17 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        {/* Phụ lục hợp đồng button */}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedRenewalForAddendum(r)}
+                          className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-md font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                          title="Xem văn bản Phụ lục gia hạn hợp đồng & chữ ký điện tử"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">description</span>
+                          <span>Phụ lục</span>
+                        </button>
+
                         {/* Chi tiết button */}
                         <button
                           type="button"
@@ -2159,7 +2172,19 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
               </div>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = selectedRenewalForDetail
+                  setSelectedRenewalForDetail(null)
+                  setSelectedRenewalForAddendum(target)
+                }}
+                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">description</span>
+                <span>Xem Văn Bản Phụ Lục Gia Hạn</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setSelectedRenewalForDetail(null)}
@@ -2170,6 +2195,14 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
             </div>
           </div>
         </div>
+      )}
+
+      {selectedRenewalForAddendum && (
+        <RenewalAddendumModal
+          renewal={selectedRenewalForAddendum}
+          readOnly={true}
+          onClose={() => setSelectedRenewalForAddendum(null)}
+        />
       )}
     </div>
   )
