@@ -28,10 +28,14 @@ import {
   Eye,
   X,
   Wrench,
-  Receipt
+  Receipt,
+  MessageSquareWarning,
+  KeyRound,
+  Warehouse,
+  History
 } from 'lucide-react'
 import { toast } from '../../../utils/toast'
-import { handoverService } from '../../../services/handoverService'
+import { handoverService, ReturnCase, ReturnInspectionPayload } from '../../../services/handoverService'
 import type { Booking } from '../../../types'
 
 export type ReturnStepStatus =
@@ -45,6 +49,7 @@ export type ReturnStepStatus =
   | 'REFUND_PROCESSING'
   | 'REFUNDED'
   | 'COMPLETED'
+  | 'DISPUTED'
 
 export interface ReturnCaseItem {
   id: string
@@ -70,16 +75,29 @@ export interface ReturnCaseItem {
   damageFee: number
   doorFee?: number
   smartLockFee?: number
+  smartLockIssueType?: string
+  wallStructureFee?: number
   lostCardFee: number
+  totalDeduction?: number
+  approvedDeductions?: number
+  netRefundAmount?: number
+  additionalAmountDue?: number
   status: ReturnStepStatus
-  inspectorName?: string
-  approverName?: string
+  inspectionStatus?: string
+  approvalStatus?: string
+  additionalPaymentStatus?: string
+  additionalPaymentTxnRef?: string
+  refundStatus?: string
   refundTxnRef?: string
   refundProcessedAt?: string
+  inspectorName?: string
+  approverName?: string
+  approvedAt?: string
+  approvalNotes?: string
   completedAt?: string
   historyNotes?: string[]
 
-  // Per-profile inspection state
+  // 7 Criteria
   doorPassed?: boolean
   doorNotes?: string
   doorFeeInput?: number
@@ -103,6 +121,14 @@ export interface ReturnCaseItem {
 
   envPassed?: boolean
   envNotes?: string
+
+  // Physical & IoT status
+  unitReturnedPhysically?: boolean
+  returnedAt?: string
+  accessRevoked?: boolean
+  accessRevokedAt?: string
+  isDisputed?: boolean
+  disputeReason?: string
 }
 
 interface HandoverReturnWorkbenchProps {
@@ -110,7 +136,7 @@ interface HandoverReturnWorkbenchProps {
   facilityName?: string
   userRole?: string
   userName?: string
-  activeRentals: Booking[]
+  activeRentals?: Booking[]
   rawReturnRequests?: any[]
   onReturnCompleted?: () => void
   onRefresh?: () => void
@@ -124,242 +150,19 @@ const normalizeStatus = (rawStatus: any): ReturnStepStatus => {
   if (st === 'INSPECTING' || st === 'INSPECTION_IN_PROGRESS') return 'INSPECTION_IN_PROGRESS'
   if (st === 'INSPECTION_PASSED') return 'INSPECTION_PASSED'
   if (st === 'INSPECTION_ISSUE') return 'INSPECTION_ISSUE'
-  if (st === 'REFUND_PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
-  if (st === 'REFUND_APPROVED') return 'REFUND_APPROVED'
-  if (st === 'REFUND_PROCESSING') return 'REFUND_PROCESSING'
+  if (st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
+  if (st === 'REFUND_APPROVED' || st === 'APPROVED') return 'REFUND_APPROVED'
+  if (st === 'REFUND_PROCESSING' || st === 'PROCESSING') return 'REFUND_PROCESSING'
   if (st === 'REFUNDED') return 'REFUNDED'
+  if (st === 'DISPUTED') return 'DISPUTED'
   if (st === 'COMPLETED' || st === 'RESOLVED') return 'COMPLETED'
   return 'RETURN_REQUESTED'
-}
-
-const STATUS_RANK: Record<ReturnStepStatus, number> = {
-  RETURN_REQUESTED: 1,
-  INSPECTION_SCHEDULED: 2,
-  INSPECTION_IN_PROGRESS: 3,
-  INSPECTION_PASSED: 4,
-  INSPECTION_ISSUE: 4,
-  REFUND_PENDING_APPROVAL: 5,
-  REFUND_APPROVED: 6,
-  REFUND_PROCESSING: 6,
-  REFUNDED: 7,
-  COMPLETED: 8
 }
 
 const DEFAULT_PROOF_PHOTOS = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80',
   'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=600&q=80'
 ]
-
-// Pure helper function to merge and preserve return cases across renders and reloads
-const syncReturnCases = (
-  currentList: ReturnCaseItem[],
-  incomingRequests: any[],
-  incomingRentals: Booking[],
-  fallbackFacilityId?: string,
-  fallbackFacilityName: string = 'Boxora Thủ Đức'
-): ReturnCaseItem[] => {
-  const savedMap: Record<string, ReturnCaseItem> = {}
-
-  // 1. Read existing saved dossiers from localStorage
-  try {
-    const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        parsed.forEach((item: ReturnCaseItem) => {
-          if (item && item.id) {
-            savedMap[item.id] = item
-            if (item.bookingId) savedMap[item.bookingId] = item
-            if (item.bookingCode) savedMap[item.bookingCode] = item
-            if (item.unitCode) savedMap[item.unitCode] = item
-          }
-        })
-      }
-    }
-  } catch {}
-
-  // Merge any in-memory state
-  currentList.forEach((item) => {
-    if (item && item.id) {
-      savedMap[item.id] = { ...(savedMap[item.id] || {}), ...item }
-      if (item.bookingId) savedMap[item.bookingId] = savedMap[item.id]
-      if (item.bookingCode) savedMap[item.bookingCode] = savedMap[item.id]
-      if (item.unitCode) savedMap[item.unitCode] = savedMap[item.id]
-    }
-  })
-
-  const list: ReturnCaseItem[] = []
-  const processedIds = new Set<string>()
-
-  // 2. Synthesize from incomingRequests (customerReturnRequests)
-  if (incomingRequests && incomingRequests.length > 0) {
-    incomingRequests.forEach((req, idx) => {
-      const candidateId = req.id || `RET-2026-${7100 + idx}`
-      const candidateBookingId = req.bookingId || req.id
-      const saved =
-        savedMap[candidateId] ||
-        (candidateBookingId ? savedMap[candidateBookingId] : undefined) ||
-        (req.bookingCode ? savedMap[req.bookingCode] : undefined) ||
-        (req.unitCode ? savedMap[req.unitCode] : undefined)
-
-      if (saved) {
-        const savedSt = normalizeStatus(saved.status)
-        const incomingSt = normalizeStatus(req.status)
-        const finalStatus = (STATUS_RANK[savedSt] || 1) >= (STATUS_RANK[incomingSt] || 1) ? savedSt : incomingSt
-
-        list.push({
-          ...saved,
-          status: finalStatus,
-          depositAmount: saved.depositAmount || req.depositAmount || req.depositPaid || 3500000,
-          unitCode: req.unitCode || saved.unitCode || 'TD-B102',
-          customerName: req.customerName || saved.customerName || 'Khách hàng',
-          customerPhone: req.customerPhone || saved.customerPhone || 'Theo hồ sơ',
-          contractCode: saved.contractCode || req.contractCode || `CTR-${req.bookingCode || candidateId}`,
-          reason: saved.reason || req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc'
-        })
-        processedIds.add(saved.id)
-        if (candidateId) processedIds.add(candidateId)
-        if (candidateBookingId) processedIds.add(candidateBookingId)
-      } else {
-        list.push({
-          id: candidateId,
-          bookingId: candidateBookingId || '',
-          bookingCode: req.bookingCode || `BX-2026-${4000 + idx}`,
-          contractCode: req.contractCode || `CTR-BX-2026-${4000 + idx}`,
-          unitCode: req.unitCode || 'TD-B102',
-          customerName: req.customerName || 'Khách hàng',
-          customerPhone: req.customerPhone || 'Theo hồ sơ',
-          customerEmail: req.customerEmail || 'khach@gmail.com',
-          facilityId: req.facilityId || fallbackFacilityId,
-          facilityName: req.facilityName || fallbackFacilityName,
-          requestDate: req.requestDate || new Date().toISOString().split('T')[0],
-          expectedReturnDate: req.expectedReturnDate || '28/10/2026',
-          inspectionDate: req.inspectionDate || '28/10/2026 10:00',
-          reason: req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-          bankName: req.bankName || 'Vietcombank',
-          bankAccountNumber: req.bankAccountNumber || '1029384756',
-          bankAccountName: req.bankAccountName || (req.customerName || 'KHACH HANG').toUpperCase(),
-          depositAmount: req.depositAmount || req.depositPaid || 3500000,
-          outstandingDebt: req.outstandingDebt || 0,
-          cleaningFee: 0,
-          damageFee: 0,
-          doorFee: 0,
-          smartLockFee: 0,
-          lostCardFee: 0,
-          status: normalizeStatus(req.status),
-          inspectorName: 'Phan Van Hau',
-          historyNotes: ['Khách hàng gửi yêu cầu qua Boxora Portal'],
-          doorPassed: true,
-          doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
-          doorFeeInput: 0,
-          cleanlinessPassed: true,
-          cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
-          cleaningFeeInput: 0,
-          damagePassed: true,
-          damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
-          damageFeeInput: 0,
-          smartLockPassed: true,
-          smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
-          smartLockFeeInput: 0,
-          assetsClearedPassed: true,
-          assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
-          photoUrls: [],
-          envPassed: true,
-          envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
-        })
-        processedIds.add(candidateId)
-        if (candidateBookingId) processedIds.add(candidateBookingId)
-      }
-    })
-  }
-
-  // 3. Synthesize from incomingRentals (activeRentals) if not already added
-  if (incomingRentals && incomingRentals.length > 0) {
-    incomingRentals.forEach((r, idx) => {
-      const candidateId = `ACT-RET-${r.id}`
-      if (
-        processedIds.has(candidateId) ||
-        processedIds.has(r.id) ||
-        (r.unitCode && list.some((item) => item.unitCode === r.unitCode))
-      ) {
-        return
-      }
-
-      const saved = savedMap[candidateId] || savedMap[r.id] || (r.unitCode ? savedMap[r.unitCode] : undefined)
-      if (saved) {
-        list.push({ ...saved, status: normalizeStatus(saved.status) })
-        processedIds.add(saved.id)
-      } else if (list.length < 5) {
-        list.push({
-          id: candidateId,
-          bookingId: r.id,
-          bookingCode: r.bookingCode || '',
-          contractCode: r.contractCode || `CTR-${r.bookingCode || r.id}`,
-          unitCode: r.unitCode || `TD-A10${idx + 1}`,
-          customerName: r.customerName || 'Khách thuê',
-          customerPhone: r.customerPhone || '0987654321',
-          customerEmail: r.customerEmail || 'khach@gmail.com',
-          facilityId: r.facilityId || fallbackFacilityId,
-          facilityName: r.facilityName || fallbackFacilityName,
-          requestDate: '27/10/2026',
-          expectedReturnDate: r.endDate || '28/10/2026',
-          inspectionDate: '28/10/2026 14:00',
-          reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-          bankName: 'MB Bank',
-          bankAccountNumber: '098765432199',
-          bankAccountName: (r.customerName || 'KHACH THUE').toUpperCase(),
-          depositAmount: r.depositPaid || r.depositAmount || 3000000,
-          outstandingDebt: 0,
-          cleaningFee: 0,
-          damageFee: 0,
-          doorFee: 0,
-          smartLockFee: 0,
-          lostCardFee: 0,
-          status: 'RETURN_REQUESTED',
-          inspectorName: 'Phan Van Hau',
-          historyNotes: ['Hệ thống ghi nhận đơn đến hạn trả kho'],
-          doorPassed: true,
-          doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
-          doorFeeInput: 0,
-          cleanlinessPassed: true,
-          cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
-          cleaningFeeInput: 0,
-          damagePassed: true,
-          damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
-          damageFeeInput: 0,
-          smartLockPassed: true,
-          smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
-          smartLockFeeInput: 0,
-          assetsClearedPassed: true,
-          assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
-          photoUrls: [],
-          envPassed: true,
-          envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
-        })
-        processedIds.add(candidateId)
-      }
-    })
-  }
-
-  // 4. IMPORTANT: If incomingRequests and incomingRentals were empty, preserve previously saved items!
-  if (list.length === 0) {
-    Object.values(savedMap).forEach((savedItem) => {
-      if (savedItem && savedItem.id && !processedIds.has(savedItem.id)) {
-        list.push({ ...savedItem, status: normalizeStatus(savedItem.status) })
-        processedIds.add(savedItem.id)
-      }
-    })
-  }
-
-  // 5. Persist to localStorage only when list has items (NEVER overwrite with empty array!)
-  if (list.length > 0) {
-    try {
-      localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(list))
-    } catch {}
-  }
-
-  return list
-}
 
 export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = ({
   currentFacilityId,
@@ -375,54 +178,296 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const isFacilityManager = userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER'
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Initialize return cases on mount
-  const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>(() =>
-    syncReturnCases([], rawReturnRequests, activeRentals, currentFacilityId, facilityName)
-  )
-  const [selectedCaseId, setSelectedCaseId] = useState<string>(() => returnCases[0]?.id || '')
+  const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>([])
+  const [selectedCaseId, setSelectedCaseId] = useState<string>('')
   const [searchFilter, setSearchFilter] = useState<string>('')
   const [statusTabFilter, setStatusTabFilter] = useState<string>('ALL')
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
 
-  // CRITICAL: Synchronize state whenever rawReturnRequests or activeRentals props update from parent
-  useEffect(() => {
-    const updated = syncReturnCases(returnCases, rawReturnRequests, activeRentals, currentFacilityId, facilityName)
-    if (updated.length > 0) {
-      setReturnCases(updated)
-      setSelectedCaseId((prev) => {
-        if (prev && updated.some((c) => c.id === prev)) return prev
-        return updated[0]?.id || ''
-      })
-    }
-  }, [rawReturnRequests, activeRentals, currentFacilityId, facilityName])
+  // 7 Checklist items state for current case
+  const [doorPassed, setDoorPassed] = useState(true)
+  const [doorNotes, setDoorNotes] = useState('Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.')
+  const [doorFeeInput, setDoorFeeInput] = useState(0)
 
-  // Explicit refresh handler
-  const handleRefreshWorkbench = () => {
+  const [cleanlinessPassed, setCleanlinessPassed] = useState(true)
+  const [cleanlinessNotes, setCleanlinessNotes] = useState('Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.')
+  const [cleaningFeeInput, setCleaningFeeInput] = useState(0)
+
+  const [damagePassed, setDamagePassed] = useState(true)
+  const [damageNotes, setDamageNotes] = useState('Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.')
+  const [damageFeeInput, setDamageFeeInput] = useState(0)
+
+  const [smartLockPassed, setSmartLockPassed] = useState(true)
+  const [smartLockNotes, setSmartLockNotes] = useState('Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.')
+  const [smartLockFeeInput, setSmartLockFeeInput] = useState(0)
+  const [smartLockIssueType, setSmartLockIssueType] = useState<string>('NORMAL_WEAR')
+
+  const [assetsClearedPassed, setAssetsClearedPassed] = useState(true)
+  const [assetsClearedNotes, setAssetsClearedNotes] = useState('Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.')
+
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
+
+  const [envPassed, setEnvPassed] = useState(true)
+  const [envNotes, setEnvNotes] = useState('Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)')
+
+  // Modals
+  const [previewImageModal, setPreviewImageModal] = useState<string | null>(null)
+  const [showScheduleConfirmModal, setShowScheduleConfirmModal] = useState(false)
+  const [scheduleDatetimeInput, setScheduleDatetimeInput] = useState('')
+  const [showRefundModal, setShowRefundModal] = useState(false)
+  const [refundMethodSelect, setRefundMethodSelect] = useState<'BANK_TRANSFER' | 'VNPAY_REFUND' | 'CASH'>('BANK_TRANSFER')
+  const [refundTxnInput, setRefundTxnInput] = useState('')
+  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false)
+
+  // Dispute modal
+  const [showDisputeModal, setShowDisputeModal] = useState(false)
+  const [disputeReasonInput, setDisputeReasonInput] = useState('')
+  const [isSubmittingDispute, setIsSubmittingDispute] = useState(false)
+
+  // Operational action states
+  const [isFinishingHandover, setIsFinishingHandover] = useState(false)
+  const [isRevokingAccess, setIsRevokingAccess] = useState(false)
+  const [isConfirmingPhysical, setIsConfirmingPhysical] = useState(false)
+
+  // 1. Fetch Real Cases from Backend API
+  const fetchReturnCases = async (showToast: boolean = false) => {
     setIsRefreshing(true)
-    if (onRefresh) {
-      onRefresh()
-    } else if (onReturnCompleted) {
-      onReturnCompleted()
-    }
-    const updated = syncReturnCases(returnCases, rawReturnRequests, activeRentals, currentFacilityId, facilityName)
-    if (updated.length > 0) {
-      setReturnCases(updated)
-      setSelectedCaseId((prev) => (prev && updated.some((c) => c.id === prev) ? prev : updated[0]?.id || ''))
-    }
-    setTimeout(() => {
+    try {
+      const data = await handoverService.getReturnCases({
+        facilityId: currentFacilityId
+      })
+
+      if (data && data.length > 0) {
+        const mapped: ReturnCaseItem[] = data.map((item) => ({
+          id: item.id || `RET-${item.bookingCode}`,
+          bookingId: item.bookingId,
+          bookingCode: item.bookingCode,
+          contractCode: item.contractCode || `CTR-${item.bookingCode}`,
+          unitCode: item.unitCode,
+          customerName: item.customerName,
+          customerPhone: item.customerPhone || 'Theo hồ sơ',
+          customerEmail: item.customerEmail || '',
+          facilityId: item.facilityId || currentFacilityId,
+          facilityName: item.facilityName || facilityName,
+          requestDate: item.requestDate || '',
+          expectedReturnDate: item.expectedReturnDate || '',
+          inspectionDate: item.inspectionDate || '',
+          reason: item.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
+          bankName: item.bankName || 'Vietcombank',
+          bankAccountNumber: item.bankAccountNumber || '',
+          bankAccountName: item.bankAccountName || (item.customerName || '').toUpperCase(),
+          depositAmount: item.depositAmount || 0,
+          outstandingDebt: item.outstandingDebt || 0,
+          cleaningFee: item.cleaningFee || 0,
+          damageFee: item.damageFee || 0,
+          doorFee: item.doorFee || 0,
+          smartLockFee: item.smartLockFee || 0,
+          smartLockIssueType: item.smartLockIssueType || 'NORMAL_WEAR',
+          wallStructureFee: item.wallStructureFee || 0,
+          lostCardFee: item.lostCardFee || 0,
+          totalDeduction: item.totalDeduction || 0,
+          approvedDeductions: item.approvedDeductions || 0,
+          netRefundAmount: item.netRefundAmount || 0,
+          additionalAmountDue: item.additionalAmountDue || 0,
+          status: normalizeStatus(item.status),
+          inspectionStatus: item.inspectionStatus,
+          approvalStatus: item.approvalStatus,
+          additionalPaymentStatus: item.additionalPaymentStatus,
+          additionalPaymentTxnRef: item.additionalPaymentTxnRef,
+          refundStatus: item.refundStatus,
+          refundTxnRef: item.refundTxnRef,
+          refundProcessedAt: item.refundProcessedAt,
+          inspectorName: item.inspectorName,
+          approverName: item.approverName,
+          approvedAt: item.approvedAt,
+          approvalNotes: item.approvalNotes,
+          completedAt: item.completedAt,
+          historyNotes: item.historyNotes || [],
+
+          doorPassed: item.doorPassed ?? true,
+          doorNotes: item.doorNotes || 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+          doorFeeInput: item.doorFeeInput || item.doorFee || 0,
+
+          cleanlinessPassed: item.cleanlinessPassed ?? true,
+          cleanlinessNotes: item.cleanlinessNotes || 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+          cleaningFeeInput: item.cleaningFeeInput || item.cleaningFee || 0,
+
+          damagePassed: item.damagePassed ?? true,
+          damageNotes: item.damageNotes || 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+          damageFeeInput: item.damageFeeInput || item.damageFee || 0,
+
+          smartLockPassed: item.smartLockPassed ?? true,
+          smartLockNotes: item.smartLockNotes || 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+          smartLockFeeInput: item.smartLockFeeInput || item.smartLockFee || 0,
+
+          assetsClearedPassed: item.assetsClearedPassed ?? true,
+          assetsClearedNotes: item.assetsClearedNotes || 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+
+          photoUrls: item.photoUrls || [],
+
+          envPassed: item.envPassed ?? true,
+          envNotes: item.envNotes || 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)',
+
+          unitReturnedPhysically: item.unitReturnedPhysically ?? false,
+          returnedAt: item.returnedAt,
+          accessRevoked: item.accessRevoked ?? false,
+          accessRevokedAt: item.accessRevokedAt
+        }))
+        setReturnCases(mapped)
+        setSelectedCaseId((prev) => (prev && mapped.some((c) => c.id === prev) ? prev : mapped[0]?.id || ''))
+        if (showToast) toast.success(`Đã đồng bộ ${mapped.length} hồ sơ trả kho từ máy chủ!`)
+      } else {
+        // Fallback to synthesizing activeRentals or rawReturnRequests if database has no records yet
+        const fallbackList: ReturnCaseItem[] = []
+        if (rawReturnRequests && rawReturnRequests.length > 0) {
+          rawReturnRequests.forEach((req, idx) => {
+            fallbackList.push({
+              id: req.id || `RET-REQ-${idx}`,
+              bookingId: req.bookingId || req.id,
+              bookingCode: req.bookingCode || `BX-${idx}`,
+              contractCode: req.contractCode || `CTR-${idx}`,
+              unitCode: req.unitCode || 'TD-B102',
+              customerName: req.customerName || 'Khách hàng',
+              customerPhone: req.customerPhone || 'Theo hồ sơ',
+              customerEmail: req.customerEmail || '',
+              facilityId: req.facilityId || currentFacilityId,
+              facilityName: req.facilityName || facilityName,
+              requestDate: req.requestDate || new Date().toISOString().split('T')[0],
+              expectedReturnDate: req.expectedReturnDate || '',
+              inspectionDate: req.inspectionDate || '',
+              reason: req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
+              bankName: req.bankName || 'Vietcombank',
+              bankAccountNumber: req.bankAccountNumber || '',
+              bankAccountName: req.bankAccountName || '',
+              depositAmount: req.depositAmount || req.depositPaid || 3500000,
+              outstandingDebt: req.outstandingDebt || 0,
+              cleaningFee: 0,
+              damageFee: 0,
+              doorFee: 0,
+              smartLockFee: 0,
+              smartLockIssueType: 'NORMAL_WEAR',
+              lostCardFee: 0,
+              status: normalizeStatus(req.status),
+              inspectorName: 'Phan Van Hau',
+              historyNotes: ['Khách hàng gửi yêu cầu qua Boxora Portal'],
+              doorPassed: true,
+              doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+              doorFeeInput: 0,
+              cleanlinessPassed: true,
+              cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+              cleaningFeeInput: 0,
+              damagePassed: true,
+              damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+              damageFeeInput: 0,
+              smartLockPassed: true,
+              smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+              smartLockFeeInput: 0,
+              assetsClearedPassed: true,
+              assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+              photoUrls: [],
+              envPassed: true,
+              envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+            })
+          })
+        } else if (activeRentals && activeRentals.length > 0) {
+          activeRentals.slice(0, 5).forEach((r, idx) => {
+            fallbackList.push({
+              id: `RET-ACT-${r.id}`,
+              bookingId: r.id,
+              bookingCode: r.bookingCode || `BX-2026-${idx}`,
+              contractCode: r.contractCode || `CTR-${r.bookingCode || r.id}`,
+              unitCode: r.unitCode || `TD-A10${idx + 1}`,
+              customerName: r.customerName || 'Khách thuê',
+              customerPhone: r.customerPhone || '0987654321',
+              customerEmail: r.customerEmail || 'khach@gmail.com',
+              facilityId: r.facilityId || currentFacilityId,
+              facilityName: r.facilityName || facilityName,
+              requestDate: new Date().toISOString().split('T')[0],
+              expectedReturnDate: r.endDate || '',
+              inspectionDate: '',
+              reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
+              bankName: 'MB Bank',
+              bankAccountNumber: '098765432199',
+              bankAccountName: (r.customerName || 'KHACH THUE').toUpperCase(),
+              depositAmount: r.depositPaid || r.depositAmount || 3000000,
+              outstandingDebt: 0,
+              cleaningFee: 0,
+              damageFee: 0,
+              doorFee: 0,
+              smartLockFee: 0,
+              smartLockIssueType: 'NORMAL_WEAR',
+              lostCardFee: 0,
+              status: 'RETURN_REQUESTED',
+              inspectorName: 'Phan Van Hau',
+              historyNotes: ['Hệ thống ghi nhận đơn đến hạn trả kho'],
+              doorPassed: true,
+              doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+              doorFeeInput: 0,
+              cleanlinessPassed: true,
+              cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+              cleaningFeeInput: 0,
+              damagePassed: true,
+              damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+              damageFeeInput: 0,
+              smartLockPassed: true,
+              smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+              smartLockFeeInput: 0,
+              assetsClearedPassed: true,
+              assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+              photoUrls: [],
+              envPassed: true,
+              envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+            })
+          })
+        }
+        setReturnCases(fallbackList)
+        setSelectedCaseId(fallbackList[0]?.id || '')
+      }
+    } catch (err: any) {
+      console.warn('Could not load return cases from backend:', err)
+      toast.error('Lỗi kết nối máy chủ khi nạp danh sách trả kho.')
+    } finally {
       setIsRefreshing(false)
-      toast.success('Đã làm mới danh sách hồ sơ trả kho!')
-    }, 400)
+    }
   }
 
-  // Filtered cases for list
+  useEffect(() => {
+    fetchReturnCases(false)
+  }, [currentFacilityId])
+
+  const handleRefreshWorkbench = () => {
+    fetchReturnCases(true)
+    if (onRefresh) onRefresh()
+  }
+
+  // Filtered cases
   const filteredCases = useMemo(() => {
     return returnCases.filter((c) => {
       const st = String(c.status || '').toUpperCase()
       if (statusTabFilter !== 'ALL') {
         if (statusTabFilter === 'PENDING' && !(st === 'RETURN_REQUESTED' || st === 'PENDING')) return false
-        if (statusTabFilter === 'INSPECTING' && !(st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_SCHEDULED' || st === 'INSPECTION_ISSUE' || st === 'INSPECTION_PASSED' || st === 'INSPECTING')) return false
-        if (statusTabFilter === 'REFUNDING' && !(st === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_APPROVED' || st === 'REFUND_PROCESSING' || st === 'REFUNDED')) return false
+        if (
+          statusTabFilter === 'INSPECTING' &&
+          !(
+            st === 'INSPECTION_IN_PROGRESS' ||
+            st === 'INSPECTION_SCHEDULED' ||
+            st === 'INSPECTION_ISSUE' ||
+            st === 'INSPECTION_PASSED' ||
+            st === 'INSPECTING'
+          )
+        )
+          return false
+        if (
+          statusTabFilter === 'REFUNDING' &&
+          !(
+            st === 'REFUND_PENDING_APPROVAL' ||
+            st === 'REFUND_APPROVED' ||
+            st === 'REFUND_PROCESSING' ||
+            st === 'REFUNDED'
+          )
+        )
+          return false
         if (statusTabFilter === 'COMPLETED' && st !== 'COMPLETED') return false
       }
       if (searchFilter.trim()) {
@@ -443,7 +488,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     return found || filteredCases[0] || null
   }, [filteredCases, selectedCaseId])
 
-  // Synchronize selectedCaseId whenever filteredCases or statusTabFilter changes
   useEffect(() => {
     if (filteredCases.length > 0) {
       if (!selectedCaseId || !filteredCases.some((c) => c.id === selectedCaseId)) {
@@ -454,47 +498,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     }
   }, [statusTabFilter, filteredCases, selectedCaseId])
 
-  // Save changes helper that persists to localStorage immediately
   const updateCurrentCase = (updates: Partial<ReturnCaseItem>) => {
     if (!currentCase) return
-    setReturnCases((prev) => {
-      const updated = prev.map((c) => (c.id === currentCase.id ? { ...c, ...updates } : c))
-      try {
-        localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(updated))
-      } catch {
-        // Ignore storage errors
-      }
-      return updated
-    })
+    setReturnCases((prev) => prev.map((c) => (c.id === currentCase.id ? { ...c, ...updates } : c)))
   }
-
-  // 7 Checklist items state for current case
-  const [doorPassed, setDoorPassed] = useState(true)
-  const [doorNotes, setDoorNotes] = useState('Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.')
-  const [doorFeeInput, setDoorFeeInput] = useState(0)
-
-  const [cleanlinessPassed, setCleanlinessPassed] = useState(true)
-  const [cleanlinessNotes, setCleanlinessNotes] = useState('Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.')
-  const [cleaningFeeInput, setCleaningFeeInput] = useState(0)
-
-  const [damagePassed, setDamagePassed] = useState(true)
-  const [damageNotes, setDamageNotes] = useState('Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.')
-  const [damageFeeInput, setDamageFeeInput] = useState(0)
-
-  const [smartLockPassed, setSmartLockPassed] = useState(true)
-  const [smartLockNotes, setSmartLockNotes] = useState('Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.')
-  const [smartLockFeeInput, setSmartLockFeeInput] = useState(0)
-
-  const [assetsClearedPassed, setAssetsClearedPassed] = useState(true)
-  const [assetsClearedNotes, setAssetsClearedNotes] = useState('Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.')
-
-  const [photoUrls, setPhotoUrls] = useState<string[]>([])
-
-  const [envPassed, setEnvPassed] = useState(true)
-  const [envNotes, setEnvNotes] = useState('Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)')
-
-  // Preview modal for full-size image
-  const [previewImageModal, setPreviewImageModal] = useState<string | null>(null)
 
   // Synchronize state when switching selectedCaseId
   useEffect(() => {
@@ -514,6 +521,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     setSmartLockPassed(currentCase.smartLockPassed !== undefined ? currentCase.smartLockPassed : true)
     setSmartLockNotes(currentCase.smartLockNotes || 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.')
     setSmartLockFeeInput(currentCase.smartLockFeeInput || currentCase.smartLockFee || 0)
+    setSmartLockIssueType(currentCase.smartLockIssueType || 'NORMAL_WEAR')
 
     setAssetsClearedPassed(currentCase.assetsClearedPassed !== undefined ? currentCase.assetsClearedPassed : true)
     setAssetsClearedNotes(currentCase.assetsClearedNotes || 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.')
@@ -524,28 +532,57 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     setEnvNotes(currentCase.envNotes || 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)')
   }, [currentCase?.id])
 
-  // Handle actual file upload
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle actual file upload to server
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
-    if (!files || files.length === 0) return
+    if (!files || files.length === 0 || !currentCase) return
     const fileList = Array.from(files)
 
-    fileList.forEach((file) => {
-      const reader = new FileReader()
-      reader.onload = (loadEvent) => {
-        const result = loadEvent.target?.result
-        if (typeof result === 'string') {
-          setPhotoUrls((prev) => {
-            const next = [...prev, result]
-            updateCurrentCase({ photoUrls: next })
-            return next
-          })
-        }
+    setIsUploadingPhoto(true)
+    let uploadedCount = 0
+
+    for (const file of fileList) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.warning(`Tệp ${file.name} vượt quá 10MB cho phép.`)
+        continue
       }
-      reader.readAsDataURL(file)
-    })
+      try {
+        if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+          const res = await handoverService.uploadHandoverDocument(currentCase.bookingId, file, 'CHECKIN_EVIDENCE')
+          if (res?.fileUrl) {
+            setPhotoUrls((prev) => {
+              const next = [...prev, res.fileUrl]
+              updateCurrentCase({ photoUrls: next })
+              return next
+            })
+            uploadedCount++
+          }
+        } else {
+          // In-memory reader for test fallback
+          const reader = new FileReader()
+          reader.onload = (loadEvt) => {
+            const result = loadEvt.target?.result
+            if (typeof result === 'string') {
+              setPhotoUrls((prev) => {
+                const next = [...prev, result]
+                updateCurrentCase({ photoUrls: next })
+                return next
+              })
+            }
+          }
+          reader.readAsDataURL(file)
+          uploadedCount++
+        }
+      } catch (err: any) {
+        toast.error(`Không thể tải lên ảnh ${file.name}: ${err.response?.data?.message || err.message}`)
+      }
+    }
+
+    setIsUploadingPhoto(false)
     e.target.value = ''
-    toast.success(`Đã tải lên ${fileList.length} ảnh hiện trường!`)
+    if (uploadedCount > 0) {
+      toast.success(`Đã tải lên ${uploadedCount} ảnh bằng chứng hiện trường thành công!`)
+    }
   }
 
   const handleRemovePhoto = (indexToRemove: number) => {
@@ -557,43 +594,26 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     toast.info('Đã gỡ ảnh khỏi biên bản.')
   }
 
-  // Refund execution modal
-  const [showRefundModal, setShowRefundModal] = useState(false)
-  const [refundMethodSelect, setRefundMethodSelect] = useState<'BANK_TRANSFER' | 'VNPAY_REFUND' | 'CASH'>('BANK_TRANSFER')
-  const [refundTxnInput, setRefundTxnInput] = useState('')
-  const [isSubmittingRefund, setIsSubmittingRefund] = useState(false)
-
-  // Handover finish modal
-  const [isFinishingHandover, setIsFinishingHandover] = useState(false)
-
   // Financial calculations
   const deposit = currentCase?.depositAmount || 0
   const cleaningFee = cleanlinessPassed ? 0 : cleaningFeeInput
   const doorFee = doorPassed ? 0 : doorFeeInput
   const damageFee = damagePassed ? 0 : damageFeeInput
-  const smartLockFee = smartLockPassed ? 0 : smartLockFeeInput
+  // SmartLock fee is ONLY charged to customer if it is CUSTOMER_FAULT!
+  const isCustomerFaultLock = !smartLockPassed && smartLockIssueType === 'CUSTOMER_FAULT'
+  const smartLockFee = isCustomerFaultLock ? smartLockFeeInput : 0
   const lostCardFee = currentCase?.lostCardFee || 0
   const outstandingDebt = currentCase?.outstandingDebt || 0
 
-  // 1. Tổng chi phí bồi thường hư hại & dịch vụ tại kho (chưa tính nợ)
+  // 1. Tổng khấu trừ bồi thường của khách
   const totalDeduction = cleaningFee + doorFee + damageFee + smartLockFee + lostCardFee
-
-  // 2. Chi phí sửa chữa & bảo trì được xác minh (Tổng chi phí khấu trừ gồm hư hại + công nợ)
   const totalVerifiedRepairCost = totalDeduction + outstandingDebt
-
-  // 3. Điều kiện: Chi phí sửa chữa và bảo trì vượt quá tiền cọc
   const isOverDeposit = totalVerifiedRepairCost > deposit
-
-  // 4. Tiền cọc được khấu trừ (cấn trừ tối đa bằng đúng tiền cọc ban đầu)
   const deductedDepositAmount = Math.min(deposit, totalVerifiedRepairCost)
-
-  // 5. Khoản khách còn phải thanh toán (chênh lệch khách nợ thêm sau khi đã khấu trừ hết cọc)
   const customerPayableAmount = Math.max(0, totalVerifiedRepairCost - deposit)
-
-  // 6. Tiền dự kiến hoàn trả (nếu chi phí sửa chữa <= tiền cọc)
   const netRefundAmount = currentCase ? Math.max(0, deposit - totalVerifiedRepairCost) : 0
 
-  // Count metrics correctly for all 4 phases
+  // KPI Metrics
   const metrics = useMemo(() => {
     let pending = 0
     let inspecting = 0
@@ -603,9 +623,21 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       const st = String(c.status || '').toUpperCase()
       if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) {
         pending++
-      } else if (st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_SCHEDULED' || st === 'INSPECTION_ISSUE' || st === 'INSPECTION_PASSED' || st === 'INSPECTING') {
+      } else if (
+        st === 'INSPECTION_IN_PROGRESS' ||
+        st === 'INSPECTION_SCHEDULED' ||
+        st === 'INSPECTION_ISSUE' ||
+        st === 'INSPECTION_PASSED' ||
+        st === 'INSPECTING'
+      ) {
         inspecting++
-      } else if (st === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_APPROVED' || st === 'REFUND_PROCESSING' || st === 'REFUNDED' || st === 'REFUNDING') {
+      } else if (
+        st === 'REFUND_PENDING_APPROVAL' ||
+        st === 'REFUND_APPROVED' ||
+        st === 'REFUND_PROCESSING' ||
+        st === 'REFUNDED' ||
+        st === 'REFUNDING'
+      ) {
         refunding++
       } else if (st === 'COMPLETED' || st === 'RESOLVED') {
         completed++
@@ -616,17 +648,17 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     return { pending, inspecting, refunding, completed, total: returnCases.length }
   }, [returnCases])
 
-  // Synchronize metrics count with parent dashboard in real time
   useEffect(() => {
     if (onMetricsChange) {
       onMetricsChange(metrics)
     }
   }, [metrics, onMetricsChange])
 
-  // Modal states for scheduling inspection
-  const [showScheduleConfirmModal, setShowScheduleConfirmModal] = useState(false)
-  const [scheduleDatetimeInput, setScheduleDatetimeInput] = useState('')
+  // =========================================================================
+  // WORKFLOW ACTION HANDLERS (FULL BACKEND INTEGRATION)
+  // =========================================================================
 
+  // Step 1: Schedule Inspection
   const handleOpenScheduleModal = () => {
     if (!currentCase) return
     const now = new Date()
@@ -635,218 +667,284 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     setShowScheduleConfirmModal(true)
   }
 
-  const confirmScheduleInspection = (scheduledTime?: string) => {
+  const confirmScheduleInspection = async (scheduledTime?: string) => {
     if (!currentCase) return
     const inspectTime = scheduledTime || new Date().toLocaleString('vi-VN')
-    const updatedStatus: ReturnStepStatus = 'INSPECTION_IN_PROGRESS'
-    const targetId = currentCase.id
 
-    setReturnCases((prev) => {
-      const updated = prev.map((c) =>
-        c.id === targetId
-          ? {
-              ...c,
-              status: updatedStatus,
-              inspectionDate: inspectTime,
-              inspectorName: userName,
-              historyNotes: [
-                ...(c.historyNotes || []),
-                `Nhân viên ${userName} đã tiếp nhận hồ sơ & lên lịch nghiệm thu (${inspectTime}). Bắt đầu thẩm định hiện trường kho #${c.unitCode}.`
-              ]
-            }
-          : c
-      )
-      try {
-        localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(updated))
-      } catch {}
-      return updated
-    })
-
-    setShowScheduleConfirmModal(false)
-    setStatusTabFilter('INSPECTING')
-    setSelectedCaseId(targetId)
-    toast.success(`Đã tiếp nhận hồ sơ kho #${currentCase.unitCode} và chuyển sang trạng thái Đang Nghiệm Thu!`, {
-      title: 'Tiếp nhận thành công'
-    })
-  }
-
-  const handleStartInspection = () => {
-    if (!currentCase) return
-    const updatedStatus: ReturnStepStatus = 'INSPECTION_IN_PROGRESS'
-    updateCurrentCase({
-      status: updatedStatus,
-      inspectorName: userName,
-      historyNotes: [
-        ...(currentCase.historyNotes || []),
-        `Bắt đầu kiểm tra hiện trường kho #${currentCase.unitCode} bởi ${userName}`
-      ]
-    })
-
-    // If currently filtered by PENDING, switch to ALL so this dossier stays active and does not jump away!
-    if (statusTabFilter === 'PENDING') {
-      setStatusTabFilter('ALL')
-    }
-
-    toast.info(`Bắt đầu nghiệm thu kho #${currentCase.unitCode}. Trạng thái: Đang nghiệm thu.`, {
-      title: 'Tiến trình kiểm định'
-    })
-  }
-
-  const handleSaveInspection = (resultType: 'PASSED' | 'ISSUE') => {
-    if (!currentCase) return
-    const isCleanIssue = !cleanlinessPassed && cleaningFeeInput > 0
-    const isDamageIssue = !damagePassed && damageFeeInput > 0
-    const isDoorIssue = !doorPassed && doorFeeInput > 0
-    const isLockIssue = !smartLockPassed && smartLockFeeInput > 0
-    const finalResult: ReturnStepStatus =
-      resultType === 'PASSED' &&
-      !isCleanIssue &&
-      !isDamageIssue &&
-      !isDoorIssue &&
-      !isLockIssue &&
-      doorPassed &&
-      cleanlinessPassed &&
-      damagePassed &&
-      smartLockPassed &&
-      assetsClearedPassed &&
-      envPassed
-        ? 'INSPECTION_PASSED'
-        : 'INSPECTION_ISSUE'
-
-    const updatedCaseData: Partial<ReturnCaseItem> = {
-      status: finalResult,
-      doorPassed,
-      doorNotes,
-      doorFeeInput: doorPassed ? 0 : doorFeeInput,
-      doorFee: doorPassed ? 0 : doorFeeInput,
-      cleanlinessPassed,
-      cleanlinessNotes,
-      cleaningFeeInput: cleanlinessPassed ? 0 : cleaningFeeInput,
-      cleaningFee: cleanlinessPassed ? 0 : cleaningFeeInput,
-      damagePassed,
-      damageNotes,
-      damageFeeInput: damagePassed ? 0 : damageFeeInput,
-      damageFee: damagePassed ? 0 : damageFeeInput,
-      smartLockPassed,
-      smartLockNotes,
-      smartLockFeeInput: smartLockPassed ? 0 : smartLockFeeInput,
-      smartLockFee: smartLockPassed ? 0 : smartLockFeeInput,
-      assetsClearedPassed,
-      assetsClearedNotes,
-      photoUrls,
-      envPassed,
-      envNotes,
-      inspectorName: userName,
-      inspectionDate: new Date().toLocaleString('vi-VN'),
-      historyNotes: [
-        ...(currentCase.historyNotes || []),
-        `Lưu biên bản nghiệm thu: [${finalResult === 'INSPECTION_PASSED' ? 'ĐẠT CHUẨN' : 'CÓ HƯ HẠI/KHẤU TRỪ'}]. Tổng khấu trừ: ${totalDeduction.toLocaleString('vi-VN')}đ bởi ${userName}`
-      ]
-    }
-    updateCurrentCase(updatedCaseData)
-    toast.success('Đã lưu biên bản nghiệm thu và hiện trạng hồ sơ thành công!')
-  }
-
-  const handleSubmitRefundApproval = () => {
-    if (!currentCase) return
-    const noteMsg = isOverDeposit
-      ? `Nhân viên ${userName} đã trình duyệt quyết toán: Khấu trừ 100% cọc (${deductedDepositAmount.toLocaleString('vi-VN')}đ) và thu bổ sung ${customerPayableAmount.toLocaleString('vi-VN')}đ chi phí hư hại`
-      : `Nhân viên ${userName} đã trình duyệt khoản hoàn trả ${netRefundAmount.toLocaleString('vi-VN')}đ`
-
-    updateCurrentCase({
-      status: 'REFUND_PENDING_APPROVAL',
-      historyNotes: [...(currentCase.historyNotes || []), noteMsg]
-    })
-    toast.success('Đã trình duyệt quyết toán lên Quản lý cơ sở (Facility Manager)!')
-  }
-
-  const handleApproveRefund = () => {
-    if (!currentCase) return
-    const noteMsg = isOverDeposit
-      ? `Quản lý cơ sở ${userName} đã phê duyệt khấu trừ hết cọc và thu thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ từ khách hàng`
-      : `Quản lý cơ sở ${userName} đã phê duyệt số tiền hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ`
-
-    updateCurrentCase({
-      status: 'REFUND_APPROVED',
-      approverName: userName,
-      historyNotes: [...(currentCase.historyNotes || []), noteMsg]
-    })
-    if (isOverDeposit) {
-      toast.success(`Đã phê duyệt quyết toán! Cần thu thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ từ khách hàng.`)
-    } else {
-      toast.success(`Đã phê duyệt hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ!`)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.scheduleInspection(
+          currentCase.bookingId,
+          inspectTime,
+          `Tiếp nhận và hẹn lịch nghiệm thu bởi ${userName}`
+        )
+      }
+      setShowScheduleConfirmModal(false)
+      setStatusTabFilter('INSPECTING')
+      toast.success(`Đã lên lịch nghiệm thu kho #${currentCase.unitCode} lúc ${inspectTime}!`)
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi lên lịch: ${err.response?.data?.message || err.message}`)
     }
   }
 
-  const handleExecuteRefund = () => {
+  // Step 2: Start Inspection
+  const handleStartInspection = async () => {
     if (!currentCase) return
-    setIsSubmittingRefund(true)
-    setTimeout(() => {
-      const generatedRef = refundTxnInput.trim() || `${isOverDeposit ? 'REC-COMP' : 'TXN-REF'}-${Date.now().toString().slice(-6)}`
-      const historyMsg = isOverDeposit
-        ? `Đã thu đủ khoản bồi thường bổ sung ${customerPayableAmount.toLocaleString('vi-VN')}đ từ khách qua [${refundMethodSelect}], mã biên lai: ${generatedRef}`
-        : `Đã thực hiện lệnh hoàn tiền qua [${refundMethodSelect}], mã giao dịch: ${generatedRef}, số tiền: ${netRefundAmount.toLocaleString('vi-VN')}đ`
-
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.startInspection(currentCase.bookingId)
+      }
       updateCurrentCase({
-        status: 'REFUNDED',
-        refundTxnRef: generatedRef,
-        refundProcessedAt: new Date().toLocaleString('vi-VN'),
+        status: 'INSPECTION_IN_PROGRESS',
+        inspectorName: userName,
         historyNotes: [
           ...(currentCase.historyNotes || []),
-          historyMsg
+          `Bắt đầu kiểm tra hiện trường kho #${currentCase.unitCode} bởi ${userName}`
         ]
       })
-      setIsSubmittingRefund(false)
-      setShowRefundModal(false)
-      if (isOverDeposit) {
-        toast.success(`Đã xác nhận thu đủ khoản bồi thường ${customerPayableAmount.toLocaleString('vi-VN')}đ thành công!`)
-      } else {
-        toast.success(`Đã hoàn tất chuyển tiền cọc ${netRefundAmount.toLocaleString('vi-VN')}đ cho khách hàng!`)
+      if (statusTabFilter === 'PENDING') {
+        setStatusTabFilter('ALL')
       }
-    }, 600)
+      toast.info(`Bắt đầu nghiệm thu kho #${currentCase.unitCode}. Trạng thái: Đang nghiệm thu.`)
+    } catch (err: any) {
+      toast.error(`Lỗi bắt đầu nghiệm thu: ${err.response?.data?.message || err.message}`)
+    }
   }
 
-  const handleCompleteHandoverAndRelease = async () => {
+  // Step 3: Save Inspection (Draft or Official)
+  const handleSaveInspection = async (resultType: 'PASSED' | 'ISSUE', isDraft: boolean = false) => {
     if (!currentCase) return
-    setIsFinishingHandover(true)
-    try {
-      // Call backend return settlement if bookingId is valid
-      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
-        await handoverService.processReturnSettlement({
-          bookingId: currentCase.bookingId,
-          recordType: 'RETURN',
-          doorConditionPassed: doorPassed,
-          cleanlinessPassed: cleanlinessPassed,
-          smartLockPassed: smartLockPassed,
-          sensorPassed: envPassed,
-          wallStructurePassed: damagePassed,
-          depositSettled: currentCase.depositAmount,
-          deductionAmount: totalDeduction,
-          damageFee: (damagePassed ? 0 : damageFeeInput) + (doorPassed ? 0 : doorFeeInput) + (smartLockPassed ? 0 : smartLockFeeInput),
-          cleaningFee: cleanlinessPassed ? 0 : cleaningFeeInput,
-          lostCardFee: currentCase.lostCardFee || 0,
-          refundMethod: refundMethodSelect,
-          notes: `Trả kho hoàn tất. Mã GD hoàn cọc: ${currentCase.refundTxnRef || 'ĐÃ DUYỆT'}`
-        })
+
+    // Pre-condition validations for Official Passed
+    if (!isDraft && resultType === 'PASSED') {
+      if (photoUrls.length < 2) {
+        toast.error('Quy định Boxora bắt buộc: Cần tối thiểu 2 ảnh bằng chứng hiện trường trước khi lưu nghiệm thu ĐẠT CHUẨN!')
+        return
       }
-    } catch (e: any) {
-      console.warn('Backend return settlement call notice:', e)
+      if (!assetsClearedPassed) {
+        toast.error('Kho chưa dọn trống tài sản của khách hàng! Không thể lập biên bản ĐẠT CHUẨN.')
+        return
+      }
+      if (!doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed) {
+        toast.error('Có tiêu chí chưa đạt! Vui lòng chọn "Lập biên bản có hư hại" hoặc chuyển các tiêu chí sang Đạt.')
+        return
+      }
     }
 
-    updateCurrentCase({
-      status: 'COMPLETED',
-      completedAt: new Date().toLocaleString('vi-VN'),
-      historyNotes: [
-        ...(currentCase.historyNotes || []),
-        `Thu hồi mã SmartLock, giải phóng buồng kho #${currentCase.unitCode} về trạng thái SẴN SÀNG, hợp đồng đã thanh lý hoàn tất.`
-      ]
-    })
-    setIsFinishingHandover(false)
-    toast.success(`Đã hoàn tất bàn giao kho #${currentCase.unitCode}, thu hồi mã PIN IoT và giải phóng buồng kho thành công!`, {
-      title: 'Thanh lý hợp đồng & Trả kho thành công'
-    })
-    if (onReturnCompleted) {
-      onReturnCompleted()
+    const payload: ReturnInspectionPayload = {
+      bookingId: currentCase.bookingId,
+      isDraft,
+      doorConditionPassed: doorPassed,
+      doorFee: doorPassed ? 0 : doorFeeInput,
+      doorNotes,
+      cleanlinessPassed,
+      cleaningFee: cleanlinessPassed ? 0 : cleaningFeeInput,
+      cleanlinessNotes,
+      wallStructurePassed: damagePassed,
+      damageFee: damagePassed ? 0 : damageFeeInput,
+      damageNotes,
+      smartLockPassed,
+      smartLockFee: smartLockPassed || smartLockIssueType !== 'CUSTOMER_FAULT' ? 0 : smartLockFeeInput,
+      smartLockNotes,
+      smartLockIssueType,
+      assetsClearedPassed,
+      assetsClearedNotes,
+      sensorPassed: envPassed,
+      sensorNotes: envNotes,
+      evidencePhotos: photoUrls,
+      notes: isDraft ? 'Lưu bản nháp nghiệm thu' : `Biên bản nghiệm thu: [${resultType === 'PASSED' ? 'ĐẠT CHUẨN' : 'CÓ HƯ HẠI'}]`
+    }
+
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.saveReturnInspection(payload)
+      }
+      toast.success(isDraft ? 'Đã lưu bản nháp nghiệm thu thành công!' : 'Đã lưu biên bản nghiệm thu hiện trường!')
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi lưu biên bản: ${err.response?.data?.message || err.message}`)
+    }
+  }
+
+  // Step 4: Submit for Approval
+  const handleSubmitRefundApproval = async () => {
+    if (!currentCase) return
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.submitDeductionsForApproval(
+          currentCase.bookingId,
+          `Nhân viên ${userName} trình duyệt quyết toán: Khấu trừ ${totalDeduction.toLocaleString('vi-VN')}đ`
+        )
+      }
+      toast.success('Đã trình duyệt quyết toán lên Quản lý cơ sở (Facility Manager)!')
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi trình duyệt: ${err.response?.data?.message || err.message}`)
+    }
+  }
+
+  // Step 5: Manager Approve or Reject
+  const handleApproveSettlement = async (action: 'APPROVE' | 'REJECT') => {
+    if (!currentCase) return
+    if (!isFacilityManager) {
+      toast.error('Chỉ Quản lý cơ sở (FACILITY_MANAGER) hoặc cấp thẩm quyền mới được phê duyệt quyết toán!')
+      return
+    }
+
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.approveSettlement(currentCase.bookingId, {
+          approvalAction: action,
+          approvedDeductionAmount: action === 'APPROVE' ? totalDeduction : 0,
+          notes: action === 'APPROVE' ? `Quản lý ${userName} phê duyệt quyết toán.` : `Quản lý ${userName} từ chối / yêu cầu thẩm định lại.`
+        })
+      }
+      if (action === 'APPROVE') {
+        toast.success('Đã phê duyệt quyết toán thành công!')
+      } else {
+        toast.warning('Đã từ chối và yêu cầu kiểm tra lại hiện trường.')
+      }
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi phê duyệt: ${err.response?.data?.message || err.message}`)
+    }
+  }
+
+  // Step 6: Customer Dispute
+  const handleRecordDispute = async () => {
+    if (!currentCase || !disputeReasonInput.trim()) {
+      toast.warning('Vui lòng nhập lý do khách hàng khiếu nại.')
+      return
+    }
+    setIsSubmittingDispute(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.recordCustomerDispute(currentCase.bookingId, disputeReasonInput.trim())
+      }
+      toast.warning(`Đã ghi nhận tranh chấp cho hồ sơ #${currentCase.unitCode}!`)
+      setShowDisputeModal(false)
+      setDisputeReasonInput('')
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi ghi nhận tranh chấp: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsSubmittingDispute(false)
+    }
+  }
+
+  // Step 7: Execute Refund or Collect Additional Payment
+  const handleExecuteFinancialAction = async () => {
+    if (!currentCase) return
+    setIsSubmittingRefund(true)
+
+    try {
+      if (isOverDeposit) {
+        // Collect additional payment
+        const txnRef = refundTxnInput.trim() || `REC-COMP-${Date.now().toString().slice(-6)}`
+        if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+          await handoverService.collectAdditionalPayment(currentCase.bookingId, {
+            additionalPaymentMethod: refundMethodSelect,
+            additionalPaymentTxnRef: txnRef,
+            notes: `Thu bổ sung ${customerPayableAmount.toLocaleString('vi-VN')}đ tại quầy`
+          })
+        }
+        toast.success(`Đã xác nhận thu đủ khoản bồi thường ${customerPayableAmount.toLocaleString('vi-VN')}đ!`)
+      } else {
+        // Execute refund
+        const txnRef = refundTxnInput.trim() || `REF-TXN-${Date.now().toString().slice(-6)}`
+        if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+          await handoverService.executeRefund(currentCase.bookingId, {
+            refundMethod: refundMethodSelect,
+            notes: `Hoàn tiền cọc ${netRefundAmount.toLocaleString('vi-VN')}đ qua ${refundMethodSelect} (${txnRef})`
+          })
+        }
+        toast.success(`Đã thực hiện lệnh hoàn tiền cọc ${netRefundAmount.toLocaleString('vi-VN')}đ cho khách!`)
+      }
+      setShowRefundModal(false)
+      setRefundTxnInput('')
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Giao dịch thất bại: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsSubmittingRefund(false)
+    }
+  }
+
+  // Step 8: Confirm Physical Return of Storage Unit
+  const handleConfirmPhysicalReturn = async () => {
+    if (!currentCase) return
+    if (!assetsClearedPassed) {
+      toast.error('Khách chưa lấy hết tài sản ra khỏi kho! Không thể nhận lại kho.')
+      return
+    }
+
+    setIsConfirmingPhysical(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.confirmPhysicalReturn(currentCase.bookingId, {
+          notes: `Nhân viên ${userName} đã kiểm tra hiện trường và nhận lại buồng kho vật lý #${currentCase.unitCode}.`
+        })
+      }
+      toast.success(`Đã xác nhận nhận lại kho #${currentCase.unitCode} từ khách hàng!`)
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi nhận lại kho: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsConfirmingPhysical(false)
+    }
+  }
+
+  // Step 9: Revoke SmartLock Access
+  const handleRevokeSmartLock = async () => {
+    if (!currentCase) return
+    setIsRevokingAccess(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.revokeAccess(currentCase.bookingId)
+      }
+      toast.success(`Đã thu hồi mã PIN SmartLock và hủy quyền truy cập kho #${currentCase.unitCode}!`)
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi thu hồi SmartLock: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsRevokingAccess(false)
+    }
+  }
+
+  // Step 10: Complete Handover & Close Contract
+  const handleCompleteHandoverAndRelease = async () => {
+    if (!currentCase) return
+
+    // Pre-condition validations
+    if (!currentCase.unitReturnedPhysically) {
+      toast.warning('Cần nhấn "Xác Nhận Nhận Lại Kho Vật Lý" trước khi hoàn tất hồ sơ!')
+      return
+    }
+    if (!currentCase.accessRevoked) {
+      toast.warning('Cần nhấn "Thu Hồi Mã SmartLock" để đảm bảo an toàn buồng kho trước khi hoàn tất!')
+      return
+    }
+    if (isOverDeposit && currentCase.additionalPaymentStatus !== 'PAID') {
+      toast.warning('Khoản bồi thường vượt cọc chưa được thanh toán! Vui lòng thu tiền tại quầy hoặc ghi nhận.')
+      return
+    }
+
+    setIsFinishingHandover(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.completeReturn(currentCase.bookingId)
+      }
+      toast.success(
+        `Đã hoàn tất thanh lý hợp đồng & giải phóng kho #${currentCase.unitCode} về trạng thái sẵn sàng!`,
+        { title: 'Thanh lý thành công' }
+      )
+      if (onReturnCompleted) onReturnCompleted()
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi hoàn tất hồ sơ: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsFinishingHandover(false)
     }
   }
 
@@ -865,11 +963,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       case 'REFUND_PENDING_APPROVAL':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-400">Chờ duyệt cọc</span>
       case 'REFUND_APPROVED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300">Đã duyệt hoàn</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300">Đã duyệt quyết toán</span>
       case 'REFUND_PROCESSING':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-900 border border-sky-300">Đang hoàn tiền</span>
       case 'REFUNDED':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-300">Đã hoàn tiền</span>
+      case 'DISPUTED':
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-900 border border-red-300 animate-pulse">Đang khiếu nại</span>
       case 'COMPLETED':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">Đã bàn giao xong</span>
       default:
@@ -888,14 +988,14 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-headline font-bold">
-                Quy Trình Nghiệm Thu &amp; Trả Kho Thực Địa
+                Quy Trình Nghiệm Thu &amp; Trả Kho Thực Địa (Boxora Warehouse Return)
               </h2>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
                 SLA HOÀN CỌC CHUẨN BOXORA
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-1">
-              Tiếp nhận yêu cầu, kiểm định 7 tiêu chí hiện trường, quyết toán khấu trừ cọc và bàn giao giải phóng buồng kho.
+              Thẩm định 7 tiêu chí hiện trường, phân tách trách nhiệm IoT, quyết toán chống cọc âm, nhận lại ô kho và thu hồi SmartLock.
             </p>
           </div>
         </div>
@@ -904,11 +1004,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           <button
             type="button"
             onClick={handleRefreshWorkbench}
-            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold border border-white/20 text-white flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
-            title="Làm mới danh sách hồ sơ trả kho từ cơ sở"
+            disabled={isRefreshing}
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold border border-white/20 text-white flex items-center gap-1.5 cursor-pointer transition shadow-2xs disabled:opacity-50"
+            title="Làm mới danh sách hồ sơ trả kho từ máy chủ"
           >
             <RotateCcw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-            <span>Làm mới</span>
+            <span>{isRefreshing ? 'Đang nạp...' : 'Làm mới'}</span>
           </button>
         </div>
       </div>
@@ -960,12 +1061,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           }`}
         >
           <div className="flex items-center justify-between text-xs font-bold text-teal-800">
-            <span>3. Duyệt &amp; Hoàn Cọc</span>
+            <span>3. Duyệt &amp; Quyết Toán</span>
             <DollarSign size={16} />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-headline text-2xl font-extrabold text-teal-950">{metrics.refunding}</span>
-            <span className="text-xs text-teal-700">đối soát hoàn tiền</span>
+            <span className="text-xs text-teal-700">đối soát tài chính</span>
           </div>
         </div>
 
@@ -1002,6 +1103,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <button
                   type="button"
                   onClick={handleRefreshWorkbench}
+                  disabled={isRefreshing}
                   className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-100 transition cursor-pointer"
                   title="Làm mới danh sách"
                 >
@@ -1037,26 +1139,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-slate-100">
                   <RotateCcw size={28} className={`mx-auto mb-2 opacity-50 ${isRefreshing ? 'animate-spin text-amber-600' : ''}`} />
                   <p className="font-bold text-slate-600">Không có hồ sơ trả kho phù hợp</p>
-                  <p className="text-[11px] mt-1">Thử đổi từ khóa, xóa bộ lọc hoặc bấm làm mới danh sách.</p>
-                  <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
-                    {statusTabFilter !== 'ALL' && (
-                      <button
-                        type="button"
-                        onClick={() => setStatusTabFilter('ALL')}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
-                      >
-                        Xem tất cả
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleRefreshWorkbench}
-                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                    >
-                      <RotateCcw size={13} className={isRefreshing ? 'animate-spin' : ''} />
-                      <span>Làm mới danh sách</span>
-                    </button>
-                  </div>
+                  <p className="text-[11px] mt-1">Thử đổi từ khóa hoặc bấm làm mới danh sách.</p>
                 </div>
               ) : (
                 filteredCases.map((c) => {
@@ -1101,10 +1184,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             onClick={(e) => {
                               e.stopPropagation()
                               setSelectedCaseId(c.id)
-                              const now = new Date()
-                              const defaultTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
-                              setScheduleDatetimeInput(c.inspectionDate || defaultTime)
-                              setShowScheduleConfirmModal(true)
+                              handleOpenScheduleModal()
                             }}
                             className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white font-bold text-[11px] border border-amber-300 hover:border-amber-600 transition flex items-center gap-1 cursor-pointer"
                           >
@@ -1170,7 +1250,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                     <span className="text-[10px] uppercase font-bold text-slate-400 block">Lịch Nghiệm Thu</span>
                     <strong className="text-amber-800 text-xs font-mono font-bold block mt-0.5">
-                      {currentCase.inspectionDate || currentCase.expectedReturnDate}
+                      {currentCase.inspectionDate || currentCase.expectedReturnDate || 'Chưa hẹn'}
                     </strong>
                     <span className="text-[10px] text-slate-400 font-mono">Gửi: {currentCase.requestDate}</span>
                   </div>
@@ -1223,10 +1303,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </button>
                   </div>
                 )}
-
               </div>
 
-              {/* KHỐI B & C: Chỉ hiển thị khi hồ sơ đã được tiếp nhận sang giai đoạn Đang nghiệm thu hoặc các giai đoạn sau */}
+              {/* KHỐI B & C & D: Chỉ kích hoạt khi đã qua giai đoạn tiếp nhận */}
               {currentCase.status === 'RETURN_REQUESTED' ? (
                 <div className="p-8 rounded-2xl bg-white border border-dashed border-amber-300 shadow-xs text-center space-y-4">
                   <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
@@ -1257,876 +1336,994 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <>
                   {/* KHỐI B: BIÊN BẢN THẨM ĐỊNH HIỆN TRƯỜNG (CHECKLIST 7 HẠNG MỤC) */}
                   <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-800 font-mono font-bold text-xs flex items-center justify-center">
-                      B
-                    </span>
-                    <div>
-                      <h3 className="font-bold text-sm text-slate-900">
-                        Biên Bản Thẩm Định Hiện Trường (7 Tiêu Chuẩn Nghiệm Thu)
-                      </h3>
-                      <p className="text-[11px] text-slate-500">
-                        Kiểm tra thực tế hiện trạng buồng kho trước khi lập biên bản hoàn cọc.
-                      </p>
-                    </div>
-                  </div>
-
-                  {currentCase.status === 'INSPECTION_SCHEDULED' && (
-                    <button
-                      type="button"
-                      onClick={handleStartInspection}
-                      className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                    >
-                      <ClipboardCheck size={14} />
-                      <span>Bắt Đầu Nghiệm Thu Hiện Trường</span>
-                    </button>
-                  )}
-
-                  {currentCase.status === 'INSPECTION_IN_PROGRESS' && (
-                    <span className="px-3 py-1 rounded-xl bg-indigo-100 text-indigo-900 border border-indigo-200 text-xs font-bold flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping"></span>
-                      <span>Đang nghiệm thu hiện trường</span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  {/* 1. Cửa cuốn & Ray trượt */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">1. Cửa cuốn &amp; Ray trượt</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${doorPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {doorPassed ? '✓ Đạt chuẩn' : '⚠️ Có vấn đề'}
+                        <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-800 font-mono font-bold text-xs flex items-center justify-center">
+                          B
                         </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDoorPassed(true)
-                            setDoorFeeInput(0)
-                            updateCurrentCase({ doorPassed: true, doorFeeInput: 0, doorFee: 0 })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${doorPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Đạt
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDoorPassed(false)
-                            const newFee = doorFeeInput > 0 ? doorFeeInput : 300000
-                            setDoorFeeInput(newFee)
-                            updateCurrentCase({ doorPassed: false, doorFeeInput: newFee, doorFee: newFee })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!doorPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Hư hại
-                        </button>
-                      </div>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={doorNotes}
-                      onChange={(e) => {
-                        setDoorNotes(e.target.value)
-                        updateCurrentCase({ doorNotes: e.target.value })
-                      }}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                      placeholder="Ghi chú tình trạng đóng mở, ray dẫn, biến dạng..."
-                    />
-
-                    {!doorPassed && (
-                      <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
-                        <AlertTriangle size={14} className="text-rose-600 shrink-0" />
-                        <span className="font-bold text-rose-800">Phí khắc phục hư hại cửa cuốn dự kiến:</span>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            value={doorFeeInput}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0
-                              setDoorFeeInput(val)
-                              updateCurrentCase({ doorFeeInput: val, doorFee: val })
-                            }}
-                            className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                            placeholder="300000"
-                          />
-                          <span className="font-bold text-rose-700">VNĐ</span>
+                        <div>
+                          <h3 className="font-bold text-sm text-slate-900">
+                            Biên Bản Thẩm Định Hiện Trường (7 Tiêu Chuẩn Nghiệm Thu)
+                          </h3>
+                          <p className="text-[11px] text-slate-500">
+                            Kiểm tra thực tế hiện trạng buồng kho trước khi lập biên bản hoàn cọc.
+                          </p>
                         </div>
-                        <span className="text-[11px] text-rose-600 font-medium">(Khấu trừ trực tiếp vào tiền cọc)</span>
                       </div>
-                    )}
-                  </div>
 
-                  {/* 2. Vệ sinh kho */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">2. Vệ sinh kho &amp; Sàn nhà</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${cleanlinessPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
-                          {cleanlinessPassed ? '✓ Sạch sẽ' : '⚠️ Chưa dọn'}
+                      {currentCase.status === 'INSPECTION_IN_PROGRESS' && (
+                        <span className="px-3 py-1 rounded-xl bg-indigo-100 text-indigo-900 border border-indigo-200 text-xs font-bold flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping"></span>
+                          <span>Đang nghiệm thu hiện trường</span>
                         </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCleanlinessPassed(true)
-                            setCleaningFeeInput(0)
-                            updateCurrentCase({ cleanlinessPassed: true, cleaningFeeInput: 0, cleaningFee: 0 })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${cleanlinessPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Sạch
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setCleanlinessPassed(false)
-                            const newFee = cleaningFeeInput > 0 ? cleaningFeeInput : 150000
-                            setCleaningFeeInput(newFee)
-                            updateCurrentCase({ cleanlinessPassed: false, cleaningFeeInput: newFee, cleaningFee: newFee })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!cleanlinessPassed ? 'bg-amber-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Chưa dọn
-                        </button>
-                      </div>
+                      )}
                     </div>
 
-                    <input
-                      type="text"
-                      value={cleanlinessNotes}
-                      onChange={(e) => {
-                        setCleanlinessNotes(e.target.value)
-                        updateCurrentCase({ cleanlinessNotes: e.target.value })
-                      }}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                      placeholder="Ghi chú vệ sinh, rác thừa, vết dầu mỡ..."
-                    />
-
-                    {!cleanlinessPassed && (
-                      <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 flex items-center gap-2 flex-wrap text-xs">
-                        <AlertTriangle size={14} className="text-amber-600 shrink-0" />
-                        <span className="font-bold text-amber-900">Phí dịch vụ dọn vệ sinh:</span>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            value={cleaningFeeInput}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0
-                              setCleaningFeeInput(val)
-                              updateCurrentCase({ cleaningFeeInput: val, cleaningFee: val })
-                            }}
-                            className="w-32 p-1.5 text-xs border border-amber-300 rounded-lg bg-white font-mono font-bold text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                            placeholder="150000"
-                          />
-                          <span className="font-bold text-amber-800">VNĐ</span>
+                    <div className="space-y-3">
+                      {/* 1. Cửa cuốn & Ray trượt */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">1. Cửa cuốn &amp; Ray trượt</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${doorPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {doorPassed ? '✓ Đạt chuẩn' : '⚠️ Có vấn đề'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDoorPassed(true)
+                                setDoorFeeInput(0)
+                                updateCurrentCase({ doorPassed: true, doorFeeInput: 0, doorFee: 0 })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${doorPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Đạt
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDoorPassed(false)
+                                const newFee = doorFeeInput > 0 ? doorFeeInput : 300000
+                                setDoorFeeInput(newFee)
+                                updateCurrentCase({ doorPassed: false, doorFeeInput: newFee, doorFee: newFee })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!doorPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Hư hại
+                            </button>
+                          </div>
                         </div>
-                        <span className="text-[11px] text-amber-700 font-medium">(Khấu trừ trực tiếp vào tiền cọc)</span>
-                      </div>
-                    )}
-                  </div>
 
-                  {/* 3. Hư hại vách sàn trần */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">3. Kết cấu tường vách &amp; Sàn trần</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${damagePassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {damagePassed ? '✓ Nguyên vẹn' : '⚠️ Có hư hỏng'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDamagePassed(true)
-                            setDamageFeeInput(0)
-                            updateCurrentCase({ damagePassed: true, damageFeeInput: 0, damageFee: 0 })
+                        <input
+                          type="text"
+                          value={doorNotes}
+                          onChange={(e) => {
+                            setDoorNotes(e.target.value)
+                            updateCurrentCase({ doorNotes: e.target.value })
                           }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${damagePassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Nguyên vẹn
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDamagePassed(false)
-                            const newFee = damageFeeInput > 0 ? damageFeeInput : 5000000
-                            setDamageFeeInput(newFee)
-                            updateCurrentCase({ damagePassed: false, damageFeeInput: newFee, damageFee: newFee })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!damagePassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Hư hại
-                        </button>
-                      </div>
-                    </div>
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
+                          placeholder="Ghi chú tình trạng đóng mở, ray dẫn, biến dạng..."
+                        />
 
-                    <input
-                      type="text"
-                      value={damageNotes}
-                      onChange={(e) => {
-                        setDamageNotes(e.target.value)
-                        updateCurrentCase({ damageNotes: e.target.value })
-                      }}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                      placeholder="Ghi chú hư hại, móp vách, nứt sàn..."
-                    />
-
-                    {!damagePassed && (
-                      <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
-                        <AlertTriangle size={14} className="text-rose-600 shrink-0" />
-                        <span className="font-bold text-rose-800">Phí khắc phục hư hại kho dự kiến:</span>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            value={damageFeeInput}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0
-                              setDamageFeeInput(val)
-                              updateCurrentCase({ damageFeeInput: val, damageFee: val })
-                            }}
-                            className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                            placeholder="5000000"
-                          />
-                          <span className="font-bold text-rose-700">VNĐ</span>
-                        </div>
-                        <span className="text-[11px] text-rose-600 font-medium">(Cần quản lý cơ sở phê duyệt)</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 4. Khóa Smart Lock IoT */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">4. Ổ khóa SmartLock IoT</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${smartLockPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {smartLockPassed ? '✓ Pin 94% • Hoạt động tốt' : '⚠️ Lỗi khóa / Hết pin'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSmartLockPassed(true)
-                            setSmartLockFeeInput(0)
-                            updateCurrentCase({ smartLockPassed: true, smartLockFeeInput: 0, smartLockFee: 0 })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${smartLockPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Bình thường
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSmartLockPassed(false)
-                            const newFee = smartLockFeeInput > 0 ? smartLockFeeInput : 400000
-                            setSmartLockFeeInput(newFee)
-                            updateCurrentCase({ smartLockPassed: false, smartLockFeeInput: newFee, smartLockFee: newFee })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!smartLockPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Báo lỗi
-                        </button>
-                      </div>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={smartLockNotes}
-                      onChange={(e) => {
-                        setSmartLockNotes(e.target.value)
-                        updateCurrentCase({ smartLockNotes: e.target.value })
-                      }}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                      placeholder="Ghi chú tình trạng khóa số, pin, độ nhạy cảm biến..."
-                    />
-
-                    {!smartLockPassed && (
-                      <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
-                        <AlertTriangle size={14} className="text-rose-600 shrink-0" />
-                        <span className="font-bold text-rose-800">Phí khắc phục / thay thế SmartLock dự kiến:</span>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            value={smartLockFeeInput}
-                            onChange={(e) => {
-                              const val = Number(e.target.value) || 0
-                              setSmartLockFeeInput(val)
-                              updateCurrentCase({ smartLockFeeInput: val, smartLockFee: val })
-                            }}
-                            className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                            placeholder="400000"
-                          />
-                          <span className="font-bold text-rose-700">VNĐ</span>
-                        </div>
-                        <span className="text-[11px] text-rose-600 font-medium">(Khấu trừ trực tiếp vào tiền cọc)</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 5. Tài sản còn lại */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">5. Xác nhận không còn đồ đạc trong kho</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${assetsClearedPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {assetsClearedPassed ? '✓ Kho đã dọn trống' : '⚠️ Vẫn còn đồ của khách'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAssetsClearedPassed(true)
-                            updateCurrentCase({ assetsClearedPassed: true })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${assetsClearedPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Đã dọn trống
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAssetsClearedPassed(false)
-                            updateCurrentCase({ assetsClearedPassed: false })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!assetsClearedPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Còn đồ
-                        </button>
-                      </div>
-                    </div>
-                    <input
-                      type="text"
-                      value={assetsClearedNotes}
-                      onChange={(e) => {
-                        setAssetsClearedNotes(e.target.value)
-                        updateCurrentCase({ assetsClearedNotes: e.target.value })
-                      }}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                      placeholder="Xác nhận khách đã mang toàn bộ đồ đạc cá nhân ra khỏi ô kho..."
-                    />
-                  </div>
-
-                  {/* 6. Ảnh chụp hiện trường có Upload thật */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={handleImageUpload}
-                    />
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 text-sm">6. Ảnh bằng chứng hiện trường (Tối thiểu 2 ảnh)</span>
-                        {photoUrls.length >= 2 ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            ✓ Đủ {photoUrls.length}/2 ảnh (Đạt tiêu chuẩn)
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
-                            ⚠️ Cần tối thiểu 2 ảnh (hiện có {photoUrls.length}/2 ảnh)
-                          </span>
+                        {!doorPassed && (
+                          <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
+                            <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                            <span className="font-bold text-rose-800">Phí khắc phục hư hại cửa cuốn dự kiến:</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                value={doorFeeInput}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value) || 0
+                                  setDoorFeeInput(val)
+                                  updateCurrentCase({ doorFeeInput: val, doorFee: val })
+                                }}
+                                className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                placeholder="300000"
+                              />
+                              <span className="font-bold text-rose-700">VNĐ</span>
+                            </div>
+                            <span className="text-[11px] text-rose-600 font-medium">(Khấu trừ trực tiếp vào tiền cọc)</span>
+                          </div>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                        >
-                          <Upload size={14} />
-                          <span>+ Tải ảnh hiện trường lên</span>
-                        </button>
+                      {/* 2. Vệ sinh kho */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">2. Vệ sinh kho &amp; Sàn nhà</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${cleanlinessPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
+                              {cleanlinessPassed ? '✓ Sạch sẽ' : '⚠️ Chưa dọn'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCleanlinessPassed(true)
+                                setCleaningFeeInput(0)
+                                updateCurrentCase({ cleanlinessPassed: true, cleaningFeeInput: 0, cleaningFee: 0 })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${cleanlinessPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Sạch
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCleanlinessPassed(false)
+                                const newFee = cleaningFeeInput > 0 ? cleaningFeeInput : 150000
+                                setCleaningFeeInput(newFee)
+                                updateCurrentCase({ cleanlinessPassed: false, cleaningFeeInput: newFee, cleaningFee: newFee })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!cleanlinessPassed ? 'bg-amber-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Chưa dọn
+                            </button>
+                          </div>
+                        </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const demo = [...DEFAULT_PROOF_PHOTOS]
-                            setPhotoUrls(demo)
-                            updateCurrentCase({ photoUrls: demo })
-                            toast.info('Đã tải 2 ảnh hiện trường mẫu.')
+                        <input
+                          type="text"
+                          value={cleanlinessNotes}
+                          onChange={(e) => {
+                            setCleanlinessNotes(e.target.value)
+                            updateCurrentCase({ cleanlinessNotes: e.target.value })
                           }}
-                          className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-medium text-xs cursor-pointer transition"
-                          title="Nạp nhanh 2 ảnh mẫu để kiểm thử biên bản"
-                        >
-                          Dùng ảnh mẫu
-                        </button>
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
+                          placeholder="Ghi chú vệ sinh, rác thừa, vết dầu mỡ..."
+                        />
 
-                        {photoUrls.length > 0 && (
+                        {!cleanlinessPassed && (
+                          <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 flex items-center gap-2 flex-wrap text-xs">
+                            <AlertTriangle size={14} className="text-amber-600 shrink-0" />
+                            <span className="font-bold text-amber-900">Phí dịch vụ dọn vệ sinh:</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                value={cleaningFeeInput}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value) || 0
+                                  setCleaningFeeInput(val)
+                                  updateCurrentCase({ cleaningFeeInput: val, cleaningFee: val })
+                                }}
+                                className="w-32 p-1.5 text-xs border border-amber-300 rounded-lg bg-white font-mono font-bold text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                placeholder="150000"
+                              />
+                              <span className="font-bold text-amber-800">VNĐ</span>
+                            </div>
+                            <span className="text-[11px] text-amber-700 font-medium">(Khấu trừ trực tiếp vào tiền cọc)</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 3. Hư hại vách sàn trần */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">3. Kết cấu tường vách &amp; Sàn trần</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${damagePassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {damagePassed ? '✓ Nguyên vẹn' : '⚠️ Có hư hỏng'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDamagePassed(true)
+                                setDamageFeeInput(0)
+                                updateCurrentCase({ damagePassed: true, damageFeeInput: 0, damageFee: 0 })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${damagePassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Nguyên vẹn
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDamagePassed(false)
+                                const newFee = damageFeeInput > 0 ? damageFeeInput : 500000
+                                setDamageFeeInput(newFee)
+                                updateCurrentCase({ damagePassed: false, damageFeeInput: newFee, damageFee: newFee })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!damagePassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Hư hại
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={damageNotes}
+                          onChange={(e) => {
+                            setDamageNotes(e.target.value)
+                            updateCurrentCase({ damageNotes: e.target.value })
+                          }}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
+                          placeholder="Ghi chú hư hại, móp vách, nứt sàn..."
+                        />
+
+                        {!damagePassed && (
+                          <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
+                            <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                            <span className="font-bold text-rose-800">Phí khắc phục hư hại kho dự kiến:</span>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                value={damageFeeInput}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value) || 0
+                                  setDamageFeeInput(val)
+                                  updateCurrentCase({ damageFeeInput: val, damageFee: val })
+                                }}
+                                className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                placeholder="500000"
+                              />
+                              <span className="font-bold text-rose-700">VNĐ</span>
+                            </div>
+                            <span className="text-[11px] text-rose-600 font-medium">(Cần quản lý cơ sở phê duyệt)</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 4. Khóa Smart Lock IoT (BẢO VỆ NGHIỆP VỤ 5.2: TÁCH LỖI KHÁCH VỚI HAO MÒN/LỖI THIẾT BỊ) */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">4. Ổ khóa SmartLock IoT</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${smartLockPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {smartLockPassed ? '✓ Pin 94% • Hoạt động tốt' : '⚠️ Báo lỗi / Sự cố'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSmartLockPassed(true)
+                                setSmartLockFeeInput(0)
+                                updateCurrentCase({ smartLockPassed: true, smartLockFeeInput: 0, smartLockFee: 0 })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${smartLockPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Bình thường
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSmartLockPassed(false)
+                                updateCurrentCase({ smartLockPassed: false })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!smartLockPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Báo lỗi
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={smartLockNotes}
+                          onChange={(e) => {
+                            setSmartLockNotes(e.target.value)
+                            updateCurrentCase({ smartLockNotes: e.target.value })
+                          }}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
+                          placeholder="Ghi chú tình trạng khóa số, pin, độ nhạy cảm biến, vết cạy phá..."
+                        />
+
+                        {!smartLockPassed && (
+                          <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 space-y-2 text-xs">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                                <KeyRound size={15} className="text-amber-700" />
+                                <span>Phân loại nguyên nhân sự cố SmartLock:</span>
+                              </span>
+                              <select
+                                value={smartLockIssueType}
+                                onChange={(e) => {
+                                  const val = e.target.value
+                                  setSmartLockIssueType(val)
+                                  if (val !== 'CUSTOMER_FAULT') {
+                                    setSmartLockFeeInput(0)
+                                    updateCurrentCase({ smartLockIssueType: val, smartLockFeeInput: 0, smartLockFee: 0 })
+                                  } else {
+                                    const initialFee = smartLockFeeInput > 0 ? smartLockFeeInput : 4000000
+                                    setSmartLockFeeInput(initialFee)
+                                    updateCurrentCase({ smartLockIssueType: val, smartLockFeeInput: initialFee, smartLockFee: initialFee })
+                                  }
+                                }}
+                                className="p-1.5 bg-white border border-amber-300 rounded-lg font-bold text-amber-900 text-xs focus:ring-1 focus:ring-amber-400"
+                              >
+                                <option value="NORMAL_WEAR">Hao mòn tự nhiên (Boxora chịu)</option>
+                                <option value="DEVICE_ERROR">Lỗi phần cứng / Hết pin (Bảo hành Boxora)</option>
+                                <option value="CONNECTION_ERROR">Mất kết nối mạng IoT (Kỹ thuật xử lý)</option>
+                                <option value="PENDING_VERIFICATION">Chờ xác minh nguyên nhân (Không trừ tiền khách)</option>
+                                <option value="CUSTOMER_FAULT">Khách làm hư hại / Cạy phá (Khách bồi thường)</option>
+                              </select>
+                            </div>
+
+                            {smartLockIssueType !== 'CUSTOMER_FAULT' ? (
+                              <div className="p-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 text-[11px] flex items-center gap-2">
+                                <ShieldCheck size={16} className="text-blue-600 shrink-0" />
+                                <span>
+                                  <strong>Chính sách Boxora:</strong> Lỗi thiết bị, pin yếu, mất kết nối hoặc chưa xác minh <strong>tuyệt đối không khấu trừ vào tiền cọc</strong> của khách hàng. Boxora bảo trì kỹ thuật miễn phí.
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
+                                <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                                <span className="font-bold text-rose-800">Khoản bồi thường SmartLock do khách gây hư hại:</span>
+                                <div className="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    value={smartLockFeeInput}
+                                    onChange={(e) => {
+                                      const val = Number(e.target.value) || 0
+                                      setSmartLockFeeInput(val)
+                                      updateCurrentCase({ smartLockFeeInput: val, smartLockFee: val })
+                                    }}
+                                    className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                    placeholder="4000000"
+                                  />
+                                  <span className="font-bold text-rose-700">VNĐ</span>
+                                </div>
+                                <span className="text-[11px] text-rose-600 font-medium">(Yêu cầu ảnh bằng chứng và phê duyệt quản lý)</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 5. Tài sản còn lại */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">5. Xác nhận không còn đồ đạc trong kho</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${assetsClearedPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {assetsClearedPassed ? '✓ Kho đã dọn trống' : '⚠️ Vẫn còn đồ của khách'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssetsClearedPassed(true)
+                                updateCurrentCase({ assetsClearedPassed: true })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${assetsClearedPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Đã dọn trống
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssetsClearedPassed(false)
+                                updateCurrentCase({ assetsClearedPassed: false })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!assetsClearedPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Còn đồ
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          value={assetsClearedNotes}
+                          onChange={(e) => {
+                            setAssetsClearedNotes(e.target.value)
+                            updateCurrentCase({ assetsClearedNotes: e.target.value })
+                          }}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
+                          placeholder="Xác nhận khách đã mang toàn bộ đồ đạc cá nhân ra khỏi ô kho..."
+                        />
+                      </div>
+
+                      {/* 6. Ảnh chụp hiện trường có Upload thật (TỐI THIỂU 2 ẢNH) */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
+                        <input
+                          type="file"
+                          ref={fileInputRef}
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={handleImageUpload}
+                        />
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-sm">6. Ảnh bằng chứng hiện trường (Tối thiểu 2 ảnh)</span>
+                            {photoUrls.length >= 2 ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                ✓ Đủ {photoUrls.length}/2 ảnh (Hợp lệ)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                                ⚠️ Cần tối thiểu 2 ảnh (hiện có {photoUrls.length}/2 ảnh)
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={isUploadingPhoto}
+                              className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                            >
+                              <Upload size={14} className={isUploadingPhoto ? 'animate-spin' : ''} />
+                              <span>{isUploadingPhoto ? 'Đang tải lên...' : '+ Tải ảnh hiện trường'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const demo = [...DEFAULT_PROOF_PHOTOS]
+                                setPhotoUrls(demo)
+                                updateCurrentCase({ photoUrls: demo })
+                                toast.info('[DEMO] Đã nạp 2 ảnh mẫu cho môi trường kiểm thử.')
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 font-medium text-xs cursor-pointer transition"
+                              title="Chỉ dùng trong môi trường kiểm thử"
+                            >
+                              [Demo] Ảnh mẫu
+                            </button>
+
+                            {photoUrls.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPhotoUrls([])
+                                  updateCurrentCase({ photoUrls: [] })
+                                  toast.info('Đã xóa tất cả ảnh hiện trường.')
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-medium cursor-pointer transition"
+                              >
+                                Xóa hết
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {photoUrls.length === 0 ? (
+                          <div
+                            onClick={() => fileInputRef.current?.click()}
+                            className="p-8 border-2 border-dashed border-blue-200 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-xl text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
+                          >
+                            <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition shadow-2xs">
+                              <Camera size={24} />
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-800 text-sm">Nhấp vào đây để chọn ảnh hoặc chụp ảnh hiện trường</p>
+                              <p className="text-xs text-slate-500 mt-1">Yêu cầu tối thiểu 2 ảnh: Toàn cảnh kho và Chi tiết khóa / sàn nhà</p>
+                            </div>
+                            <span className="mt-1 px-4 py-1.5 rounded-lg bg-blue-600 group-hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs">
+                              <Upload size={14} />
+                              <span>Chọn tệp ảnh từ máy</span>
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                            {photoUrls.map((url, i) => (
+                              <div
+                                key={i}
+                                className="group relative rounded-xl overflow-hidden h-28 bg-slate-100 border border-slate-200 shadow-2xs cursor-pointer"
+                                onClick={() => setPreviewImageModal(url)}
+                              >
+                                <img src={url} alt={`Hiện trường ${i + 1}`} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                                <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-mono font-medium truncate max-w-[80%]">
+                                  Ảnh {i + 1}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleRemovePhoto(i)
+                                  }}
+                                  className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
+                                  title="Gỡ ảnh này"
+                                >
+                                  ✕ Xóa
+                                </button>
+                              </div>
+                            ))}
+
+                            <div
+                              onClick={() => fileInputRef.current?.click()}
+                              className="h-28 rounded-xl border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/20 hover:bg-blue-50/50 flex flex-col items-center justify-center cursor-pointer transition text-blue-600 hover:text-blue-700 gap-1"
+                            >
+                              <Upload size={20} />
+                              <span className="text-xs font-bold">+ Thêm ảnh</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 7. Cảm biến môi trường Boxora IoT */}
+                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Thermometer size={16} className={envPassed ? 'text-cyan-600' : 'text-rose-600'} />
+                            <span className="font-bold text-slate-900 text-sm">7. Cảm biến môi trường Boxora IoT</span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${envPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {envPassed ? '✓ Đạt chuẩn' : '⚠️ Chưa đạt'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEnvPassed(true)
+                                const defaultNote = 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+                                setEnvNotes(defaultNote)
+                                updateCurrentCase({ envPassed: true, envNotes: defaultNote })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${envPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Đạt
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEnvPassed(false)
+                                const alertNote = 'Cảm biến IoT: 32°C • Độ ẩm 78% RH (Vượt ngưỡng an toàn - Cần bảo trì)'
+                                setEnvNotes(alertNote)
+                                updateCurrentCase({ envPassed: false, envNotes: alertNote })
+                              }}
+                              className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!envPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
+                            >
+                              Chưa đạt
+                            </button>
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          value={envNotes}
+                          onChange={(e) => {
+                            setEnvNotes(e.target.value)
+                            updateCurrentCase({ envNotes: e.target.value })
+                          }}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
+                          placeholder="Ghi chú chỉ số cảm biến môi trường..."
+                        />
+                      </div>
+                    </div>
+
+                    {/* Nút hành động Bước B */}
+                    <div className="pt-3 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveInspection('ISSUE', true)}
+                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 cursor-pointer flex items-center gap-1.5 transition"
+                      >
+                        <FileText size={14} />
+                        <span>Lưu Bản Nháp</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSaveInspection('ISSUE', false)}
+                        className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 cursor-pointer flex items-center gap-1.5 transition"
+                      >
+                        <AlertTriangle size={15} />
+                        <span>Lập Biên Bản Có Hư Hại</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSaveInspection('PASSED', false)}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition"
+                      >
+                        <CheckCircle2 size={15} />
+                        <span>Lưu Biên Bản Nghiệm Thu ĐẠT CHUẨN</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* KHỐI C: ĐỐI SOÁT TIỀN CỌC & KHẤU TRỪ */}
+                  <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-teal-100 text-teal-800 font-mono font-bold text-xs flex items-center justify-center">
+                          C
+                        </span>
+                        <h3 className="font-bold text-sm text-slate-900">
+                          Đối Soát Tiền Cọc, Khấu Trừ &amp; Khoản Hoàn Trả Khách Hàng
+                        </h3>
+                      </div>
+                      <span className="text-xs font-mono text-slate-500">
+                        Tiền hoàn = max(0, Tiền cọc - Khấu trừ - Công nợ)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Cột 1: Chi tiết phép tính */}
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>1. Tiền cọc ban đầu:</span>
+                          <span className="font-mono font-bold text-slate-900">
+                            {deposit.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>2. Phí vệ sinh dọn kho:</span>
+                          <span className={`font-mono font-bold ${cleaningFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            -{cleaningFee.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>3. Phí hư hại cửa cuốn &amp; ray:</span>
+                          <span className={`font-mono font-bold ${doorFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            -{doorFee.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>4. Phí hư hại kho (vách, sàn, trần):</span>
+                          <span className={`font-mono font-bold ${damageFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            -{damageFee.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>5. Phí SmartLock (do khách cạy phá):</span>
+                          <span className={`font-mono font-bold ${smartLockFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            -{smartLockFee.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between text-slate-600">
+                          <span>6. Công nợ / Cước trễ hạn:</span>
+                          <span className={`font-mono font-bold ${outstandingDebt > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            -{outstandingDebt.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        {/* KẾT QUẢ ĐỐI SOÁT */}
+                        {!isOverDeposit ? (
+                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm font-extrabold text-slate-900 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                            <span className="flex items-center gap-1.5 text-emerald-950 font-bold">
+                              <CheckCircle2 size={16} className="text-emerald-600" />
+                              Tiền Dự Kiến Hoàn Trả:
+                            </span>
+                            <span className="font-mono text-emerald-600 text-base font-extrabold">
+                              {netRefundAmount.toLocaleString('vi-VN')}đ
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="pt-2 border-t border-slate-200 space-y-2">
+                            <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-amber-950 font-bold">
+                                <Wrench size={14} className="text-amber-600 shrink-0" />
+                                <span>Chi phí sửa chữa được xác minh</span>
+                              </div>
+                              <span className="font-mono font-extrabold text-amber-900 text-sm">
+                                {totalVerifiedRepairCost.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 bg-blue-50/80 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-1.5 text-blue-950 font-bold">
+                                <ShieldCheck size={14} className="text-blue-600 shrink-0" />
+                                <span>Tiền cọc được khấu trừ (100%)</span>
+                              </div>
+                              <span className="font-mono font-extrabold text-blue-900 text-sm">
+                                {deductedDepositAmount.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+
+                            <div className="p-3 bg-rose-50 border-2 border-rose-300 rounded-xl flex items-center justify-between text-xs shadow-xs">
+                              <div className="flex items-center gap-1.5">
+                                <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                                <div>
+                                  <span className="font-extrabold text-rose-950 block text-xs uppercase tracking-tight">
+                                    Khoản Khách Cần Thanh Toán Bổ Sung
+                                  </span>
+                                  <span className="text-[10px] text-rose-600 font-medium">
+                                    (Chi phí sửa chữa vượt quá số tiền cọc)
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="font-mono font-black text-rose-600 text-base">
+                                {customerPayableAmount.toLocaleString('vi-VN')}đ
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cột 2: Thông tin tài khoản nhận hoàn hoặc thu bồi thường */}
+                      <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
+                        {!isOverDeposit ? (
+                          <>
+                            <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                              Thông Tin Nhận Tiền Cọc Của Khách Hàng
+                            </span>
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Ngân hàng:</span>
+                                <strong className="text-slate-900 font-bold">{currentCase.bankName || 'Vietcombank'}</strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Số tài khoản:</span>
+                                <strong className="text-slate-900 font-mono font-bold">{currentCase.bankAccountNumber || '1029384756'}</strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Chủ tài khoản:</span>
+                                <strong className="text-slate-900 font-bold">{currentCase.bankAccountName || currentCase.customerName.toUpperCase()}</strong>
+                              </div>
+                              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                                <span className="text-slate-500">Trạng thái hoàn tiền:</span>
+                                <strong className="text-indigo-700 font-bold">
+                                  {currentCase.refundTxnRef ? `Đã hoàn (${currentCase.refundTxnRef})` : 'Chờ thực hiện'}
+                                </strong>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] uppercase font-bold text-rose-700">
+                                Quyết Toán Cấn Trừ Cọc &amp; Thu Bồi Thường
+                              </span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                Cọc không đủ bù hư hại
+                              </span>
+                            </div>
+
+                            <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 space-y-1 text-slate-700">
+                              <p className="font-semibold text-rose-900">
+                                Toàn bộ tiền cọc ({deductedDepositAmount.toLocaleString('vi-VN')}đ) đã được cấn trừ.
+                              </p>
+                              <p className="text-[11px] text-rose-800">
+                                Khách hàng cần thanh toán bổ sung số tiền <strong className="font-mono text-rose-900">{customerPayableAmount.toLocaleString('vi-VN')}đ</strong> tại quầy lễ tân hoặc chuyển khoản trước khi giải phóng kho.
+                              </p>
+                            </div>
+
+                            <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Hình thức thu:</span>
+                                <strong className="text-slate-800 font-bold">Tiền mặt / QR POS tại quầy</strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Khách hàng:</span>
+                                <strong className="text-slate-900 font-bold">{currentCase.customerName} ({currentCase.customerPhone})</strong>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Trạng thái thanh toán bù:</span>
+                                <strong className={currentCase.additionalPaymentStatus === 'PAID' ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                                  {currentCase.additionalPaymentStatus === 'PAID' ? `Đã thu (${currentCase.additionalPaymentTxnRef || 'Hợp lệ'})` : `Chưa thu (${customerPayableAmount.toLocaleString('vi-VN')}đ)`}
+                                </strong>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* KHỐI BỔ SUNG: BÀN GIAO VẬT LÝ & THU HỒI SMARTLOCK (YÊU CẦU 9 & 10) */}
+                  <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 font-mono font-bold text-xs flex items-center justify-center">
+                          E
+                        </span>
+                        <h3 className="font-bold text-sm text-slate-900">
+                          Bàn Giao Vật Lý &amp; Thu Hồi SmartLock IoT
+                        </h3>
+                      </div>
+                      <span className="text-[11px] text-slate-500">
+                        Bắt buộc hoàn tất trước khi đóng hợp đồng
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                      {/* 1. Nhận lại kho vật lý */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <Warehouse size={16} className="text-indigo-600" />
+                            <div>
+                              <strong className="block text-slate-900">1. Nhận Lại Kho Vật Lý</strong>
+                              <span className="text-[11px] text-slate-500">
+                                Xác nhận kho đã lấy hết đồ đạc và nhân viên đã tiếp quản.
+                              </span>
+                            </div>
+                          </div>
+                          {currentCase.unitReturnedPhysically ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ✓ Đã nhận kho
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              Chưa xác nhận
+                            </span>
+                          )}
+                        </div>
+
+                        {!currentCase.unitReturnedPhysically && (
                           <button
                             type="button"
-                            onClick={() => {
-                              setPhotoUrls([])
-                              updateCurrentCase({ photoUrls: [] })
-                              toast.info('Đã xóa tất cả ảnh hiện trường.')
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-medium cursor-pointer transition"
+                            onClick={handleConfirmPhysicalReturn}
+                            disabled={isConfirmingPhysical || !assetsClearedPassed}
+                            className="mt-1 w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
                           >
-                            Xóa hết
+                            <Warehouse size={14} />
+                            <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 2. Thu hồi mã PIN SmartLock IoT */}
+                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <KeyRound size={16} className="text-amber-600" />
+                            <div>
+                              <strong className="block text-slate-900">2. Thu Hồi Mã SmartLock PIN</strong>
+                              <span className="text-[11px] text-slate-500">
+                                Vô hiệu hóa PIN và giải phóng khóa IoT buồng kho.
+                              </span>
+                            </div>
+                          </div>
+                          {currentCase.accessRevoked ? (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ✓ Đã thu hồi PIN
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                              Chưa thu hồi
+                            </span>
+                          )}
+                        </div>
+
+                        {!currentCase.accessRevoked && (
+                          <button
+                            type="button"
+                            onClick={handleRevokeSmartLock}
+                            disabled={isRevokingAccess}
+                            className="mt-1 w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
+                          >
+                            <KeyRound size={14} />
+                            <span>{isRevokingAccess ? 'Đang thu hồi...' : 'Thu Hồi Mã SmartLock Ngay'}</span>
                           </button>
                         )}
                       </div>
                     </div>
+                  </div>
 
-                    {photoUrls.length === 0 ? (
-                      <div
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-8 border-2 border-dashed border-blue-200 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-xl text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
-                      >
-                        <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition shadow-2xs">
-                          <Camera size={24} />
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-800 text-sm">Nhấp vào đây để chọn ảnh hoặc chụp ảnh hiện trường</p>
-                          <p className="text-xs text-slate-500 mt-1">Yêu cầu tối thiểu 2 ảnh: Toàn cảnh kho và Chi tiết khóa / sàn nhà</p>
-                        </div>
-                        <span className="mt-1 px-4 py-1.5 rounded-lg bg-blue-600 group-hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs">
-                          <Upload size={14} />
-                          <span>Chọn tệp ảnh từ máy</span>
+                  {/* KHỐI D: LỊCH SỬ XỬ LÝ & NÚT HÀNH ĐỘNG THEO VAI TRÒ */}
+                  <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-mono font-bold text-xs flex items-center justify-center">
+                          D
                         </span>
+                        <h3 className="font-bold text-sm text-slate-900">
+                          Lịch Sử Xử Lý &amp; Quyết Định Nghiệp Vụ
+                        </h3>
                       </div>
-                    ) : (
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                        {photoUrls.map((url, i) => (
-                          <div
-                            key={i}
-                            className="group relative rounded-xl overflow-hidden h-28 bg-slate-100 border border-slate-200 shadow-2xs cursor-pointer"
-                            onClick={() => setPreviewImageModal(url)}
+                    </div>
+
+                    {/* Timeline Notes */}
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs max-h-36 overflow-y-auto">
+                      {currentCase.historyNotes && currentCase.historyNotes.length > 0 ? (
+                        currentCase.historyNotes.map((note, idx) => (
+                          <div key={idx} className="flex items-center gap-2 text-slate-700">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            <span>{note}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <span className="text-slate-400">Chưa có bản ghi lịch sử xử lý.</span>
+                      )}
+                    </div>
+
+                    {/* Action Buttons tailored by Role & Status */}
+                    <div className="pt-2 flex items-center justify-between gap-3 flex-wrap border-t border-slate-100">
+                      {/* Nút Ghi Nhận Khiếu Nại (Luôn có sẵn khi chưa hoàn tất) */}
+                      {currentCase.status !== 'COMPLETED' && (
+                        <button
+                          type="button"
+                          onClick={() => setShowDisputeModal(true)}
+                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs cursor-pointer flex items-center gap-1.5 transition"
+                        >
+                          <MessageSquareWarning size={14} />
+                          <span>Ghi Nhận Khiếu Nại</span>
+                        </button>
+                      )}
+
+                      <div className="flex items-center gap-2 flex-wrap ml-auto">
+                        {/* STAFF action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
+                        {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') && (
+                          <button
+                            type="button"
+                            onClick={handleSubmitRefundApproval}
+                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                           >
-                            <img src={url} alt={`Hiện trường ${i + 1}`} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                            <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-mono font-medium truncate max-w-[80%]">
-                              Ảnh {i + 1} • {i === 0 ? 'Toàn cảnh' : i === 1 ? 'Khóa & sàn' : 'Chi tiết'}
+                            <Send size={15} />
+                            <span>
+                              {isOverDeposit
+                                ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
                             </span>
+                          </button>
+                        )}
+
+                        {/* FACILITY_MANAGER action: Phê duyệt hoàn cọc */}
+                        {currentCase.status === 'REFUND_PENDING_APPROVAL' && (
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleRemovePhoto(i)
-                              }}
-                              className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer flex items-center gap-0.5"
-                              title="Gỡ ảnh này"
+                              onClick={() => handleApproveSettlement('REJECT')}
+                              className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs cursor-pointer transition"
                             >
-                              ✕ Xóa
+                              Yêu Cầu Kiểm Tra Lại
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveSettlement('APPROVE')}
+                              className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                            >
+                              <ShieldCheck size={16} />
+                              <span>
+                                {isOverDeposit
+                                  ? `Phê Duyệt Khấu Trừ & Thu Thêm (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                  : `Phê Duyệt Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                              </span>
                             </button>
                           </div>
-                        ))}
+                        )}
 
-                        {/* Ô thêm ảnh trực tiếp trong grid */}
-                        <div
-                          onClick={() => fileInputRef.current?.click()}
-                          className="h-28 rounded-xl border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/20 hover:bg-blue-50/50 flex flex-col items-center justify-center cursor-pointer transition text-blue-600 hover:text-blue-700 gap-1"
-                        >
-                          <Upload size={20} />
-                          <span className="text-xs font-bold">+ Thêm ảnh</span>
-                        </div>
+                        {/* Action: Thực hiện hoàn tiền hoặc thu tiền bồi thường */}
+                        {(currentCase.status === 'REFUND_APPROVED' || (currentCase.status === 'INSPECTION_PASSED' && totalDeduction === 0)) && (
+                          <button
+                            type="button"
+                            onClick={() => setShowRefundModal(true)}
+                            className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition ${
+                              isOverDeposit ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                            }`}
+                          >
+                            {isOverDeposit ? <Receipt size={15} /> : <CreditCard size={15} />}
+                            <span>
+                              {isOverDeposit
+                                ? `Thu Tiền Bồi Thường Tại Quầy (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                : `Thực Hiện Hoàn Tiền Cho Khách (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                            </span>
+                          </button>
+                        )}
+
+                        {/* Final Action: Hoàn tất hồ sơ & Giải phóng kho */}
+                        {(currentCase.status === 'REFUNDED' || currentCase.status === 'REFUND_APPROVED') && (
+                          <button
+                            type="button"
+                            onClick={handleCompleteHandoverAndRelease}
+                            disabled={isFinishingHandover}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/20 transition"
+                          >
+                            <Lock size={15} />
+                            <span>{isFinishingHandover ? 'Đang hoàn tất...' : 'Hoàn Tất Hồ Sơ & Giải Phóng Kho'}</span>
+                          </button>
+                        )}
+
+                        {currentCase.status === 'COMPLETED' && (
+                          <div className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5">
+                            <CheckCircle2 size={16} className="text-emerald-600" />
+                            <span>Hồ sơ đã hoàn tất thanh lý &amp; buồng kho đã sẵn sàng cho thuê mới.</span>
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
-
-                  {/* 7. Cảm biến môi trường Boxora IoT có button Đạt và Chưa đạt */}
-                  <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <Thermometer size={16} className={envPassed ? 'text-cyan-600' : 'text-rose-600'} />
-                        <span className="font-bold text-slate-900 text-sm">7. Cảm biến môi trường Boxora IoT</span>
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${envPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {envPassed ? '✓ Đạt chuẩn' : '⚠️ Chưa đạt'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEnvPassed(true)
-                            const defaultNote = 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
-                            setEnvNotes(defaultNote)
-                            updateCurrentCase({ envPassed: true, envNotes: defaultNote })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${envPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Đạt
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEnvPassed(false)
-                            const alertNote = 'Cảm biến IoT: 32°C • Độ ẩm 78% RH (Vượt ngưỡng an toàn - Cần bảo trì buồng kho)'
-                            setEnvNotes(alertNote)
-                            updateCurrentCase({ envPassed: false, envNotes: alertNote })
-                          }}
-                          className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!envPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
-                        >
-                          Chưa đạt
-                        </button>
-                      </div>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={envNotes}
-                      onChange={(e) => {
-                        setEnvNotes(e.target.value)
-                        updateCurrentCase({ envNotes: e.target.value })
-                      }}
-                      className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                      placeholder="Ghi chú chỉ số cảm biến môi trường (nhiệt độ, độ ẩm)..."
-                    />
-
-                    {!envPassed && (
-                      <div className="p-2.5 rounded-lg bg-rose-50/80 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
-                        <AlertTriangle size={14} className="text-rose-600 shrink-0" />
-                        <span className="font-bold text-rose-800">Cảnh báo môi trường kho không đạt chuẩn:</span>
-                        <span className="text-[11px] text-rose-700 font-medium">
-                          Chỉ số môi trường không đạt yêu cầu. Buồng kho sẽ được đưa vào diện BẢO TRÌ (UNDER_MAINTENANCE) sau khi bàn giao để kỹ thuật xử lý.
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Nút lưu biên bản B */}
-                <div className="pt-2 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
-                  <button
-                    type="button"
-                    onClick={() => handleSaveInspection('ISSUE')}
-                    className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 cursor-pointer flex items-center gap-1.5 transition"
-                  >
-                    <AlertTriangle size={15} />
-                    <span>Lập Biên Bản Có Hư Hại / Khấu Trừ</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSaveInspection('PASSED')}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition"
-                  >
-                    <CheckCircle2 size={15} />
-                    <span>Lưu Biên Bản Nghiệm Thu ĐẠT CHUẨN</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* KHỐI C: ĐỐI SOÁT TIỀN CỌC & KHẤU TRỪ */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-lg bg-teal-100 text-teal-800 font-mono font-bold text-xs flex items-center justify-center">
-                      C
-                    </span>
-                    <h3 className="font-bold text-sm text-slate-900">
-                      Đối Soát Tiền Cọc, Khấu Trừ &amp; Khoản Hoàn Trả Khách Hàng
-                    </h3>
-                  </div>
-                  <span className="text-xs font-mono text-slate-500">
-                    Công thức: Tiền hoàn = Tiền cọc - Khấu trừ - Công nợ
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Cột 1: Chi tiết phép tính */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
-                    <div className="flex items-center justify-between text-slate-600">
-                      <span>1. Tiền cọc ban đầu:</span>
-                      <span className="font-mono font-bold text-slate-900">
-                        {deposit.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-slate-600">
-                      <span>2. Phí vệ sinh dọn kho:</span>
-                      <span className={`font-mono font-bold ${cleaningFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{cleaningFee.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-slate-600">
-                      <span>3. Phí khắc phục hư hại cửa cuốn &amp; ray:</span>
-                      <span className={`font-mono font-bold ${doorFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{doorFee.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-slate-600">
-                      <span>4. Phí bồi thường hư hại kho (vách, sàn, trần):</span>
-                      <span className={`font-mono font-bold ${damageFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{damageFee.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-slate-600">
-                      <span>5. Phí sửa chữa / thay thế khóa SmartLock:</span>
-                      <span className={`font-mono font-bold ${smartLockFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{smartLockFee.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between text-slate-600">
-                      <span>6. Công nợ / Cước trễ hạn:</span>
-                      <span className={`font-mono font-bold ${outstandingDebt > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{outstandingDebt.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    {/* KẾT QUẢ ĐỐI SOÁT THEO 2 TRƯỜNG HỢP */}
-                    {!isOverDeposit ? (
-                      /* Trường hợp 1: Số tiền sửa chữa và bảo trì <= tiền cọc */
-                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm font-extrabold text-slate-900 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
-                        <span className="flex items-center gap-1.5 text-emerald-950 font-bold">
-                          <CheckCircle2 size={16} className="text-emerald-600" />
-                          Tiền Dự Kiến Hoàn Trả:
-                        </span>
-                        <span className="font-mono text-emerald-600 text-base font-extrabold">
-                          {netRefundAmount.toLocaleString('vi-VN')}đ
-                        </span>
-                      </div>
-                    ) : (
-                      /* Trường hợp 2: Số tiền sửa chữa và bảo trì >= tiền cọc */
-                      <div className="pt-2 border-t border-slate-200 space-y-2">
-                        <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-1.5 text-amber-950 font-bold">
-                            <Wrench size={14} className="text-amber-600 shrink-0" />
-                            <span>Chi phí sửa chữa được xác minh</span>
-                          </div>
-                          <span className="font-mono font-extrabold text-amber-900 text-sm">
-                            {totalVerifiedRepairCost.toLocaleString('vi-VN')}đ
-                          </span>
-                        </div>
-
-                        <div className="p-2.5 bg-blue-50/80 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-1.5 text-blue-950 font-bold">
-                            <ShieldCheck size={14} className="text-blue-600 shrink-0" />
-                            <span>Tiền cọc được khấu trừ</span>
-                          </div>
-                          <span className="font-mono font-extrabold text-blue-900 text-sm">
-                            {deductedDepositAmount.toLocaleString('vi-VN')}đ
-                          </span>
-                        </div>
-
-                        <div className="p-3 bg-rose-50 border-2 border-rose-300 rounded-xl flex items-center justify-between text-xs shadow-xs">
-                          <div className="flex items-center gap-1.5">
-                            <AlertTriangle size={16} className="text-rose-600 shrink-0" />
-                            <div>
-                              <span className="font-extrabold text-rose-950 block text-xs uppercase tracking-tight">
-                                Khoản khách còn phải thanh toán
-                              </span>
-                              <span className="text-[10px] text-rose-600 font-medium">
-                                (Tổng chi phí sửa chữa vượt quá số tiền cọc)
-                              </span>
-                            </div>
-                          </div>
-                          <span className="font-mono font-black text-rose-600 text-base">
-                            {customerPayableAmount.toLocaleString('vi-VN')}đ
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Cột 2: Thông tin tài khoản nhận hoàn cọc hoặc Thu bù khoản chênh lệch */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
-                    {!isOverDeposit ? (
-                      <>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                          Thông Tin Nhận Tiền Cọc Của Khách Hàng
-                        </span>
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Ngân hàng:</span>
-                            <strong className="text-slate-900 font-bold">{currentCase.bankName || 'Vietcombank'}</strong>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Số tài khoản:</span>
-                            <strong className="text-slate-900 font-mono font-bold">{currentCase.bankAccountNumber || '1029384756'}</strong>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Chủ tài khoản:</span>
-                            <strong className="text-slate-900 font-bold">{currentCase.bankAccountName || currentCase.customerName.toUpperCase()}</strong>
-                          </div>
-                          <div className="flex items-center justify-between pt-1 border-t border-slate-200">
-                            <span className="text-slate-500">Trạng thái hoàn tiền:</span>
-                            <strong className="text-indigo-700 font-bold">{currentCase.refundTxnRef ? `Đã hoàn (${currentCase.refundTxnRef})` : 'Chờ hoàn tiền'}</strong>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] uppercase font-bold text-rose-700">
-                            Quyết Toán Cấn Trừ Cọc &amp; Thu Bồi Thường
-                          </span>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
-                            Cọc không đủ bù hư hại
-                          </span>
-                        </div>
-
-                        <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 space-y-1 text-slate-700">
-                          <p className="font-semibold text-rose-900">
-                            Toàn bộ tiền cọc ({deductedDepositAmount.toLocaleString('vi-VN')}đ) đã được khấu trừ 100%.
-                          </p>
-                          <p className="text-[11px] text-rose-800">
-                            Khách hàng cần thanh toán bổ sung số tiền <strong className="font-mono text-rose-900">{customerPayableAmount.toLocaleString('vi-VN')}đ</strong> tại quầy lễ tân hoặc chuyển khoản trước khi giải phóng kho.
-                          </p>
-                        </div>
-
-                        <div className="space-y-1.5 pt-1 border-t border-slate-200">
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Hình thức thu:</span>
-                            <strong className="text-slate-800 font-bold">Tiền mặt / QR POS tại quầy</strong>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Khách hàng:</span>
-                            <strong className="text-slate-900 font-bold">{currentCase.customerName} ({currentCase.customerPhone})</strong>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Trạng thái thanh toán bù:</span>
-                            <strong className={currentCase.refundTxnRef ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
-                              {currentCase.refundTxnRef ? `Đã thu (${currentCase.refundTxnRef})` : `Chưa thu (${customerPayableAmount.toLocaleString('vi-VN')}đ)`}
-                            </strong>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
                 </>
               )}
-
-              {/* KHỐI D: LỊCH SỬ XỬ LÝ & NÚT HÀNH ĐỘNG THEO VAI TRÒ */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-mono font-bold text-xs flex items-center justify-center">
-                      D
-                    </span>
-                    <h3 className="font-bold text-sm text-slate-900">
-                      Lịch Sử Xử Lý &amp; Quyết Định Nghiệp Vụ
-                    </h3>
-                  </div>
-                  <span className="text-xs text-slate-400">Audit Trail Boxora</span>
-                </div>
-
-                {/* Timeline Notes */}
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs">
-                  {(currentCase.historyNotes && currentCase.historyNotes.length > 0) ? (
-                    currentCase.historyNotes.map((note, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-slate-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                        <span>{note}</span>
-                      </div>
-                    ))
-                  ) : (
-                    <span className="text-slate-400">Chưa có bản ghi lịch sử xử lý.</span>
-                  )}
-                </div>
-
-                {/* Action Buttons tailored by Role & Status */}
-                <div className="pt-2 flex items-center justify-between gap-3 flex-wrap border-t border-slate-100">
-                  <div className="text-xs text-slate-500">
-                    Vai trò hiện tại: <strong className="text-slate-800">{userRole} ({userName})</strong>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {/* STAFF action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
-                    {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') && (
-                      <button
-                        type="button"
-                        onClick={handleSubmitRefundApproval}
-                        className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                      >
-                        <Send size={15} />
-                        <span>
-                          {isOverDeposit
-                            ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                            : `Trình Duyệt Khoản Hoàn Trả (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
-                        </span>
-                      </button>
-                    )}
-
-                    {/* FACILITY_MANAGER action: Phê duyệt hoàn cọc */}
-                    {currentCase.status === 'REFUND_PENDING_APPROVAL' && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            updateCurrentCase({
-                              status: 'INSPECTION_ISSUE',
-                              historyNotes: [...(currentCase.historyNotes || []), `Quản lý ${userName} yêu cầu thẩm định lại`]
-                            })
-                            toast.warning('Đã yêu cầu nhân viên đối soát lại hiện trường.')
-                          }}
-                          className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs cursor-pointer transition"
-                        >
-                          Yêu Cầu Kiểm Tra Lại
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleApproveRefund}
-                          className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                        >
-                          <ShieldCheck size={16} />
-                          <span>
-                            {isOverDeposit
-                              ? `Phê Duyệt Khấu Trừ Hết Cọc & Thu Thêm (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                              : `Phê Duyệt Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
-                          </span>
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Action: Thực hiện hoàn tiền hoặc thu tiền bồi thường */}
-                    {(currentCase.status === 'REFUND_APPROVED' || (currentCase.status === 'INSPECTION_PASSED' && totalDeduction === 0)) && (
-                      <button
-                        type="button"
-                        onClick={() => setShowRefundModal(true)}
-                        className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition ${
-                          isOverDeposit ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
-                        }`}
-                      >
-                        {isOverDeposit ? <Receipt size={15} /> : <CreditCard size={15} />}
-                        <span>
-                          {isOverDeposit
-                            ? `Thu Tiền Bồi Thường Tại Quầy (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                            : `Thực Hiện Hoàn Tiền Cho Khách (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
-                        </span>
-                      </button>
-                    )}
-
-                    {/* Final Action: Bàn giao & Giải phóng kho */}
-                    {(currentCase.status === 'REFUNDED' || currentCase.status === 'REFUND_APPROVED') && (
-                      <button
-                        type="button"
-                        onClick={handleCompleteHandoverAndRelease}
-                        disabled={isFinishingHandover}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/20 transition"
-                      >
-                        <Lock size={15} />
-                        <span>{isFinishingHandover ? 'Đang hoàn tất...' : 'Xác Nhận Bàn Giao & Giải Phóng Kho'}</span>
-                      </button>
-                    )}
-
-                    {currentCase.status === 'COMPLETED' && (
-                      <div className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-xs flex items-center gap-1.5">
-                        <CheckCircle2 size={16} className="text-emerald-600" />
-                        <span>Hồ sơ đã hoàn tất thanh lý &amp; buồng kho đã sẵn sàng cho thuê mới.</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -2224,7 +2421,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               </button>
               <button
                 type="button"
-                onClick={handleExecuteRefund}
+                onClick={handleExecuteFinancialAction}
                 disabled={isSubmittingRefund}
                 className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition ${
                   isOverDeposit ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
@@ -2238,6 +2435,67 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     ? `Xác Nhận Đã Thu ${customerPayableAmount.toLocaleString('vi-VN')}đ`
                     : 'Xác Nhận Đã Hoàn Tiền'}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GHI NHẬN KHIẾU NẠI CỦA KHÁCH HÀNG */}
+      {showDisputeModal && currentCase && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-rose-600">
+                <MessageSquareWarning size={20} />
+                <h3 className="font-bold text-base text-slate-900">Ghi Nhận Khiếu Nại Của Khách Hàng</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDisputeModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-600">
+                Ghi nhận nội dung khiếu nại của khách hàng <strong>{currentCase.customerName}</strong> đối với chi phí khấu trừ hoặc biên bản nghiệm thu buồng kho <strong>#{currentCase.unitCode}</strong>.
+              </p>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Lý do khiếu nại:</label>
+                <textarea
+                  rows={4}
+                  value={disputeReasonInput}
+                  onChange={(e) => setDisputeReasonInput(e.target.value)}
+                  placeholder="Khách hàng không đồng ý với chi phí sửa chữa cửa cuốn, đề nghị cung cấp hóa đơn bảo trì..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-red-400"
+                />
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-900 text-[11px]">
+                Hồ sơ sẽ chuyển sang trạng thái <strong>TRANH CHẤP (DISPUTED)</strong> và thông báo cho Quản lý cơ sở để tiến hành hòa giải.
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDisputeModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleRecordDispute}
+                disabled={isSubmittingDispute}
+                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+              >
+                <CheckCircle2 size={15} />
+                <span>{isSubmittingDispute ? 'Đang lưu...' : 'Xác Nhận Khiếu Nại'}</span>
               </button>
             </div>
           </div>
@@ -2270,6 +2528,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           </div>
         </div>
       )}
+
       {/* MODAL XÁC NHẬN TIẾP NHẬN & LÊN LỊCH NGHIỆM THU */}
       {showScheduleConfirmModal && currentCase && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
@@ -2326,7 +2585,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
               <AlertTriangle size={16} className="text-amber-700 shrink-0 mt-0.5" />
               <span>
-                Sau khi xác nhận, hồ sơ sẽ chuyển sang trạng thái <strong>Đang nghiệm thu</strong> và tự động chuyển sang mục <strong>2. Đang Nghiệm Thu</strong> để nhân viên tiến hành thẩm định 7 tiêu chuẩn hiện trường buồng kho và đối soát hoàn cọc.
+                Sau khi xác nhận, hồ sơ sẽ chuyển sang trạng thái <strong>Đang nghiệm thu</strong> để nhân viên tiến hành thẩm định 7 tiêu chuẩn hiện trường buồng kho và đối soát hoàn cọc.
               </span>
             </div>
 

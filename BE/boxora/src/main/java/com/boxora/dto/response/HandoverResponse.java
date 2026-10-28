@@ -42,4 +42,24 @@ public class HandoverResponse {
     // --- Cấp quyền truy cập SmartLock phát hành bởi máy chủ ---
     private String accessPin;
     private String qrAccessToken;
+
+    private String inspectionStatus;
+    private String approvalStatus;
+    private BigDecimal additionalAmountDue;
+    private String additionalPaymentStatus;
+    private String refundStatus;
+
+    private Boolean doorConditionPassed;
+    private Boolean cleanlinessPassed;
+    private Boolean wallStructurePassed;
+    private Boolean smartLockPassed;
+    private Boolean assetsClearedPassed;
+    private Boolean sensorPassed;
+    private String smartLockIssueType;
+
+    private Boolean unitReturnedPhysically;
+    private LocalDateTime returnedAt;
+    private Boolean accessRevoked;
+    private LocalDateTime accessRevokedAt;
+    private LocalDateTime scheduledInspectionAt;
 }

@@ -31,4 +31,5 @@ public interface EmailService {
 
     void sendBookingCancellationEmail(String toEmail, String fullName, String bookingCode, String facilityName, String unitCode, String reason, boolean isRejectedByStaff, java.math.BigDecimal refundAmount);
     void sendCheckinOverdueReminderEmail(String toEmail, String fullName, String bookingCode, String facilityName, String facilityAddress, String facilityPhone, String unitCode, java.time.LocalDateTime checkInDateTime);
+    void sendSimpleEmail(String toEmail, String subject, String body);
 }

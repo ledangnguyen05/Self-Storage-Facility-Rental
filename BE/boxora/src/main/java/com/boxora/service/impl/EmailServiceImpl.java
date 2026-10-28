@@ -1501,4 +1501,21 @@ public class EmailServiceImpl implements EmailService {
             throw new RuntimeException("Failed to send email", e);
         }
     }
+
+    @Override
+    @Async
+    public void sendSimpleEmail(String toEmail, String subject, String body) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(body, false);
+            mailSender.send(message);
+            log.info("Simple email sent successfully to: {}", toEmail);
+        } catch (Exception ex) {
+            log.error("Failed to send simple email to {}: {}", toEmail, ex.getMessage());
+        }
+    }
 }

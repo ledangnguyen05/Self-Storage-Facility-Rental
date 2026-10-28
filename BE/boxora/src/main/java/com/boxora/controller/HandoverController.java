@@ -16,6 +16,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import com.boxora.dto.response.PaymentResponse;
+import com.boxora.dto.response.ReturnCaseResponse;
+import org.springframework.format.annotation.DateTimeFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -233,5 +238,148 @@ public class HandoverController {
             @Valid @RequestBody com.boxora.dto.request.CheckInInspectionRequest request) {
         return ResponseEntity.ok(ApiResponse.success("Ghi nhận biên bản nghiệm thu hiện trường thành công",
                 handoverService.recordCheckInInspection(request)));
+    }
+
+    // =========================================================================
+    // QUY TRÌNH TOÀN DIỆN: NGHIỆM THU HIỆN TRƯỜNG & TRẢ KHO (WAREHOUSE RETURN)
+    // =========================================================================
+
+    @GetMapping("/returns")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW')")
+    @Operation(summary = "Danh sách hồ sơ trả kho với tìm kiếm và lọc đa tiêu chí")
+    public ResponseEntity<ApiResponse<List<ReturnCaseResponse>>> getReturnCases(
+            @RequestParam(required = false) UUID facilityId,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
+        return ResponseEntity.ok(ApiResponse.success(
+                handoverService.getReturnCases(facilityId, search, status, dateFrom, dateTo)));
+    }
+
+    @GetMapping("/returns/{bookingId}")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER')")
+    @Operation(summary = "Chi tiết hồ sơ trả kho và lịch sử xử lý")
+    public ResponseEntity<ApiResponse<ReturnCaseResponse>> getReturnCaseDetail(
+            @PathVariable UUID bookingId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                handoverService.getReturnCaseDetail(bookingId)));
+    }
+
+    @PostMapping("/returns/{bookingId}/schedule")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @Operation(summary = "Xác nhận hoặc đổi lịch hẹn nghiệm thu hiện trường")
+    public ResponseEntity<ApiResponse<HandoverResponse>> scheduleInspection(
+            @PathVariable UUID bookingId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime scheduledAt,
+            @RequestParam(required = false) String notes) {
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận lịch nghiệm thu hiện trường thành công",
+                handoverService.scheduleInspection(bookingId, scheduledAt, notes)));
+    }
+
+    @PostMapping("/returns/{bookingId}/start-inspection")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @Operation(summary = "Bắt đầu nghiệm thu hiện trường")
+    public ResponseEntity<ApiResponse<HandoverResponse>> startInspection(
+            @PathVariable UUID bookingId) {
+        return ResponseEntity.ok(ApiResponse.success("Bắt đầu nghiệm thu hiện trường thành công",
+                handoverService.startInspection(bookingId)));
+    }
+
+    @PostMapping("/returns/inspection")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @Operation(summary = "Lưu biên bản kiểm định 7 tiêu chí hiện trường (hỗ trợ lưu nháp hoặc chốt biên bản)")
+    public ResponseEntity<ApiResponse<HandoverResponse>> saveInspection(
+            @Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Lưu biên bản kiểm định hiện trường thành công",
+                handoverService.saveInspection(request)));
+    }
+
+    @PostMapping("/returns/{bookingId}/calculate-settlement")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW')")
+    @Operation(summary = "Tính toán đối soát quyết toán tiền cọc, công nợ và chi phí hư hại")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> calculateSettlement(
+            @PathVariable UUID bookingId,
+            @RequestBody(required = false) HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Tính toán quyết toán cọc thành công",
+                handoverService.calculateSettlement(bookingId, request)));
+    }
+
+    @PostMapping("/returns/{bookingId}/submit-approval")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @Operation(summary = "Trình cấp quản lý phê duyệt các khoản khấu trừ bồi thường")
+    public ResponseEntity<ApiResponse<HandoverResponse>> submitDeductionsForApproval(
+            @PathVariable UUID bookingId,
+            @RequestParam(required = false) String notes) {
+        return ResponseEntity.ok(ApiResponse.success("Trình phê duyệt quyết toán khấu trừ thành công",
+                handoverService.submitDeductionsForApproval(bookingId, notes)));
+    }
+
+    @PostMapping("/returns/{bookingId}/approve-settlement")
+    @PreAuthorize("hasAuthority('HANDOVER_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @Operation(summary = "Quản lý cơ sở / Ban quản lý phê duyệt hoặc từ chối quyết toán khấu trừ")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> approveSettlement(
+            @PathVariable UUID bookingId,
+            @Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Xử lý phê duyệt quyết toán khấu trừ thành công",
+                handoverService.approveSettlement(bookingId, request)));
+    }
+
+    @PostMapping("/returns/{bookingId}/dispute")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasRole('CUSTOMER')")
+    @Operation(summary = "Ghi nhận khiếu nại / tranh chấp từ khách hàng đối với số tiền bồi thường")
+    public ResponseEntity<ApiResponse<HandoverResponse>> recordCustomerDispute(
+            @PathVariable UUID bookingId,
+            @RequestParam String disputeReason) {
+        return ResponseEntity.ok(ApiResponse.success("Ghi nhận khiếu nại tranh chấp thành công",
+                handoverService.recordCustomerDispute(bookingId, disputeReason)));
+    }
+
+    @PostMapping("/returns/{bookingId}/collect-additional-payment")
+    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
+    @Operation(summary = "Thu khoản bồi thường bổ sung khi chi phí vượt quá tiền cọc")
+    public ResponseEntity<ApiResponse<PaymentResponse>> collectAdditionalPayment(
+            @PathVariable UUID bookingId,
+            @Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Thu khoản bồi thường bổ sung thành công",
+                handoverService.collectAdditionalPayment(bookingId, request)));
+    }
+
+    @PostMapping("/returns/{bookingId}/execute-refund")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Thực hiện lệnh hoàn trả tiền cọc cho khách hàng")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> executeRefund(
+            @PathVariable UUID bookingId,
+            @Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Lệnh hoàn trả tiền cọc đã được thực hiện thành công",
+                handoverService.executeRefund(bookingId, request)));
+    }
+
+    @PostMapping("/returns/{bookingId}/confirm-physical-return")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @Operation(summary = "Xác nhận nhận lại kho vật lý & đồ đạc đã dọn sạch")
+    public ResponseEntity<ApiResponse<HandoverResponse>> confirmPhysicalReturn(
+            @PathVariable UUID bookingId,
+            @Valid @RequestBody HandoverRequest request) {
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận nhận lại kho vật lý thành công",
+                handoverService.confirmPhysicalReturn(bookingId, request)));
+    }
+
+    @PostMapping("/returns/{bookingId}/revoke-access")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @Operation(summary = "Thu hồi mã PIN SmartLock và quyền truy cập kho của khách hàng")
+    public ResponseEntity<ApiResponse<HandoverResponse>> revokeAccess(
+            @PathVariable UUID bookingId) {
+        return ResponseEntity.ok(ApiResponse.success("Thu hồi quyền truy cập kho thành công",
+                handoverService.revokeAccess(bookingId)));
+    }
+
+    @PostMapping("/returns/{bookingId}/complete")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Hoàn tất toàn bộ hồ sơ trả kho, thanh lý hợp đồng và chuyển trạng thái kho")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> completeReturn(
+            @PathVariable UUID bookingId) {
+        return ResponseEntity.ok(ApiResponse.success("Hoàn tất toàn bộ hồ sơ trả kho thành công",
+                handoverService.completeReturn(bookingId)));
     }
 }

@@ -294,4 +294,245 @@ export const handoverService = {
     const blob = new Blob([response.data], { type: contentType })
     return URL.createObjectURL(blob)
   },
+
+  // =========================================================================
+  // TOÀN DIỆN: QUY TRÌNH NGHIỆM THU HIỆN TRƯỜNG & TRẢ KHO (WAREHOUSE RETURN)
+  // =========================================================================
+
+  async getReturnCases(params?: {
+    facilityId?: string
+    search?: string
+    status?: string
+    dateFrom?: string
+    dateTo?: string
+  }): Promise<ReturnCase[]> {
+    const response = await api.get('/api/v1/handovers/returns', { params })
+    return (response.data?.data || []) as ReturnCase[]
+  },
+
+  async getReturnCaseDetail(bookingId: string): Promise<ReturnCase> {
+    const response = await api.get(`/api/v1/handovers/returns/${bookingId}`)
+    return response.data?.data as ReturnCase
+  },
+
+  async scheduleInspection(bookingId: string, scheduledAt: string, notes?: string): Promise<HandoverRecord> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/schedule`, null, {
+      params: { scheduledAt, notes }
+    })
+    return response.data?.data as HandoverRecord
+  },
+
+  async startInspection(bookingId: string): Promise<HandoverRecord> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/start-inspection`)
+    return response.data?.data as HandoverRecord
+  },
+
+  async saveReturnInspection(data: ReturnInspectionPayload): Promise<HandoverRecord> {
+    const response = await api.post('/api/v1/handovers/returns/inspection', data)
+    return response.data?.data as HandoverRecord
+  },
+
+  async calculateSettlement(bookingId: string, data?: Partial<ReturnInspectionPayload>): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/calculate-settlement`, data || {})
+    return response.data?.data as ReturnSettlementDetail
+  },
+
+  async submitDeductionsForApproval(bookingId: string, notes?: string): Promise<HandoverRecord> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/submit-approval`, null, {
+      params: { notes }
+    })
+    return response.data?.data as HandoverRecord
+  },
+
+  async approveSettlement(
+    bookingId: string,
+    data: { approvalAction: 'APPROVE' | 'REJECT'; approvedDeductionAmount?: number; notes?: string }
+  ): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/approve-settlement`, data)
+    return response.data?.data as ReturnSettlementDetail
+  },
+
+  async recordCustomerDispute(bookingId: string, disputeReason: string): Promise<HandoverRecord> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/dispute`, null, {
+      params: { disputeReason }
+    })
+    return response.data?.data as HandoverRecord
+  },
+
+  async collectAdditionalPayment(
+    bookingId: string,
+    data: { additionalPaymentMethod?: string; additionalPaymentTxnRef?: string; notes?: string }
+  ): Promise<any> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/collect-additional-payment`, data)
+    return response.data?.data
+  },
+
+  async executeRefund(
+    bookingId: string,
+    data: { refundMethod?: string; notes?: string }
+  ): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/execute-refund`, data)
+    return response.data?.data as ReturnSettlementDetail
+  },
+
+  async confirmPhysicalReturn(bookingId: string, data?: { notes?: string }): Promise<HandoverRecord> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/confirm-physical-return`, data || {})
+    return response.data?.data as HandoverRecord
+  },
+
+  async revokeAccess(bookingId: string): Promise<HandoverRecord> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/revoke-access`)
+    return response.data?.data as HandoverRecord
+  },
+
+  async completeReturn(bookingId: string): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/complete`)
+    return response.data?.data as ReturnSettlementDetail
+  },
+}
+
+export interface ReturnCase {
+  id: string
+  bookingId: string
+  bookingCode: string
+  contractCode?: string
+  unitCode: string
+  customerName: string
+  customerPhone?: string
+  customerEmail?: string
+  facilityId?: string
+  facilityName?: string
+  requestDate?: string
+  expectedReturnDate?: string
+  inspectionDate?: string
+  reason?: string
+  bankName?: string
+  bankAccountNumber?: string
+  bankAccountName?: string
+  depositAmount: number
+  outstandingDebt?: number
+  cleaningFee?: number
+  damageFee?: number
+  doorFee?: number
+  smartLockFee?: number
+  wallStructureFee?: number
+  lostCardFee?: number
+  totalDeduction?: number
+  approvedDeductions?: number
+  netRefundAmount?: number
+  additionalAmountDue?: number
+  status: string
+  inspectionStatus: string
+  approvalStatus: string
+  additionalPaymentStatus?: string
+  additionalPaymentTxnRef?: string
+  refundStatus?: string
+  refundTxnRef?: string
+  refundProcessedAt?: string
+  inspectorName?: string
+  approverName?: string
+  approvedAt?: string
+  approvalNotes?: string
+  completedAt?: string
+  historyNotes?: string[]
+
+  // 7 Checklist Criteria
+  doorPassed?: boolean | null
+  doorNotes?: string
+  doorFeeInput?: number
+
+  cleanlinessPassed?: boolean | null
+  cleanlinessNotes?: string
+  cleaningFeeInput?: number
+
+  damagePassed?: boolean | null
+  damageNotes?: string
+  damageFeeInput?: number
+
+  smartLockPassed?: boolean | null
+  smartLockNotes?: string
+  smartLockFeeInput?: number
+  smartLockIssueType?: string
+
+  assetsClearedPassed?: boolean | null
+  assetsClearedNotes?: string
+
+  photoUrls?: string[]
+
+  envPassed?: boolean | null
+  envNotes?: string
+
+  unitReturnedPhysically?: boolean
+  returnedAt?: string
+  accessRevoked?: boolean
+  accessRevokedAt?: string
+  postReturnUnitStatus?: string
+}
+
+export interface ReturnSettlementDetail {
+  handoverRecordId?: string
+  bookingId: string
+  bookingCode: string
+  unitCode: string
+  customerName: string
+  depositPaid: number
+  damageFee: number
+  cleaningFee: number
+  lostCardFee: number
+  doorFee: number
+  smartLockFee: number
+  smartLockIssueType?: string
+  wallStructureFee: number
+  overdueDebt: number
+  totalDeduction: number
+  approvedDeductions: number
+  netRefundAmount: number
+  additionalAmountDue: number
+  reviewStatus: string
+  approvalStatus: string
+  approverName?: string
+  approvedAt?: string
+  approvalNotes?: string
+  additionalPaymentStatus?: string
+  additionalPaymentTxnRef?: string
+  refundStatus?: string
+  refundTransactionId?: string
+  depositRefundSlaDays: number
+  checklistAllPassed: boolean
+  checklistSummary?: string
+  doorConditionPassed?: boolean
+  cleanlinessPassed?: boolean
+  wallStructurePassed?: boolean
+  smartLockPassed?: boolean
+  assetsClearedPassed?: boolean
+  sensorPassed?: boolean
+  unitReturnedPhysically?: boolean
+  returnedAt?: string
+  accessRevoked?: boolean
+  accessRevokedAt?: string
+}
+
+export interface ReturnInspectionPayload {
+  bookingId: string
+  isDraft?: boolean
+  doorConditionPassed?: boolean
+  doorFee?: number
+  doorNotes?: string
+  cleanlinessPassed?: boolean
+  cleaningFee?: number
+  cleanlinessNotes?: string
+  wallStructurePassed?: boolean
+  damageFee?: number
+  damageNotes?: string
+  smartLockPassed?: boolean
+  smartLockFee?: number
+  smartLockNotes?: string
+  smartLockIssueType?: string
+  assetsClearedPassed?: boolean
+  assetsClearedNotes?: string
+  sensorPassed?: boolean
+  sensorNotes?: string
+  lostCardFee?: number
+  evidencePhotos?: string[]
+  notes?: string
 }

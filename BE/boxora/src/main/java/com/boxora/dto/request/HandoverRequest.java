@@ -50,28 +50,43 @@ public class HandoverRequest {
 
     private BigDecimal deductionAmount;
 
-    // --- BR-RULE-013: 5 CHECKLIST ITEMS TIÊU CHUẨN HIỆN TRẠNG KHO ---
+    // --- BR-RULE-013: 7 CHECKLIST ITEMS TIÊU CHUẨN HIỆN TRẠNG TRẢ KHO ---
     /** 1. Tình trạng cửa cuốn (đóng mở êm, không móp méo, ray dẫn tốt) */
     private Boolean doorConditionPassed;
+    private BigDecimal doorFee;
+    private String doorNotes;
 
     /** 2. Vệ sinh kho & sàn (đã dọn sạch rác, không ẩm ướt) */
     private Boolean cleanlinessPassed;
+    private BigDecimal cleaningFee;
+    private String cleanlinessNotes;
 
-    /** 3. Ổ khóa Smart Lock (cảm biến nhạy, pin tốt, khóa chắc chắn) */
-    private Boolean smartLockPassed;
-
-    /** 4. Cảm biến nhiệt / ẩm (thông số chuẩn, hoạt động bình thường) */
-    private Boolean sensorPassed;
-
-    /** 5. Tường vách / kết cấu kho (không móp vách, không bong tróc, nguyên vẹn) */
+    /** 3. Tường vách / kết cấu kho (không móp vách, không bong tróc, nguyên vẹn) */
     private Boolean wallStructurePassed;
+    private BigDecimal wallStructureFee;
+    private String wallStructureNotes;
+
+    /** 4. Ổ khóa Smart Lock IoT (cảm biến nhạy, pin tốt, khóa chắc chắn) */
+    private Boolean smartLockPassed;
+    private BigDecimal smartLockFee;
+    private String smartLockNotes;
+    /** Loại nguyên nhân lỗi Smart Lock: CUSTOMER_FAULT, NORMAL_WEAR, DEVICE_ERROR, CONNECTION_ERROR, PENDING_VERIFICATION */
+    private String smartLockIssueType;
+
+    /** 5. Xác nhận kho đã lấy hết đồ đạc & giải phóng tài sản */
+    private Boolean assetsClearedPassed;
+    private String assetsClearedNotes;
+
+    /** 6. Ảnh bằng chứng hiện trường (tối thiểu 2 ảnh chụp thực tế) */
+    private List<String> evidencePhotos;
+
+    /** 7. Cảm biến nhiệt / ẩm môi trường Boxora IoT */
+    private Boolean sensorPassed;
+    private String sensorNotes;
 
     // --- BR-RULE-014: CHI PHÍ KHẤU TRỪ CHI TIẾT ---
     /** Chi phí sửa chữa hư hại cửa/vách/ổ khóa */
     private BigDecimal damageFee;
-
-    /** Phí dịch vụ vệ sinh nếu khách chưa dọn kho */
-    private BigDecimal cleaningFee;
 
     /** Phí làm mất thẻ từ RFID hoặc chìa khóa cơ */
     private BigDecimal lostCardFee;
@@ -82,14 +97,33 @@ public class HandoverRequest {
     /** Chi tiết mô tả lỗi hư hại / hiện trường */
     private String damageNotes;
 
+    /** Lưu biên bản dưới dạng bản nháp (DRAFT) chưa chốt */
+    private Boolean isDraft;
+
+    /** Lịch hẹn kiểm tra hiện trường */
+    private java.time.LocalDateTime scheduledInspectionAt;
+    private String rescheduleReason;
+
+    /** Phê duyệt khấu trừ */
+    private BigDecimal approvedAmount;
+    private BigDecimal approvedDeductionAmount;
+    private String approvalAction;
+    private String approvalNotes;
+    private Boolean approved;
+
+    /** Ghi nhận khiếu nại / tranh chấp từ khách hàng */
+    private String disputeReason;
+
+    /** Thu tiền bồi thường bổ sung khi chi phí vượt cọc */
+    private String additionalPaymentMethod;
+    private String additionalPaymentTxnRef;
+
     /** Phương thức hoàn tiền: VNPAY_REFUND hoặc BANK_TRANSFER */
     private String refundMethod;
+    private String refundTxnRef;
 
     /** Đánh dấu chuyển kế toán duyệt chi */
     private Boolean requiresAccountingReview;
-
-    /** Danh sách URL ảnh chụp hiện trường nghiệm thu */
-    private List<String> evidencePhotos;
 
     private String unitCondition;
 

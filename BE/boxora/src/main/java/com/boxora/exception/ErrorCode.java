@@ -243,7 +243,22 @@ public enum ErrorCode {
     CONTRACT_NOT_SIGNED(1535, "Hợp đồng chưa được ký hoặc chưa có hồ sơ scan giấy", HttpStatus.BAD_REQUEST),
     INVALID_PAYMENT_METHOD(756, "Phương thức thanh toán không hợp lệ (chỉ chấp nhận VNPAY trực tuyến hoặc BANK_TRANSFER tại quầy)", HttpStatus.BAD_REQUEST),
     CHECKIN_STEP_NOT_SATISFIED(729, "Chưa thỏa mãn đầy đủ 3 điều kiện đối soát để chuyển bước", HttpStatus.BAD_REQUEST),
-    SMARTLOCK_INTEGRATION_UNAVAILABLE(2200, "Hệ thống khóa thông minh SmartLock tạm thời chưa khả dụng; chưa có lệnh mở khóa nào được gửi đi", HttpStatus.SERVICE_UNAVAILABLE);
+    SMARTLOCK_INTEGRATION_UNAVAILABLE(2200, "Hệ thống khóa thông minh SmartLock tạm thời chưa khả dụng; chưa có lệnh mở khóa nào được gửi đi", HttpStatus.SERVICE_UNAVAILABLE),
+
+    // ========================= RETURN SETTLEMENT (2300 - 2349) =========================
+    RETURN_ALREADY_COMPLETED(2300, "Hồ sơ trả kho này đã được hoàn tất trước đó", HttpStatus.BAD_REQUEST),
+    RETURN_NOT_INSPECTED(2301, "Hồ sơ chưa hoàn thành biên bản nghiệm thu hiện trường", HttpStatus.BAD_REQUEST),
+    RETURN_ASSETS_NOT_CLEARED(2302, "Kho chưa được lấy hết đồ đạc và dọn trống để bàn giao", HttpStatus.BAD_REQUEST),
+    RETURN_APPROVAL_REQUIRED(2303, "Các khoản khấu trừ bồi thường cần được quản lý phê duyệt trước khi quyết toán", HttpStatus.BAD_REQUEST),
+    RETURN_UNAUTHORIZED_APPROVAL(2304, "Bạn không có thẩm quyền phê duyệt quyết toán bồi thường này", HttpStatus.FORBIDDEN),
+    RETURN_ADDITIONAL_PAYMENT_PENDING(2305, "Khoản bồi thường bổ sung vượt tiền cọc chưa được thanh toán hoặc xác nhận", HttpStatus.BAD_REQUEST),
+    RETURN_DISPUTED(2306, "Hồ sơ đang trong trạng thái khiếu nại tranh chấp, không thể hoàn tất", HttpStatus.BAD_REQUEST),
+    RETURN_PHYSICAL_HANDOVER_REQUIRED(2307, "Chưa ghi nhận việc bàn giao và nhận lại kho vật lý từ khách hàng", HttpStatus.BAD_REQUEST),
+    RETURN_PHOTO_COUNT_INSUFFICIENT(2308, "Cần tối thiểu 2 ảnh bằng chứng hiện trường để chốt biên bản nghiệm thu", HttpStatus.BAD_REQUEST),
+    RETURN_INVALID_STATUS_TRANSITION(2309, "Chuyển trạng thái hồ sơ trả kho không hợp lệ theo quy trình", HttpStatus.BAD_REQUEST),
+    RETURN_ACCESS_REVOCATION_FAILED(2310, "Thu hồi quyền truy cập SmartLock chưa hoàn tất", HttpStatus.BAD_REQUEST),
+    RETURN_ALREADY_REFUNDED(2311, "Tiền cọc cho hồ sơ này đã được hoàn tất trước đó", HttpStatus.BAD_REQUEST),
+    RETURN_ADDITIONAL_PAYMENT_ALREADY_PAID(2312, "Khoản thanh toán bổ sung đã được ghi nhận trước đó", HttpStatus.BAD_REQUEST);
 
     private final int code;
     private final String message;
