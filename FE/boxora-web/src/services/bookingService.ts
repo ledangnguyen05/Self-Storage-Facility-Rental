@@ -211,14 +211,28 @@ export const bookingService = {
     return response.data?.data as BookingCancellationPreview
   },
 
-  async cancelBooking(idOrCode: string, cancellationReason?: string) {
+  async cancelBooking(
+    idOrCode: string,
+    cancellationReasonOrData?: string | {
+      cancellationReason?: string
+      bankName?: string
+      bankAccountNumber?: string
+      bankAccountName?: string
+    }
+  ) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
     const url = isUuid
       ? `/api/v1/bookings/${idOrCode}/cancel`
       : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/cancel`
-    const response = await api.post(url, {
-      cancellationReason: cancellationReason?.trim() || undefined,
-    })
+    const body = typeof cancellationReasonOrData === 'string'
+      ? { cancellationReason: cancellationReasonOrData.trim() || undefined }
+      : {
+          cancellationReason: cancellationReasonOrData?.cancellationReason?.trim() || undefined,
+          bankName: cancellationReasonOrData?.bankName?.trim() || undefined,
+          bankAccountNumber: cancellationReasonOrData?.bankAccountNumber?.trim() || undefined,
+          bankAccountName: cancellationReasonOrData?.bankAccountName?.trim() || undefined,
+        }
+    const response = await api.post(url, body)
     window.dispatchEvent(new Event('boxora:notifications-refresh'))
     return response.data?.data as BookingCancelResponse
   },

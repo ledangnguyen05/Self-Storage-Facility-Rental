@@ -115,8 +115,16 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         long hoursSinceBooking = Math.max(0, durationSinceBooking.toHours());
         String timeRemainingLabel = formatBookingCancellationTimeLabel(durationSinceBooking, hoursSinceBooking, fullRefundHours, partialRefundHours);
 
-        // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
-        if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
+        // Nếu booking chưa thanh toán cọc trực tuyến (depositPaid == 0) hoặc ở trạng thái PENDING_CONTACT / PENDING_PAYMENT / IN_PERSON:
+        boolean hasPaidDeposit = depositPaid != null && depositPaid.compareTo(BigDecimal.ZERO) > 0;
+        boolean isUnpaidMethod = !hasPaidDeposit
+                || booking.getStatus() == BookingStatus.PENDING_PAYMENT
+                || booking.getStatus() == BookingStatus.PENDING_APPROVAL
+                || booking.getStatus() == BookingStatus.PENDING_CONTACT
+                || booking.getStatus() == BookingStatus.PENDING_SIGNATURE
+                || (booking.getSigningMethod() != null && booking.getSigningMethod().equalsIgnoreCase("IN_PERSON"));
+
+        if (isUnpaidMethod) {
             return BookingCancellationPreviewResponse.builder()
                     .bookingId(booking.getId())
                     .bookingCode(booking.getBookingCode())
@@ -124,7 +132,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .startDate(booking.getStartDate())
                     .bookingDateTime(bookingCreatedAt)
                     .checkInDateTime(checkinDateTime)
-                    .depositPaid(depositPaid)
+                    .depositPaid(BigDecimal.ZERO)
                     .totalRentalFee(totalRentalFee)
                     .hoursUntilCheckin(hoursUntilCheckin)
                     .hoursSinceBooking(hoursSinceBooking)
@@ -133,7 +141,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .refundPercentage(0.0)
                     .refundAmount(BigDecimal.ZERO)
                     .penaltyAmount(BigDecimal.ZERO)
-                    .policyDescription("Đơn đặt kho đang chờ thanh toán. Hủy đơn không phát sinh chi phí và không hoàn tiền.")
+                    .policyDescription("Đơn đặt giữ chỗ trả sau tại cơ sở (0 ₫ hôm nay). Hủy đơn không phát sinh chi phí và không có hoàn cọc.")
                     .refundable(false)
                     .build();
         }
@@ -401,7 +409,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .unitReleased(unitReleased)
                 .cancelledAt(cancelNow)
                 .cancellationReason(reason)
-                .message("Đã hủy đơn đặt kho thành công. " + preview.getPolicyDescription())
+                .message(refundRequestId != null ? "Đã gửi yêu cầu hủy đơn và hoàn tiền cọc (" + refundRequestCode + ") đến Quản lý cơ sở để xử lý hoàn tiền." : ("Đã hủy đơn đặt giữ chỗ thành công. " + (preview.getPolicyDescription() != null ? preview.getPolicyDescription() : "")))
                 .build();
     }
 

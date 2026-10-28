@@ -135,6 +135,20 @@ export function getBookingStage(b: Booking): BookingStageInfo {
   const status = (b.status || '').toUpperCase()
   const isCancelled = status === 'CANCELLED' || status === 'OVERDUE'
   if (isCancelled) {
+    const hasRefund = Number(b.depositPaid || 0) > 0 || Boolean((b as any).refundStatus) || Boolean((b as any).refundRequestCode)
+    if (hasRefund) {
+      return {
+        stage: 'CANCELLED',
+        label: 'Hủy đơn hoàn tiền chờ xác nhận',
+        badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
+        dotClass: 'bg-amber-500 animate-pulse',
+        description: 'Đã gửi yêu cầu hủy đơn & hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát và giải ngân qua chuyển khoản.',
+        step: 0,
+        stepLabel: 'Chờ duyệt hoàn tiền',
+        priorityTag: '⏳ Chờ hoàn tiền cọc',
+        priorityTagClass: 'text-amber-800 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
+      }
+    }
     return {
       stage: 'CANCELLED',
       label: 'Đã hủy',

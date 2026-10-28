@@ -133,6 +133,10 @@ export function CustomerBookingCard({
                 <span className={`stitch-badge ${
                   booking.status === 'ACTIVE'
                     ? 'stitch-badge-available'
+                    : booking.status === 'CANCELLED' && Number(booking.depositPaid || 0) > 0
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : booking.status === 'CANCELLED'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
                     : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
                     ? 'bg-amber-100 text-amber-800 border border-amber-300'
                     : 'bg-cyan-100 text-cyan-800 border border-cyan-300'
@@ -140,12 +144,20 @@ export function CustomerBookingCard({
                   <span className={`pulsing-dot ${
                     booking.status === 'ACTIVE'
                       ? 'bg-emerald-500'
+                      : booking.status === 'CANCELLED' && Number(booking.depositPaid || 0) > 0
+                      ? 'bg-amber-500 animate-pulse'
+                      : booking.status === 'CANCELLED'
+                      ? 'bg-rose-500'
                       : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
                       ? 'bg-amber-500'
                       : 'bg-cyan-500'
                   }`}></span>
                   {booking.status === 'ACTIVE'
                     ? 'Đang hoạt động'
+                    : booking.status === 'CANCELLED' && Number(booking.depositPaid || 0) > 0
+                    ? 'Hủy đơn hoàn tiền chờ xác nhận'
+                    : booking.status === 'CANCELLED'
+                    ? 'Đã hủy'
                     : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
                     ? 'Chờ xác nhận'
                     : 'Chờ check in'}

@@ -224,6 +224,11 @@ export interface BookingCancelResponse {
   refundAmount: number
   penaltyAmount: number
   refundTransactionId?: string
+  refundRequestId?: string
+  refundRequestCode?: string
+  bankName?: string
+  bankAccountNumber?: string
+  bankAccountName?: string
   unitReleased: boolean
   cancelledAt: string
   cancellationReason?: string
