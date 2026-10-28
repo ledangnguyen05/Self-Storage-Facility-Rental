@@ -393,6 +393,8 @@ class InventoryAvailabilityServiceTest {
         @Mock
         private EmailService mailService;
         @Mock
+        private RefundRequestRepository refundRequestRepo;
+        @Mock
         private ObjectProvider<StorageUnitService> storageUnitProv;
 
         private BookingServiceImpl bookingService;
@@ -409,6 +411,7 @@ class InventoryAvailabilityServiceTest {
                     lockService,
                     actLogService,
                     payRepo,
+                    refundRequestRepo,
                     facGuard,
                     encService,
                     priceService,

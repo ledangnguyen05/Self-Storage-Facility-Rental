@@ -131,6 +131,23 @@ export function evaluateCheckInTimeStatus(
   }
 }
 
+export type RenewalFilterType =
+  | 'ALL'
+  | 'PENDING_REVIEW'
+  | 'PENDING_SIGNATURE'
+  | 'PENDING_PAYMENT'
+  | 'COMPLETED'
+  | 'REJECTED'
+  | 'CAN_RE_REVIEW_3D'
+
+export function isEligibleForReReview3d(renewal?: { status?: string; createdAt?: string } | null): boolean {
+  if (!renewal || renewal.status !== 'REJECTED' || !renewal.createdAt) return false
+  const createdTime = new Date(renewal.createdAt).getTime()
+  if (isNaN(createdTime)) return false
+  const elapsedMs = Date.now() - createdTime
+  return elapsedMs >= 3 * 24 * 60 * 60 * 1000
+}
+
 export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagementPanelProps> = ({
   currentFacilityId,
   facilities = [],
@@ -146,10 +163,12 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
 
   // Query & Filter States
   const [selectedFacility, setSelectedFacility] = useState<string>(currentFacilityId || 'all')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [activeStatusFilter, setActiveStatusFilter] = useState<RenewalFilterType>('ALL')
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
+  const [currentPage, setCurrentPage] = useState<number>(1)
+  const pageSize = 10
 
   // Data States
   const [renewals, setRenewals] = useState<ContractRenewal[]>([])
@@ -286,7 +305,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     setReceptionSignatureData('')
   }
 
-  // Fetch renewals from backend
+  // Fetch renewals from backend (loads full facility dataset so KPI counters remain accurate and unskewed)
   const fetchRenewals = useCallback(async () => {
     setIsLoading(true)
     setErrorMsg(null)
@@ -296,11 +315,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
 
       const res = await contractService.getRenewals({
         facilityId: facilityIdParam,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        search: searchTerm.trim() || undefined,
-        fromDate: fromDate || undefined,
-        toDate: toDate || undefined,
-        size: 100,
+        size: 300,
         sortBy: 'createdAt',
         sortDir: 'desc',
       })
@@ -313,7 +328,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     } finally {
       setIsLoading(false)
     }
-  }, [selectedFacility, currentFacilityId, showChainWideFilter, statusFilter, searchTerm, fromDate, toDate])
+  }, [selectedFacility, currentFacilityId, showChainWideFilter])
 
   useEffect(() => {
     fetchRenewals()
@@ -351,7 +366,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     }
   }, [currentFacilityId, user?.facilityId, user?.id, roleName])
 
-  // Calculated Metrics
+  // Calculated Metrics (always computed on full facility dataset so numbers never change when filtering or changing pages)
   const metrics = useMemo(() => {
     const total = renewals.length
     const pendingReview = renewals.filter((r) => r.status === 'PENDING_REVIEW').length
@@ -359,6 +374,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     const pendingPayment = renewals.filter((r) => r.status === 'PENDING_PAYMENT').length
     const completed = renewals.filter((r) => r.status === 'COMPLETED').length
     const rejected = renewals.filter((r) => r.status === 'REJECTED').length
+    const canReReview3d = renewals.filter(isEligibleForReReview3d).length
 
     const expectedRevenue = renewals
       .filter((r) => r.status !== 'CANCELLED' && r.status !== 'REJECTED')
@@ -377,11 +393,76 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
       pendingPayment,
       completed,
       rejected,
+      canReReview3d,
       expectedRevenue,
       confirmedCollectedRevenue,
       completionRate,
     }
   }, [renewals])
+
+  // Filtered dataset according to active status card, search term, and date range
+  const filteredRenewals = useMemo(() => {
+    let list = renewals
+
+    if (activeStatusFilter === 'PENDING_REVIEW') {
+      list = list.filter((r) => r.status === 'PENDING_REVIEW')
+    } else if (activeStatusFilter === 'PENDING_SIGNATURE') {
+      list = list.filter((r) => r.status === 'PENDING_SIGNATURE')
+    } else if (activeStatusFilter === 'PENDING_PAYMENT') {
+      list = list.filter((r) => r.status === 'PENDING_PAYMENT')
+    } else if (activeStatusFilter === 'COMPLETED') {
+      list = list.filter((r) => r.status === 'COMPLETED')
+    } else if (activeStatusFilter === 'REJECTED') {
+      list = list.filter((r) => r.status === 'REJECTED')
+    } else if (activeStatusFilter === 'CAN_RE_REVIEW_3D') {
+      list = list.filter(isEligibleForReReview3d)
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().toLowerCase()
+      list = list.filter((r) => {
+        return (
+          r.id?.toLowerCase().includes(term) ||
+          r.contractCode?.toLowerCase().includes(term) ||
+          r.unitCode?.toLowerCase().includes(term) ||
+          r.customerName?.toLowerCase().includes(term) ||
+          r.customerEmail?.toLowerCase().includes(term) ||
+          r.facilityName?.toLowerCase().includes(term) ||
+          r.receiptVoucherCode?.toLowerCase().includes(term)
+        )
+      })
+    }
+
+    if (fromDate) {
+      const fromTime = new Date(fromDate).setHours(0, 0, 0, 0)
+      list = list.filter((r) => r.createdAt && new Date(r.createdAt).getTime() >= fromTime)
+    }
+    if (toDate) {
+      const toTime = new Date(toDate).setHours(23, 59, 59, 999)
+      list = list.filter((r) => r.createdAt && new Date(r.createdAt).getTime() <= toTime)
+    }
+
+    return list
+  }, [renewals, activeStatusFilter, searchTerm, fromDate, toDate])
+
+  const totalItems = filteredRenewals.length
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages)
+
+  const paginatedRenewals = useMemo(() => {
+    const startIndex = (safeCurrentPage - 1) * pageSize
+    return filteredRenewals.slice(startIndex, startIndex + pageSize)
+  }, [filteredRenewals, safeCurrentPage, pageSize])
+
+  const handleFilterSelect = (filterKey: RenewalFilterType) => {
+    setActiveStatusFilter(filterKey)
+    setCurrentPage(1)
+  }
+
+  // Reset pagination to page 1 whenever any filter changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedFacility, activeStatusFilter, searchTerm, fromDate, toDate])
 
   // Handlers
   const handleApprove = async () => {
@@ -422,6 +503,19 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
       setRejectError(msg)
     } finally {
       setIsSubmittingReject(false)
+    }
+  }
+
+  const handleReactivate = async (renewal: ContractRenewal) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn kích hoạt duyệt lại yêu cầu gia hạn #${renewal.contractCode}?`)) return
+    try {
+      await contractService.reactivateRenewal(renewal.id)
+      setSuccessMsg(`Đã kích hoạt duyệt lại yêu cầu gia hạn #${renewal.contractCode} thành công. Trạng thái đã chuyển về Chờ QL Duyệt.`)
+      await fetchRenewals()
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể kích hoạt duyệt lại yêu cầu gia hạn.'
+      setErrorMsg(msg)
+      toast.error(msg)
     }
   }
 
@@ -667,63 +761,144 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
         </div>
       )}
 
-      {/* KPI Overview Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">Tổng YC Gia Hạn</span>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-mono font-extrabold text-slate-900">{metrics.total}</span>
-            <span className="material-symbols-outlined text-slate-400 text-[20px]">autorenew</span>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">Tỷ lệ hoàn tất: {metrics.completionRate}%</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs bg-amber-50/20">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800 block">Chờ QL Duyệt</span>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-mono font-extrabold text-amber-900">{metrics.pendingReview}</span>
-            <span className="material-symbols-outlined text-amber-600 text-[20px]">pending_actions</span>
-          </div>
-          <span className="text-[10px] text-amber-700 mt-0.5 block">Cần thẩm định</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-blue-200 shadow-2xs bg-blue-50/20">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-800 block">Chờ Ký Phụ Lục</span>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-mono font-extrabold text-blue-900">{metrics.pendingSignature}</span>
-            <span className="material-symbols-outlined text-blue-600 text-[20px]">draw</span>
-          </div>
-          <span className="text-[10px] text-blue-700 mt-0.5 block">Đã duyệt • Có thể tiếp nhận</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-indigo-200 shadow-2xs bg-indigo-50/20">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-800 block">Chờ Thanh Toán</span>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-mono font-extrabold text-indigo-900">{metrics.pendingPayment}</span>
-            <span className="material-symbols-outlined text-indigo-600 text-[20px]">payments</span>
-          </div>
-          <span className="text-[10px] text-indigo-700 mt-0.5 block">Online / Tại quầy</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 shadow-2xs bg-emerald-50/20">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 block">Đã Hoàn Tất</span>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-mono font-extrabold text-emerald-900">{metrics.completed}</span>
-            <span className="material-symbols-outlined text-emerald-600 text-[20px]">check_circle</span>
-          </div>
-          <span className="text-[10px] text-emerald-700 mt-0.5 block font-mono">
-            {metrics.confirmedCollectedRevenue.toLocaleString('vi-VN')} ₫
-          </span>
-        </div>
-
-        <div className="bg-white p-4 rounded-xl border border-rose-200 shadow-2xs bg-rose-50/20">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-rose-800 block">Bị Từ Chối</span>
-          <div className="mt-1 flex items-baseline justify-between">
-            <span className="text-2xl font-mono font-extrabold text-rose-900">{metrics.rejected}</span>
-            <span className="material-symbols-outlined text-rose-600 text-[20px]">cancel</span>
-          </div>
-          <span className="text-[10px] text-rose-700 mt-0.5 block">Có thể duyệt lại sau 3d</span>
-        </div>
+      {/* KPI Overview Cards - Interactive Filter Buttons */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {[
+          {
+            key: 'ALL' as RenewalFilterType,
+            title: 'Tổng YC Gia Hạn',
+            count: metrics.total,
+            icon: 'autorenew',
+            subtext: `Tỷ lệ: ${metrics.completionRate}% xong`,
+            activeClass: 'ring-2 ring-slate-800 border-slate-800 bg-slate-100 shadow-md',
+            inactiveClass: 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70 shadow-2xs',
+            countClass: 'text-slate-900',
+            iconClass: 'text-slate-500',
+            subtextClass: 'text-slate-500',
+            badgeClass: 'bg-slate-800 text-white',
+          },
+          {
+            key: 'PENDING_REVIEW' as RenewalFilterType,
+            title: 'Chờ QL Duyệt',
+            count: metrics.pendingReview,
+            icon: 'pending_actions',
+            subtext: 'Cần thẩm định',
+            activeClass: 'ring-2 ring-amber-500 border-amber-500 bg-amber-50 shadow-md',
+            inactiveClass: 'border-amber-200 bg-amber-50/20 hover:border-amber-300 hover:bg-amber-50/50 shadow-2xs',
+            countClass: 'text-amber-900',
+            iconClass: 'text-amber-600',
+            subtextClass: 'text-amber-700',
+            badgeClass: 'bg-amber-600 text-white',
+          },
+          {
+            key: 'PENDING_SIGNATURE' as RenewalFilterType,
+            title: 'Chờ Ký Phụ Lục',
+            count: metrics.pendingSignature,
+            icon: 'draw',
+            subtext: 'Đã duyệt • Tiếp nhận',
+            activeClass: 'ring-2 ring-blue-600 border-blue-600 bg-blue-50 shadow-md',
+            inactiveClass: 'border-blue-200 bg-blue-50/20 hover:border-blue-300 hover:bg-blue-50/50 shadow-2xs',
+            countClass: 'text-blue-900',
+            iconClass: 'text-blue-600',
+            subtextClass: 'text-blue-700',
+            badgeClass: 'bg-blue-600 text-white',
+          },
+          {
+            key: 'PENDING_PAYMENT' as RenewalFilterType,
+            title: 'Chờ Thanh Toán',
+            count: metrics.pendingPayment,
+            icon: 'payments',
+            subtext: 'Online / Tại quầy',
+            activeClass: 'ring-2 ring-indigo-600 border-indigo-600 bg-indigo-50 shadow-md',
+            inactiveClass: 'border-indigo-200 bg-indigo-50/20 hover:border-indigo-300 hover:bg-indigo-50/50 shadow-2xs',
+            countClass: 'text-indigo-900',
+            iconClass: 'text-indigo-600',
+            subtextClass: 'text-indigo-700',
+            badgeClass: 'bg-indigo-600 text-white',
+          },
+          {
+            key: 'COMPLETED' as RenewalFilterType,
+            title: 'Đã Hoàn Tất',
+            count: metrics.completed,
+            icon: 'check_circle',
+            subtext: `${metrics.confirmedCollectedRevenue.toLocaleString('vi-VN')} ₫`,
+            activeClass: 'ring-2 ring-emerald-600 border-emerald-600 bg-emerald-50 shadow-md',
+            inactiveClass: 'border-emerald-200 bg-emerald-50/20 hover:border-emerald-300 hover:bg-emerald-50/50 shadow-2xs',
+            countClass: 'text-emerald-900',
+            iconClass: 'text-emerald-600',
+            subtextClass: 'text-emerald-700',
+            badgeClass: 'bg-emerald-600 text-white',
+          },
+          {
+            key: 'REJECTED' as RenewalFilterType,
+            title: 'Bị Từ Chối',
+            count: metrics.rejected,
+            icon: 'cancel',
+            subtext: 'Tất cả đơn từ chối',
+            activeClass: 'ring-2 ring-rose-500 border-rose-500 bg-rose-50 shadow-md',
+            inactiveClass: 'border-rose-200 bg-rose-50/20 hover:border-rose-300 hover:bg-rose-50/50 shadow-2xs',
+            countClass: 'text-rose-900',
+            iconClass: 'text-rose-600',
+            subtextClass: 'text-rose-700',
+            badgeClass: 'bg-rose-600 text-white',
+          },
+          {
+            key: 'CAN_RE_REVIEW_3D' as RenewalFilterType,
+            title: 'Duyệt lại sau 3d',
+            count: metrics.canReReview3d,
+            icon: 'history',
+            subtext: 'Đủ điều kiện xét lại',
+            activeClass: 'ring-2 ring-purple-600 border-purple-600 bg-purple-50 shadow-md',
+            inactiveClass: 'border-purple-200 bg-purple-50/20 hover:border-purple-300 hover:bg-purple-50/50 shadow-2xs',
+            countClass: 'text-purple-900',
+            iconClass: 'text-purple-600',
+            subtextClass: 'text-purple-700',
+            badgeClass: 'bg-purple-600 text-white',
+          },
+        ].map((card) => {
+          const isActive = activeStatusFilter === card.key
+          return (
+            <button
+              key={card.key}
+              type="button"
+              role="button"
+              aria-pressed={isActive}
+              onClick={() => handleFilterSelect(card.key)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  handleFilterSelect(card.key)
+                }
+              }}
+              className={`p-3.5 rounded-xl border text-left transition-all duration-150 relative flex flex-col justify-between cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 select-none ${
+                isActive ? card.activeClass : card.inactiveClass
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span className={`text-[11px] font-bold uppercase tracking-wider block truncate ${card.countClass}`}>
+                  {card.title}
+                </span>
+                {isActive && (
+                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-extrabold ${card.badgeClass}`}>
+                    <span className="material-symbols-outlined text-[10px]">check</span>
+                    <span>Lọc</span>
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 flex items-baseline justify-between">
+                <span className={`text-xl sm:text-2xl font-mono font-extrabold ${card.countClass}`}>
+                  {card.count}
+                </span>
+                <span className={`material-symbols-outlined text-[20px] sm:text-[22px] ${card.iconClass}`}>
+                  {card.icon}
+                </span>
+              </div>
+              <span className={`text-[10px] mt-1 block truncate font-medium ${card.subtextClass}`}>
+                {card.subtext}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {/* Financial Summary Card for Manager / Business Operations */}
@@ -753,7 +928,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Filter and Search Bar (old status dropdown completely removed, filtering handled via status cards above) */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 text-xs">
         <div className="flex items-center gap-2 flex-1 flex-wrap">
           {/* Facility Filter */}
@@ -775,24 +950,6 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
             </div>
           )}
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
-            <span className="material-symbols-outlined text-[16px] text-slate-500">tune</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer"
-            >
-              <option value="all">Tất cả trạng thái</option>
-              <option value="PENDING_REVIEW">Chờ QL duyệt ({metrics.pendingReview})</option>
-              <option value="PENDING_SIGNATURE">Chờ ký phụ lục ({metrics.pendingSignature})</option>
-              <option value="PENDING_PAYMENT">Chờ thanh toán ({metrics.pendingPayment})</option>
-              <option value="COMPLETED">Đã hoàn tất ({metrics.completed})</option>
-              <option value="REJECTED">Bị từ chối ({metrics.rejected})</option>
-              <option value="CANCELLED">Đã hủy</option>
-            </select>
-          </div>
-
           {/* Search Term */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl flex-1 min-w-[200px]">
             <span className="material-symbols-outlined text-[16px] text-slate-400">search</span>
@@ -804,7 +961,46 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
               className="bg-transparent text-slate-800 placeholder-slate-400 focus:outline-none w-full"
             />
             {searchTerm && (
-              <button onClick={() => setSearchTerm('')} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Date Filter Range */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-2 rounded-xl">
+            <span className="material-symbols-outlined text-[16px] text-slate-500">calendar_today</span>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              title="Từ ngày"
+              className="bg-transparent text-slate-700 focus:outline-none cursor-pointer text-xs"
+            />
+            <span className="text-slate-400">-</span>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              title="Đến ngày"
+              className="bg-transparent text-slate-700 focus:outline-none cursor-pointer text-xs"
+            />
+            {(fromDate || toDate) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFromDate('')
+                  setToDate('')
+                }}
+                className="text-slate-400 hover:text-slate-600 cursor-pointer ml-0.5 text-[11px]"
+                title="Xóa lọc ngày"
+              >
+                ✕
+              </button>
             )}
           </div>
         </div>
@@ -814,6 +1010,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
             type="button"
             onClick={fetchRenewals}
             className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold flex items-center gap-1.5 transition cursor-pointer"
+            title="Tải lại dữ liệu mới nhất từ máy chủ"
           >
             <span className="material-symbols-outlined text-[15px]">refresh</span>
             <span>Làm mới</span>
@@ -847,14 +1044,26 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                     </div>
                   </td>
                 </tr>
-              ) : renewals.length === 0 ? (
+              ) : filteredRenewals.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400 text-xs">
-                    Không tìm thấy yêu cầu gia hạn nào phù hợp với bộ lọc hiện tại.
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <span className="material-symbols-outlined text-[32px] text-slate-300">filter_alt_off</span>
+                      <span>Không tìm thấy yêu cầu gia hạn nào phù hợp với bộ lọc hiện tại.</span>
+                      {activeStatusFilter !== 'ALL' && (
+                        <button
+                          type="button"
+                          onClick={() => handleFilterSelect('ALL')}
+                          className="mt-1 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition cursor-pointer"
+                        >
+                          Xem tất cả ({metrics.total} yêu cầu)
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
-                renewals.map((r) => {
+                paginatedRenewals.map((r) => {
                   const timeEval = r.paymentMethod === 'COUNTER' ? evaluateCheckInTimeStatus(r.counterAppointmentDate, r.counterAppointmentTime) : null
 
                   return (
@@ -1015,6 +1224,28 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                           </>
                         )}
 
+                        {/* Kích hoạt duyệt lại: dành cho Quản lý khi đơn bị từ chối */}
+                        {(isManager || isAdmin) && r.status === 'REJECTED' && (
+                          <button
+                            type="button"
+                            onClick={() => handleReactivate(r)}
+                            disabled={!isEligibleForReReview3d(r)}
+                            className={`px-2 py-1 rounded-md font-bold text-xs transition cursor-pointer flex items-center gap-1 ${
+                              isEligibleForReReview3d(r)
+                                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-2xs'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            }`}
+                            title={
+                              isEligibleForReReview3d(r)
+                                ? 'Kích hoạt duyệt lại yêu cầu gia hạn này'
+                                : 'Chưa đủ 3 ngày kể từ ngày gửi đơn, chưa thể kích hoạt duyệt lại'
+                            }
+                          >
+                            <span className="material-symbols-outlined text-[13px]">refresh</span>
+                            <span>Kích hoạt lại</span>
+                          </button>
+                        )}
+
                         {/* Bỏ duyệt: dành cho Facility Manager khi PENDING_SIGNATURE và chưa ký */}
                         {isManager && r.status === 'PENDING_SIGNATURE' && !r.signedAt && !r.signatureData && (
                           <button
@@ -1071,6 +1302,79 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar */}
+        {totalItems > 0 && (
+          <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="text-slate-500 font-medium">
+              Hiển thị <span className="font-bold text-slate-800">{(safeCurrentPage - 1) * pageSize + 1}</span> -{' '}
+              <span className="font-bold text-slate-800">{Math.min(safeCurrentPage * pageSize, totalItems)}</span> trên{' '}
+              <span className="font-bold text-slate-800">{totalItems}</span> yêu cầu
+              {activeStatusFilter !== 'ALL' && (
+                <span className="ml-1 text-slate-400">
+                  (lọc theo thẻ trạng thái)
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safeCurrentPage <= 1}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
+                aria-label="Trang trước"
+              >
+                <span className="material-symbols-outlined text-[15px]">chevron_left</span>
+                <span className="hidden sm:inline">Trước</span>
+              </button>
+
+              <div className="flex items-center gap-1 mx-1">
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                  if (
+                    totalPages > 7 &&
+                    page !== 1 &&
+                    page !== totalPages &&
+                    Math.abs(page - safeCurrentPage) > 1
+                  ) {
+                    if (page === 2 || page === totalPages - 1) {
+                      return <span key={page} className="px-1 text-slate-400 font-mono">...</span>
+                    }
+                    return null
+                  }
+
+                  const isCurrent = page === safeCurrentPage
+                  return (
+                    <button
+                      key={page}
+                      type="button"
+                      onClick={() => setCurrentPage(page)}
+                      className={`min-w-[32px] h-8 rounded-lg font-mono text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                        isCurrent
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                      aria-current={isCurrent ? 'page' : undefined}
+                    >
+                      {page}
+                    </button>
+                  )
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safeCurrentPage >= totalPages}
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-700 font-semibold text-xs hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition cursor-pointer"
+                aria-label="Trang tiếp"
+              >
+                <span className="hidden sm:inline">Tiếp</span>
+                <span className="material-symbols-outlined text-[15px]">chevron_right</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL 1: Phê Duyệt Gia Hạn */}
@@ -2154,6 +2458,26 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                 {selectedRenewalForDetail.rejectionReason && (
                   <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800">
                     <strong>Lý do từ chối:</strong> {selectedRenewalForDetail.rejectionReason}
+                  </div>
+                )}
+                {selectedRenewalForDetail.status === 'REJECTED' && (isManager || isAdmin) && isEligibleForReReview3d(selectedRenewalForDetail) && (
+                  <div className="p-3 bg-purple-50 rounded-xl border border-purple-200 flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-purple-900 text-xs">Đủ điều kiện xét duyệt lại</div>
+                      <div className="text-[11px] text-purple-700">Đơn đã quá 3 ngày từ ngày gửi, có thể mở lại để quản lý thẩm định.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = selectedRenewalForDetail
+                        setSelectedRenewalForDetail(null)
+                        handleReactivate(target)
+                      }}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">refresh</span>
+                      <span>Kích hoạt lại</span>
+                    </button>
                   </div>
                 )}
                 {selectedRenewalForDetail.notes && (
