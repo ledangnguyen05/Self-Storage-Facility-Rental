@@ -1580,7 +1580,12 @@ export const StaffDashboard: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => fetchArrivals(currentTargetFacility, selectedShiftFilter, filterFromDate, filterToDate)}
+              onClick={() => {
+                fetchArrivals(currentTargetFacility, selectedShiftFilter, filterFromDate, filterToDate)
+                loadActiveRentals(currentTargetFacility)
+                loadTicketQueue()
+                toast.info('Đang làm mới dữ liệu vận hành quầy...')
+              }}
               className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer self-start sm:self-auto"
             >
               <span className="material-symbols-outlined text-[16px] text-slate-500">refresh</span>
@@ -2119,6 +2124,11 @@ export const StaffDashboard: React.FC = () => {
             onReturnCompleted={() => {
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
+            }}
+            onRefresh={() => {
+              fetchArrivals(currentTargetFacility)
+              loadActiveRentals(currentTargetFacility)
+              loadTicketQueue()
             }}
           />
         </section>

@@ -110,6 +110,7 @@ interface HandoverReturnWorkbenchProps {
   activeRentals: Booking[]
   rawReturnRequests?: any[]
   onReturnCompleted?: () => void
+  onRefresh?: () => void
 }
 
 const normalizeStatus = (rawStatus: any): ReturnStepStatus => {
@@ -132,6 +133,213 @@ const DEFAULT_PROOF_PHOTOS = [
   'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=600&q=80'
 ]
 
+// Pure helper function to merge and preserve return cases across renders and reloads
+const syncReturnCases = (
+  currentList: ReturnCaseItem[],
+  incomingRequests: any[],
+  incomingRentals: Booking[],
+  fallbackFacilityId?: string,
+  fallbackFacilityName: string = 'Boxora Thủ Đức'
+): ReturnCaseItem[] => {
+  const savedMap: Record<string, ReturnCaseItem> = {}
+
+  // 1. Read existing saved dossiers from localStorage
+  try {
+    const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        parsed.forEach((item: ReturnCaseItem) => {
+          if (item && item.id) {
+            savedMap[item.id] = item
+            if (item.bookingId) savedMap[item.bookingId] = item
+            if (item.bookingCode) savedMap[item.bookingCode] = item
+            if (item.unitCode) savedMap[item.unitCode] = item
+          }
+        })
+      }
+    }
+  } catch {}
+
+  // Merge any in-memory state
+  currentList.forEach((item) => {
+    if (item && item.id) {
+      savedMap[item.id] = { ...(savedMap[item.id] || {}), ...item }
+      if (item.bookingId) savedMap[item.bookingId] = savedMap[item.id]
+      if (item.bookingCode) savedMap[item.bookingCode] = savedMap[item.id]
+      if (item.unitCode) savedMap[item.unitCode] = savedMap[item.id]
+    }
+  })
+
+  const list: ReturnCaseItem[] = []
+  const processedIds = new Set<string>()
+
+  // 2. Synthesize from incomingRequests (customerReturnRequests)
+  if (incomingRequests && incomingRequests.length > 0) {
+    incomingRequests.forEach((req, idx) => {
+      const candidateId = req.id || `RET-2026-${7100 + idx}`
+      const candidateBookingId = req.bookingId || req.id
+      const saved =
+        savedMap[candidateId] ||
+        (candidateBookingId ? savedMap[candidateBookingId] : undefined) ||
+        (req.bookingCode ? savedMap[req.bookingCode] : undefined) ||
+        (req.unitCode ? savedMap[req.unitCode] : undefined)
+
+      if (saved) {
+        list.push({
+          ...saved,
+          status: saved.status ? normalizeStatus(saved.status) : normalizeStatus(req.status),
+          depositAmount: saved.depositAmount || req.depositAmount || req.depositPaid || 3500000,
+          unitCode: req.unitCode || saved.unitCode || 'TD-B102',
+          customerName: req.customerName || saved.customerName || 'Khách hàng',
+          customerPhone: req.customerPhone || saved.customerPhone || 'Theo hồ sơ',
+          contractCode: saved.contractCode || req.contractCode || `CTR-${req.bookingCode || candidateId}`,
+          reason: saved.reason || req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc'
+        })
+        processedIds.add(saved.id)
+        if (candidateId) processedIds.add(candidateId)
+        if (candidateBookingId) processedIds.add(candidateBookingId)
+      } else {
+        list.push({
+          id: candidateId,
+          bookingId: candidateBookingId || '',
+          bookingCode: req.bookingCode || `BX-2026-${4000 + idx}`,
+          contractCode: req.contractCode || `CTR-BX-2026-${4000 + idx}`,
+          unitCode: req.unitCode || 'TD-B102',
+          customerName: req.customerName || 'Khách hàng',
+          customerPhone: req.customerPhone || 'Theo hồ sơ',
+          customerEmail: req.customerEmail || 'khach@gmail.com',
+          facilityId: req.facilityId || fallbackFacilityId,
+          facilityName: req.facilityName || fallbackFacilityName,
+          requestDate: req.requestDate || new Date().toISOString().split('T')[0],
+          expectedReturnDate: req.expectedReturnDate || '28/10/2026',
+          inspectionDate: req.inspectionDate || '28/10/2026 10:00',
+          reason: req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
+          bankName: req.bankName || 'Vietcombank',
+          bankAccountNumber: req.bankAccountNumber || '1029384756',
+          bankAccountName: req.bankAccountName || (req.customerName || 'KHACH HANG').toUpperCase(),
+          depositAmount: req.depositAmount || req.depositPaid || 3500000,
+          outstandingDebt: req.outstandingDebt || 0,
+          cleaningFee: 0,
+          damageFee: 0,
+          doorFee: 0,
+          smartLockFee: 0,
+          lostCardFee: 0,
+          status: normalizeStatus(req.status),
+          inspectorName: 'Phan Van Hau',
+          historyNotes: ['Khách hàng gửi yêu cầu qua Boxora Portal'],
+          doorPassed: true,
+          doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+          doorFeeInput: 0,
+          cleanlinessPassed: true,
+          cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+          cleaningFeeInput: 0,
+          damagePassed: true,
+          damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+          damageFeeInput: 0,
+          smartLockPassed: true,
+          smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+          smartLockFeeInput: 0,
+          assetsClearedPassed: true,
+          assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+          photoUrls: [],
+          envPassed: true,
+          envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+        })
+        processedIds.add(candidateId)
+        if (candidateBookingId) processedIds.add(candidateBookingId)
+      }
+    })
+  }
+
+  // 3. Synthesize from incomingRentals (activeRentals) if not already added
+  if (incomingRentals && incomingRentals.length > 0) {
+    incomingRentals.forEach((r, idx) => {
+      const candidateId = `ACT-RET-${r.id}`
+      if (
+        processedIds.has(candidateId) ||
+        processedIds.has(r.id) ||
+        (r.unitCode && list.some((item) => item.unitCode === r.unitCode))
+      ) {
+        return
+      }
+
+      const saved = savedMap[candidateId] || savedMap[r.id] || (r.unitCode ? savedMap[r.unitCode] : undefined)
+      if (saved) {
+        list.push({ ...saved, status: normalizeStatus(saved.status) })
+        processedIds.add(saved.id)
+      } else if (list.length < 5) {
+        list.push({
+          id: candidateId,
+          bookingId: r.id,
+          bookingCode: r.bookingCode || '',
+          contractCode: r.contractCode || `CTR-${r.bookingCode || r.id}`,
+          unitCode: r.unitCode || `TD-A10${idx + 1}`,
+          customerName: r.customerName || 'Khách thuê',
+          customerPhone: r.customerPhone || '0987654321',
+          customerEmail: r.customerEmail || 'khach@gmail.com',
+          facilityId: r.facilityId || fallbackFacilityId,
+          facilityName: r.facilityName || fallbackFacilityName,
+          requestDate: '27/10/2026',
+          expectedReturnDate: r.endDate || '28/10/2026',
+          inspectionDate: '28/10/2026 14:00',
+          reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
+          bankName: 'MB Bank',
+          bankAccountNumber: '098765432199',
+          bankAccountName: (r.customerName || 'KHACH THUE').toUpperCase(),
+          depositAmount: r.depositPaid || r.depositAmount || 3000000,
+          outstandingDebt: 0,
+          cleaningFee: 0,
+          damageFee: 0,
+          doorFee: 0,
+          smartLockFee: 0,
+          lostCardFee: 0,
+          status: 'RETURN_REQUESTED',
+          inspectorName: 'Phan Van Hau',
+          historyNotes: ['Hệ thống ghi nhận đơn đến hạn trả kho'],
+          doorPassed: true,
+          doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+          doorFeeInput: 0,
+          cleanlinessPassed: true,
+          cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+          cleaningFeeInput: 0,
+          damagePassed: true,
+          damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+          damageFeeInput: 0,
+          smartLockPassed: true,
+          smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+          smartLockFeeInput: 0,
+          assetsClearedPassed: true,
+          assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+          photoUrls: [],
+          envPassed: true,
+          envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+        })
+        processedIds.add(candidateId)
+      }
+    })
+  }
+
+  // 4. IMPORTANT: If incomingRequests and incomingRentals were empty, preserve previously saved items!
+  if (list.length === 0) {
+    Object.values(savedMap).forEach((savedItem) => {
+      if (savedItem && savedItem.id && !processedIds.has(savedItem.id)) {
+        list.push({ ...savedItem, status: normalizeStatus(savedItem.status) })
+        processedIds.add(savedItem.id)
+      }
+    })
+  }
+
+  // 5. Persist to localStorage only when list has items (NEVER overwrite with empty array!)
+  if (list.length > 0) {
+    try {
+      localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(list))
+    } catch {}
+  }
+
+  return list
+}
+
 export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = ({
   currentFacilityId,
   facilityName = 'Boxora Thủ Đức',
@@ -139,180 +347,51 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   userName = 'Nhân viên trực ca',
   activeRentals = [],
   rawReturnRequests = [],
-  onReturnCompleted
+  onReturnCompleted,
+  onRefresh
 }) => {
   const isFacilityManager = userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER'
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Initialize return cases from active rentals + raw requests + localStorage
-  const initialCases: ReturnCaseItem[] = useMemo(() => {
-    // 1. Read existing saved dossiers from localStorage
-    const savedMap: Record<string, ReturnCaseItem> = {}
-    try {
-      const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed)) {
-          parsed.forEach((item: ReturnCaseItem) => {
-            if (item && item.id) {
-              savedMap[item.id] = item
-              if (item.bookingId) savedMap[item.bookingId] = item
-              if (item.unitCode) savedMap[item.unitCode] = item
-            }
-          })
-        }
-      }
-    } catch {
-      // Fallback
-    }
-
-    const list: ReturnCaseItem[] = []
-    const processedIds = new Set<string>()
-
-    // 2. Synthesize from rawReturnRequests if available
-    if (rawReturnRequests && rawReturnRequests.length > 0) {
-      rawReturnRequests.forEach((req, idx) => {
-        const candidateId = req.id || `RET-2026-${7100 + idx}`
-        const candidateBookingId = req.bookingId || req.id
-        const saved = savedMap[candidateId] || savedMap[candidateBookingId] || savedMap[req.unitCode]
-
-        if (saved) {
-          list.push({
-            ...saved,
-            status: saved.status ? normalizeStatus(saved.status) : normalizeStatus(req.status),
-            depositAmount: saved.depositAmount || req.depositAmount || req.depositPaid || 2400000,
-            unitCode: saved.unitCode || req.unitCode || 'TD-B105',
-            customerName: saved.customerName || req.customerName || 'Khách thuê',
-            customerPhone: saved.customerPhone || req.customerPhone || 'N/A'
-          })
-          processedIds.add(saved.id)
-        } else {
-          list.push({
-            id: candidateId,
-            bookingId: candidateBookingId,
-            bookingCode: req.bookingCode || `BX-2026-${4000 + idx}`,
-            contractCode: req.contractCode || `CTR-BX-2026-${4000 + idx}`,
-            unitCode: req.unitCode || 'TD-B105',
-            customerName: req.customerName || 'Nguyễn Văn Khách',
-            customerPhone: req.customerPhone || '0912345678',
-            customerEmail: req.customerEmail || 'khachhang@boxora.vn',
-            facilityId: req.facilityId || currentFacilityId,
-            facilityName: req.facilityName || facilityName,
-            requestDate: req.requestDate || '26/10/2026',
-            expectedReturnDate: req.expectedReturnDate || '28/10/2026',
-            inspectionDate: req.inspectionDate || '28/10/2026 10:00',
-            reason: req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-            bankName: req.bankName || 'Vietcombank',
-            bankAccountNumber: req.bankAccountNumber || '1029384756',
-            bankAccountName: req.bankAccountName || (req.customerName || 'NGUYEN VAN KHACH').toUpperCase(),
-            depositAmount: req.depositAmount || req.depositPaid || 2400000,
-            outstandingDebt: 0,
-            cleaningFee: 0,
-            damageFee: 0,
-            doorFee: 0,
-            smartLockFee: 0,
-            lostCardFee: 0,
-            status: normalizeStatus(req.status),
-            inspectorName: 'Phan Van Hau',
-            historyNotes: ['Khách hàng gửi yêu cầu qua Boxora Portal'],
-            doorPassed: true,
-            doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
-            doorFeeInput: 0,
-            cleanlinessPassed: true,
-            cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
-            cleaningFeeInput: 0,
-            damagePassed: true,
-            damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
-            damageFeeInput: 0,
-            smartLockPassed: true,
-            smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
-            smartLockFeeInput: 0,
-            assetsClearedPassed: true,
-            assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
-            photoUrls: [],
-            envPassed: true,
-            envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
-          })
-          processedIds.add(candidateId)
-        }
-      })
-    }
-
-    // 3. Fallback mock cases from activeRentals if list is empty
-    if (list.length === 0 && activeRentals && activeRentals.length > 0) {
-      activeRentals.slice(0, 3).forEach((r, idx) => {
-        const candidateId = `ACT-RET-${r.id}`
-        const saved = savedMap[candidateId] || savedMap[r.id] || savedMap[r.unitCode || '']
-
-        if (saved) {
-          list.push({ ...saved, status: normalizeStatus(saved.status) })
-          processedIds.add(saved.id)
-        } else {
-          list.push({
-            id: candidateId,
-            bookingId: r.id,
-            bookingCode: r.bookingCode,
-            contractCode: r.contractCode || `CTR-${r.bookingCode}`,
-            unitCode: r.unitCode || `TD-A10${idx + 1}`,
-            customerName: r.customerName || 'Khách thuê',
-            customerPhone: r.customerPhone || '0987654321',
-            customerEmail: r.customerEmail || 'khach@gmail.com',
-            facilityId: r.facilityId || currentFacilityId,
-            facilityName: r.facilityName || facilityName,
-            requestDate: '27/10/2026',
-            expectedReturnDate: r.endDate || '28/10/2026',
-            inspectionDate: '28/10/2026 14:00',
-            reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-            bankName: 'MB Bank',
-            bankAccountNumber: '098765432199',
-            bankAccountName: (r.customerName || 'KHACH THUE').toUpperCase(),
-            depositAmount: r.depositPaid || r.depositAmount || 3000000,
-            outstandingDebt: 0,
-            cleaningFee: 0,
-            damageFee: 0,
-            doorFee: 0,
-            smartLockFee: 0,
-            lostCardFee: 0,
-            status: 'RETURN_REQUESTED',
-            inspectorName: 'Phan Van Hau',
-            historyNotes: ['Hệ thống ghi nhận đơn đến hạn trả kho'],
-            doorPassed: true,
-            doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
-            doorFeeInput: 0,
-            cleanlinessPassed: true,
-            cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
-            cleaningFeeInput: 0,
-            damagePassed: true,
-            damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
-            damageFeeInput: 0,
-            smartLockPassed: true,
-            smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
-            smartLockFeeInput: 0,
-            assetsClearedPassed: true,
-            assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
-            photoUrls: [],
-            envPassed: true,
-            envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
-          })
-          processedIds.add(candidateId)
-        }
-      })
-    }
-
-    // Persist normalized list initially
-    try {
-      localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(list))
-    } catch {
-      // ignore
-    }
-
-    return list
-  }, [rawReturnRequests, activeRentals, currentFacilityId, facilityName])
-
-  const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>(initialCases)
-  const [selectedCaseId, setSelectedCaseId] = useState<string>(() => initialCases[0]?.id || '')
+  // Initialize return cases on mount
+  const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>(() =>
+    syncReturnCases([], rawReturnRequests, activeRentals, currentFacilityId, facilityName)
+  )
+  const [selectedCaseId, setSelectedCaseId] = useState<string>(() => returnCases[0]?.id || '')
   const [searchFilter, setSearchFilter] = useState<string>('')
   const [statusTabFilter, setStatusTabFilter] = useState<string>('ALL')
+  const [isRefreshing, setIsRefreshing] = useState(false)
+
+  // CRITICAL: Synchronize state whenever rawReturnRequests or activeRentals props update from parent
+  useEffect(() => {
+    const updated = syncReturnCases(returnCases, rawReturnRequests, activeRentals, currentFacilityId, facilityName)
+    if (updated.length > 0) {
+      setReturnCases(updated)
+      setSelectedCaseId((prev) => {
+        if (prev && updated.some((c) => c.id === prev)) return prev
+        return updated[0]?.id || ''
+      })
+    }
+  }, [rawReturnRequests, activeRentals, currentFacilityId, facilityName])
+
+  // Explicit refresh handler
+  const handleRefreshWorkbench = () => {
+    setIsRefreshing(true)
+    if (onRefresh) {
+      onRefresh()
+    } else if (onReturnCompleted) {
+      onReturnCompleted()
+    }
+    const updated = syncReturnCases(returnCases, rawReturnRequests, activeRentals, currentFacilityId, facilityName)
+    if (updated.length > 0) {
+      setReturnCases(updated)
+      setSelectedCaseId((prev) => (prev && updated.some((c) => c.id === prev) ? prev : updated[0]?.id || ''))
+    }
+    setTimeout(() => {
+      setIsRefreshing(false)
+      toast.success('Đã làm mới danh sách hồ sơ trả kho!')
+    }, 400)
+  }
 
   const currentCase = useMemo(() => {
     return returnCases.find((c) => c.id === selectedCaseId) || returnCases[0] || null
@@ -696,7 +775,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-auto">
+        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
           <span className="px-3 py-1.5 rounded-xl bg-white/10 text-xs font-semibold border border-white/15 flex items-center gap-1.5">
             <Building2 size={14} className="text-amber-400" />
             <span>{facilityName}</span>
@@ -704,6 +783,15 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
             {userRole}
           </span>
+          <button
+            type="button"
+            onClick={handleRefreshWorkbench}
+            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold border border-white/20 text-white flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+            title="Làm mới danh sách hồ sơ trả kho từ cơ sở"
+          >
+            <RotateCcw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            <span>Làm mới</span>
+          </button>
         </div>
       </div>
 
@@ -792,15 +880,25 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <RotateCcw size={16} className="text-amber-600" />
                 <span>Danh Sách Hồ Sơ Trả Kho ({filteredCases.length})</span>
               </h3>
-              {statusTabFilter !== 'ALL' && (
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setStatusTabFilter('ALL')}
-                  className="text-xs text-amber-600 hover:underline font-bold cursor-pointer"
+                  onClick={handleRefreshWorkbench}
+                  className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-100 transition cursor-pointer"
+                  title="Làm mới danh sách"
                 >
-                  Xem tất cả
+                  <RotateCcw size={14} className={isRefreshing ? 'animate-spin text-amber-600' : ''} />
                 </button>
-              )}
+                {statusTabFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusTabFilter('ALL')}
+                    className="text-xs text-amber-600 hover:underline font-bold cursor-pointer"
+                  >
+                    Xem tất cả
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Search Box */}
@@ -819,9 +917,28 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             <div className="space-y-2.5 max-h-[680px] overflow-y-auto pr-1">
               {filteredCases.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-xs bg-slate-50 rounded-xl border border-slate-100">
-                  <RotateCcw size={28} className="mx-auto mb-2 opacity-50" />
+                  <RotateCcw size={28} className={`mx-auto mb-2 opacity-50 ${isRefreshing ? 'animate-spin text-amber-600' : ''}`} />
                   <p className="font-bold text-slate-600">Không có hồ sơ trả kho phù hợp</p>
-                  <p className="text-[11px] mt-1">Thử đổi từ khóa hoặc bộ lọc trạng thái khác.</p>
+                  <p className="text-[11px] mt-1">Thử đổi từ khóa, xóa bộ lọc hoặc bấm làm mới danh sách.</p>
+                  <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+                    {statusTabFilter !== 'ALL' && (
+                      <button
+                        type="button"
+                        onClick={() => setStatusTabFilter('ALL')}
+                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-100 cursor-pointer"
+                      >
+                        Xem tất cả
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRefreshWorkbench}
+                      className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                    >
+                      <RotateCcw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+                      <span>Làm mới danh sách</span>
+                    </button>
+                  </div>
                 </div>
               ) : (
                 filteredCases.map((c) => {
