@@ -829,6 +829,339 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const customerPayableAmount = Math.max(0, totalVerifiedRepairCost - deposit)
   const netRefundAmount = currentCase ? Math.max(0, deposit - totalVerifiedRepairCost) : 0
 
+  // Danh sách chi tiết các hạng mục và trường thông tin vừa thay đổi so với bản nháp / bản nạp ban đầu
+  const changedInspectionItems = useMemo(() => {
+    if (!savedSnapshot) return []
+    try {
+      const base = JSON.parse(savedSnapshot)
+      const diffs: {
+        criterionNumber: number
+        title: string
+        statusText?: string
+        fee?: number
+        details: string[]
+      }[] = []
+
+      // 1. Cửa cuốn & Ray trượt
+      {
+        const details: string[] = []
+        let statusText = ''
+        let fee: number | undefined = undefined
+
+        const statusChanged = base.doorPassed !== doorPassed
+        const feeChanged = Number(base.doorFeeInput || 0) !== Number(doorFeeInput || 0)
+        const notesChanged = (base.doorNotes || '').trim() !== doorNotes.trim()
+
+        if (statusChanged) {
+          details.push(`Trạng thái: ${base.doorPassed ? 'Đạt' : 'Có vấn đề'} ➔ ${doorPassed ? 'Đạt' : 'Có vấn đề'}`)
+        }
+        if (!doorPassed) {
+          statusText = 'Có vấn đề'
+          fee = doorFeeInput
+          if (feeChanged) {
+            details.push(
+              `Phí sửa chữa: ${(Number(base.doorFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ ${(Number(doorFeeInput) || 0).toLocaleString('vi-VN')}đ`
+            )
+          }
+        } else if (statusChanged) {
+          statusText = 'Đạt chuẩn'
+          if (Number(base.doorFeeInput || 0) > 0) {
+            details.push(`Đã bỏ khấu trừ: ${(Number(base.doorFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ 0đ`)
+          }
+        }
+        if (notesChanged) {
+          details.push(`Mô tả: "${doorNotes.trim() || 'Để trống'}"`)
+        }
+
+        if (statusChanged || feeChanged || notesChanged) {
+          diffs.push({
+            criterionNumber: 1,
+            title: '1. Cửa cuốn & Ray trượt',
+            statusText: statusText || (doorPassed ? 'Đạt' : 'Có vấn đề'),
+            fee,
+            details
+          })
+        }
+      }
+
+      // 2. Vệ sinh kho & Sàn nhà
+      {
+        const details: string[] = []
+        let statusText = ''
+        let fee: number | undefined = undefined
+
+        const statusChanged = base.cleanlinessPassed !== cleanlinessPassed
+        const feeChanged = Number(base.cleaningFeeInput || 0) !== Number(cleaningFeeInput || 0)
+        const notesChanged = (base.cleanlinessNotes || '').trim() !== cleanlinessNotes.trim()
+
+        if (statusChanged) {
+          details.push(`Trạng thái: ${base.cleanlinessPassed ? 'Sạch' : 'Chưa dọn'} ➔ ${cleanlinessPassed ? 'Sạch' : 'Chưa dọn'}`)
+        }
+        if (!cleanlinessPassed) {
+          statusText = 'Chưa dọn'
+          fee = cleaningFeeInput
+          if (feeChanged) {
+            details.push(
+              `Phí vệ sinh: ${(Number(base.cleaningFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ ${(Number(cleaningFeeInput) || 0).toLocaleString('vi-VN')}đ`
+            )
+          }
+        } else if (statusChanged) {
+          statusText = 'Đạt chuẩn'
+          if (Number(base.cleaningFeeInput || 0) > 0) {
+            details.push(`Đã bỏ khấu trừ: ${(Number(base.cleaningFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ 0đ`)
+          }
+        }
+        if (notesChanged) {
+          details.push(`Mô tả: "${cleanlinessNotes.trim() || 'Để trống'}"`)
+        }
+
+        if (statusChanged || feeChanged || notesChanged) {
+          diffs.push({
+            criterionNumber: 2,
+            title: '2. Vệ sinh kho & Sàn nhà',
+            statusText: statusText || (cleanlinessPassed ? 'Sạch' : 'Chưa dọn'),
+            fee,
+            details
+          })
+        }
+      }
+
+      // 3. Kết cấu tường vách
+      {
+        const details: string[] = []
+        let statusText = ''
+        let fee: number | undefined = undefined
+
+        const statusChanged = base.damagePassed !== damagePassed
+        const feeChanged = Number(base.damageFeeInput || 0) !== Number(damageFeeInput || 0)
+        const notesChanged = (base.damageNotes || '').trim() !== damageNotes.trim()
+
+        if (statusChanged) {
+          details.push(`Trạng thái: ${base.damagePassed ? 'Nguyên vẹn' : 'Có hư hại'} ➔ ${damagePassed ? 'Nguyên vẹn' : 'Có hư hại'}`)
+        }
+        if (!damagePassed) {
+          statusText = 'Có hư hỏng'
+          fee = damageFeeInput
+          if (feeChanged) {
+            details.push(
+              `Phí khắc phục: ${(Number(base.damageFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ ${(Number(damageFeeInput) || 0).toLocaleString('vi-VN')}đ`
+            )
+          }
+        } else if (statusChanged) {
+          statusText = 'Đạt chuẩn'
+          if (Number(base.damageFeeInput || 0) > 0) {
+            details.push(`Đã bỏ khấu trừ: ${(Number(base.damageFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ 0đ`)
+          }
+        }
+        if (notesChanged) {
+          details.push(`Mô tả: "${damageNotes.trim() || 'Để trống'}"`)
+        }
+
+        if (statusChanged || feeChanged || notesChanged) {
+          diffs.push({
+            criterionNumber: 3,
+            title: '3. Kết cấu tường vách',
+            statusText: statusText || (damagePassed ? 'Nguyên vẹn' : 'Có hư hỏng'),
+            fee,
+            details
+          })
+        }
+      }
+
+      // 4. Ổ khóa SmartLock IoT
+      {
+        const details: string[] = []
+        let statusText = ''
+        let fee: number | undefined = undefined
+
+        const statusChanged = base.smartLockPassed !== smartLockPassed
+        const issueTypeChanged = base.smartLockIssueType !== smartLockIssueType
+        const feeChanged = Number(base.smartLockFeeInput || 0) !== Number(smartLockFeeInput || 0)
+        const notesChanged = (base.smartLockNotes || '').trim() !== smartLockNotes.trim()
+
+        if (statusChanged) {
+          details.push(`Trạng thái: ${base.smartLockPassed ? 'Tốt' : 'Báo lỗi'} ➔ ${smartLockPassed ? 'Tốt' : 'Báo lỗi'}`)
+        }
+        if (!smartLockPassed) {
+          statusText = 'Báo lỗi'
+          if (issueTypeChanged) {
+            details.push(
+              `Phân loại: ${smartLockIssueType === 'CUSTOMER_FAULT' ? 'Khách làm hỏng (Có khấu trừ)' : 'Lỗi kỹ thuật IoT (Miễn trừ)'}`
+            )
+          }
+          if (isCustomerFaultLock) {
+            fee = smartLockFeeInput
+            if (feeChanged) {
+              details.push(
+                `Phí đền bù khóa: ${(Number(base.smartLockFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ ${(Number(smartLockFeeInput) || 0).toLocaleString('vi-VN')}đ`
+              )
+            }
+          }
+        } else if (statusChanged) {
+          statusText = 'Đạt chuẩn'
+          if (Number(base.smartLockFeeInput || 0) > 0) {
+            details.push(`Đã bỏ khấu trừ: ${(Number(base.smartLockFeeInput) || 0).toLocaleString('vi-VN')}đ ➔ 0đ`)
+          }
+        }
+        if (notesChanged) {
+          details.push(`Mô tả: "${smartLockNotes.trim() || 'Để trống'}"`)
+        }
+
+        if (statusChanged || issueTypeChanged || (isCustomerFaultLock && feeChanged) || notesChanged) {
+          diffs.push({
+            criterionNumber: 4,
+            title: '4. Ổ khóa SmartLock IoT',
+            statusText: statusText || (smartLockPassed ? 'Tốt' : 'Báo lỗi'),
+            fee,
+            details
+          })
+        }
+      }
+
+      // 5. Xác nhận không còn đồ đạc trong kho
+      {
+        const details: string[] = []
+        let statusText = ''
+
+        const statusChanged = base.assetsClearedPassed !== assetsClearedPassed
+        const notesChanged = (base.assetsClearedNotes || '').trim() !== assetsClearedNotes.trim()
+
+        if (statusChanged) {
+          details.push(
+            `Trạng thái: ${base.assetsClearedPassed ? 'Đã dọn trống' : 'Còn đồ lưu trữ'} ➔ ${assetsClearedPassed ? 'Đã dọn trống' : 'Còn đồ lưu trữ'}`
+          )
+        }
+        if (!assetsClearedPassed) {
+          statusText = 'Còn đồ'
+        } else if (statusChanged) {
+          statusText = 'Đã dọn trống'
+        }
+        if (notesChanged) {
+          details.push(`Mô tả: "${assetsClearedNotes.trim() || 'Để trống'}"`)
+        }
+
+        if (statusChanged || notesChanged) {
+          diffs.push({
+            criterionNumber: 5,
+            title: '5. Xác nhận đồ đạc trong kho',
+            statusText: statusText || (assetsClearedPassed ? 'Đã dọn trống' : 'Còn đồ'),
+            details
+          })
+        }
+      }
+
+      // 6. Ảnh bằng chứng hiện trường
+      {
+        const basePhotos = (base.photoUrls || '').split('|').filter(Boolean)
+        const currentPhotos = photoUrls.filter(Boolean)
+        if (basePhotos.join('|') !== currentPhotos.join('|')) {
+          const details: string[] = []
+          if (currentPhotos.length > basePhotos.length) {
+            details.push(`Đã tải lên thêm ${currentPhotos.length - basePhotos.length} ảnh mới (Tổng: ${currentPhotos.length} ảnh)`)
+          } else if (currentPhotos.length < basePhotos.length) {
+            details.push(`Đã gỡ bớt ảnh khỏi biên bản (Còn lại: ${currentPhotos.length} ảnh)`)
+          } else {
+            details.push(`Cập nhật danh sách ảnh hiện trường (${currentPhotos.length} ảnh)`)
+          }
+          diffs.push({
+            criterionNumber: 6,
+            title: '6. Ảnh bằng chứng hiện trường',
+            statusText: `${currentPhotos.length} ảnh`,
+            details
+          })
+        }
+      }
+
+      // 7. Cảm biến môi trường Boxora IoT
+      {
+        const details: string[] = []
+        let statusText = ''
+
+        const statusChanged = base.envPassed !== envPassed
+        const notesChanged = (base.envNotes || '').trim() !== envNotes.trim()
+
+        if (statusChanged) {
+          details.push(`Trạng thái: ${base.envPassed ? 'Đạt chuẩn' : 'Chưa đạt'} ➔ ${envPassed ? 'Đạt chuẩn' : 'Chưa đạt'}`)
+        }
+        if (!envPassed) {
+          statusText = 'Chưa đạt'
+        } else if (statusChanged) {
+          statusText = 'Đạt chuẩn'
+        }
+        if (notesChanged) {
+          details.push(`Mô tả: "${envNotes.trim() || 'Để trống'}"`)
+        }
+
+        if (statusChanged || notesChanged) {
+          diffs.push({
+            criterionNumber: 7,
+            title: '7. Cảm biến môi trường Boxora IoT',
+            statusText: statusText || (envPassed ? 'Đạt chuẩn' : 'Chưa đạt'),
+            details
+          })
+        }
+      }
+
+      return diffs
+    } catch {
+      return []
+    }
+  }, [
+    savedSnapshot,
+    doorPassed,
+    doorFeeInput,
+    doorNotes,
+    cleanlinessPassed,
+    cleaningFeeInput,
+    cleanlinessNotes,
+    damagePassed,
+    damageFeeInput,
+    damageNotes,
+    smartLockPassed,
+    smartLockFeeInput,
+    smartLockNotes,
+    smartLockIssueType,
+    isCustomerFaultLock,
+    assetsClearedPassed,
+    assetsClearedNotes,
+    photoUrls,
+    envPassed,
+    envNotes
+  ])
+
+  // Cảnh báo khi người dùng tắt tab trình duyệt hoặc F5 khi có dữ liệu chưa lưu
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (shouldPromptDraftSave()) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [
+    savedSnapshot,
+    doorPassed,
+    doorFeeInput,
+    doorNotes,
+    cleanlinessPassed,
+    cleaningFeeInput,
+    cleanlinessNotes,
+    damagePassed,
+    damageFeeInput,
+    damageNotes,
+    smartLockPassed,
+    smartLockFeeInput,
+    smartLockNotes,
+    smartLockIssueType,
+    assetsClearedPassed,
+    assetsClearedNotes,
+    photoUrls,
+    envPassed,
+    envNotes,
+    currentCase
+  ])
+
   // KPI Metrics
   const metrics = useMemo(() => {
     let pending = 0
@@ -2223,14 +2556,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <div className="pt-3 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
                       <button
                         type="button"
-                        onClick={() => handleSaveInspection('ISSUE', true)}
-                        className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 cursor-pointer flex items-center gap-1.5 transition"
-                      >
-                        <FileText size={14} />
-                        <span>Lưu Bản Nháp</span>
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => {
                           const hasIssue = currentMarkedIssues.length > 0 || totalDeduction > 0 || !doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed || !assetsClearedPassed
                           handleSaveInspection(hasIssue ? 'ISSUE' : 'PASSED', false)
@@ -2440,7 +2765,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                       <div className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 font-mono font-bold text-xs flex items-center justify-center">
-                          E
+                          D
                         </span>
                         <h3 className="font-bold text-sm text-slate-900">
                           Bàn Giao Vật Lý &amp; Thu Hồi SmartLock IoT
@@ -2531,7 +2856,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                       <div className="flex items-center gap-2">
                         <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-mono font-bold text-xs flex items-center justify-center">
-                          D
+                          E
                         </span>
                         <h3 className="font-bold text-sm text-slate-900">
                           Lịch Sử Xử Lý &amp; Quyết Định Nghiệp Vụ
@@ -2971,8 +3296,60 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 Bạn có muốn lưu lại kết quả thẩm định hiện trường này thành <strong>Bản Nháp</strong> trước khi chuyển sang mục khác không?
               </p>
 
-              {/* Tóm tắt các lỗi / chi phí đã ghi nhận nếu có */}
-              {currentMarkedIssues.length > 0 ? (
+              {/* Danh sách các nơi/hạng mục có thông tin thay đổi chi tiết */}
+              {changedInspectionItems.length > 0 ? (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-amber-900 border-b border-amber-200/60 pb-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                      <span>Hạng mục ghi nhận thay đổi ({changedInspectionItems.length}):</span>
+                    </span>
+                    <span>Khấu trừ dự kiến</span>
+                  </div>
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {changedInspectionItems.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white/90 border border-amber-200/80 rounded-lg p-2.5 text-[11px] space-y-1 shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between font-bold text-slate-800">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-amber-600 font-mono font-bold">•</span>
+                            <span>{item.title}{item.statusText ? `: ${item.statusText}` : ''}</span>
+                          </span>
+                          {item.fee !== undefined && item.fee > 0 ? (
+                            <span className="font-mono font-bold text-rose-700">
+                              -{item.fee.toLocaleString('vi-VN')}đ
+                            </span>
+                          ) : item.fee === 0 ? (
+                            <span className="text-emerald-700 font-semibold">0đ</span>
+                          ) : (
+                            <span className="text-slate-400 italic">0đ</span>
+                          )}
+                        </div>
+                        {item.details.length > 0 && (
+                          <div className="pl-3.5 space-y-0.5 text-[10px] text-slate-600">
+                            {item.details.map((d, dIdx) => (
+                              <div key={dIdx} className="flex items-start gap-1">
+                                <span className="text-amber-600 font-bold shrink-0">↳</span>
+                                <span className="leading-tight">{d}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {totalVerifiedRepairCost > 0 && (
+                    <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-xs font-bold text-slate-900">
+                      <span>Tổng chi phí phát sinh:</span>
+                      <span className="font-mono text-rose-700">
+                        {totalVerifiedRepairCost.toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : currentMarkedIssues.length > 0 ? (
                 <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
                     <span>Hạng mục ghi nhận ({currentMarkedIssues.length}):</span>
