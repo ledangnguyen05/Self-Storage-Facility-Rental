@@ -343,6 +343,17 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     null,
                     UnitStatus.AVAILABLE
             );
+        } else if (booking.getUnitType() != null) {
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.STORAGE_UNIT_RELEASE,
+                    "Booking",
+                    booking.getId(),
+                    String.format("Giải phóng 1 suất kho %s về kho khả dụng do đơn đặt kho %s bị hủy",
+                            booking.getUnitType().getTypeName(), booking.getBookingCode()),
+                    null,
+                    UnitStatus.AVAILABLE
+            );
         }
 
         activityLogService.record(
@@ -406,7 +417,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .penaltyAmount(preview.getPenaltyAmount())
                 .refundRequestId(refundRequestId)
                 .refundRequestCode(refundRequestCode)
-                .unitReleased(unitReleased)
+                .unitReleased(unitReleased || booking.getUnitType() != null)
                 .cancelledAt(cancelNow)
                 .cancellationReason(reason)
                 .message(refundRequestId != null ? "Đã gửi yêu cầu hủy đơn và hoàn tiền cọc (" + refundRequestCode + ") đến Quản lý cơ sở để xử lý hoàn tiền." : ("Đã hủy đơn đặt giữ chỗ thành công. " + (preview.getPolicyDescription() != null ? preview.getPolicyDescription() : "")))

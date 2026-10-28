@@ -5,6 +5,7 @@ import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
 import com.boxora.dto.request.ToggleMaintenanceRequest;
 import com.boxora.dto.response.StorageUnitResponse;
+import com.boxora.dto.response.UnitAvailabilityResponse;
 import com.boxora.service.StorageUnitService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -38,9 +39,25 @@ public class StorageUnitController {
     public ResponseEntity<ApiResponse<List<StorageUnitResponse>>> getUnits(
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) String floorLevel,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean forAssignment
     ) {
-        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnits(facilityId, floorLevel, status)));
+        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnits(facilityId, floorLevel, status, forAssignment)));
+    }
+
+    @GetMapping("/availability")
+    public ResponseEntity<ApiResponse<UnitAvailabilityResponse>> getUnitAvailability(
+            @RequestParam UUID facilityId,
+            @RequestParam UUID unitTypeId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnitAvailability(facilityId, unitTypeId)));
+    }
+
+    @GetMapping("/availability/facility/{facilityId}")
+    public ResponseEntity<ApiResponse<List<UnitAvailabilityResponse>>> getFacilityAvailability(
+            @PathVariable UUID facilityId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getFacilityAvailability(facilityId)));
     }
 
     @GetMapping("/{id}")

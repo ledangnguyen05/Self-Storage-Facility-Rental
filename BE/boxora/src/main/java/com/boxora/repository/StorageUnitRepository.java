@@ -68,6 +68,14 @@ public interface StorageUnitRepository extends JpaRepository<StorageUnit, UUID>,
 
     List<StorageUnit> findByUnitType_Id(UUID unitTypeId);
 
+    long countByFacility_IdAndUnitType_IdAndStatus(UUID facilityId, UUID unitTypeId, UnitStatus status);
+
+    long countByFacility_IdAndStatus(UUID facilityId, UnitStatus status);
+
+    long countByFacility_IdAndUnitType_Id(UUID facilityId, UUID unitTypeId);
+
+    long countByFacility_Id(UUID facilityId);
+
     @Query("""
             SELECT su.facility.id, su.facility.name, su.status, COUNT(su)
             FROM StorageUnit su

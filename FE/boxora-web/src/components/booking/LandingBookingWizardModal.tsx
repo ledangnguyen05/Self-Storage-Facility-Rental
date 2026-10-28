@@ -1,5 +1,5 @@
 import { useLanguage } from '../../context/LanguageContext'
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   AlertCircle,
   X,
@@ -216,6 +216,25 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [paymentRedirectUrl, setPaymentRedirectUrl] = useState<string | null>(null)
   const [payLaterConfirmed, setPayLaterConfirmed] = useState<boolean>(false)
 
+  // Refresh storage units
+  const refreshStorageUnits = useCallback(() => {
+    storageUnitService.getUnits().then((units) => {
+      if (Array.isArray(units)) {
+        setStorageUnits(units)
+      }
+    }).catch(err => {
+      console.warn('Failed to refresh storage units:', err)
+    })
+  }, [])
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      refreshStorageUnits()
+    }
+    window.addEventListener('boxora:storage-units-refresh', handleRefresh)
+    return () => window.removeEventListener('boxora:storage-units-refresh', handleRefresh)
+  }, [refreshStorageUnits])
+
   // Load facilities and storage units
   useEffect(() => {
     if (!isOpen) return
@@ -377,6 +396,22 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     })
   }, [facilities, storageUnits, customerCoords, selectedCityFilter])
 
+  // Helper to count available units for any specific size tier
+  const getTierAvailableCount = useCallback((tierKey: SizeTierKey) => {
+    if (!selectedFacility) return 0
+    const facUnits = storageUnits.filter((u) => u.facilityId === selectedFacility.id)
+    const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+    return available.filter((u) => {
+      const typeName = (u.unitTypeName || (u as any).unitType?.name || (u as any).type || '').toLowerCase()
+      const area = u.areaSqMeters || (u as any).area || 0
+      if (tierKey === 'LOCKER' && (typeName.includes('mini') || typeName.includes('locker') || typeName.includes('cá nhân') || (area > 0 && area <= 3))) return true
+      if (tierKey === 'STANDARD' && (typeName.includes('tiêu chuẩn') || typeName.includes('standard') || (area > 3 && area <= 7))) return true
+      if (tierKey === 'LARGE' && (typeName.includes('lớn') || typeName.includes('large') || (area > 7 && area <= 14))) return true
+      if (tierKey === 'ENTERPRISE' && (typeName.includes('doanh nghiệp') || typeName.includes('business') || area > 14)) return true
+      return false
+    }).length
+  }, [selectedFacility, storageUnits])
+
   // Count units available for selected tier in chosen facility
   const tierAvailability = useMemo(() => {
     if (!selectedFacility) return { count: 0, matchedUnit: null as StorageUnit | null }
@@ -384,9 +419,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     const facUnits = storageUnits.filter((u) => u.facilityId === selectedFacility.id)
     const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
 
-    // Find unit that roughly matches selected tier
-    const tier = SIZE_TIERS[selectedTierKey]
-    const matched = available.find((u) => {
+    const matchedUnits = available.filter((u) => {
       const typeName = (u.unitTypeName || (u as any).unitType?.name || (u as any).type || '').toLowerCase()
       const area = u.areaSqMeters || (u as any).area || 0
       if (selectedTierKey === 'LOCKER' && (typeName.includes('mini') || typeName.includes('locker') || typeName.includes('cá nhân') || (area > 0 && area <= 3))) return true
@@ -394,10 +427,12 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       if (selectedTierKey === 'LARGE' && (typeName.includes('lớn') || typeName.includes('large') || (area > 7 && area <= 14))) return true
       if (selectedTierKey === 'ENTERPRISE' && (typeName.includes('doanh nghiệp') || typeName.includes('business') || area > 14)) return true
       return false
-    }) || available[0] || null
+    })
+
+    const matched = matchedUnits[0] || null
 
     return {
-      count: available.length,
+      count: matchedUnits.length,
       matchedUnit: matched,
     }
   }, [selectedFacility, storageUnits, selectedTierKey])
@@ -492,6 +527,10 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       }
       setCurrentStep(2)
     } else if (currentStep === 2) {
+      if (tierAvailability.count === 0) {
+        toast.warning('Gói kích thước đã chọn tại cơ sở này hiện đã hết buồng kho khả dụng. Vui lòng chọn gói khác hoặc đổi cơ sở.')
+        return
+      }
       setCurrentStep(3)
     } else if (currentStep === 3) {
       if (validateStep3()) {
@@ -654,6 +693,8 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       savedReservations.unshift(reservationRecord)
       localStorage.setItem('boxora_guest_reservations', JSON.stringify(savedReservations))
       window.dispatchEvent(new CustomEvent('boxora_staff_reservation_created', { detail: reservationRecord }))
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      refreshStorageUnits()
 
       setPayLaterConfirmed(true)
       setCurrentStep(5)
@@ -985,9 +1026,20 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                     >
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900">
-                            {tier.badge}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900">
+                              {tier.badge}
+                            </span>
+                            {getTierAvailableCount(tierKey) > 0 ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Còn {getTierAvailableCount(tierKey)} kho
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                                Hết kho
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs font-mono font-bold text-slate-500">
                             {tier.area}
                           </span>

@@ -21,9 +21,19 @@ export const storageUnitService = {
     })
     return response.data?.data as { fileUrl: string; fileName: string; fileSize?: number; fileType?: string }
   },
-  async getUnits(params?: { facilityId?: string; floorLevel?: string; status?: string }) {
+  async getUnits(params?: { facilityId?: string; floorLevel?: string; status?: string; forAssignment?: boolean; forBookingId?: string }) {
     const response = await api.get('/api/v1/storage-units', { params })
     return response.data?.data as StorageUnit[]
+  },
+
+  async getUnitAvailability(facilityId: string, unitTypeId: string) {
+    const response = await api.get('/api/v1/storage-units/availability', { params: { facilityId, unitTypeId } })
+    return response.data?.data
+  },
+
+  async getFacilityAvailability(facilityId: string) {
+    const response = await api.get(`/api/v1/storage-units/availability/facility/${facilityId}`)
+    return response.data?.data
   },
 
   async getById(id: string) {

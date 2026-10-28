@@ -27,6 +27,7 @@ import com.boxora.service.BookingService;
 import com.boxora.service.EncryptionService;
 import com.boxora.service.PricingService;
 import com.boxora.service.StorageUnitLockService;
+import com.boxora.service.StorageUnitService;
 import com.boxora.dto.request.BookingRescheduleRequest;
 import com.boxora.dto.response.BookingRescheduleEligibilityResponse;
 import com.boxora.dto.response.BookingRescheduleHistoryResponse;
@@ -100,6 +101,7 @@ public class BookingServiceImpl implements BookingService {
     private final UnitTypeRepository unitTypeRepository;
     private final RoleRepository roleRepository;
     private final EmailService emailService;
+    private final org.springframework.beans.factory.ObjectProvider<StorageUnitService> storageUnitServiceProvider;
 
 
     @Value("${app.booking.soft-lock-hours:24}")
@@ -226,7 +228,7 @@ public class BookingServiceImpl implements BookingService {
                         .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
             }
             if (request.getUnitTypeId() != null) {
-                unitType = unitTypeRepository.findById(request.getUnitTypeId())
+                unitType = unitTypeRepository.findByIdForUpdate(request.getUnitTypeId())
                         .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
             }
             if (facility != null) {
@@ -237,16 +239,12 @@ public class BookingServiceImpl implements BookingService {
                     throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE, "Chi nhánh " + facility.getName() + " hiện đang bảo trì.");
                 }
 
-                // Kiểm tra xem cơ sở còn buồng kho khả dụng (AVAILABLE) theo loại kho hay không
-                List<StorageUnit> candidates = new ArrayList<>();
-                if (unitType != null) {
-                    candidates.addAll(storageUnitRepository.findByFacility_IdAndUnitType_IdAndStatus(facility.getId(), unitType.getId(), UnitStatus.AVAILABLE));
-                }
-                if (candidates.isEmpty()) {
-                    candidates.addAll(storageUnitRepository.findByFacility_IdAndStatus(facility.getId(), UnitStatus.AVAILABLE));
-                }
+                // Kiểm tra xem cơ sở còn buồng kho khả dụng (AVAILABLE) thực tế theo loại kho hay không
+                long availableCount = (unitType != null)
+                        ? storageUnitServiceProvider.getObject().getAvailableUnitsCount(facility.getId(), unitType.getId())
+                        : storageUnitServiceProvider.getObject().getFacilityAvailableUnitsCount(facility.getId());
 
-                if (candidates.isEmpty()) {
+                if (availableCount <= 0) {
                     log.warn("[AUTO_ALLOCATE_FAILED] No available storage unit found for facility {} and unitType {}",
                             facility.getId(), unitType != null ? unitType.getId() : "null");
                     throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE, "Rất tiếc, cơ sở hiện đã hết buồng kho khả dụng cho kích thước này.");

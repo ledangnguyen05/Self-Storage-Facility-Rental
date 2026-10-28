@@ -1231,6 +1231,12 @@ export const BookingPage: React.FC = () => {
         setIsNoUnitsModalOpen(true)
         return
       }
+      if (currentSelectedSize && getAvailableCountForSize(currentSelectedSize) === 0) {
+        toast.warning('Kích thước buồng kho đã chọn hiện không còn buồng khả dụng tại cơ sở này. Vui lòng chọn kích thước khác hoặc đổi chi nhánh.', {
+          title: 'Kho đã hết chỗ',
+        })
+        return
+      }
       if (!selectedSizeId && availableSizesInFacility.length > 0) {
         setSelectedSizeId(availableSizesInFacility[0].id)
       }

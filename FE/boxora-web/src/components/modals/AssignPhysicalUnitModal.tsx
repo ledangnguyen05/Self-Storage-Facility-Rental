@@ -148,6 +148,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
       .getUnits({
         facilityId: targetFacilityId,
         status: 'AVAILABLE',
+        forAssignment: true,
       })
       .then((data) => {
         const availableList = (data || []).filter(
