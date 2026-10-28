@@ -201,6 +201,19 @@ export const DashboardLayout: React.FC = () => {
 
           {/* Right Tools: Notifications, User Profile */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+            {role === 'CUSTOMER' && (
+              <Link
+                to="/portal/customer?tab=history"
+                className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                  isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'history'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-blue-50/80 hover:bg-blue-100 text-blue-700 border-blue-200'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">history</span>
+                <span>Xem lịch sử</span>
+              </Link>
+            )}
             <QuickThemeLanguageToggle />
             <NotificationCenter userId={user?.id} />
 
@@ -313,6 +326,18 @@ export const DashboardLayout: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[18px]">inventory_2</span>
                   <span>Kho của tôi &amp; Mã PIN</span>
+                </Link>
+
+                <Link
+                  to="/portal/customer?tab=history"
+                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                    isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'history'
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-bold'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[18px]">history</span>
+                  <span>Lịch sử kho &amp; Thông báo</span>
                 </Link>
 
                 <Link

@@ -22,6 +22,8 @@ import { getFacilityImage } from '../public/BookingPage'
 import { extractFloor } from '../../utils/floorUtils'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import NotificationCenter from '../../components/layout/NotificationCenter'
+import { notificationService, NotificationLog } from '../../services/notificationService'
+import { toast } from '../../utils/toast'
 import { MyBookingsPage } from './MyBookingsPage'
 import { CustomerSupportPanel } from './components/CustomerSupportPanel'
 
@@ -75,6 +77,59 @@ const nextMonthlyPaymentDate = (startDate?: string): Date | null => {
   let nextDate = makeCycleDate(Math.max(0, baseMonthOffset))
   if (nextDate < today) nextDate = makeCycleDate(Math.max(0, baseMonthOffset) + 1)
   return nextDate
+}
+
+interface CustomerUnitActivityLog {
+  id: string
+  unitCode?: string
+  facilityName?: string
+  category: 'ACCESS' | 'RENEWAL' | 'CONTRACT' | 'NOTIFICATION' | 'SUPPORT'
+  actionType:
+    | 'LOCK_OPEN'
+    | 'LOCK_CLOSE'
+    | 'PIN_REVEAL'
+    | 'PIN_HIDE'
+    | 'PIN_COPY'
+    | 'PIN_CHANGE'
+    | 'RENEWAL_REQUEST'
+    | 'RENEWAL_APPROVED'
+    | 'RENEWAL_COMPLETED'
+    | 'RENEWAL_REJECTED'
+    | 'CONTRACT_ACTIVATED'
+    | 'CONTRACT_OVERDUE'
+    | 'PAYMENT_COMPLETED'
+    | 'SUPPORT_REQUEST'
+    | 'SYSTEM_NOTIFICATION'
+  title: string
+  description: string
+  timestamp: string
+  actorName?: string
+  statusLabel?: string
+  statusTone?: 'emerald' | 'blue' | 'amber' | 'rose' | 'purple' | 'cyan' | 'slate'
+  meta?: {
+    oldEndDate?: string
+    newEndDate?: string
+    cycleMonths?: number
+    amount?: number
+    contractCode?: string
+  }
+}
+
+const formatRelativeTimeVi = (isoString?: string): string => {
+  if (!isoString) return ''
+  const date = new Date(isoString)
+  if (Number.isNaN(date.getTime())) return ''
+  const diffSec = Math.floor((Date.now() - date.getTime()) / 1000)
+  if (diffSec < 0) return 'Mới cập nhật'
+  if (diffSec < 60) return 'Vừa xong'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin} phút trước`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour} giờ trước`
+  const diffDay = Math.floor(diffHour / 24)
+  if (diffDay < 30) return `${diffDay} ngày trước`
+  const diffMonth = Math.floor(diffDay / 30)
+  return `${diffMonth} tháng trước`
 }
 
 interface CustomerDashboardProps {
@@ -192,14 +247,81 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }
 
+  // Customer notifications & unit activity history state
+  const [customerNotifications, setCustomerNotifications] = useState<NotificationLog[]>([])
+  const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false)
+  const [unitHistoryCategory, setUnitHistoryCategory] = useState<'ALL' | 'ACCESS' | 'RENEWAL' | 'NOTIFICATION' | 'SUPPORT'>('ALL')
+  const [unitHistoryUnitFilter, setUnitHistoryUnitFilter] = useState<string>('ALL')
+  const [unitHistorySearch, setUnitHistorySearch] = useState<string>('')
+  const [unitHistoryLimit, setUnitHistoryLimit] = useState<number>(12)
+
+  const activityStorageKey = useMemo(
+    () => `boxora_customer_unit_activity_${user?.id || user?.email || 'guest'}`,
+    [user?.id, user?.email]
+  )
+
+  const [unitActivityLogs, setUnitActivityLogs] = useState<CustomerUnitActivityLog[]>(() => {
+    try {
+      const raw = localStorage.getItem(`boxora_customer_unit_activity_${user?.id || user?.email || 'guest'}`)
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(activityStorageKey)
+      setUnitActivityLogs(raw ? JSON.parse(raw) : [])
+    } catch {
+      setUnitActivityLogs([])
+    }
+  }, [activityStorageKey])
+
+  const recordUnitActivity = useCallback(
+    (entry: Omit<CustomerUnitActivityLog, 'id' | 'timestamp'> & { timestamp?: string }) => {
+      const newLog: CustomerUnitActivityLog = {
+        ...entry,
+        id: `ACT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: entry.timestamp || new Date().toISOString(),
+        actorName: entry.actorName || user?.fullName || user?.username || 'Khách hàng',
+      }
+      setUnitActivityLogs(prev => {
+        const next = [newLog, ...prev].slice(0, 200)
+        try {
+          localStorage.setItem(activityStorageKey, JSON.stringify(next))
+        } catch {
+          // ignore storage quota errors
+        }
+        return next
+      })
+    },
+    [activityStorageKey, user?.fullName, user?.username]
+  )
+
+  const fetchCustomerNotifications = useCallback(async () => {
+    if (!user?.id) return []
+    try {
+      setLoadingNotifications(true)
+      const res = await notificationService.getRecent({ recipientId: user.id, page: 0, size: 50 })
+      const list = Array.isArray(res?.content) ? res.content : []
+      setCustomerNotifications(list)
+      return list
+    } catch (err) {
+      console.warn('Failed to load customer notifications:', err)
+      return []
+    } finally {
+      setLoadingNotifications(false)
+    }
+  }, [user?.id])
+
   const fetchMyRenewals = async () => {
     try {
       setLoadingRenewals(true)
-      const res = await contractService.getRenewals()
-      if (Array.isArray(res)) {
-        setMyRenewals(res)
-      }
-      return res
+      const res = await contractService.getRenewals({ size: 50 })
+      const list = Array.isArray(res) ? res : (Array.isArray((res as any)?.content) ? (res as any).content : [])
+      setMyRenewals(list)
+      return list
     } catch {
       return []
     } finally {
@@ -377,7 +499,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     fetchCustomerPayments()
     fetchAvailableUnits()
     fetchFacilities()
-  }, [user])
+    fetchMyRenewals()
+    fetchCustomerTickets()
+    void fetchCustomerNotifications()
+  }, [user, fetchCustomerNotifications])
 
   useEffect(() => {
     let isCurrent = true
@@ -445,11 +570,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     .filter(Boolean)
     .sort()[0] || '--'
 
-  // Tabs: 'my-units' (default) | 'bookings' | 'explore' | 'contracts' | 'support'
+  // Tabs: 'my-units' (default) | 'history' | 'bookings' | 'explore' | 'contracts' | 'support'
+  type CustomerPortalTab = 'my-units' | 'history' | 'bookings' | 'explore' | 'contracts' | 'support'
+  const validCustomerTabs: CustomerPortalTab[] = ['my-units', 'history', 'bookings', 'explore', 'contracts', 'support']
   const rawTab = searchParams.get('tab')
-  const tabParam = (rawTab === 'requests' ? 'bookings' : rawTab) as 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support' | null
-  const [activeTab, setActiveTab] = useState<'my-units' | 'bookings' | 'explore' | 'contracts' | 'support'>(
-    tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)
+  const tabParam = (rawTab === 'requests' ? 'bookings' : rawTab) as CustomerPortalTab | null
+  const [activeTab, setActiveTab] = useState<CustomerPortalTab>(
+    tabParam && validCustomerTabs.includes(tabParam)
       ? tabParam
       : 'my-units'
   )
@@ -460,7 +587,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       setSearchParams({ tab: 'bookings' })
       return
     }
-    if (tabParam && ['my-units', 'bookings', 'explore', 'contracts', 'support'].includes(tabParam)) {
+    if (tabParam && validCustomerTabs.includes(tabParam)) {
       setActiveTab(tabParam)
     }
   }, [tabParam, rawTab])
@@ -472,7 +599,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [tabParam, loadingContracts, activeContracts.length])
 
-  const handleTabChange = (tab: 'my-units' | 'bookings' | 'explore' | 'contracts' | 'support') => {
+  const handleTabChange = (tab: CustomerPortalTab) => {
     setActiveTab(tab)
     setSearchParams({ tab })
   }
@@ -796,8 +923,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [pinCountdown, setPinCountdown] = useState<number>(59)
 
   const togglePinReveal = async (unitCode: string, bookingOrContractId: string) => {
+    const matchedContract = contracts.find(c => c.unitCode === unitCode)
     if (revealedPins[unitCode]) {
       setRevealedPins(prev => ({ ...prev, [unitCode]: false }))
+      recordUnitActivity({
+        unitCode,
+        facilityName: matchedContract?.facilityName,
+        category: 'ACCESS',
+        actionType: 'PIN_HIDE',
+        title: `Đã ẩn mã PIN truy cập kho #${unitCode}`,
+        description: `Khách hàng đã ẩn hiển thị mã PIN bảo mật của kho #${unitCode} trên bảng điều khiển.`,
+        statusLabel: 'Đã ẩn mã PIN',
+        statusTone: 'slate',
+      })
       return
     }
 
@@ -817,6 +955,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
     setRevealedPins(prev => ({ ...prev, [unitCode]: true }))
     setPinCountdown(59)
+    recordUnitActivity({
+      unitCode,
+      facilityName: matchedContract?.facilityName,
+      category: 'ACCESS',
+      actionType: 'PIN_REVEAL',
+      title: `Giải mã xem mã PIN kho #${unitCode}`,
+      description: `Khách hàng đã xác thực và giải mã hiển thị mã PIN 6 số (AES-256) của buồng kho #${unitCode}${matchedContract?.facilityName ? ` tại ${matchedContract.facilityName}` : ''}.`,
+      statusLabel: 'Xem mã PIN',
+      statusTone: 'blue',
+    })
   }
 
   // Booking Modal (Đặt giữ chỗ kho)
@@ -1332,6 +1480,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
     setCopiedPin(id)
     setTimeout(() => setCopiedPin(null), 2000)
+    const matchedContract = contracts.find(c => c.unitCode === id)
+    recordUnitActivity({
+      unitCode: id,
+      facilityName: matchedContract?.facilityName,
+      category: 'ACCESS',
+      actionType: 'PIN_COPY',
+      title: `Sao chép mã PIN kho #${id}`,
+      description: `Đã sao chép mã PIN truy cập cửa kho #${id} vào bộ nhớ tạm của thiết bị.`,
+      statusLabel: 'Sao chép PIN',
+      statusTone: 'cyan',
+    })
   }
 
   const closeBookingModal = () => {
@@ -1346,6 +1505,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setUnlockingUnit(unitCode)
     setUnlockError(null)
     const isCurrentlyUnlocked = !!unlockedUnits[unitCode]
+    const matchedContract = contracts.find(c => c.unitCode === unitCode)
 
     try {
       if (!isCurrentlyUnlocked) {
@@ -1363,6 +1523,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         })
         setUnlockedSuccess(unitCode)
         setTimeout(() => setUnlockedSuccess(null), 4000)
+        recordUnitActivity({
+          unitCode,
+          facilityName: matchedContract?.facilityName,
+          category: 'ACCESS',
+          actionType: 'LOCK_OPEN',
+          title: `Mở khóa cửa kho #${unitCode} từ xa`,
+          description: `Khách hàng đã gửi lệnh mở khóa SmartLock IoT từ xa cho buồng kho #${unitCode}${matchedContract?.facilityName ? ` (${matchedContract.facilityName})` : ''}. Trạng thái cửa kho: ĐANG MỞ.`,
+          statusLabel: 'Cửa kho: Đã mở',
+          statusTone: 'emerald',
+          meta: { contractCode: matchedContract?.contractCode },
+        })
+        toast.success(`Đã mở khóa kho #${unitCode}`, 'Tín hiệu mở khóa cửa kho từ xa đã được ghi vào lịch sử hoạt động.')
       } else {
         // Gửi lệnh khóa lại
         try {
@@ -1377,6 +1549,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           return next
         })
         setUnlockedSuccess(null)
+        recordUnitActivity({
+          unitCode,
+          facilityName: matchedContract?.facilityName,
+          category: 'ACCESS',
+          actionType: 'LOCK_CLOSE',
+          title: `Đóng & khóa cửa kho #${unitCode}`,
+          description: `Khách hàng đã đóng cửa và kích hoạt chốt khóa an toàn SmartLock IoT cho buồng kho #${unitCode}${matchedContract?.facilityName ? ` (${matchedContract.facilityName})` : ''}. Trạng thái cửa kho: ĐÃ KHÓA AN TOÀN.`,
+          statusLabel: 'Cửa kho: Đã khóa',
+          statusTone: 'amber',
+          meta: { contractCode: matchedContract?.contractCode },
+        })
+        toast.info(`Đã đóng & khóa kho #${unitCode}`, 'Trạng thái đóng cửa kho an toàn đã được lưu vào lịch sử.')
       }
     } catch (err: any) {
       console.warn('Remote lock/unlock request failed:', err)
@@ -1401,6 +1585,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         priority: ticketType === 'lock' ? 'HIGH' : 'MEDIUM'
       })
       setTicketSubmitted(true)
+      recordUnitActivity({
+        unitCode: ticketUnit,
+        facilityName: activeUnit?.facilityName,
+        category: 'SUPPORT',
+        actionType: 'SUPPORT_REQUEST',
+        title: ticketType === 'return' ? `Gửi yêu cầu trả kho #${ticketUnit}` : `Gửi báo cáo sự cố kho #${ticketUnit}`,
+        description: `Nội dung yêu cầu: "${ticketContent}"${activeUnit?.facilityName ? ` • Cơ sở: ${activeUnit.facilityName}` : ''}.`,
+        statusLabel: ticketType === 'return' ? 'Yêu cầu trả kho' : 'Báo sự cố kho',
+        statusTone: 'amber',
+      })
+      void fetchCustomerTickets()
       setTimeout(() => {
         setTicketSubmitted(false)
         setTicketContent('')
@@ -1429,6 +1624,292 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     const total = base - discountAmt + (renewOtherFee || 0)
     return Math.max(0, Math.round(total))
   }, [renewMonthlyPrice, renewMonths, renewDiscountPercent, renewOtherFee])
+
+  // Tổng hợp lịch sử thao tác kho, lịch sử gia hạn kho, kích hoạt hợp đồng & thông báo hệ thống
+  const combinedUnitActivityHistory = useMemo<CustomerUnitActivityLog[]>(() => {
+    const items: CustomerUnitActivityLog[] = []
+    const knownUnitCodes = Array.from(
+      new Set(
+        contracts
+          .map(c => c.unitCode)
+          .concat(customerBookings.map(b => b.unitCode || ''))
+          .filter(Boolean)
+      )
+    )
+
+    const extractUnitFromText = (text?: string): string | undefined => {
+      if (!text) return undefined
+      for (const code of knownUnitCodes) {
+        if (code && text.toUpperCase().includes(code.toUpperCase())) {
+          return code
+        }
+      }
+      const match = text.match(/#([A-Z0-9]{1,5}-[A-Z0-9-]{2,10})/i)
+      return match ? match[1].toUpperCase() : undefined
+    }
+
+    // 1. Nhật ký thao tác trực tiếp của khách hàng trên kho (Mở khóa, Đóng khóa, Xem PIN, Sao chép PIN, Đổi PIN, Gửi yêu cầu gia hạn...)
+    unitActivityLogs.forEach(log => {
+      items.push(log)
+    })
+
+    // 2. Lịch sử Gia hạn kho từ database (myRenewals)
+    myRenewals.forEach(r => {
+      const createdTs = r.createdAt || r.updatedAt || new Date().toISOString()
+      items.push({
+        id: `REN-REQ-${r.id}`,
+        unitCode: r.unitCode,
+        facilityName: r.facilityName,
+        category: 'RENEWAL',
+        actionType: 'RENEWAL_REQUEST',
+        title: `Yêu cầu gia hạn kho #${r.unitCode} (+${r.cycleMonths} tháng)`,
+        description: `Đã tạo yêu cầu gia hạn hợp đồng #${r.contractCode} tại ${r.facilityName} thêm ${r.cycleMonths} tháng (từ ${formatDisplayDate(r.oldEndDate)} đến ${formatDisplayDate(r.newEndDate)}). Phí gia hạn: ${Number(r.renewalFee || 0).toLocaleString('vi-VN')} ₫.`,
+        timestamp: createdTs,
+        actorName: r.customerName || user?.fullName || 'Khách hàng',
+        statusLabel: 'Đã gửi yêu cầu gia hạn',
+        statusTone: 'blue',
+        meta: {
+          oldEndDate: r.oldEndDate,
+          newEndDate: r.newEndDate,
+          cycleMonths: r.cycleMonths,
+          amount: r.renewalFee,
+          contractCode: r.contractCode,
+        },
+      })
+
+      if (r.status === 'COMPLETED') {
+        const doneTs = r.paidAt || r.handledAt || r.reviewedAt || r.updatedAt || createdTs
+        items.push({
+          id: `REN-DONE-${r.id}`,
+          unitCode: r.unitCode,
+          facilityName: r.facilityName,
+          category: 'RENEWAL',
+          actionType: 'RENEWAL_COMPLETED',
+          title: `Kho #${r.unitCode} đã được gia hạn thành công (+${r.cycleMonths} tháng)`,
+          description: `Hợp đồng #${r.contractCode} (${r.facilityName}) đã hoàn tất gia hạn thêm ${r.cycleMonths} tháng. Hạn thuê kho đã được gia hạn từ ngày ${formatDisplayDate(r.oldEndDate)} sang ngày kết thúc mới ${formatDisplayDate(r.newEndDate)}.${r.handledByName || r.reviewedByName ? ` Người xác nhận: ${r.handledByName || r.reviewedByName}.` : ''}`,
+          timestamp: doneTs,
+          actorName: r.handledByName || r.reviewedByName || 'Hệ thống Boxora',
+          statusLabel: `Đã gia hạn đến ${formatDisplayDate(r.newEndDate)}`,
+          statusTone: 'emerald',
+          meta: {
+            oldEndDate: r.oldEndDate,
+            newEndDate: r.newEndDate,
+            cycleMonths: r.cycleMonths,
+            amount: r.renewalFee,
+            contractCode: r.contractCode,
+          },
+        })
+      } else if (r.status === 'PENDING_PAYMENT' || r.status === 'PENDING_SIGNATURE') {
+        const reviewTs = r.reviewedAt || r.updatedAt || createdTs
+        items.push({
+          id: `REN-APP-${r.id}`,
+          unitCode: r.unitCode,
+          facilityName: r.facilityName,
+          category: 'RENEWAL',
+          actionType: 'RENEWAL_APPROVED',
+          title: `Đã duyệt yêu cầu gia hạn kho #${r.unitCode} (+${r.cycleMonths} tháng)`,
+          description: `Yêu cầu gia hạn hợp đồng #${r.contractCode} thêm ${r.cycleMonths} tháng đã được phê duyệt${r.reviewedByName ? ` bởi ${r.reviewedByName}` : ''}. Thời hạn mới sau khi hoàn tất: ${formatDisplayDate(r.oldEndDate)} → ${formatDisplayDate(r.newEndDate)}.`,
+          timestamp: reviewTs,
+          actorName: r.reviewedByName || 'Quản lý cơ sở',
+          statusLabel: r.status === 'PENDING_SIGNATURE' ? 'Chờ ký phụ lục gia hạn' : 'Chờ thanh toán gia hạn',
+          statusTone: 'amber',
+          meta: {
+            oldEndDate: r.oldEndDate,
+            newEndDate: r.newEndDate,
+            cycleMonths: r.cycleMonths,
+            amount: r.renewalFee,
+            contractCode: r.contractCode,
+          },
+        })
+      } else if (r.status === 'REJECTED') {
+        const rejectTs = r.reviewedAt || r.updatedAt || createdTs
+        items.push({
+          id: `REN-REJ-${r.id}`,
+          unitCode: r.unitCode,
+          facilityName: r.facilityName,
+          category: 'RENEWAL',
+          actionType: 'RENEWAL_REJECTED',
+          title: `Từ chối yêu cầu gia hạn kho #${r.unitCode}`,
+          description: `Yêu cầu gia hạn hợp đồng #${r.contractCode} (+${r.cycleMonths} tháng) không được phê duyệt.${r.rejectionReason ? ` Lý do: ${r.rejectionReason}` : ''}`,
+          timestamp: rejectTs,
+          actorName: r.reviewedByName || 'Quản lý cơ sở',
+          statusLabel: 'Từ chối gia hạn',
+          statusTone: 'rose',
+          meta: {
+            oldEndDate: r.oldEndDate,
+            newEndDate: r.newEndDate,
+            cycleMonths: r.cycleMonths,
+            amount: r.renewalFee,
+            contractCode: r.contractCode,
+          },
+        })
+      }
+    })
+
+    // 3. Sự kiện kích hoạt hợp đồng & bàn giao mã PIN SmartLock IoT + cảnh báo quá hạn
+    contracts.forEach(c => {
+      if (c.status === 'ACTIVE' || c.status === 'OVERDUE' || c.status === 'EXPIRED' || c.status === 'TERMINATED') {
+        const activatedTs =
+          c.paperVerifiedAt ||
+          c.signedAt ||
+          (c.startDate ? `${c.startDate.split('T')[0]}T08:30:00` : new Date().toISOString())
+        items.push({
+          id: `CTR-ACT-${c.id}`,
+          unitCode: c.unitCode,
+          facilityName: c.facilityName,
+          category: 'CONTRACT',
+          actionType: 'CONTRACT_ACTIVATED',
+          title: `Kích hoạt kho #${c.unitCode} & Cấp mã PIN SmartLock IoT`,
+          description: `Hợp đồng #${c.contractCode} tại ${c.facilityName} đã được kích hoạt bàn giao kho và đồng bộ mã PIN 6 số (AES-256). Thời hạn thuê: ${formatDisplayDate(c.startDate)} → ${formatDisplayDate(c.endDate)}.`,
+          timestamp: activatedTs,
+          actorName: 'Hệ thống Boxora IoT',
+          statusLabel: 'Đã kích hoạt kho & PIN',
+          statusTone: 'emerald',
+          meta: {
+            oldEndDate: c.startDate,
+            newEndDate: c.endDate,
+            amount: c.monthlyFee,
+            contractCode: c.contractCode,
+          },
+        })
+      }
+
+      if (c.status === 'OVERDUE') {
+        const overdueTs = c.endDate ? `${c.endDate.split('T')[0]}T23:59:00` : new Date().toISOString()
+        items.push({
+          id: `CTR-OVD-${c.id}`,
+          unitCode: c.unitCode,
+          facilityName: c.facilityName,
+          category: 'NOTIFICATION',
+          actionType: 'CONTRACT_OVERDUE',
+          title: `Thông báo quá hạn kho #${c.unitCode} — Tạm khóa cửa kho IoT`,
+          description: `Kho #${c.unitCode} (Hợp đồng #${c.contractCode}) đã quá hạn thuê từ ngày ${formatDisplayDate(c.endDate)}. Hệ thống SmartLock đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Quý khách vui lòng gia hạn kho để mở khóa lại.`,
+          timestamp: overdueTs,
+          actorName: 'Hệ thống Cảnh báo Boxora',
+          statusLabel: 'Quá hạn - Tạm khóa',
+          statusTone: 'rose',
+          meta: {
+            oldEndDate: c.startDate,
+            newEndDate: c.endDate,
+            contractCode: c.contractCode,
+          },
+        })
+      }
+    })
+
+    // 4. Lịch sử Thông báo hệ thống gửi cho khách (customerNotifications)
+    customerNotifications.forEach(n => {
+      const cleanContent = (n.content || '').replace(/\[\[[\s\S]*?\]\]/g, '').trim()
+      const detectedUnit = extractUnitFromText(n.title) || extractUnitFromText(cleanContent)
+      const isRenewalNotif = Boolean(
+        n.notificationType?.includes('RENEWAL') ||
+          n.title?.toLowerCase().includes('gia hạn') ||
+          cleanContent.toLowerCase().includes('gia hạn')
+      )
+      const isAccessNotif = Boolean(
+        n.notificationType?.includes('PIN') ||
+          n.notificationType?.includes('SEAL') ||
+          n.title?.toLowerCase().includes('mã pin') ||
+          n.title?.toLowerCase().includes('niêm phong') ||
+          n.title?.toLowerCase().includes('mở khóa')
+      )
+
+      items.push({
+        id: `NOTIF-${n.id}`,
+        unitCode: detectedUnit,
+        facilityName: n.facilityName,
+        category: isRenewalNotif ? 'RENEWAL' : isAccessNotif ? 'ACCESS' : 'NOTIFICATION',
+        actionType: isRenewalNotif
+          ? n.notificationType === 'RENEWAL_REJECTED'
+            ? 'RENEWAL_REJECTED'
+            : 'RENEWAL_COMPLETED'
+          : 'SYSTEM_NOTIFICATION',
+        title: n.title || 'Thông báo từ hệ thống Boxora',
+        description: cleanContent || 'Thông báo cập nhật trạng thái vận hành kho lưu trữ.',
+        timestamp: n.createdAt || new Date().toISOString(),
+        actorName: n.facilityName || 'Hệ thống Boxora',
+        statusLabel: isRenewalNotif
+          ? 'Thông báo gia hạn'
+          : isAccessNotif
+          ? 'Mã PIN & Khóa kho'
+          : 'Thông báo hệ thống',
+        statusTone:
+          n.notificationType === 'RENEWAL_REJECTED' || n.notificationType === 'SEALING_NOTICE'
+            ? 'rose'
+            : isRenewalNotif
+            ? 'emerald'
+            : 'cyan',
+      })
+    })
+
+    // 5. Lịch sử Yêu cầu hỗ trợ / Báo sự cố / Yêu cầu trả kho (customerTickets)
+    customerTickets.forEach(t => {
+      const detectedUnit = t.unitCode || extractUnitFromText(t.title) || extractUnitFromText(t.description)
+      const isResolved = t.status === 'RESOLVED' || t.status === 'CLOSED'
+      items.push({
+        id: `TCK-${t.id}`,
+        unitCode: detectedUnit,
+        facilityName: t.facilityName,
+        category: 'SUPPORT',
+        actionType: 'SUPPORT_REQUEST',
+        title: t.title || `Yêu cầu hỗ trợ kho ${detectedUnit ? `#${detectedUnit}` : ''}`,
+        description: `${t.description || 'Yêu cầu hỗ trợ kỹ thuật / vận hành kho.'}${
+          t.resolutionNotes ? ` • Phản hồi xử lý: ${t.resolutionNotes}` : ''
+        }`,
+        timestamp: t.updatedAt || t.createdAt || new Date().toISOString(),
+        actorName: isResolved ? 'Nhân viên kỹ thuật Boxora' : user?.fullName || 'Khách hàng',
+        statusLabel: isResolved ? 'Đã xử lý xong' : t.status === 'IN_PROGRESS' ? 'Đang xử lý' : 'Đã tiếp nhận',
+        statusTone: isResolved ? 'emerald' : 'amber',
+      })
+    })
+
+    // Sort newest first
+    return items.sort((a, b) => {
+      const timeA = new Date(a.timestamp).getTime() || 0
+      const timeB = new Date(b.timestamp).getTime() || 0
+      return timeB - timeA
+    })
+  }, [unitActivityLogs, myRenewals, contracts, customerBookings, customerNotifications, customerTickets, user?.fullName])
+
+  const filteredUnitActivityHistory = useMemo(() => {
+    return combinedUnitActivityHistory.filter(item => {
+      if (unitHistoryCategory !== 'ALL') {
+        if (unitHistoryCategory === 'NOTIFICATION') {
+          if (item.category !== 'NOTIFICATION' && item.category !== 'CONTRACT') return false
+        } else if (item.category !== unitHistoryCategory) {
+          return false
+        }
+      }
+      if (unitHistoryUnitFilter !== 'ALL') {
+        if (!item.unitCode || item.unitCode.toUpperCase() !== unitHistoryUnitFilter.toUpperCase()) {
+          return false
+        }
+      }
+      if (unitHistorySearch.trim()) {
+        const q = unitHistorySearch.toLowerCase().trim()
+        const matchTitle = item.title?.toLowerCase().includes(q)
+        const matchDesc = item.description?.toLowerCase().includes(q)
+        const matchUnit = item.unitCode?.toLowerCase().includes(q)
+        const matchFac = item.facilityName?.toLowerCase().includes(q)
+        const matchStatus = item.statusLabel?.toLowerCase().includes(q)
+        const matchContract = item.meta?.contractCode?.toLowerCase().includes(q)
+        if (!matchTitle && !matchDesc && !matchUnit && !matchFac && !matchStatus && !matchContract) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [combinedUnitActivityHistory, unitHistoryCategory, unitHistoryUnitFilter, unitHistorySearch])
+
+  const unitHistoryCounts = useMemo(() => {
+    return {
+      all: combinedUnitActivityHistory.length,
+      access: combinedUnitActivityHistory.filter(i => i.category === 'ACCESS').length,
+      renewal: combinedUnitActivityHistory.filter(i => i.category === 'RENEWAL').length,
+      notification: combinedUnitActivityHistory.filter(i => i.category === 'NOTIFICATION' || i.category === 'CONTRACT').length,
+      support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT').length,
+    }
+  }, [combinedUnitActivityHistory])
 
   const openRenewModal = (c: RentalContract) => {
     const numFee = Number(c.monthlyFee || 0) || 1500000
@@ -1486,15 +1967,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         console.warn('Update PIN API fallback:', e2)
       }
     } finally {
+      const matchedContract = contracts.find(c => c.unitCode === pinChangeUnit.unitCode)
       setLoadedPins(prev => ({ ...prev, [pinChangeUnit.unitCode]: newPin }))
       setIsSubmittingPinChange(false)
       setPinChangeSuccess(true)
+      recordUnitActivity({
+        unitCode: pinChangeUnit.unitCode,
+        facilityName: matchedContract?.facilityName,
+        category: 'ACCESS',
+        actionType: 'PIN_CHANGE',
+        title: `Đổi mã PIN truy cập kho #${pinChangeUnit.unitCode}`,
+        description: `Khách hàng đã thay đổi mã PIN 6 số mới cho khóa thông minh IoT tại buồng kho #${pinChangeUnit.unitCode}${matchedContract?.facilityName ? ` (${matchedContract.facilityName})` : ''}.`,
+        statusLabel: 'Đã đổi mã PIN',
+        statusTone: 'purple',
+        meta: { contractCode: matchedContract?.contractCode },
+      })
+      toast.success(`Đã cập nhật mã PIN kho #${pinChangeUnit.unitCode}`, 'Mã PIN mới đã được đồng bộ với khóa IoT và lưu lịch sử.')
     }
   }
 
   const handleConfirmRenewal = async () => {
     if (!renewModalData) return
     setIsSubmittingRenewal(true)
+    const calcNewEndDate = (() => {
+      try {
+        const base = new Date(renewModalData.endDate)
+        if (Number.isNaN(base.getTime())) return ''
+        base.setMonth(base.getMonth() + (renewMonths || 1))
+        return base.toISOString().split('T')[0]
+      } catch {
+        return ''
+      }
+    })()
     try {
       const targetContract = contracts.find(c => c.id === renewModalData.contractId || c.unitCode === renewModalData.unitCode)
       if (targetContract) {
@@ -1503,11 +2007,50 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         await bookingService.renewBooking(renewModalData.unitCode, renewMonths)
       }
       setRenewSuccess(true)
-      await fetchContracts()
-      await fetchCustomerPayments()
+      recordUnitActivity({
+        unitCode: renewModalData.unitCode,
+        facilityName: renewModalData.facilityName,
+        category: 'RENEWAL',
+        actionType: 'RENEWAL_REQUEST',
+        title: `Gửi yêu cầu gia hạn kho #${renewModalData.unitCode} (+${renewMonths} tháng)`,
+        description: `Khách hàng đã gửi yêu cầu gia hạn hợp đồng #${renewModalData.contractCode} tại ${renewModalData.facilityName} thêm ${renewMonths} tháng. Hạn cũ: ${formatDisplayDate(renewModalData.endDate)}${calcNewEndDate ? ` → Hạn mới dự kiến: ${formatDisplayDate(calcNewEndDate)}` : ''}.`,
+        statusLabel: 'Yêu cầu gia hạn',
+        statusTone: 'amber',
+        meta: {
+          oldEndDate: renewModalData.endDate,
+          newEndDate: calcNewEndDate || undefined,
+          cycleMonths: renewMonths,
+          amount: totalRenewEstimate,
+          contractCode: renewModalData.contractCode,
+        },
+      })
+      toast.success(`Đã gửi yêu cầu gia hạn kho #${renewModalData.unitCode}`, `Yêu cầu gia hạn thêm ${renewMonths} tháng đã được ghi vào lịch sử kho.`)
+      await Promise.all([
+        fetchContracts(),
+        fetchMyRenewals(),
+        fetchCustomerPayments(),
+        fetchCustomerNotifications(),
+      ])
     } catch (err) {
       console.warn('Renewal API fallback:', err)
       setRenewSuccess(true)
+      recordUnitActivity({
+        unitCode: renewModalData.unitCode,
+        facilityName: renewModalData.facilityName,
+        category: 'RENEWAL',
+        actionType: 'RENEWAL_REQUEST',
+        title: `Gửi yêu cầu gia hạn kho #${renewModalData.unitCode} (+${renewMonths} tháng)`,
+        description: `Khách hàng đã gửi yêu cầu gia hạn hợp đồng #${renewModalData.contractCode} tại ${renewModalData.facilityName} thêm ${renewMonths} tháng.`,
+        statusLabel: 'Yêu cầu gia hạn',
+        statusTone: 'amber',
+        meta: {
+          oldEndDate: renewModalData.endDate,
+          newEndDate: calcNewEndDate || undefined,
+          cycleMonths: renewMonths,
+          amount: totalRenewEstimate,
+          contractCode: renewModalData.contractCode,
+        },
+      })
     } finally {
       setIsSubmittingRenewal(false)
     }
@@ -1788,12 +2331,25 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleTabChange('history')}
+              className={`px-3.5 py-2.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
+                activeTab === 'history'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">history</span>
+              <span>Xem lịch sử ({unitHistoryCounts.all})</span>
+            </button>
+
             <button
               onClick={() => handleTabChange('support')}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
             >
+              <span className="material-symbols-outlined text-[16px]">support_agent</span>
               <span>Hỗ trợ kỹ thuật</span>
             </button>
           </div>
@@ -1801,8 +2357,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
         {/* 4 Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="stitch-card p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
+          <div
+            onClick={() => handleTabChange('my-units')}
+            className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform">
               <span className="material-symbols-outlined text-[24px]">garage_door</span>
             </div>
             <div className="flex flex-col min-w-0">
@@ -1835,17 +2394,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
           </div>
 
-          <div className="stitch-card p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-100">
-              <span className="material-symbols-outlined text-[24px]">lock</span>
+          <div
+            onClick={() => handleTabChange('history')}
+            className="stitch-card p-5 flex items-center gap-4 cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group"
+          >
+            <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0 border border-indigo-100 group-hover:scale-105 transition-transform">
+              <span className="material-symbols-outlined text-[24px]">history</span>
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                Bảo mật cửa kho
-                {activatedContracts.length > 0 && <span className="pulsing-dot bg-emerald-500"></span>}
+                Lịch sử kho &amp; Gia hạn
+                <span className="pulsing-dot bg-emerald-500"></span>
               </span>
-              <span className="font-mono text-xl font-bold text-emerald-700 mt-0.5">{activatedContracts.length > 0 ? 'Đã kích hoạt' : 'Chưa có kho'}</span>
-              <span className="text-xs text-slate-500 truncate">{activatedContracts.length > 0 ? 'Smart Lock & mã PIN' : 'Tiện ích khóa sẽ mở khi có kho ACTIVE'}</span>
+              <span className="font-mono text-xl font-bold text-indigo-800 mt-0.5">
+                {unitHistoryCounts.all} Hoạt động
+              </span>
+              <span className="text-xs text-indigo-600 font-semibold truncate">
+                Nhấn để xem lịch sử đóng/mở &amp; gia hạn →
+              </span>
             </div>
           </div>
 
@@ -1862,12 +2428,70 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
           </div>
         </div>
+
+        {/* Thanh chuyển Tab nhanh ở phía trên */}
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              { id: 'my-units', label: 'Kho của tôi & Mã PIN', icon: 'inventory_2', badge: activatedContracts.length },
+              { id: 'history', label: 'Lịch sử thao tác & Thông báo', icon: 'history', badge: unitHistoryCounts.all },
+              { id: 'bookings', label: 'Đơn đặt giữ chỗ', icon: 'pending_actions', badge: customerBookings.length },
+              { id: 'contracts', label: 'Hợp đồng & Hóa đơn', icon: 'receipt_long', badge: visibleContracts.length },
+              { id: 'explore', label: 'Tìm & Thuê kho mới', icon: 'travel_explore' },
+              { id: 'support', label: 'Trung tâm hỗ trợ', icon: 'support_agent' },
+            ].map(tabItem => {
+              const isTabActive = activeTab === tabItem.id
+              return (
+                <button
+                  key={tabItem.id}
+                  type="button"
+                  onClick={() => handleTabChange(tabItem.id as CustomerPortalTab)}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    isTabActive
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">{tabItem.icon}</span>
+                  <span>{tabItem.label}</span>
+                  {typeof tabItem.badge === 'number' && (
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                        isTabActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {tabItem.badge}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {activeTab === 'my-units' && (
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('customer-unit-activity-history-section')
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                } else {
+                  handleTabChange('history')
+                }
+              }}
+              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[15px]">arrow_downward</span>
+              <span>Cuộn xuống lịch sử kho</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
-      {activeTab === 'my-units' && (
+      {/* 3. TAB 1 & TAB LỊCH SỬ: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) & LỊCH SỬ KHO (HISTORY) */}
+      {(activeTab === 'my-units' || activeTab === 'history') && (
         <div className="flex flex-col gap-6">
-          {loadingContracts ? (
+          {activeTab === 'my-units' && (loadingContracts ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : activeContracts.length === 0 ? (
             <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-5 max-w-2xl mx-auto my-6 border-dashed border-2 border-slate-200">
@@ -2129,6 +2753,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <span>Yêu Cầu Gia Hạn</span>
                       </button>
                       <button
+                        type="button"
+                        onClick={() => {
+                          setUnitHistoryUnitFilter(c.unitCode)
+                          setUnitHistoryCategory('ALL')
+                          const el = document.getElementById('customer-unit-activity-history-section')
+                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                        }}
+                        className="px-3.5 h-10 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">history</span>
+                        <span>Lịch sử kho</span>
+                      </button>
+                      <button
                         onClick={() => {
                           setTicketUnit(c.unitCode)
                           setTicketType('lock')
@@ -2185,7 +2822,392 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 )
               })}
             </div>
-          )}
+          ))}
+
+          {/* BẢNG LỊCH SỬ THAO TÁC KHO, GIA HẠN & THÔNG BÁO HỆ THỐNG (Ở DƯỚI CÙNG TAB KHO CỦA TÔI & MÃ PIN HOẶC TAB LỊCH SỬ RIÊNG) */}
+          <div
+            id="customer-unit-activity-history-section"
+            className="stitch-card p-6 flex flex-col gap-5 border border-slate-200/90 shadow-xs mt-2"
+          >
+            {/* Header */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-start gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-sm shrink-0">
+                  <span className="material-symbols-outlined text-[26px]">history</span>
+                </div>
+                <div className="flex flex-col">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-headline text-lg sm:text-xl font-extrabold text-slate-900">
+                      Lịch Sử Thao Tác Kho, Gia Hạn &amp; Thông Báo
+                    </h2>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold font-mono">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Ghi nhận thời gian thực 24/7
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Theo dõi đầy đủ nhật ký mở/đóng cửa kho từ xa, giải mã &amp; đổi mã PIN, thời điểm yêu cầu và được duyệt gia hạn kho cùng toàn bộ thông báo từ hệ thống.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void fetchMyRenewals()
+                    void fetchContracts()
+                    void fetchCustomerNotifications()
+                    void fetchCustomerTickets()
+                    void fetchCustomerPayments()
+                    toast.info('Đã đồng bộ lịch sử', 'Dữ liệu lịch sử thao tác, gia hạn kho và thông báo đã được cập nhật mới nhất.')
+                  }}
+                  disabled={loadingRenewals || loadingNotifications}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+                >
+                  <span className={`material-symbols-outlined text-[16px] ${loadingRenewals || loadingNotifications ? 'animate-spin' : ''}`}>
+                    refresh
+                  </span>
+                  <span>Làm mới</span>
+                </button>
+                {unitActivityLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnitActivityLogs([])
+                      try {
+                        localStorage.removeItem(activityStorageKey)
+                      } catch {}
+                      toast.info('Đã làm sạch nhật ký thiết bị', 'Các thao tác đóng/mở mới sẽ tiếp tục được ghi nhận tự động.')
+                    }}
+                    className="px-3 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-700 border border-slate-200 hover:border-rose-200 text-xs font-medium flex items-center gap-1 transition-all cursor-pointer"
+                    title="Xóa nhật ký thao tác lưu tạm trên trình duyệt này"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
+                    <span>Xóa log thiết bị</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* 4 Thẻ tóm tắt nhanh */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100/80 text-blue-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px]">receipt_long</span>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Tổng sự kiện</span>
+                  <span className="font-mono text-base font-extrabold text-slate-900">{unitHistoryCounts.all} hoạt động</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200/70 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px]">lock_open_right</span>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 block">Đóng/Mở &amp; Mã PIN</span>
+                  <span className="font-mono text-base font-extrabold text-emerald-900">{unitHistoryCounts.access} thao tác</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-amber-50/50 border border-amber-200/70 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px]">event_repeat</span>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700/80 block">Gia hạn kho</span>
+                  <span className="font-mono text-base font-extrabold text-amber-900">{unitHistoryCounts.renewal} bản ghi</span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-cyan-50/50 border border-cyan-200/70 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px]">notifications_active</span>
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-700/80 block">Thông báo &amp; Hợp đồng</span>
+                  <span className="font-mono text-base font-extrabold text-cyan-900">
+                    {unitHistoryCounts.notification + unitHistoryCounts.support} tin
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Bộ lọc danh mục, lọc theo mã kho & ô tìm kiếm */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[
+                  { id: 'ALL', label: 'Tất cả', count: unitHistoryCounts.all, icon: 'apps' },
+                  { id: 'ACCESS', label: 'Đóng / Mở kho & Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
+                  { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
+                  { id: 'NOTIFICATION', label: 'Thông báo & Hợp đồng', count: unitHistoryCounts.notification, icon: 'notifications' },
+                  { id: 'SUPPORT', label: 'Sự cố & Trả kho', count: unitHistoryCounts.support, icon: 'support_agent' },
+                ].map(tab => {
+                  const isActive = unitHistoryCategory === tab.id
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        setUnitHistoryCategory(tab.id as any)
+                        setUnitHistoryLimit(12)
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
+                      <span>{tab.label}</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {tab.count}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <select
+                  value={unitHistoryUnitFilter}
+                  onChange={e => {
+                    setUnitHistoryUnitFilter(e.target.value)
+                    setUnitHistoryLimit(12)
+                  }}
+                  aria-label="Lọc lịch sử theo kho"
+                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="ALL">Tất cả các kho ({activeContracts.length})</option>
+                  {Array.from(new Set(contracts.map(c => c.unitCode).filter(Boolean))).map(code => (
+                    <option key={code} value={code}>
+                      Kho #{code}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="relative min-w-[220px]">
+                  <span className="material-symbols-outlined text-[16px] text-slate-400 absolute left-3 top-1/2 -translate-y-1/2">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    value={unitHistorySearch}
+                    onChange={e => setUnitHistorySearch(e.target.value)}
+                    placeholder="Tìm mở kho, đóng kho, gia hạn, #mã kho..."
+                    className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                  />
+                  {unitHistorySearch && (
+                    <button
+                      type="button"
+                      onClick={() => setUnitHistorySearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">close</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Danh sách Timeline Lịch sử */}
+            {filteredUnitActivityHistory.length === 0 ? (
+              <div className="p-10 rounded-2xl bg-slate-50/70 border border-dashed border-slate-200 text-center flex flex-col items-center justify-center gap-2">
+                <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 text-slate-400 flex items-center justify-center shadow-2xs">
+                  <span className="material-symbols-outlined text-[26px]">history_toggle_off</span>
+                </div>
+                <p className="text-sm font-bold text-slate-700 mt-1">
+                  Chưa có bản ghi lịch sử nào khớp với bộ lọc hiện tại
+                </p>
+                <p className="text-xs text-slate-500 max-w-md">
+                  Khi quý khách bấm &quot;Mở khóa từ xa&quot;, &quot;Khóa cửa kho&quot;, &quot;Xem mã PIN&quot;, &quot;Đổi mã PIN&quot; hoặc &quot;Yêu cầu gia hạn&quot;, mọi hoạt động sẽ tự động hiển thị tại đây.
+                </p>
+                {(unitHistoryCategory !== 'ALL' || unitHistoryUnitFilter !== 'ALL' || unitHistorySearch) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnitHistoryCategory('ALL')
+                      setUnitHistoryUnitFilter('ALL')
+                      setUnitHistorySearch('')
+                    }}
+                    className="mt-2 px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold cursor-pointer"
+                  >
+                    Xóa bộ lọc lịch sử
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {filteredUnitActivityHistory.slice(0, unitHistoryLimit).map(item => {
+                  const iconConfig = (() => {
+                    switch (item.actionType) {
+                      case 'LOCK_OPEN':
+                        return { icon: 'lock_open_right', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+                      case 'LOCK_CLOSE':
+                        return { icon: 'lock', bg: 'bg-amber-100 text-amber-700 border-amber-200' }
+                      case 'PIN_REVEAL':
+                        return { icon: 'key', bg: 'bg-blue-100 text-blue-700 border-blue-200' }
+                      case 'PIN_HIDE':
+                        return { icon: 'visibility_off', bg: 'bg-slate-100 text-slate-600 border-slate-200' }
+                      case 'PIN_COPY':
+                        return { icon: 'content_copy', bg: 'bg-cyan-100 text-cyan-700 border-cyan-200' }
+                      case 'PIN_CHANGE':
+                        return { icon: 'lock_reset', bg: 'bg-purple-100 text-purple-700 border-purple-200' }
+                      case 'RENEWAL_REQUEST':
+                        return { icon: 'autorenew', bg: 'bg-amber-100 text-amber-700 border-amber-200' }
+                      case 'RENEWAL_APPROVED':
+                        return { icon: 'task_alt', bg: 'bg-blue-100 text-blue-700 border-blue-200' }
+                      case 'RENEWAL_COMPLETED':
+                        return { icon: 'event_repeat', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+                      case 'RENEWAL_REJECTED':
+                        return { icon: 'cancel', bg: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      case 'CONTRACT_ACTIVATED':
+                        return { icon: 'verified_user', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+                      case 'CONTRACT_OVERDUE':
+                        return { icon: 'warning', bg: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      case 'PAYMENT_COMPLETED':
+                        return { icon: 'payments', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+                      case 'SUPPORT_REQUEST':
+                        return { icon: 'support_agent', bg: 'bg-indigo-100 text-indigo-700 border-indigo-200' }
+                      default:
+                        return { icon: 'notifications_active', bg: 'bg-cyan-100 text-cyan-700 border-cyan-200' }
+                    }
+                  })()
+
+                  const badgeToneClass = (() => {
+                    switch (item.statusTone) {
+                      case 'emerald':
+                        return 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      case 'amber':
+                        return 'bg-amber-50 text-amber-800 border-amber-200'
+                      case 'rose':
+                        return 'bg-rose-50 text-rose-700 border-rose-200'
+                      case 'purple':
+                        return 'bg-purple-50 text-purple-700 border-purple-200'
+                      case 'cyan':
+                        return 'bg-cyan-50 text-cyan-700 border-cyan-200'
+                      case 'slate':
+                        return 'bg-slate-100 text-slate-600 border-slate-200'
+                      default:
+                        return 'bg-blue-50 text-blue-700 border-blue-200'
+                    }
+                  })()
+
+                  const relTime = formatRelativeTimeVi(item.timestamp)
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl bg-white hover:bg-slate-50/70 border border-slate-200/90 transition-all flex flex-col sm:flex-row sm:items-start justify-between gap-3 shadow-2xs"
+                    >
+                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                        <div
+                          className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${iconConfig.bg}`}
+                        >
+                          <span className="material-symbols-outlined text-[20px]">{iconConfig.icon}</span>
+                        </div>
+
+                        <div className="flex flex-col gap-1 min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {item.unitCode && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono text-[11px] font-bold">
+                                KHO #{item.unitCode}
+                              </span>
+                            )}
+                            {item.statusLabel && (
+                              <span className={`px-2.5 py-0.5 rounded-full border text-[11px] font-semibold ${badgeToneClass}`}>
+                                {item.statusLabel}
+                              </span>
+                            )}
+                            {item.facilityName && (
+                              <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[13px] text-slate-400">location_on</span>
+                                {item.facilityName}
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug mt-0.5">
+                            {item.title}
+                          </h4>
+
+                          <p className="text-xs text-slate-600 leading-relaxed">
+                            {item.description}
+                          </p>
+
+                          {/* Chi tiết Gia hạn kho (Hạn cũ -> Hạn mới, Số tháng gia hạn, Phí gia hạn) */}
+                          {item.category === 'RENEWAL' && (item.meta?.oldEndDate || item.meta?.newEndDate) && (
+                            <div className="mt-1.5 p-2.5 rounded-lg bg-amber-50/60 border border-amber-200/80 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
+                              {item.meta?.cycleMonths && (
+                                <span className="font-semibold text-amber-900 flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[14px] text-amber-600">calendar_add_on</span>
+                                  Chu kỳ: +{item.meta.cycleMonths} tháng
+                                </span>
+                              )}
+                              {item.meta?.oldEndDate && (
+                                <span className="text-slate-600 font-mono">
+                                  Hạn cũ: <strong className="text-slate-800">{formatDisplayDate(item.meta.oldEndDate)}</strong>
+                                </span>
+                              )}
+                              {item.meta?.newEndDate && (
+                                <span className="text-emerald-800 font-mono font-bold flex items-center gap-1">
+                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">arrow_forward</span>
+                                  Hạn mới: {formatDisplayDate(item.meta.newEndDate)}
+                                </span>
+                              )}
+                              {Number(item.meta?.amount || 0) > 0 && (
+                                <span className="text-slate-700 font-mono">
+                                  Phí gia hạn: <strong>{Number(item.meta?.amount || 0).toLocaleString('vi-VN')} ₫</strong>
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-1 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 text-right">
+                        <span className="font-mono text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[13px] text-slate-400">schedule</span>
+                          {safeFormatDateTime(item.timestamp, 'Vừa xong')}
+                        </span>
+                        {relTime && (
+                          <span className="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                            {relTime}
+                          </span>
+                        )}
+                        {item.actorName && (
+                          <span className="text-[10px] text-slate-400 mt-0.5">
+                            Thực hiện: {item.actorName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {filteredUnitActivityHistory.length > unitHistoryLimit && (
+                  <div className="pt-2 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setUnitHistoryLimit(prev => prev + 15)}
+                      className="px-5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                      <span>
+                        Xem thêm ({filteredUnitActivityHistory.length - unitHistoryLimit} hoạt động trước đó)
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
