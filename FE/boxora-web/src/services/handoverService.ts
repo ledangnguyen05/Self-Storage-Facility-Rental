@@ -306,7 +306,17 @@ export const handoverService = {
     dateFrom?: string
     dateTo?: string
   }): Promise<ReturnCase[]> {
-    const response = await api.get('/api/v1/handovers/returns', { params })
+    const cleanParams: Record<string, any> = {}
+    if (params) {
+      if (params.facilityId && params.facilityId !== 'ALL' && params.facilityId !== 'undefined' && params.facilityId !== 'null') {
+        cleanParams.facilityId = params.facilityId
+      }
+      if (params.search && params.search.trim()) cleanParams.search = params.search.trim()
+      if (params.status && params.status !== 'ALL') cleanParams.status = params.status
+      if (params.dateFrom) cleanParams.dateFrom = params.dateFrom
+      if (params.dateTo) cleanParams.dateTo = params.dateTo
+    }
+    const response = await api.get('/api/v1/handovers/returns', { params: cleanParams })
     return (response.data?.data || []) as ReturnCase[]
   },
 
@@ -316,8 +326,23 @@ export const handoverService = {
   },
 
   async scheduleInspection(bookingId: string, scheduledAt: string, notes?: string): Promise<HandoverRecord> {
+    let cleanScheduledAt = scheduledAt
+    if (scheduledAt) {
+      const trimmed = scheduledAt.trim()
+      const vnMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s+(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+      if (vnMatch) {
+        const [, hour, min, day, month, year] = vnMatch
+        cleanScheduledAt = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min}:00`
+      } else {
+        const vnMatch2 = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::\d{2})?$/)
+        if (vnMatch2) {
+          const [, day, month, year, hour, min] = vnMatch2
+          cleanScheduledAt = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${hour.padStart(2, '0')}:${min}:00`
+        }
+      }
+    }
     const response = await api.post(`/api/v1/handovers/returns/${bookingId}/schedule`, null, {
-      params: { scheduledAt, notes }
+      params: { scheduledAt: cleanScheduledAt, notes }
     })
     return response.data?.data as HandoverRecord
   },

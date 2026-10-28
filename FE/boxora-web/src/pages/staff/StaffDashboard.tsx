@@ -1406,6 +1406,19 @@ export const StaffDashboard: React.FC = () => {
     return pendingList.length > 0 ? pendingList.length : customerReturnRequests.length
   }, [returnBadgeCount, customerReturnRequests])
 
+  // Khi chuyển sang tab 3 "Trả Kho", tự động cuộn mượt tới hiển thị KPI "1. Yêu Cầu Chờ Xử Lý"
+  useEffect(() => {
+    if (staffActiveTab === 'returns') {
+      const timer = setTimeout(() => {
+        const el = document.getElementById('pending-return-kpi-card') || document.getElementById('return-kpi-metrics-bar')
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [staffActiveTab])
+
   const currentReturnBooking = activeRentals.find(r => r.id === selectedReturnBookingId) || (customerReturnRequests.find(r => r.bookingId === selectedReturnBookingId || r.id === selectedReturnBookingId) as any)
   const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
   const facilityTotalUnits = facilities.find(facility => facility.id === selectedFacility)?.totalUnits
@@ -1595,6 +1608,12 @@ export const StaffDashboard: React.FC = () => {
             setActiveBookingId('')
             setStaffActiveTab('returns')
             setSearchParams({ tab: 'returns' })
+            setTimeout(() => {
+              const el = document.getElementById('pending-return-kpi-card') || document.getElementById('return-kpi-metrics-bar')
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+            }, 50)
           }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
             staffActiveTab === 'returns'
@@ -2187,8 +2206,9 @@ export const StaffDashboard: React.FC = () => {
           </div>
         </section>
       ) : staffActiveTab === 'returns' ? (
-        <section className="space-y-4 animate-in fade-in">
+        <section id="staff-returns-section" className="space-y-4 animate-in fade-in">
           <HandoverReturnWorkbench
+            initialStatusTabFilter="PENDING"
             currentFacilityId={currentTargetFacility}
             facilityName={assignedFacilityName}
             userRole={resolvedRole}

@@ -1381,7 +1381,13 @@ export const ManagerDashboard: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => setActiveTab('returns')}
+          onClick={() => {
+            setActiveTab('returns')
+            setTimeout(() => {
+              const el = document.getElementById('pending-return-kpi-card') || document.getElementById('return-kpi-metrics-bar')
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }, 60)
+          }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
             activeTab === 'returns'
               ? 'bg-amber-600 text-white shadow-xs'
@@ -2347,6 +2353,7 @@ export const ManagerDashboard: React.FC = () => {
       {activeTab === 'returns' && (
         <section className="flex flex-col gap-6 animate-in fade-in">
           <HandoverReturnWorkbench
+            initialStatusTabFilter="PENDING"
             currentFacilityId={selectedFacilityId || user?.facilityId}
             facilityName={facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở Boxora'}
             userRole={role || 'FACILITY_MANAGER'}

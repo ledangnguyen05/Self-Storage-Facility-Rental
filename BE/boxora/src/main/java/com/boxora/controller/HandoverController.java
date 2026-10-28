@@ -248,13 +248,20 @@ public class HandoverController {
     @PreAuthorize("hasAuthority('HANDOVER_VIEW')")
     @Operation(summary = "Danh sách hồ sơ trả kho với tìm kiếm và lọc đa tiêu chí")
     public ResponseEntity<ApiResponse<List<ReturnCaseResponse>>> getReturnCases(
-            @RequestParam(required = false) UUID facilityId,
+            @RequestParam(required = false) String facilityId,
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo) {
+        UUID parsedFacilityId = null;
+        if (facilityId != null && !facilityId.isBlank() && !"ALL".equalsIgnoreCase(facilityId)
+                && !"undefined".equalsIgnoreCase(facilityId) && !"null".equalsIgnoreCase(facilityId)) {
+            try {
+                parsedFacilityId = UUID.fromString(facilityId.trim());
+            } catch (IllegalArgumentException ignored) {}
+        }
         return ResponseEntity.ok(ApiResponse.success(
-                handoverService.getReturnCases(facilityId, search, status, dateFrom, dateTo)));
+                handoverService.getReturnCases(parsedFacilityId, search, status, dateFrom, dateTo)));
     }
 
     @GetMapping("/returns/{bookingId}")
@@ -271,10 +278,39 @@ public class HandoverController {
     @Operation(summary = "Xác nhận hoặc đổi lịch hẹn nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<HandoverResponse>> scheduleInspection(
             @PathVariable UUID bookingId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime scheduledAt,
+            @RequestParam(required = false) String scheduledAt,
             @RequestParam(required = false) String notes) {
+        LocalDateTime parsedDateTime = parseFlexibleDateTime(scheduledAt);
         return ResponseEntity.ok(ApiResponse.success("Xác nhận lịch nghiệm thu hiện trường thành công",
-                handoverService.scheduleInspection(bookingId, scheduledAt, notes)));
+                handoverService.scheduleInspection(bookingId, parsedDateTime, notes)));
+    }
+
+    private LocalDateTime parseFlexibleDateTime(String input) {
+        if (input == null || input.isBlank()) {
+            return LocalDateTime.now();
+        }
+        String trimmed = input.trim();
+        List<java.time.format.DateTimeFormatter> formatters = List.of(
+                java.time.format.DateTimeFormatter.ISO_DATE_TIME,
+                java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"),
+                java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss dd/MM/yyyy"),
+                java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"),
+                java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"),
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+        );
+        for (java.time.format.DateTimeFormatter fmt : formatters) {
+            try {
+                return LocalDateTime.parse(trimmed, fmt);
+            } catch (Exception ignored) {}
+        }
+        try {
+            return LocalDate.parse(trimmed, java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")).atStartOfDay();
+        } catch (Exception ignored) {}
+        try {
+            return LocalDate.parse(trimmed, java.time.format.DateTimeFormatter.ISO_DATE).atStartOfDay();
+        } catch (Exception ignored) {}
+        return LocalDateTime.now();
     }
 
     @PostMapping("/returns/{bookingId}/start-inspection")

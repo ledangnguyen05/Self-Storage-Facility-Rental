@@ -32,7 +32,8 @@ import {
   MessageSquareWarning,
   KeyRound,
   Warehouse,
-  History
+  History,
+  Save
 } from 'lucide-react'
 import { toast } from '../../../utils/toast'
 import { handoverService, ReturnCase, ReturnInspectionPayload } from '../../../services/handoverService'
@@ -138,24 +139,33 @@ interface HandoverReturnWorkbenchProps {
   userName?: string
   activeRentals?: Booking[]
   rawReturnRequests?: any[]
+  initialStatusTabFilter?: string
   onReturnCompleted?: () => void
   onRefresh?: () => void
   onMetricsChange?: (metrics: { pending: number; inspecting: number; refunding: number; completed: number; total: number }) => void
 }
 
-const normalizeStatus = (rawStatus: any): ReturnStepStatus => {
+const normalizeStatus = (
+  rawStatus: any,
+  inspectionStatus?: string,
+  approvalStatus?: string,
+  refundStatus?: string
+): ReturnStepStatus => {
+  const insp = String(inspectionStatus || '').toUpperCase()
+  const app = String(approvalStatus || '').toUpperCase()
+  const ref = String(refundStatus || '').toUpperCase()
   const st = String(rawStatus || '').toUpperCase()
-  if (st === 'PENDING' || st === 'RETURN_REQUESTED' || !st) return 'RETURN_REQUESTED'
-  if (st === 'INSPECTION_SCHEDULED') return 'INSPECTION_SCHEDULED'
-  if (st === 'INSPECTING' || st === 'INSPECTION_IN_PROGRESS') return 'INSPECTION_IN_PROGRESS'
-  if (st === 'INSPECTION_PASSED') return 'INSPECTION_PASSED'
-  if (st === 'INSPECTION_ISSUE') return 'INSPECTION_ISSUE'
-  if (st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
-  if (st === 'REFUND_APPROVED' || st === 'APPROVED') return 'REFUND_APPROVED'
-  if (st === 'REFUND_PROCESSING' || st === 'PROCESSING') return 'REFUND_PROCESSING'
-  if (st === 'REFUNDED') return 'REFUNDED'
-  if (st === 'DISPUTED') return 'DISPUTED'
+
   if (st === 'COMPLETED' || st === 'RESOLVED') return 'COMPLETED'
+  if (ref === 'COMPLETED' || ref === 'REFUNDED' || st === 'REFUNDED') return 'REFUNDED'
+  if (ref === 'PROCESSING' || ref === 'REFUND_PROCESSING' || st === 'REFUND_PROCESSING') return 'REFUND_PROCESSING'
+  if (app === 'APPROVED' || app === 'REFUND_APPROVED' || st === 'REFUND_APPROVED') return 'REFUND_APPROVED'
+  if (app === 'PENDING' || app === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
+  if (insp === 'ISSUE' || insp === 'INSPECTION_ISSUE' || st === 'INSPECTION_ISSUE') return 'INSPECTION_ISSUE'
+  if (insp === 'PASSED' || insp === 'COMPLETED' || insp === 'INSPECTION_PASSED' || st === 'INSPECTION_PASSED' || st === 'INSPECTED') return 'INSPECTION_PASSED'
+  if (insp === 'IN_PROGRESS' || insp === 'INSPECTING' || insp === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTING') return 'INSPECTION_IN_PROGRESS'
+  if (insp === 'SCHEDULED' || insp === 'INSPECTION_SCHEDULED' || st === 'INSPECTION_SCHEDULED') return 'INSPECTION_SCHEDULED'
+  if (st === 'DISPUTED') return 'DISPUTED'
   return 'RETURN_REQUESTED'
 }
 
@@ -164,6 +174,26 @@ const DEFAULT_PROOF_PHOTOS = [
   'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=600&q=80'
 ]
 
+const INSPECTION_DEFAULT_NOTES = {
+  door: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+  cleanliness: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+  damage: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+  smartLock: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+  assetsCleared: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+  env: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)',
+}
+
+const resolveInspectionNote = (passed: boolean, existingNotes: string | undefined | null, defaultText: string): string => {
+  if (passed) {
+    return existingNotes && existingNotes.trim() ? existingNotes : defaultText
+  }
+  // When not passed, clear if it currently matches the default passed note
+  if (existingNotes && existingNotes.trim() !== defaultText.trim()) {
+    return existingNotes
+  }
+  return ''
+}
+
 export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = ({
   currentFacilityId,
   facilityName = 'Boxora Thủ Đức',
@@ -171,6 +201,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   userName = 'Nhân viên trực ca',
   activeRentals = [],
   rawReturnRequests = [],
+  initialStatusTabFilter = 'PENDING',
   onReturnCompleted,
   onRefresh,
   onMetricsChange
@@ -181,37 +212,53 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>([])
   const [selectedCaseId, setSelectedCaseId] = useState<string>('')
   const [searchFilter, setSearchFilter] = useState<string>('')
-  const [statusTabFilter, setStatusTabFilter] = useState<string>('ALL')
+  const [statusTabFilter, setStatusTabFilter] = useState<string>(initialStatusTabFilter || 'PENDING')
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
 
+  useEffect(() => {
+    if (initialStatusTabFilter) {
+      setStatusTabFilter(initialStatusTabFilter)
+    }
+  }, [initialStatusTabFilter])
+
   // 7 Checklist items state for current case
   const [doorPassed, setDoorPassed] = useState(true)
-  const [doorNotes, setDoorNotes] = useState('Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.')
+  const [doorNotes, setDoorNotes] = useState(INSPECTION_DEFAULT_NOTES.door)
   const [doorFeeInput, setDoorFeeInput] = useState(0)
 
   const [cleanlinessPassed, setCleanlinessPassed] = useState(true)
-  const [cleanlinessNotes, setCleanlinessNotes] = useState('Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.')
+  const [cleanlinessNotes, setCleanlinessNotes] = useState(INSPECTION_DEFAULT_NOTES.cleanliness)
   const [cleaningFeeInput, setCleaningFeeInput] = useState(0)
 
   const [damagePassed, setDamagePassed] = useState(true)
-  const [damageNotes, setDamageNotes] = useState('Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.')
+  const [damageNotes, setDamageNotes] = useState(INSPECTION_DEFAULT_NOTES.damage)
   const [damageFeeInput, setDamageFeeInput] = useState(0)
 
   const [smartLockPassed, setSmartLockPassed] = useState(true)
-  const [smartLockNotes, setSmartLockNotes] = useState('Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.')
+  const [smartLockNotes, setSmartLockNotes] = useState(INSPECTION_DEFAULT_NOTES.smartLock)
   const [smartLockFeeInput, setSmartLockFeeInput] = useState(0)
   const [smartLockIssueType, setSmartLockIssueType] = useState<string>('NORMAL_WEAR')
 
   const [assetsClearedPassed, setAssetsClearedPassed] = useState(true)
-  const [assetsClearedNotes, setAssetsClearedNotes] = useState('Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.')
+  const [assetsClearedNotes, setAssetsClearedNotes] = useState(INSPECTION_DEFAULT_NOTES.assetsCleared)
 
   const [photoUrls, setPhotoUrls] = useState<string[]>([])
 
   const [envPassed, setEnvPassed] = useState(true)
-  const [envNotes, setEnvNotes] = useState('Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)')
+  const [envNotes, setEnvNotes] = useState(INSPECTION_DEFAULT_NOTES.env)
 
-  // Modals
+  // Modals & Navigation Guards
+  type PendingNavType = 'TAB_FILTER' | 'SELECT_CASE' | 'REFRESH'
+  const [pendingNavAction, setPendingNavAction] = useState<{
+    type: PendingNavType
+    targetFilter?: string
+    targetCaseId?: string
+  } | null>(null)
+  const [showDraftConfirmModal, setShowDraftConfirmModal] = useState(false)
+  const [isSavingDraftModal, setIsSavingDraftModal] = useState(false)
+  const [savedSnapshot, setSavedSnapshot] = useState<string>('')
+
   const [previewImageModal, setPreviewImageModal] = useState<string | null>(null)
   const [showScheduleConfirmModal, setShowScheduleConfirmModal] = useState(false)
   const [scheduleDatetimeInput, setScheduleDatetimeInput] = useState('')
@@ -270,7 +317,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvedDeductions: item.approvedDeductions || 0,
           netRefundAmount: item.netRefundAmount || 0,
           additionalAmountDue: item.additionalAmountDue || 0,
-          status: normalizeStatus(item.status),
+          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus),
           inspectionStatus: item.inspectionStatus,
           approvalStatus: item.approvalStatus,
           additionalPaymentStatus: item.additionalPaymentStatus,
@@ -286,28 +333,28 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           historyNotes: item.historyNotes || [],
 
           doorPassed: item.doorPassed ?? true,
-          doorNotes: item.doorNotes || 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+          doorNotes: resolveInspectionNote(item.doorPassed ?? true, item.doorNotes, INSPECTION_DEFAULT_NOTES.door),
           doorFeeInput: item.doorFeeInput || item.doorFee || 0,
 
           cleanlinessPassed: item.cleanlinessPassed ?? true,
-          cleanlinessNotes: item.cleanlinessNotes || 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+          cleanlinessNotes: resolveInspectionNote(item.cleanlinessPassed ?? true, item.cleanlinessNotes, INSPECTION_DEFAULT_NOTES.cleanliness),
           cleaningFeeInput: item.cleaningFeeInput || item.cleaningFee || 0,
 
           damagePassed: item.damagePassed ?? true,
-          damageNotes: item.damageNotes || 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+          damageNotes: resolveInspectionNote(item.damagePassed ?? true, item.damageNotes, INSPECTION_DEFAULT_NOTES.damage),
           damageFeeInput: item.damageFeeInput || item.damageFee || 0,
 
           smartLockPassed: item.smartLockPassed ?? true,
-          smartLockNotes: item.smartLockNotes || 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+          smartLockNotes: resolveInspectionNote(item.smartLockPassed ?? true, item.smartLockNotes, INSPECTION_DEFAULT_NOTES.smartLock),
           smartLockFeeInput: item.smartLockFeeInput || item.smartLockFee || 0,
 
           assetsClearedPassed: item.assetsClearedPassed ?? true,
-          assetsClearedNotes: item.assetsClearedNotes || 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+          assetsClearedNotes: resolveInspectionNote(item.assetsClearedPassed ?? true, item.assetsClearedNotes, INSPECTION_DEFAULT_NOTES.assetsCleared),
 
           photoUrls: item.photoUrls || [],
 
           envPassed: item.envPassed ?? true,
-          envNotes: item.envNotes || 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)',
+          envNotes: resolveInspectionNote(item.envPassed ?? true, item.envNotes, INSPECTION_DEFAULT_NOTES.env),
 
           unitReturnedPhysically: item.unitReturnedPhysically ?? false,
           returnedAt: item.returnedAt,
@@ -402,22 +449,22 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               inspectorName: 'Phan Van Hau',
               historyNotes: ['Hệ thống ghi nhận đơn đến hạn trả kho'],
               doorPassed: true,
-              doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
+              doorNotes: INSPECTION_DEFAULT_NOTES.door,
               doorFeeInput: 0,
               cleanlinessPassed: true,
-              cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
+              cleanlinessNotes: INSPECTION_DEFAULT_NOTES.cleanliness,
               cleaningFeeInput: 0,
               damagePassed: true,
-              damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
+              damageNotes: INSPECTION_DEFAULT_NOTES.damage,
               damageFeeInput: 0,
               smartLockPassed: true,
-              smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
+              smartLockNotes: INSPECTION_DEFAULT_NOTES.smartLock,
               smartLockFeeInput: 0,
               assetsClearedPassed: true,
-              assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
+              assetsClearedNotes: INSPECTION_DEFAULT_NOTES.assetsCleared,
               photoUrls: [],
               envPassed: true,
-              envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+              envNotes: INSPECTION_DEFAULT_NOTES.env
             })
           })
         }
@@ -503,34 +550,203 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     setReturnCases((prev) => prev.map((c) => (c.id === currentCase.id ? { ...c, ...updates } : c)))
   }
 
+  const syncInspectionFormFromCase = (target: ReturnCaseItem | null) => {
+    if (!target) return
+    const isDoorOk = target.doorPassed !== undefined ? target.doorPassed : true
+    const dNotes = resolveInspectionNote(isDoorOk, target.doorNotes, INSPECTION_DEFAULT_NOTES.door)
+    const dFee = target.doorFeeInput || target.doorFee || 0
+    setDoorPassed(isDoorOk)
+    setDoorNotes(dNotes)
+    setDoorFeeInput(dFee)
+
+    const isCleanOk = target.cleanlinessPassed !== undefined ? target.cleanlinessPassed : true
+    const cNotes = resolveInspectionNote(isCleanOk, target.cleanlinessNotes, INSPECTION_DEFAULT_NOTES.cleanliness)
+    const cFee = target.cleaningFeeInput || target.cleaningFee || 0
+    setCleanlinessPassed(isCleanOk)
+    setCleanlinessNotes(cNotes)
+    setCleaningFeeInput(cFee)
+
+    const isDamageOk = target.damagePassed !== undefined ? target.damagePassed : true
+    const dmgNotes = resolveInspectionNote(isDamageOk, target.damageNotes, INSPECTION_DEFAULT_NOTES.damage)
+    const dmgFee = target.damageFeeInput || target.damageFee || 0
+    setDamagePassed(isDamageOk)
+    setDamageNotes(dmgNotes)
+    setDamageFeeInput(dmgFee)
+
+    const isLockOk = target.smartLockPassed !== undefined ? target.smartLockPassed : true
+    const lockNotes = resolveInspectionNote(isLockOk, target.smartLockNotes, INSPECTION_DEFAULT_NOTES.smartLock)
+    const lockFee = target.smartLockFeeInput || target.smartLockFee || 0
+    const lockIssue = target.smartLockIssueType || 'NORMAL_WEAR'
+    setSmartLockPassed(isLockOk)
+    setSmartLockNotes(lockNotes)
+    setSmartLockFeeInput(lockFee)
+    setSmartLockIssueType(lockIssue)
+
+    const isAssetsOk = target.assetsClearedPassed !== undefined ? target.assetsClearedPassed : true
+    const aNotes = resolveInspectionNote(isAssetsOk, target.assetsClearedNotes, INSPECTION_DEFAULT_NOTES.assetsCleared)
+    setAssetsClearedPassed(isAssetsOk)
+    setAssetsClearedNotes(aNotes)
+
+    const pUrls = target.photoUrls || []
+    setPhotoUrls(pUrls)
+
+    const isEnvOk = target.envPassed !== undefined ? target.envPassed : true
+    const eNotes = resolveInspectionNote(isEnvOk, target.envNotes, INSPECTION_DEFAULT_NOTES.env)
+    setEnvPassed(isEnvOk)
+    setEnvNotes(eNotes)
+
+    const snap = JSON.stringify({
+      doorPassed: isDoorOk,
+      doorNotes: dNotes,
+      doorFeeInput: dFee,
+      cleanlinessPassed: isCleanOk,
+      cleanlinessNotes: cNotes,
+      cleaningFeeInput: cFee,
+      damagePassed: isDamageOk,
+      damageNotes: dmgNotes,
+      damageFeeInput: dmgFee,
+      smartLockPassed: isLockOk,
+      smartLockNotes: lockNotes,
+      smartLockFeeInput: lockFee,
+      smartLockIssueType: lockIssue,
+      assetsClearedPassed: isAssetsOk,
+      assetsClearedNotes: aNotes,
+      photoUrls: pUrls.join('|'),
+      envPassed: isEnvOk,
+      envNotes: eNotes
+    })
+    setSavedSnapshot(snap)
+  }
+
   // Synchronize state when switching selectedCaseId
   useEffect(() => {
-    if (!currentCase) return
-    setDoorPassed(currentCase.doorPassed !== undefined ? currentCase.doorPassed : true)
-    setDoorNotes(currentCase.doorNotes || 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.')
-    setDoorFeeInput(currentCase.doorFeeInput || currentCase.doorFee || 0)
-
-    setCleanlinessPassed(currentCase.cleanlinessPassed !== undefined ? currentCase.cleanlinessPassed : true)
-    setCleanlinessNotes(currentCase.cleanlinessNotes || 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.')
-    setCleaningFeeInput(currentCase.cleaningFeeInput || currentCase.cleaningFee || 0)
-
-    setDamagePassed(currentCase.damagePassed !== undefined ? currentCase.damagePassed : true)
-    setDamageNotes(currentCase.damageNotes || 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.')
-    setDamageFeeInput(currentCase.damageFeeInput || currentCase.damageFee || 0)
-
-    setSmartLockPassed(currentCase.smartLockPassed !== undefined ? currentCase.smartLockPassed : true)
-    setSmartLockNotes(currentCase.smartLockNotes || 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.')
-    setSmartLockFeeInput(currentCase.smartLockFeeInput || currentCase.smartLockFee || 0)
-    setSmartLockIssueType(currentCase.smartLockIssueType || 'NORMAL_WEAR')
-
-    setAssetsClearedPassed(currentCase.assetsClearedPassed !== undefined ? currentCase.assetsClearedPassed : true)
-    setAssetsClearedNotes(currentCase.assetsClearedNotes || 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.')
-
-    setPhotoUrls(currentCase.photoUrls || [])
-
-    setEnvPassed(currentCase.envPassed !== undefined ? currentCase.envPassed : true)
-    setEnvNotes(currentCase.envNotes || 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)')
+    syncInspectionFormFromCase(currentCase)
   }, [currentCase?.id])
+
+  const createSnapshot = () =>
+    JSON.stringify({
+      doorPassed,
+      doorNotes,
+      doorFeeInput,
+      cleanlinessPassed,
+      cleanlinessNotes,
+      cleaningFeeInput,
+      damagePassed,
+      damageNotes,
+      damageFeeInput,
+      smartLockPassed,
+      smartLockNotes,
+      smartLockFeeInput,
+      smartLockIssueType,
+      assetsClearedPassed,
+      assetsClearedNotes,
+      photoUrls: photoUrls.join('|'),
+      envPassed,
+      envNotes
+    })
+
+  const currentMarkedIssues = useMemo(() => {
+    const issues: { title: string; fee?: number }[] = []
+    if (!doorPassed) issues.push({ title: '1. Cửa cuốn & Ray trượt: Có vấn đề', fee: doorFeeInput })
+    if (!cleanlinessPassed) issues.push({ title: '2. Vệ sinh kho & Sàn nhà: Chưa dọn', fee: cleaningFeeInput })
+    if (!damagePassed) issues.push({ title: '3. Kết cấu tường vách: Có hư hỏng', fee: damageFeeInput })
+    if (!smartLockPassed) issues.push({ title: '4. Ổ khóa SmartLock IoT: Báo lỗi', fee: smartLockFeeInput })
+    if (!assetsClearedPassed) issues.push({ title: '5. Chưa dọn trống đồ đạc của khách' })
+    if (!envPassed) issues.push({ title: '7. Cảm biến môi trường Boxora IoT: Chưa đạt' })
+    return issues
+  }, [
+    doorPassed,
+    doorFeeInput,
+    cleanlinessPassed,
+    cleaningFeeInput,
+    damagePassed,
+    damageFeeInput,
+    smartLockPassed,
+    smartLockFeeInput,
+    assetsClearedPassed,
+    envPassed
+  ])
+
+  const shouldPromptDraftSave = (): boolean => {
+    if (!currentCase) return false
+    if (currentCase.status === 'RETURN_REQUESTED') return false
+    // Chỉ hỏi lưu bản nháp khi CÓ DỮ LIỆU THAY ĐỔI trong 7 mục thẩm định so với bản gốc/lần lưu nháp gần nhất
+    if (!savedSnapshot) return false
+    const currentSnap = createSnapshot()
+    return currentSnap !== savedSnapshot
+  }
+
+  const handleRequestChangeFilter = (targetFilter: string) => {
+    if (statusTabFilter === targetFilter) return
+    if (shouldPromptDraftSave()) {
+      setPendingNavAction({ type: 'TAB_FILTER', targetFilter })
+      setShowDraftConfirmModal(true)
+      return
+    }
+    setStatusTabFilter(targetFilter)
+  }
+
+  const handleRequestSelectCase = (targetCaseId: string) => {
+    if (targetCaseId === currentCase?.id) return
+    if (shouldPromptDraftSave()) {
+      setPendingNavAction({ type: 'SELECT_CASE', targetCaseId })
+      setShowDraftConfirmModal(true)
+      return
+    }
+    setSelectedCaseId(targetCaseId)
+  }
+
+  const handleRequestRefresh = () => {
+    if (shouldPromptDraftSave()) {
+      setPendingNavAction({ type: 'REFRESH' })
+      setShowDraftConfirmModal(true)
+      return
+    }
+    handleRefreshWorkbench()
+  }
+
+  const handleConfirmSaveDraftAndProceed = async () => {
+    setIsSavingDraftModal(true)
+    try {
+      const ok = await handleSaveInspection('ISSUE', true)
+      if (ok) {
+        if (pendingNavAction) {
+          if (pendingNavAction.type === 'TAB_FILTER' && pendingNavAction.targetFilter) {
+            setStatusTabFilter(pendingNavAction.targetFilter)
+          } else if (pendingNavAction.type === 'SELECT_CASE' && pendingNavAction.targetCaseId) {
+            setSelectedCaseId(pendingNavAction.targetCaseId)
+          } else if (pendingNavAction.type === 'REFRESH') {
+            await fetchReturnCases(true)
+          }
+        }
+        setShowDraftConfirmModal(false)
+        setPendingNavAction(null)
+      }
+    } finally {
+      setIsSavingDraftModal(false)
+    }
+  }
+
+  const handleDiscardDraftAndProceed = async () => {
+    await fetchReturnCases(false)
+    if (pendingNavAction) {
+      if (pendingNavAction.type === 'TAB_FILTER' && pendingNavAction.targetFilter) {
+        setStatusTabFilter(pendingNavAction.targetFilter)
+      } else if (pendingNavAction.type === 'SELECT_CASE' && pendingNavAction.targetCaseId) {
+        setSelectedCaseId(pendingNavAction.targetCaseId)
+      } else if (pendingNavAction.type === 'REFRESH') {
+        handleRefreshWorkbench()
+      }
+    }
+    syncInspectionFormFromCase(currentCase)
+    setShowDraftConfirmModal(false)
+    setPendingNavAction(null)
+  }
+
+  const handleCancelNavigation = () => {
+    setShowDraftConfirmModal(false)
+    setPendingNavAction(null)
+  }
 
   // Handle actual file upload to server
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -679,6 +895,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           `Tiếp nhận và hẹn lịch nghiệm thu bởi ${userName}`
         )
       }
+      updateCurrentCase({
+        status: 'INSPECTION_SCHEDULED',
+        inspectionStatus: 'SCHEDULED',
+        inspectionDate: inspectTime
+      })
+      setSelectedCaseId(currentCase.id)
       setShowScheduleConfirmModal(false)
       setStatusTabFilter('INSPECTING')
       toast.success(`Đã lên lịch nghiệm thu kho #${currentCase.unitCode} lúc ${inspectTime}!`)
@@ -713,22 +935,37 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   }
 
   // Step 3: Save Inspection (Draft or Official)
-  const handleSaveInspection = async (resultType: 'PASSED' | 'ISSUE', isDraft: boolean = false) => {
-    if (!currentCase) return
+  const handleSaveInspection = async (resultType: 'PASSED' | 'ISSUE', isDraft: boolean = false): Promise<boolean> => {
+    if (!currentCase) return false
 
-    // Pre-condition validations for Official Passed
-    if (!isDraft && resultType === 'PASSED') {
-      if (photoUrls.length < 2) {
-        toast.error('Quy định Boxora bắt buộc: Cần tối thiểu 2 ảnh bằng chứng hiện trường trước khi lưu nghiệm thu ĐẠT CHUẨN!')
-        return
+    // Pre-condition validations
+    if (!isDraft) {
+      const missingNotes: string[] = []
+      if (!doorPassed && !doorNotes.trim()) missingNotes.push('1. Cửa cuốn & Ray trượt')
+      if (!cleanlinessPassed && !cleanlinessNotes.trim()) missingNotes.push('2. Vệ sinh kho & Sàn nhà')
+      if (!damagePassed && !damageNotes.trim()) missingNotes.push('3. Kết cấu tường vách & Sàn trần')
+      if (!smartLockPassed && !smartLockNotes.trim()) missingNotes.push('4. Ổ khóa SmartLock IoT')
+      if (!assetsClearedPassed && !assetsClearedNotes.trim()) missingNotes.push('5. Xác nhận dọn trống tài sản')
+      if (!envPassed && !envNotes.trim()) missingNotes.push('7. Cảm biến môi trường Boxora IoT')
+
+      if (missingNotes.length > 0) {
+        toast.error(`Bắt buộc nhập mô tả chi tiết hư hại/sự cố cho: ${missingNotes.join(', ')}`)
+        return false
       }
-      if (!assetsClearedPassed) {
-        toast.error('Kho chưa dọn trống tài sản của khách hàng! Không thể lập biên bản ĐẠT CHUẨN.')
-        return
-      }
-      if (!doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed) {
-        toast.error('Có tiêu chí chưa đạt! Vui lòng chọn "Lập biên bản có hư hại" hoặc chuyển các tiêu chí sang Đạt.')
-        return
+
+      if (resultType === 'PASSED') {
+        if (photoUrls.length < 2) {
+          toast.error('Quy định Boxora bắt buộc: Cần tối thiểu 2 ảnh bằng chứng hiện trường trước khi lưu nghiệm thu ĐẠT CHUẨN!')
+          return false
+        }
+        if (!assetsClearedPassed) {
+          toast.error('Kho chưa dọn trống tài sản của khách hàng! Không thể lập biên bản ĐẠT CHUẨN.')
+          return false
+        }
+        if (!doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed) {
+          toast.error('Có tiêu chí chưa đạt! Vui lòng chọn "Lập biên bản có hư hại" hoặc chuyển các tiêu chí sang Đạt.')
+          return false
+        }
       }
     }
 
@@ -762,8 +999,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       }
       toast.success(isDraft ? 'Đã lưu bản nháp nghiệm thu thành công!' : 'Đã lưu biên bản nghiệm thu hiện trường!')
       await fetchReturnCases()
+      setSavedSnapshot(createSnapshot())
+      return true
     } catch (err: any) {
       toast.error(`Lỗi lưu biên bản: ${err.response?.data?.message || err.message}`)
+      return false
     }
   }
 
@@ -1003,7 +1243,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
           <button
             type="button"
-            onClick={handleRefreshWorkbench}
+            onClick={handleRequestRefresh}
             disabled={isRefreshing}
             className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold border border-white/20 text-white flex items-center gap-1.5 cursor-pointer transition shadow-2xs disabled:opacity-50"
             title="Làm mới danh sách hồ sơ trả kho từ máy chủ"
@@ -1015,9 +1255,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       </div>
 
       {/* 2. KPI Metrics Bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div id="return-kpi-metrics-bar" className="grid grid-cols-2 lg:grid-cols-4 gap-3 scroll-mt-24">
         <div
-          onClick={() => setStatusTabFilter('PENDING')}
+          id="pending-return-kpi-card"
+          onClick={() => handleRequestChangeFilter('PENDING')}
           className={`p-4 rounded-2xl border transition-all cursor-pointer ${
             statusTabFilter === 'PENDING'
               ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/50 shadow-xs'
@@ -1035,7 +1276,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         </div>
 
         <div
-          onClick={() => setStatusTabFilter('INSPECTING')}
+          onClick={() => handleRequestChangeFilter('INSPECTING')}
           className={`p-4 rounded-2xl border transition-all cursor-pointer ${
             statusTabFilter === 'INSPECTING'
               ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-400/50 shadow-xs'
@@ -1053,7 +1294,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         </div>
 
         <div
-          onClick={() => setStatusTabFilter('REFUNDING')}
+          onClick={() => handleRequestChangeFilter('REFUNDING')}
           className={`p-4 rounded-2xl border transition-all cursor-pointer ${
             statusTabFilter === 'REFUNDING'
               ? 'bg-teal-50 border-teal-400 ring-2 ring-teal-400/50 shadow-xs'
@@ -1071,7 +1312,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         </div>
 
         <div
-          onClick={() => setStatusTabFilter('COMPLETED')}
+          onClick={() => handleRequestChangeFilter('COMPLETED')}
           className={`p-4 rounded-2xl border transition-all cursor-pointer ${
             statusTabFilter === 'COMPLETED'
               ? 'bg-emerald-50 border-emerald-400 ring-2 ring-emerald-400/50 shadow-xs'
@@ -1099,26 +1340,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <RotateCcw size={16} className="text-amber-600" />
                 <span>Danh Sách Hồ Sơ Trả Kho ({filteredCases.length})</span>
               </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleRefreshWorkbench}
-                  disabled={isRefreshing}
-                  className="p-1 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-slate-100 transition cursor-pointer"
-                  title="Làm mới danh sách"
-                >
-                  <RotateCcw size={14} className={isRefreshing ? 'animate-spin text-amber-600' : ''} />
-                </button>
-                {statusTabFilter !== 'ALL' && (
-                  <button
-                    type="button"
-                    onClick={() => setStatusTabFilter('ALL')}
-                    className="text-xs text-amber-600 hover:underline font-bold cursor-pointer"
-                  >
-                    Xem tất cả
-                  </button>
-                )}
-              </div>
             </div>
 
             {/* Search Box */}
@@ -1147,7 +1368,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   return (
                     <div
                       key={c.id}
-                      onClick={() => setSelectedCaseId(c.id)}
+                      onClick={() => handleRequestSelectCase(c.id)}
                       className={`p-3.5 rounded-xl border transition-all cursor-pointer ${
                         isSelected
                           ? 'bg-amber-50/80 border-amber-400 ring-2 ring-amber-400/40 shadow-xs'
@@ -1183,6 +1404,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation()
+                              if (shouldPromptDraftSave()) {
+                                handleRequestSelectCase(c.id)
+                                return
+                              }
                               setSelectedCaseId(c.id)
                               handleOpenScheduleModal()
                             }}
@@ -1321,16 +1546,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       Vui lòng bấm <strong>"Tiếp Nhận &amp; Lên Lịch Nghiệm Thu"</strong> để chuyển sang giai đoạn <strong>2. Đang Nghiệm Thu</strong> trước khi bắt đầu kiểm tra hiện trường và đối soát cọc.
                     </p>
                   </div>
-                  <div className="pt-2">
-                    <button
-                      type="button"
-                      onClick={handleOpenScheduleModal}
-                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shadow-md shadow-amber-600/20 transition hover:scale-[1.02]"
-                    >
-                      <CalendarCheck size={16} />
-                      <span>Tiếp Nhận &amp; Lên Lịch Nghiệm Thu Ngay</span>
-                    </button>
-                  </div>
+              
                 </div>
               ) : (
                 <>
@@ -1375,7 +1591,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               onClick={() => {
                                 setDoorPassed(true)
                                 setDoorFeeInput(0)
-                                updateCurrentCase({ doorPassed: true, doorFeeInput: 0, doorFee: 0 })
+                                const defaultNote = INSPECTION_DEFAULT_NOTES.door
+                                setDoorNotes(defaultNote)
+                                updateCurrentCase({ doorPassed: true, doorFeeInput: 0, doorFee: 0, doorNotes: defaultNote })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${doorPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1387,7 +1605,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 setDoorPassed(false)
                                 const newFee = doorFeeInput > 0 ? doorFeeInput : 300000
                                 setDoorFeeInput(newFee)
-                                updateCurrentCase({ doorPassed: false, doorFeeInput: newFee, doorFee: newFee })
+                                const newNotes = doorNotes.trim() === INSPECTION_DEFAULT_NOTES.door ? '' : doorNotes
+                                setDoorNotes(newNotes)
+                                updateCurrentCase({ doorPassed: false, doorFeeInput: newFee, doorFee: newFee, doorNotes: newNotes })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!doorPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1396,16 +1616,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         </div>
 
-                        <input
-                          type="text"
-                          value={doorNotes}
-                          onChange={(e) => {
-                            setDoorNotes(e.target.value)
-                            updateCurrentCase({ doorNotes: e.target.value })
-                          }}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                          placeholder="Ghi chú tình trạng đóng mở, ray dẫn, biến dạng..."
-                        />
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={doorNotes}
+                            onChange={(e) => {
+                              setDoorNotes(e.target.value)
+                              updateCurrentCase({ doorNotes: e.target.value })
+                            }}
+                            className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
+                              !doorPassed && !doorNotes.trim()
+                                ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                                : 'bg-white border border-slate-200 focus:border-amber-400'
+                            }`}
+                            placeholder={
+                              doorPassed
+                                ? 'Gợi ý: Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.'
+                                : '* Bắt buộc: Mô tả cụ thể lỗi cửa cuốn (cong vênh, kẹt ray, móp méo...)'
+                            }
+                          />
+                          {!doorPassed && !doorNotes.trim() && (
+                            <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                              * Bắt buộc nhập mô tả chi tiết hư hại cửa cuốn khi Chưa đạt
+                            </span>
+                          )}
+                        </div>
 
                         {!doorPassed && (
                           <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
@@ -1445,7 +1680,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               onClick={() => {
                                 setCleanlinessPassed(true)
                                 setCleaningFeeInput(0)
-                                updateCurrentCase({ cleanlinessPassed: true, cleaningFeeInput: 0, cleaningFee: 0 })
+                                const defaultNote = INSPECTION_DEFAULT_NOTES.cleanliness
+                                setCleanlinessNotes(defaultNote)
+                                updateCurrentCase({ cleanlinessPassed: true, cleaningFeeInput: 0, cleaningFee: 0, cleanlinessNotes: defaultNote })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${cleanlinessPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1457,7 +1694,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 setCleanlinessPassed(false)
                                 const newFee = cleaningFeeInput > 0 ? cleaningFeeInput : 150000
                                 setCleaningFeeInput(newFee)
-                                updateCurrentCase({ cleanlinessPassed: false, cleaningFeeInput: newFee, cleaningFee: newFee })
+                                const newNotes = cleanlinessNotes.trim() === INSPECTION_DEFAULT_NOTES.cleanliness ? '' : cleanlinessNotes
+                                setCleanlinessNotes(newNotes)
+                                updateCurrentCase({ cleanlinessPassed: false, cleaningFeeInput: newFee, cleaningFee: newFee, cleanlinessNotes: newNotes })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!cleanlinessPassed ? 'bg-amber-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1466,16 +1705,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         </div>
 
-                        <input
-                          type="text"
-                          value={cleanlinessNotes}
-                          onChange={(e) => {
-                            setCleanlinessNotes(e.target.value)
-                            updateCurrentCase({ cleanlinessNotes: e.target.value })
-                          }}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                          placeholder="Ghi chú vệ sinh, rác thừa, vết dầu mỡ..."
-                        />
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={cleanlinessNotes}
+                            onChange={(e) => {
+                              setCleanlinessNotes(e.target.value)
+                              updateCurrentCase({ cleanlinessNotes: e.target.value })
+                            }}
+                            className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
+                              !cleanlinessPassed && !cleanlinessNotes.trim()
+                                ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                                : 'bg-white border border-slate-200 focus:border-amber-400'
+                            }`}
+                            placeholder={
+                              cleanlinessPassed
+                                ? 'Gợi ý: Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.'
+                                : '* Bắt buộc: Mô tả tình trạng vệ sinh (rác tồn đọng, vết dầu mỡ, ẩm mốc...)'
+                            }
+                          />
+                          {!cleanlinessPassed && !cleanlinessNotes.trim() && (
+                            <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                              * Bắt buộc nhập mô tả tình trạng vệ sinh khi Chưa đạt
+                            </span>
+                          )}
+                        </div>
 
                         {!cleanlinessPassed && (
                           <div className="p-2.5 rounded-lg bg-amber-50/80 border border-amber-200 flex items-center gap-2 flex-wrap text-xs">
@@ -1515,7 +1769,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               onClick={() => {
                                 setDamagePassed(true)
                                 setDamageFeeInput(0)
-                                updateCurrentCase({ damagePassed: true, damageFeeInput: 0, damageFee: 0 })
+                                const defaultNote = INSPECTION_DEFAULT_NOTES.damage
+                                setDamageNotes(defaultNote)
+                                updateCurrentCase({ damagePassed: true, damageFeeInput: 0, damageFee: 0, damageNotes: defaultNote })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${damagePassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1527,7 +1783,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 setDamagePassed(false)
                                 const newFee = damageFeeInput > 0 ? damageFeeInput : 500000
                                 setDamageFeeInput(newFee)
-                                updateCurrentCase({ damagePassed: false, damageFeeInput: newFee, damageFee: newFee })
+                                const newNotes = damageNotes.trim() === INSPECTION_DEFAULT_NOTES.damage ? '' : damageNotes
+                                setDamageNotes(newNotes)
+                                updateCurrentCase({ damagePassed: false, damageFeeInput: newFee, damageFee: newFee, damageNotes: newNotes })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!damagePassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1536,16 +1794,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         </div>
 
-                        <input
-                          type="text"
-                          value={damageNotes}
-                          onChange={(e) => {
-                            setDamageNotes(e.target.value)
-                            updateCurrentCase({ damageNotes: e.target.value })
-                          }}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                          placeholder="Ghi chú hư hại, móp vách, nứt sàn..."
-                        />
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={damageNotes}
+                            onChange={(e) => {
+                              setDamageNotes(e.target.value)
+                              updateCurrentCase({ damageNotes: e.target.value })
+                            }}
+                            className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
+                              !damagePassed && !damageNotes.trim()
+                                ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                                : 'bg-white border border-slate-200 focus:border-amber-400'
+                            }`}
+                            placeholder={
+                              damagePassed
+                                ? 'Gợi ý: Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.'
+                                : '* Bắt buộc: Mô tả chi tiết hư hại vách/sàn/trần (khoan đục, móp méo, trầy xước...)'
+                            }
+                          />
+                          {!damagePassed && !damageNotes.trim() && (
+                            <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                              * Bắt buộc nhập mô tả hư hại tường vách / sàn trần khi Chưa đạt
+                            </span>
+                          )}
+                        </div>
 
                         {!damagePassed && (
                           <div className="p-2.5 rounded-lg bg-rose-50/70 border border-rose-200 flex items-center gap-2 flex-wrap text-xs">
@@ -1585,7 +1858,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               onClick={() => {
                                 setSmartLockPassed(true)
                                 setSmartLockFeeInput(0)
-                                updateCurrentCase({ smartLockPassed: true, smartLockFeeInput: 0, smartLockFee: 0 })
+                                const defaultNote = INSPECTION_DEFAULT_NOTES.smartLock
+                                setSmartLockNotes(defaultNote)
+                                updateCurrentCase({ smartLockPassed: true, smartLockFeeInput: 0, smartLockFee: 0, smartLockNotes: defaultNote })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${smartLockPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1595,7 +1870,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               type="button"
                               onClick={() => {
                                 setSmartLockPassed(false)
-                                updateCurrentCase({ smartLockPassed: false })
+                                const newNotes = smartLockNotes.trim() === INSPECTION_DEFAULT_NOTES.smartLock ? '' : smartLockNotes
+                                setSmartLockNotes(newNotes)
+                                updateCurrentCase({ smartLockPassed: false, smartLockNotes: newNotes })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!smartLockPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1604,16 +1881,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         </div>
 
-                        <input
-                          type="text"
-                          value={smartLockNotes}
-                          onChange={(e) => {
-                            setSmartLockNotes(e.target.value)
-                            updateCurrentCase({ smartLockNotes: e.target.value })
-                          }}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                          placeholder="Ghi chú tình trạng khóa số, pin, độ nhạy cảm biến, vết cạy phá..."
-                        />
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={smartLockNotes}
+                            onChange={(e) => {
+                              setSmartLockNotes(e.target.value)
+                              updateCurrentCase({ smartLockNotes: e.target.value })
+                            }}
+                            className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
+                              !smartLockPassed && !smartLockNotes.trim()
+                                ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                                : 'bg-white border border-slate-200 focus:border-amber-400'
+                            }`}
+                            placeholder={
+                              smartLockPassed
+                                ? 'Gợi ý: Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.'
+                                : '* Bắt buộc: Mô tả sự cố khóa SmartLock (kẹt chốt, pin chai, cạy phá, lỗi kết nối...)'
+                            }
+                          />
+                          {!smartLockPassed && !smartLockNotes.trim() && (
+                            <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                              * Bắt buộc nhập mô tả sự cố khóa SmartLock khi Chưa đạt
+                            </span>
+                          )}
+                        </div>
 
                         {!smartLockPassed && (
                           <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 space-y-2 text-xs">
@@ -1692,7 +1984,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               type="button"
                               onClick={() => {
                                 setAssetsClearedPassed(true)
-                                updateCurrentCase({ assetsClearedPassed: true })
+                                const defaultNote = INSPECTION_DEFAULT_NOTES.assetsCleared
+                                setAssetsClearedNotes(defaultNote)
+                                updateCurrentCase({ assetsClearedPassed: true, assetsClearedNotes: defaultNote })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${assetsClearedPassed ? 'bg-emerald-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1702,7 +1996,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               type="button"
                               onClick={() => {
                                 setAssetsClearedPassed(false)
-                                updateCurrentCase({ assetsClearedPassed: false })
+                                const newNotes = assetsClearedNotes.trim() === INSPECTION_DEFAULT_NOTES.assetsCleared ? '' : assetsClearedNotes
+                                setAssetsClearedNotes(newNotes)
+                                updateCurrentCase({ assetsClearedPassed: false, assetsClearedNotes: newNotes })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!assetsClearedPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1710,16 +2006,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             </button>
                           </div>
                         </div>
-                        <input
-                          type="text"
-                          value={assetsClearedNotes}
-                          onChange={(e) => {
-                            setAssetsClearedNotes(e.target.value)
-                            updateCurrentCase({ assetsClearedNotes: e.target.value })
-                          }}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                          placeholder="Xác nhận khách đã mang toàn bộ đồ đạc cá nhân ra khỏi ô kho..."
-                        />
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={assetsClearedNotes}
+                            onChange={(e) => {
+                              setAssetsClearedNotes(e.target.value)
+                              updateCurrentCase({ assetsClearedNotes: e.target.value })
+                            }}
+                            className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
+                              !assetsClearedPassed && !assetsClearedNotes.trim()
+                                ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                                : 'bg-white border border-slate-200 focus:border-amber-400'
+                            }`}
+                            placeholder={
+                              assetsClearedPassed
+                                ? 'Gợi ý: Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.'
+                                : '* Bắt buộc: Ghi rõ tài sản/đồ đạc của khách còn để lại trong kho...'
+                            }
+                          />
+                          {!assetsClearedPassed && !assetsClearedNotes.trim() && (
+                            <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                              * Bắt buộc ghi rõ tài sản/đồ đạc còn để lại trong kho
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* 6. Ảnh chụp hiện trường có Upload thật (TỐI THIỂU 2 ẢNH) */}
@@ -1857,7 +2168,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               type="button"
                               onClick={() => {
                                 setEnvPassed(true)
-                                const defaultNote = 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+                                const defaultNote = INSPECTION_DEFAULT_NOTES.env
                                 setEnvNotes(defaultNote)
                                 updateCurrentCase({ envPassed: true, envNotes: defaultNote })
                               }}
@@ -1869,9 +2180,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               type="button"
                               onClick={() => {
                                 setEnvPassed(false)
-                                const alertNote = 'Cảm biến IoT: 32°C • Độ ẩm 78% RH (Vượt ngưỡng an toàn - Cần bảo trì)'
-                                setEnvNotes(alertNote)
-                                updateCurrentCase({ envPassed: false, envNotes: alertNote })
+                                const newNotes = envNotes.trim() === INSPECTION_DEFAULT_NOTES.env ? '' : envNotes
+                                setEnvNotes(newNotes)
+                                updateCurrentCase({ envPassed: false, envNotes: newNotes })
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!envPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -1880,16 +2191,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         </div>
 
-                        <input
-                          type="text"
-                          value={envNotes}
-                          onChange={(e) => {
-                            setEnvNotes(e.target.value)
-                            updateCurrentCase({ envNotes: e.target.value })
-                          }}
-                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus:outline-none focus:border-amber-400"
-                          placeholder="Ghi chú chỉ số cảm biến môi trường..."
-                        />
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={envNotes}
+                            onChange={(e) => {
+                              setEnvNotes(e.target.value)
+                              updateCurrentCase({ envNotes: e.target.value })
+                            }}
+                            className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
+                              !envPassed && !envNotes.trim()
+                                ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
+                                : 'bg-white border border-slate-200 focus:border-amber-400'
+                            }`}
+                            placeholder={
+                              envPassed
+                                ? 'Gợi ý: Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
+                                : '* Bắt buộc: Ghi chú chỉ số bất thường hoặc sự cố cảm biến môi trường...'
+                            }
+                          />
+                          {!envPassed && !envNotes.trim() && (
+                            <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
+                              * Bắt buộc ghi nhận chỉ số hoặc sự cố cảm biến khi Chưa đạt
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
@@ -1903,23 +2229,24 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         <FileText size={14} />
                         <span>Lưu Bản Nháp</span>
                       </button>
-
                       <button
                         type="button"
-                        onClick={() => handleSaveInspection('ISSUE', false)}
-                        className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 cursor-pointer flex items-center gap-1.5 transition"
-                      >
-                        <AlertTriangle size={15} />
-                        <span>Lập Biên Bản Có Hư Hại</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSaveInspection('PASSED', false)}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition"
+                        onClick={() => {
+                          const hasIssue = currentMarkedIssues.length > 0 || totalDeduction > 0 || !doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed || !assetsClearedPassed
+                          handleSaveInspection(hasIssue ? 'ISSUE' : 'PASSED', false)
+                        }}
+                        className={`px-4 py-2 rounded-xl text-white font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition ${
+                          currentMarkedIssues.length > 0 || totalDeduction > 0
+                            ? 'bg-rose-600 hover:bg-rose-700'
+                            : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
                       >
                         <CheckCircle2 size={15} />
-                        <span>Lưu Biên Bản Nghiệm Thu ĐẠT CHUẨN</span>
+                        <span>
+                          {currentMarkedIssues.length > 0 || totalDeduction > 0
+                            ? 'Lưu Biên Bản Có Hư Hại / Khấu Trừ'
+                            : 'Lưu Biên Bản Nghiệm Thu ĐẠT CHUẨN'}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -2070,7 +2397,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <>
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] uppercase font-bold text-rose-700">
-                                Quyết Toán Cấn Trừ Cọc &amp; Thu Bồi Thường
+                                Quyết Toán Khấu Trừ Cọc &amp; Thu Bồi Thường
                               </span>
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
                                 Cọc không đủ bù hư hại
@@ -2079,7 +2406,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                             <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 space-y-1 text-slate-700">
                               <p className="font-semibold text-rose-900">
-                                Toàn bộ tiền cọc ({deductedDepositAmount.toLocaleString('vi-VN')}đ) đã được cấn trừ.
+                                Toàn bộ tiền cọc ({deductedDepositAmount.toLocaleString('vi-VN')}đ) đã được khấu trừ.
                               </p>
                               <p className="text-[11px] text-rose-800">
                                 Khách hàng cần thanh toán bổ sung số tiền <strong className="font-mono text-rose-900">{customerPayableAmount.toLocaleString('vi-VN')}đ</strong> tại quầy lễ tân hoặc chuyển khoản trước khi giải phóng kho.
@@ -2604,6 +2931,115 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               >
                 <CheckCircle2 size={15} />
                 <span>Xác Nhận &amp; Bắt Đầu Nghiệm Thu</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL XÁC NHẬN LƯU BẢN NHÁP KHI RỜI KHỎI ĐANG NGHIỆM THU */}
+      {showDraftConfirmModal && currentCase && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <Save size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    Lưu Bản Nháp Nghiệm Thu?
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Kho #{currentCase.unitCode} • {currentCase.customerName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelNavigation}
+                className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <p className="text-slate-700 leading-relaxed">
+                Bạn đang thao tác tại mục <strong>2. Đang Nghiệm Thu</strong> cho hồ sơ buồng kho{' '}
+                <strong className="text-blue-700 font-mono">#{currentCase.unitCode}</strong>.
+                <br />
+                Bạn có muốn lưu lại kết quả thẩm định hiện trường này thành <strong>Bản Nháp</strong> trước khi chuyển sang mục khác không?
+              </p>
+
+              {/* Tóm tắt các lỗi / chi phí đã ghi nhận nếu có */}
+              {currentMarkedIssues.length > 0 ? (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-amber-900">
+                    <span>Hạng mục ghi nhận ({currentMarkedIssues.length}):</span>
+                    <span>Khấu trừ dự kiến</span>
+                  </div>
+                  <div className="space-y-1">
+                    {currentMarkedIssues.map((issue, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[11px] text-slate-700">
+                        <span className="truncate max-w-[240px]">• {issue.title}</span>
+                        {issue.fee !== undefined && issue.fee > 0 ? (
+                          <span className="font-mono font-bold text-rose-700">
+                            -{issue.fee.toLocaleString('vi-VN')}đ
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">0đ</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {totalVerifiedRepairCost > 0 && (
+                    <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-xs font-bold text-slate-900">
+                      <span>Tổng chi phí phát sinh:</span>
+                      <span className="font-mono text-rose-700">{totalVerifiedRepairCost.toLocaleString('vi-VN')}đ</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600">
+                  Biên bản hiện tại ghi nhận các tiêu chí đạt chuẩn. Bạn có thể lưu bản nháp hoặc tiếp tục rời đi.
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCancelNavigation}
+                disabled={isSavingDraftModal}
+                className="w-full sm:w-auto px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-bold text-xs cursor-pointer transition disabled:opacity-50 text-center"
+              >
+                Ở lại tiếp tục
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardDraftAndProceed}
+                disabled={isSavingDraftModal}
+                className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-200 hover:border-rose-300 font-bold text-xs cursor-pointer transition disabled:opacity-50 text-center"
+              >
+                Không lưu &amp; Rời đi
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSaveDraftAndProceed}
+                disabled={isSavingDraftModal}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50 text-center"
+              >
+                {isSavingDraftModal ? (
+                  <>
+                    <RotateCcw size={14} className="animate-spin" />
+                    <span>Đang lưu...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={14} />
+                    <span>Lưu Bản Nháp &amp; Tiếp Tục</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

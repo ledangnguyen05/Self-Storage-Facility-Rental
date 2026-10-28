@@ -89,6 +89,9 @@ class HandoverServiceTest {
     @Mock
     private FileStorageService fileStorageService;
 
+    @Mock
+    private SupportTicketRepository supportTicketRepository;
+
     @InjectMocks
     private HandoverServiceImpl handoverService;
 

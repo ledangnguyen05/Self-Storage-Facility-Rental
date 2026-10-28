@@ -73,6 +73,7 @@ public class HandoverServiceImpl implements HandoverService {
     private final RentalContractMapper rentalContractMapper;
     private final com.boxora.service.FileStorageService fileStorageService;
     private final StorageUnitLockService storageUnitLockService;
+    private final SupportTicketRepository supportTicketRepository;
 
     /**
      * Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005):
@@ -2524,9 +2525,88 @@ public class HandoverServiceImpl implements HandoverService {
             historyNotes.addAll(Arrays.asList(booking.getStepTransitionHistory().split("\n")));
         }
 
-        String returnReason = (inspectionRecord != null && inspectionRecord.getNotes() != null && !inspectionRecord.getNotes().isBlank())
-                ? inspectionRecord.getNotes()
-                : (booking.getCancellationReason() != null ? booking.getCancellationReason() : "Khách hàng kết thúc hợp đồng thuê kho");
+        // Lấy lý do trả kho chính xác từ yêu cầu của khách hàng trong DB:
+        // 1. Kiểm tra ticket từ Trung tâm hỗ trợ (SupportTicket) gửi từ phía khách hàng
+        String returnReason = null;
+        if (supportTicketRepository != null) {
+            List<SupportTicket> tickets = supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(booking.getId());
+            if (tickets.isEmpty() && booking.getStorageUnit() != null) {
+                tickets = supportTicketRepository.findByStorageUnit_IdOrderByCreatedAtDesc(booking.getStorageUnit().getId());
+            }
+
+            // Ưu tiên 1: Ticket yêu cầu trả kho (RETURN_REFUND hoặc RETURN_EXPIRED)
+            Optional<SupportTicket> returnTicket = tickets.stream()
+                    .filter(t -> t.getCategory() == TicketCategory.RETURN_REFUND || t.getCategory() == TicketCategory.RETURN_EXPIRED)
+                    .findFirst();
+
+            if (returnTicket.isPresent()) {
+                SupportTicket t = returnTicket.get();
+                if (t.getDescription() != null && !t.getDescription().isBlank()) {
+                    returnReason = t.getDescription().trim();
+                } else if (t.getTitle() != null && !t.getTitle().isBlank()) {
+                    returnReason = t.getTitle().trim();
+                }
+            }
+
+            // Ưu tiên 2: Nếu chưa tìm thấy nhưng có ticket liên quan trả kho
+            if (returnReason == null || returnReason.isBlank()) {
+                for (SupportTicket t : tickets) {
+                    String desc = t.getDescription() != null ? t.getDescription().toLowerCase() : "";
+                    String tit = t.getTitle() != null ? t.getTitle().toLowerCase() : "";
+                    if (desc.contains("trả kho") || desc.contains("hoàn cọc") || desc.contains("thanh lý") || desc.contains("kết thúc hợp đồng")
+                            || tit.contains("trả kho") || tit.contains("hoàn cọc") || tit.contains("thanh lý")) {
+                        returnReason = (t.getDescription() != null && !t.getDescription().isBlank()) ? t.getDescription().trim() : t.getTitle().trim();
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 2. Kiểm tra biên bản yêu cầu trả kho từ phía khách hàng (HandoverRecord loại CHECKOUT_REQUEST)
+        if (returnReason == null || returnReason.isBlank()) {
+            Optional<HandoverRecord> checkoutReq = records.stream()
+                    .filter(r -> "CHECKOUT_REQUEST".equalsIgnoreCase(r.getRecordType()) && r.getNotes() != null && !r.getNotes().isBlank())
+                    .findFirst();
+            if (checkoutReq.isPresent()) {
+                returnReason = checkoutReq.get().getNotes().trim();
+            }
+        }
+
+        // 3. Kiểm tra cancellationReason của đơn đặt kho (Booking)
+        if (returnReason == null || returnReason.isBlank()) {
+            if (booking.getCancellationReason() != null && !booking.getCancellationReason().isBlank()) {
+                returnReason = booking.getCancellationReason().trim();
+            }
+        }
+
+        // 4. Mặc định theo nghiệp vụ Boxora: "Khách hàng kết thúc hợp đồng thuê kho"
+        if (returnReason == null || returnReason.isBlank()) {
+            returnReason = "Khách hàng kết thúc hợp đồng thuê kho";
+        }
+
+        String caseStatus = "RETURN_REQUESTED";
+        if (booking.getStatus() == BookingStatus.COMPLETED && (inspectionRecord == null || !"PENDING".equalsIgnoreCase(inspectionRecord.getRefundStatus()))) {
+            caseStatus = "COMPLETED";
+        } else if ("COMPLETED".equalsIgnoreCase(refStatus) || "REFUNDED".equalsIgnoreCase(refStatus)) {
+            caseStatus = "REFUNDED";
+        } else if ("PROCESSING".equalsIgnoreCase(refStatus) || "REFUND_PROCESSING".equalsIgnoreCase(refStatus)) {
+            caseStatus = "REFUND_PROCESSING";
+        } else if ("APPROVED".equalsIgnoreCase(approvalStatus) || "REFUND_APPROVED".equalsIgnoreCase(approvalStatus)) {
+            caseStatus = "REFUND_APPROVED";
+        } else if ("PENDING".equalsIgnoreCase(approvalStatus) || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)) {
+            caseStatus = "REFUND_PENDING_APPROVAL";
+        } else if ("ISSUE".equalsIgnoreCase(inspStatus) || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus)) {
+            caseStatus = "INSPECTION_ISSUE";
+        } else if ("PASSED".equalsIgnoreCase(inspStatus) || "INSPECTION_PASSED".equalsIgnoreCase(inspStatus) || booking.getStatus() == BookingStatus.INSPECTED) {
+            caseStatus = "INSPECTION_PASSED";
+        } else if ("IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTION_IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTING".equalsIgnoreCase(inspStatus)) {
+            caseStatus = "INSPECTION_IN_PROGRESS";
+        } else if ("SCHEDULED".equalsIgnoreCase(inspStatus) || "INSPECTION_SCHEDULED".equalsIgnoreCase(inspStatus)
+                || (inspectionRecord != null && inspectionRecord.getScheduledInspectionAt() != null && !"COMPLETED".equalsIgnoreCase(inspStatus))) {
+            caseStatus = "INSPECTION_SCHEDULED";
+        } else if (booking.getStatus() == BookingStatus.CHECKOUT_REQUESTED) {
+            caseStatus = "RETURN_REQUESTED";
+        }
 
         return ReturnCaseResponse.builder()
                 .id(booking.getId().toString())
@@ -2555,7 +2635,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .approvedDeductions(approvedDeductions)
                 .netRefundAmount(netRefund)
                 .additionalAmountDue(additionalDue)
-                .status(booking.getStatus().name())
+                .status(caseStatus)
                 .inspectionStatus(inspStatus)
                 .approvalStatus(approvalStatus)
                 .additionalPaymentStatus(addPaymentStatus)
@@ -2773,7 +2853,10 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
-                .stream().findFirst().orElseGet(() -> HandoverRecord.builder()
+                .stream()
+                .filter(r -> "INSPECTION".equalsIgnoreCase(r.getRecordType()) || "CHECK_OUT".equalsIgnoreCase(r.getRecordType()))
+                .findFirst()
+                .orElseGet(() -> HandoverRecord.builder()
                         .booking(booking)
                         .staff(staff)
                         .recordType("INSPECTION")
