@@ -1973,6 +1973,15 @@ public class BookingServiceImpl implements BookingService {
                 ? b.getStorageUnit().getUnitType()
                 : b.getUnitType();
 
+        String plainAccessPin = null;
+        if (b.getAccessPin() != null && !b.getAccessPin().isBlank()) {
+            try {
+                plainAccessPin = encryptionService.decrypt(b.getAccessPin());
+            } catch (Exception ex) {
+                plainAccessPin = b.getAccessPin();
+            }
+        }
+
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -2012,7 +2021,7 @@ public class BookingServiceImpl implements BookingService {
                 .assignedStaffId(b.getHandedOverByStaffId())
                 .assignedStaffName(assignedStaffName)
                 .staffAssignmentNotes(b.getStaffAssignmentNotes())
-                .accessPin(b.getAccessPin())
+                .accessPin(plainAccessPin)
                 .qrAccessToken(b.getQrAccessToken())
                 .handoverTime(b.getHandoverTime())
                 .returnTime(b.getReturnTime())

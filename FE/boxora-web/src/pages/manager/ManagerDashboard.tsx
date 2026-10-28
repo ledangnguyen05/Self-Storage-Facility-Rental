@@ -20,8 +20,10 @@ import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
 import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType } from '../../components/modals/EarlyCheckInConfirmModal'
+import { CancelOverdueBookingModal } from '../../components/modals/CancelOverdueBookingModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
+import { HandoverReturnWorkbench } from '../staff/components/HandoverReturnWorkbench'
 import { reservationEmailService } from '../../services/reservationEmailService'
 import { toast } from '../../utils/toast'
 
@@ -49,7 +51,7 @@ interface InspectedUnit {
   maintenanceAt?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
+type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'performance' | 'policy'
 
 const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[] => {
   let list = [...apiArrivals]
@@ -128,7 +130,7 @@ export const ManagerDashboard: React.FC = () => {
     if (role === 'STAFF') {
       return tab === 'overview'
     }
-    return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
+    return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
   }
 
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
@@ -575,21 +577,16 @@ export const ManagerDashboard: React.FC = () => {
     }
   }
 
-  // Quản lý cơ sở hủy đơn quá hạn 48h cho đơn đặt ký + thanh toán tại quầy
-  const handleManagerCancelOverdueBooking = async (booking: Booking) => {
-    const unitText = booking.unitCode ? `Kho #${booking.unitCode}` : (booking.unitTypeName || 'buồng kho')
-    const confirmed = window.confirm(
-      `XÁC NHẬN HỦY ĐƠN QUÁ HẠN 48 GIỜ:\n\n` +
-      `Đơn đặt giữ chỗ ${booking.bookingCode} (khách hàng: ${booking.customerName || 'N/A'}) đã quá 48 giờ sau lịch hẹn check-in nhưng chưa được tiếp nhận.\n\n` +
-      `Khi Quản lý cơ sở xác nhận hủy đơn:\n` +
-      `1. Trạng thái đơn sẽ chuyển sang ĐÃ HỦY (CANCELLED).\n` +
-      `2. Buồng ${unitText} tại ${booking.facilityName || 'cơ sở'} sẽ được GIẢI PHÓNG về trạng thái TRỐNG (AVAILABLE) và cập nhật lại số lượng khả dụng ở Bước 2 quy trình đặt kho.\n` +
-      `3. Email thông báo hủy đơn sẽ được gửi đến email khách hàng (${booking.customerEmail || 'đã đăng ký'}).\n\n` +
-      `Bạn có chắc chắn muốn hủy đơn này không?`
-    )
-    if (!confirmed) return
+  const [cancellingOverdueBooking, setCancellingOverdueBooking] = useState<Booking | null>(null)
 
-    const reason = 'Quản lý cơ sở hủy đơn do quá hạn 48 giờ sau lịch hẹn check-in nhưng khách hàng chưa đến làm thủ tục tiếp nhận tại quầy'
+  const openManagerCancelOverdueModal = (booking: Booking) => {
+    setCancellingOverdueBooking(booking)
+  }
+
+  // Quản lý cơ sở hủy đơn quá hạn 48h cho đơn đặt ký + thanh toán tại quầy
+  const executeManagerCancelOverdueBooking = async (booking: Booking, customReason?: string) => {
+    const unitText = booking.unitCode ? `Kho #${booking.unitCode}` : (booking.unitTypeName || 'buồng kho')
+    const reason = customReason?.trim() || 'Quản lý cơ sở hủy đơn do quá hạn 48 giờ sau lịch hẹn check-in nhưng khách hàng chưa đến làm thủ tục tiếp nhận tại quầy'
     try {
       const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
       const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
@@ -634,11 +631,14 @@ export const ManagerDashboard: React.FC = () => {
       ))
 
       triggerAction(`Đã hủy đơn ${booking.bookingCode} quá hạn 48h thành công. Buồng ${unitText} đã được mở lại cho khách khác đặt chỗ!`)
+      toast.success(`Đã hủy đơn ${booking.bookingCode} và giải phóng buồng ${unitText} thành công!`)
+      setCancellingOverdueBooking(null)
       if (selectedFacilityId) {
         void fetchUnits(selectedFacilityId)
       }
     } catch (err: any) {
       toast.error('Không thể hủy đơn: ' + (err.message || 'Lỗi không xác định'))
+      throw err
     }
   }
 
@@ -1340,7 +1340,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">grid_view</span>
-          <span>1. Sơ Đồ Kho &amp; Thiết Bị</span>
+          <span>Sơ Đồ Cơ Sở</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'overview'
               ? 'bg-white text-slate-900'
@@ -1350,43 +1350,72 @@ export const ManagerDashboard: React.FC = () => {
           </span>
         </button>
 
+        <Link
+          to="/portal/staff?tab=pending_orders"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+          title="Chuyển tới Bàn Đơn Chờ Xử Lý tại quầy tiếp đón"
+        >
+          <span className="material-symbols-outlined text-[18px] text-amber-600">pending_actions</span>
+          <span>1. Đơn Chờ Xử Lý</span>
+        </Link>
+
         <button
           type="button"
-          onClick={() => setActiveTab('renewals')}
+          onClick={() => setActiveTab('reception')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-            activeTab === 'renewals'
-              ? 'bg-slate-900 text-white shadow-xs'
+            activeTab === 'reception' || activeTab === 'handovers-returns'
+              ? 'bg-cyan-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">autorenew</span>
-          <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+          <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+          <span>2. Bàn Tiếp Đón Nhận Kho</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-            activeTab === 'renewals'
-              ? 'bg-white text-slate-900'
-              : 'bg-emerald-100 text-emerald-800'
+            activeTab === 'reception' || activeTab === 'handovers-returns'
+              ? 'bg-white text-cyan-800'
+              : 'bg-cyan-100 text-cyan-800'
           }`}>
-            {renewalsCount} đơn
+            {upcomingHandovers.length} đơn
           </span>
         </button>
 
         <button
           type="button"
-          onClick={() => setActiveTab('handovers-returns')}
+          onClick={() => setActiveTab('returns')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-            activeTab === 'handovers-returns'
-              ? 'bg-slate-900 text-white shadow-xs'
+            activeTab === 'returns'
+              ? 'bg-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">badge</span>
-          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón</span>
+          <span className="material-symbols-outlined text-[18px]">assignment_return</span>
+          <span>3. Trả Kho</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-            activeTab === 'handovers-returns'
-              ? 'bg-white text-slate-900'
-              : 'bg-blue-100 text-blue-800'
+            activeTab === 'returns'
+              ? 'bg-white text-amber-800'
+              : 'bg-amber-100 text-amber-800'
           }`}>
-            {upcomingHandovers.length} đơn
+            {activeRentals.length} hợp đồng
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('renewals')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'renewals'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">autorenew</span>
+          <span>4. Hỗ Trợ Gia Hạn</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'renewals'
+              ? 'bg-white text-blue-900'
+              : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {renewalsCount} đơn
           </span>
         </button>
 
@@ -1400,7 +1429,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>4. Sự Cố &amp; SLA</span>
+          <span>Sự Cố &amp; SLA</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'tickets'
               ? 'bg-white text-slate-900'
@@ -1941,9 +1970,9 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 3: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN BÀN GIAO */}
+      {/* TAB 2: BÀN TIẾP ĐÓN NHẬN KHO & BÀN GIAO */}
       {/* ============================================================== */}
-      {activeTab === 'handovers-returns' && (
+      {(activeTab === 'handovers-returns' || activeTab === 'reception') && (
         <section className="flex flex-col gap-6">
           
           {/* Header Bàn Vận Hành Quầy & Tiếp Đón */}
@@ -2187,7 +2216,7 @@ export const ManagerDashboard: React.FC = () => {
                                 {isOverdue48h && (
                                   <button
                                     type="button"
-                                    onClick={() => handleManagerCancelOverdueBooking(b)}
+                                    onClick={() => openManagerCancelOverdueModal(b)}
                                     className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
                                     title="Đơn quá 48h sau lịch hẹn check-in chưa tiếp nhận: Hủy đơn và trả ô kho về trạng thái trống"
                                   >
@@ -2205,7 +2234,7 @@ export const ManagerDashboard: React.FC = () => {
                                 {isOverdue48h && (
                                   <button
                                     type="button"
-                                    onClick={() => handleManagerCancelOverdueBooking(b)}
+                                    onClick={() => openManagerCancelOverdueModal(b)}
                                     className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
                                     title="Đơn quá 48h sau lịch hẹn check-in chưa tiếp nhận: Hủy đơn và trả ô kho về trạng thái trống"
                                   >
@@ -2309,151 +2338,28 @@ export const ManagerDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* Overdue Returns Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600 text-[20px]">assignment_return</span>
-                <h3 className="font-headline text-sm font-bold text-slate-900">
-                  Hợp Đồng Đến Hạn &amp; Chờ Nghiệm Thu Trả Kho ({activeRentals.length} hợp đồng)
-                </h3>
-              </div>
-              <span className="text-xs text-slate-500 font-mono">Thẩm định hiện trường bởi nhân viên quầy</span>
-            </div>
+        </section>
+      )}
 
-            {activeRentals.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">Không có hợp đồng nào đang chờ nghiệm thu trả kho.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
-                      <th className="py-2.5 px-3 rounded-l-lg">Khách Hàng</th>
-                      <th className="py-2.5 px-3">Mã Hợp Đồng</th>
-                      <th className="py-2.5 px-3">Kho</th>
-                      <th className="py-2.5 px-3">Hạn Kết Thúc</th>
-                      <th className="py-2.5 px-3">Hết Hạn Sau</th>
-                      <th className="py-2.5 px-3">Tiền Cọc Bảo Lãnh</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {paginatedRentals.map(r => {
-                      const countdown = getExpirationCountdown(r.endDate)
-                      return (
-                        <tr key={r.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-3">
-                            <span className="font-bold text-slate-900 block">{r.customerName || 'N/A'}</span>
-                            <span className="text-[11px] text-slate-500 font-mono">{r.customerPhone || 'N/A'}</span>
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.bookingCode}</td>
-                          <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{r.unitCode}</td>
-                          <td className="py-3 px-3 font-mono text-slate-700">{r.endDate || 'Hôm nay'}</td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border shadow-2xs ${countdown.badgeClass}`}
-                              title={`Hạn hợp đồng: ${r.endDate || 'N/A'}`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${countdown.dotClass}`}></span>
-                              <span className="font-mono">{countdown.text}</span>
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                            {(r.depositPaid || r.depositAmount || 0).toLocaleString('vi-VN')} đ
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReadOnlyTargetBookingId(r.id)
-                                setShowReadOnlyBookingModal(true)
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
-                            >
-                              Xem chi tiết
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-
-                {/* Table 2 Pagination - Centered */}
-                {activeRentals.length > 0 && (
-                  <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 mt-2 border-t border-slate-100 text-xs text-slate-500">
-                    <div className="text-center md:text-left">
-                      Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedRentals.length}</span> trên tổng số{' '}
-                      <span className="font-semibold text-slate-800 font-mono">{activeRentals.length}</span> hợp đồng
-                    </div>
-
-                    {/* Center: Pagination Controls */}
-                    <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
-                      <button
-                        type="button"
-                        onClick={() => setRentalPage(p => Math.max(1, p - 1))}
-                        disabled={rentalPage === 1}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
-                        title="Trang trước"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                        <span className="hidden md:inline">Trước</span>
-                      </button>
-
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: totalRentalPages }, (_, i) => i + 1).map(pageNum => {
-                          if (
-                            totalRentalPages > 6 &&
-                            pageNum !== 1 &&
-                            pageNum !== totalRentalPages &&
-                            Math.abs(pageNum - rentalPage) > 1
-                          ) {
-                            if (pageNum === 2 || pageNum === totalRentalPages - 1) {
-                              return (
-                                <span key={pageNum} className="px-1 text-slate-400 font-mono">
-                                  ...
-                                </span>
-                              )
-                            }
-                            return null
-                          }
-                          const isActive = rentalPage === pageNum
-                          return (
-                            <button
-                              key={pageNum}
-                              type="button"
-                              onClick={() => setRentalPage(pageNum)}
-                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
-                                isActive
-                                  ? 'bg-slate-900 text-white shadow-xs'
-                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
-                              }`}
-                            >
-                              {pageNum}
-                            </button>
-                          )
-                        })}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setRentalPage(p => Math.min(totalRentalPages, p + 1))}
-                        disabled={rentalPage === totalRentalPages}
-                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
-                        title="Trang sau"
-                      >
-                        <span className="hidden md:inline">Sau</span>
-                        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-                      </button>
-                    </div>
-
-                    <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
+      {/* ============================================================== */}
+      {/* TAB 3: TRẢ KHO & NGHIỆM THU HIỆN TRƯỜNG */}
+      {/* ============================================================== */}
+      {activeTab === 'returns' && (
+        <section className="flex flex-col gap-6 animate-in fade-in">
+          <HandoverReturnWorkbench
+            currentFacilityId={selectedFacilityId || user?.facilityId}
+            facilityName={facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở Boxora'}
+            userRole={role || 'FACILITY_MANAGER'}
+            userName={user?.fullName || 'Quản lý cơ sở'}
+            activeRentals={activeRentals}
+            onReturnCompleted={() => {
+              const targetFac = selectedFacilityId || user?.facilityId
+              if (targetFac) {
+                void fetchUnits(targetFac)
+                void fetchUpcomingHandovers(targetFac, checkinTimeframe, checkinFromDate, checkinToDate)
+              }
+            }}
+          />
         </section>
       )}
 
@@ -3131,6 +3037,14 @@ export const ManagerDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      <CancelOverdueBookingModal
+        isOpen={Boolean(cancellingOverdueBooking)}
+        booking={cancellingOverdueBooking}
+        userRoleTitle={user?.fullName ? `${user.fullName} (Quản lý cơ sở)` : 'Quản lý cơ sở Boxora'}
+        onConfirm={(b, r) => executeManagerCancelOverdueBooking(b, r)}
+        onClose={() => setCancellingOverdueBooking(null)}
+      />
 
     </div>
   )

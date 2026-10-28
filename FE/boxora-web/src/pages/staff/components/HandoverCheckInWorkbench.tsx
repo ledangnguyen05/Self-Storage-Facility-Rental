@@ -112,6 +112,9 @@ export const persistSessions = (sessions: Record<string, BookingWorkbenchSession
   }
 }
 
+export const isValidDigitPin = (pin?: string | null): boolean =>
+  Boolean(pin && pin !== '------' && /^\d{4,8}$/.test(pin.trim()))
+
 export const createInitialSession = (
   bookingId: string,
   isAlreadyActive = false,
@@ -120,16 +123,16 @@ export const createInitialSession = (
 ): BookingWorkbenchSession => ({
   bookingId,
   assignedUnitCode: isAlreadyActive ? (initialUnitCode || undefined) : undefined,
-  activeStepTab: 'verify',
+  activeStepTab: isAlreadyActive ? 'pin' : 'verify',
   checklist: { ...defaultChecklist },
   photoDoor: '',
   photoInterior: '',
   rfidCard: '',
-  accessPin: existingPin && existingPin !== '------' ? existingPin : '------',
+  accessPin: isValidDigitPin(existingPin) ? existingPin.trim() : '------',
   emailSent: false,
   webPushSent: false,
   handoverNotes: 'Đã đối soát đầy đủ hồ sơ tại quầy tiếp đón.',
-  identityVerified: false,
+  identityVerified: isAlreadyActive,
   isCompleted: isAlreadyActive
 })
 
@@ -282,14 +285,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   const arrivalsList = propArrivals || []
 
-  // Sync selected booking ID
+  // Sync selected booking ID (only set when propActiveBookingId is explicitly provided)
   useEffect(() => {
-    if (propActiveBookingId) {
-      setSelectedBookingId(propActiveBookingId)
-    } else if (arrivalsList.length > 0 && !selectedBookingId) {
-      setSelectedBookingId(arrivalsList[0].id)
-    }
-  }, [propActiveBookingId, arrivalsList, selectedBookingId])
+    setSelectedBookingId(propActiveBookingId || '')
+  }, [propActiveBookingId])
 
   // Persist sessions to sessionStorage
   useEffect(() => {
@@ -411,6 +410,30 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     [selectedBookingId]
   )
 
+  // Tự động tải mã PIN giải mã 6 số nếu hồ sơ đã ACTIVE/COMPLETED nhưng PIN hiện tại chưa phải dạng số
+  useEffect(() => {
+    if (!selectedBookingId || !currentBooking) return
+    const isHandedOverNow =
+      currentSession.isCompleted ||
+      currentBooking.status === 'ACTIVE' ||
+      currentBooking.status === 'COMPLETED'
+
+    if (!isHandedOverNow) return
+
+    if (!isValidDigitPin(currentSession.accessPin)) {
+      bookingService.getAccessPin(selectedBookingId)
+        .then((res) => {
+          const pinVal = res?.accessPin || res?.pin
+          if (pinVal && isValidDigitPin(pinVal)) {
+            updateCurrentSession({ accessPin: pinVal.trim() })
+          }
+        })
+        .catch((err) => {
+          console.warn('Unable to load decrypted PIN for booking', err)
+        })
+    }
+  }, [selectedBookingId, currentBooking?.status, currentSession.isCompleted, currentSession.accessPin, updateCurrentSession])
+
   // Normalized active tab
   const activeTab: 'verify' | 'assign' | 'contract_payment' | 'pin' = useMemo(() => {
     const raw = currentSession.activeStepTab
@@ -429,6 +452,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isAlreadyActive =
     currentBooking?.status === 'ACTIVE' ||
     currentBooking?.status === 'COMPLETED'
+
+  const isHandedOver = Boolean(
+    currentSession.isCompleted ||
+    isAlreadyActive
+  )
 
   const unitDisplayCode =
     currentSession?.assignedUnitCode ||
@@ -594,6 +622,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // Step Tab Navigation Guards (Task 8.4: Allow signed & paid bookings to review Step 3 directly)
   const handleSelectTab = (tab: 'verify' | 'assign' | 'contract_payment' | 'pin') => {
+    if (isHandedOver) {
+      setCheckInError(null)
+      updateCurrentSession({ activeStepTab: tab })
+      return
+    }
+
     const isSignedAndPaid = Boolean(isDepositMet && isRentMet && isContractMet)
 
     if (tab === 'assign' && !isIdMet) {
@@ -1021,20 +1055,89 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
+  const handleFinishAndNavigateToQueue = () => {
+    setHandoverSuccessModalData(null)
+    setSelectedBookingId('')
+    if (onSelectBooking) {
+      onSelectBooking('')
+    }
+    setTimeout(() => {
+      const queueEl = document.getElementById('checkin-queue-table') || document.getElementById('checkin-queue-container')
+      if (queueEl) {
+        queueEl.scrollIntoView({ behavior: 'smooth' })
+      }
+    }, 100)
+  }
+
   if (!currentBooking) {
     return (
-      <div id="handover-workbench" className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 text-left">
-        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm shrink-0">
-            <span className="material-symbols-outlined text-[26px]">desk</span>
+      <div id="handover-workbench" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-6 text-left animate-in fade-in duration-150">
+        <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-slate-50 via-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:via-slate-800/40 dark:to-slate-800/20 border border-slate-200 dark:border-slate-700/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-slate-900 dark:bg-slate-800 text-white flex items-center justify-center shadow-md shrink-0 ring-4 ring-slate-100 dark:ring-slate-700/40">
+              <span className="material-symbols-outlined text-[30px] text-cyan-400">desk</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200 font-mono">
+                  Bàn Tiếp Đón &amp; Trả Kho
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">Sẵn sàng tiếp đón</span>
+              </div>
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-1">
+                Tiếp Nhận &amp; Bàn Giao Kho
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5 font-medium">
+                <span className="material-symbols-outlined text-[17px] text-blue-600 shrink-0">info</span>
+                <span>Vui lòng chọn khách hàng muốn check-in từ danh sách bên dưới</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Quy Trình Tiếp Nhận &amp; Bàn Giao Kho Tại Cơ Sở
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Vui lòng chọn một lượt đặt kho trong danh sách Đón tiếp hôm nay hoặc bấm "Tiếp nhận" ở bảng trên để bắt đầu quy trình 4 bước.
-            </p>
+
+          <div className="flex items-center gap-2 self-start md:self-center shrink-0">
+            {onOpenQrScanner && (
+              <button
+                type="button"
+                onClick={onOpenQrScanner}
+                className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                title="Quét mã QR trên phiếu/app của khách hàng"
+              >
+                <QrCode size={15} />
+                <span>Quét QR Đơn</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('checkin-queue-table') || document.getElementById('checkin-queue-container')
+                if (el) el.scrollIntoView({ behavior: 'smooth' })
+              }}
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-blue-600/30 transition cursor-pointer"
+            >
+              <span>Xem danh sách chờ check-in</span>
+              <span className="material-symbols-outlined text-[16px]">arrow_downward</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4 Steps Visual Guide */}
+        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 flex items-center gap-2.5 text-slate-600 dark:text-slate-300">
+            <span className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center shrink-0">1</span>
+            <span className="font-semibold text-[11.5px] truncate">Xác thực CCCD</span>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 flex items-center gap-2.5 text-slate-600 dark:text-slate-300">
+            <span className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center shrink-0">2</span>
+            <span className="font-semibold text-[11.5px] truncate">Gán kho vật lý</span>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 flex items-center gap-2.5 text-slate-600 dark:text-slate-300">
+            <span className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center shrink-0">3</span>
+            <span className="font-semibold text-[11.5px] truncate">Hợp đồng &amp; Tiền</span>
+          </div>
+          <div className="p-3 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/70 dark:border-slate-800 flex items-center gap-2.5 text-slate-600 dark:text-slate-300">
+            <span className="w-6 h-6 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] flex items-center justify-center shrink-0">4</span>
+            <span className="font-semibold text-[11.5px] truncate">Cấp PIN SmartLock</span>
           </div>
         </div>
       </div>
@@ -1054,7 +1157,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <h2 className="text-base font-bold text-slate-900">
                 Tiếp Nhận &amp; Bàn Giao Kho: #{bookingDisplayCode}
               </h2>
-              {currentSession.isCompleted && (
+              {isHandedOver && (
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
                   <CheckCircle2 size={12} />
                   <span>ĐÃ BÀN GIAO</span>
@@ -1067,7 +1170,16 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start md:self-center">
+        <div className="flex items-center gap-2 self-start md:self-center flex-wrap">
+          <button
+            type="button"
+            onClick={handleFinishAndNavigateToQueue}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer transition shadow-2xs"
+            title="Đóng hồ sơ hiện tại và quay về danh sách chọn khách hàng"
+          >
+            <span className="material-symbols-outlined text-[15px]">close</span>
+            <span>Đổi khách hàng</span>
+          </button>
           <button
             type="button"
             onClick={() => fetchPrerequisitesForBooking(selectedBookingId)}
@@ -1199,12 +1311,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           }`}
         >
           <span className={`w-5 h-5 rounded-full flex items-center justify-center font-mono text-[10px] ${
-            currentSession.isCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+            isHandedOver ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
           }`}>
             4
           </span>
           <span>Cấp PIN &amp; Bàn Giao</span>
-          {currentSession.isCompleted && <CheckCircle2 size={14} className="text-emerald-600" />}
+          {isHandedOver && <CheckCircle2 size={14} className="text-emerald-600" />}
         </button>
       </div>
 
@@ -1499,7 +1611,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="flex-1">
                 <span className="font-bold block">Chưa gán ô kho vật lý</span>
                 <span>
-                  Vui lòng chọn một ô kho còn trống (AVAILABLE) đúng loại <strong>{bookedUnitTypeName || unitTypeName || 'Gói đã đặt'} ({unitArea != null && unitArea !== '' && !isNaN(Number(unitArea)) ? `${unitArea}m²` : 'Chưa cập nhật diện tích'})</strong> từ danh sách bên dưới và bấm nút <strong>"Gán kho"</strong>.
+                  Vui lòng chọn một ô kho còn trống đúng loại <strong>{bookedUnitTypeName || unitTypeName || 'Gói đã đặt'} ({unitArea != null && unitArea !== '' && !isNaN(Number(unitArea)) ? `${unitArea}m²` : 'Chưa cập nhật diện tích'})</strong> từ danh sách bên dưới và bấm nút <strong>"Gán kho"</strong>.
                 </span>
               </div>
             </div>
@@ -2031,22 +2143,38 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
          ========================================================================= */}
       {activeTab === 'pin' && (
         <div className="mt-6 space-y-6">
-          <div className="p-4 rounded-xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
-              <Key size={20} />
+          {isHandedOver ? (
+            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 text-xs text-emerald-950 flex items-start gap-3 shadow-2xs">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <CheckCircle2 size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-sm text-emerald-900">
+                  Bước 4: Hồ Sơ Đã Bàn Giao Thành Công
+                </h3>
+                <p className="mt-0.5 text-emerald-800 leading-relaxed">
+                  Buồng kho <strong>#{unitDisplayCode}</strong> đã được bàn giao và hợp đồng đang hoạt động. Khách hàng đã được cấp mã PIN mở khóa SmartLock IoT.
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-sm text-purple-900">
-                Bước 4: Kích Hoạt Mã PIN &amp; Hoàn Tất Bàn Giao
-              </h3>
-              <p className="mt-0.5 text-purple-800 leading-relaxed">
-                Kiểm tra ca hẹn check-in hợp lệ, sinh mã PIN bảo mật 6 số cho khóa thông minh SmartLock, đồng thời tự động gửi email và thông báo trong hệ thống cho khách hàng.
-              </p>
+          ) : (
+            <div className="p-4 rounded-xl bg-purple-50/80 border border-purple-200 text-xs text-purple-950 flex items-start gap-3">
+              <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <Key size={20} />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-sm text-purple-900">
+                  Bước 4: Kích Hoạt Mã PIN &amp; Hoàn Tất Bàn Giao
+                </h3>
+                <p className="mt-0.5 text-purple-800 leading-relaxed">
+                  Kiểm tra ca hẹn check-in hợp lệ, sinh mã PIN bảo mật 6 số cho khóa thông minh SmartLock, đồng thời tự động gửi email và thông báo trong hệ thống cho khách hàng.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Quy Tắc Nghiệp Vụ Thời Điểm Check-In (Ca Hẹn) */}
-          {(() => {
+          {/* Quy Tắc Nghiệp Vụ Thời Điểm Check-In (Ca Hẹn) - CHỈ hiển thị khi CHƯA bàn giao */}
+          {!isHandedOver && (() => {
             const checkInStatus = currentPrerequisites?.checkInTimeStatus || 'ON_TIME'
             const checkInMet = currentPrerequisites?.checkInTimeMet ?? true
             const checkInMsg = currentPrerequisites?.checkInTimeMessage || 'Đã đến thời điểm hợp lệ để nhận kho'
@@ -2152,12 +2280,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                 <span className="text-[10px] uppercase font-bold text-slate-400 block">Cơ Sở Lưu Trữ</span>
                 <span className="font-bold text-slate-900 block mt-0.5">{facilityDisplayName}</span>
-                <span className="text-[11px] text-slate-500 block">Hợp đồng: {currentPrerequisites?.contractCode || 'Hợp lệ'}</span>
+                <span className="text-[11px] text-slate-500 block">Hợp đồng: {currentPrerequisites?.contractCode || currentBooking?.contractCode || 'Hợp lệ'}</span>
               </div>
             </div>
           </div>
 
-          {currentSession.isCompleted ? (
+          {isHandedOver ? (
             <div className="p-6 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-cyan-500/10 border-2 border-emerald-400 shadow-sm space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -2171,17 +2299,31 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <h3 className="text-base font-extrabold text-slate-900 mt-0.5">
                       Khách hàng: {customerDisplayName} • Ô kho #{unitDisplayCode}
                     </h3>
+                    <span className="text-[11px] text-emerald-800 font-mono mt-0.5 block">
+                      Hợp đồng: {currentPrerequisites?.contractCode || currentBooking?.contractCode || 'Đã ký'}
+                    </span>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowPdfModal(true)}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer self-start sm:self-auto"
-                >
-                  <Printer size={15} />
-                  <span>In Phiếu Bàn Giao</span>
-                </button>
+                <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setShowPdfModal(true)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  >
+                    <Printer size={15} />
+                    <span>In Phiếu Bàn Giao</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFinishAndNavigateToQueue}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                    title="Đóng hồ sơ bàn giao và quay lại danh sách chờ"
+                  >
+                    <CheckCircle2 size={15} />
+                    <span>Hoàn thành</span>
+                  </button>
+                </div>
               </div>
 
               <div className="p-5 bg-white rounded-2xl border border-emerald-200 text-center space-y-3">
@@ -2189,19 +2331,28 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   Mã PIN Mở Khóa SmartLock IoT
                 </span>
                 <div className="flex items-center justify-center gap-2">
-                  <span className="font-mono text-3xl font-extrabold tracking-widest text-slate-900 bg-slate-100 px-6 py-2.5 rounded-2xl border border-slate-200">
-                    {currentSession.accessPin || '------'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleCopyPin}
-                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
-                    title="Sao chép mã PIN"
-                  >
-                    <span className="material-symbols-outlined text-[20px]">
-                      {pinCopied ? 'done' : 'content_copy'}
+                  {isValidDigitPin(currentSession.accessPin) ? (
+                    <>
+                      <span className="font-mono text-3xl font-extrabold tracking-widest text-slate-900 bg-slate-100 px-6 py-2.5 rounded-2xl border border-slate-200">
+                        {currentSession.accessPin}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyPin}
+                        className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                        title="Sao chép mã PIN"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">
+                          {pinCopied ? 'done' : 'content_copy'}
+                        </span>
+                      </button>
+                    </>
+                  ) : (
+                    <span className="font-mono text-sm font-bold text-slate-500 bg-slate-100 px-6 py-2.5 rounded-2xl border border-slate-200 inline-flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px] text-amber-500 animate-spin">sync</span>
+                      <span>Đang tải mã PIN giải mã...</span>
                     </span>
-                  </button>
+                  )}
                 </div>
                 {pinCopied && (
                   <span className="text-xs text-emerald-700 font-bold block">✓ Đã sao chép mã PIN vào bộ nhớ tạm!</span>
@@ -2271,15 +2422,27 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </div>
           )}
 
-          <div className="pt-2 flex items-center justify-between">
+          <div className="pt-2 flex items-center justify-between flex-wrap gap-2">
             <button
               type="button"
               onClick={() => handleSelectTab('contract_payment')}
               className="py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowLeft size={15} />
-              <span>Quay lại Bước 3</span>
+              <span>{isHandedOver ? 'Xem lại Bước 3 (Hợp đồng & Thanh toán)' : 'Quay lại Bước 3'}</span>
             </button>
+
+            {isHandedOver && (
+              <button
+                type="button"
+                onClick={handleFinishAndNavigateToQueue}
+                className="py-2.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs flex items-center gap-2 shadow-md shadow-emerald-600/30 transition cursor-pointer"
+                title="Đóng hồ sơ bàn giao và quay lại danh sách chờ"
+              >
+                <CheckCircle2 size={16} />
+                <span>Hoàn thành &amp; Đóng hồ sơ</span>
+              </button>
+            )}
           </div>
         </div>
       )}
