@@ -460,6 +460,7 @@ export interface ReturnCase {
   approvalNotes?: string
   completedAt?: string
   historyNotes?: string[]
+  disputeReason?: string
 
   // 7 Checklist Criteria
   doorPassed?: boolean | null

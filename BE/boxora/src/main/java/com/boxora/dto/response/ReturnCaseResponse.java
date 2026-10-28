@@ -59,6 +59,7 @@ public class ReturnCaseResponse {
     private String approvalNotes;
     private LocalDateTime completedAt;
     private List<String> historyNotes;
+    private String disputeReason;
 
     // 7 Checklist Criteria
     private Boolean doorPassed;

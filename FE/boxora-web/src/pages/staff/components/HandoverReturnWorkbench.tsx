@@ -157,15 +157,15 @@ const normalizeStatus = (
   const st = String(rawStatus || '').toUpperCase()
 
   if (st === 'COMPLETED' || st === 'RESOLVED') return 'COMPLETED'
+  if (st === 'DISPUTED' || app === 'DISPUTED') return 'DISPUTED'
   if (ref === 'COMPLETED' || ref === 'REFUNDED' || st === 'REFUNDED') return 'REFUNDED'
   if (ref === 'PROCESSING' || ref === 'REFUND_PROCESSING' || st === 'REFUND_PROCESSING') return 'REFUND_PROCESSING'
   if (app === 'APPROVED' || app === 'REFUND_APPROVED' || st === 'REFUND_APPROVED') return 'REFUND_APPROVED'
-  if (app === 'PENDING' || app === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
+  if (app === 'PENDING' || app === 'PENDING_APPROVAL' || app === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
   if (insp === 'ISSUE' || insp === 'INSPECTION_ISSUE' || st === 'INSPECTION_ISSUE') return 'INSPECTION_ISSUE'
   if (insp === 'PASSED' || insp === 'COMPLETED' || insp === 'INSPECTION_PASSED' || st === 'INSPECTION_PASSED' || st === 'INSPECTED') return 'INSPECTION_PASSED'
   if (insp === 'IN_PROGRESS' || insp === 'INSPECTING' || insp === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTING') return 'INSPECTION_IN_PROGRESS'
   if (insp === 'SCHEDULED' || insp === 'INSPECTION_SCHEDULED' || st === 'INSPECTION_SCHEDULED') return 'INSPECTION_SCHEDULED'
-  if (st === 'DISPUTED') return 'DISPUTED'
   return 'RETURN_REQUESTED'
 }
 
@@ -331,6 +331,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvalNotes: item.approvalNotes,
           completedAt: item.completedAt,
           historyNotes: item.historyNotes || [],
+          isDisputed: item.approvalStatus === 'DISPUTED' || item.status === 'DISPUTED',
+          disputeReason: item.disputeReason || item.approvalNotes || '',
 
           doorPassed: item.doorPassed ?? true,
           doorNotes: resolveInspectionNote(item.doorPassed ?? true, item.doorNotes, INSPECTION_DEFAULT_NOTES.door),
@@ -511,7 +513,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             st === 'REFUND_PENDING_APPROVAL' ||
             st === 'REFUND_APPROVED' ||
             st === 'REFUND_PROCESSING' ||
-            st === 'REFUNDED'
+            st === 'REFUNDED' ||
+            st === 'DISPUTED' ||
+            c.approvalStatus === 'PENDING_APPROVAL' ||
+            c.approvalStatus === 'DISPUTED'
           )
         )
           return false
@@ -1185,7 +1190,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         st === 'REFUND_APPROVED' ||
         st === 'REFUND_PROCESSING' ||
         st === 'REFUNDED' ||
-        st === 'REFUNDING'
+        st === 'REFUNDING' ||
+        st === 'DISPUTED' ||
+        c.approvalStatus === 'PENDING_APPROVAL' ||
+        c.approvalStatus === 'DISPUTED'
       ) {
         refunding++
       } else if (st === 'COMPLETED' || st === 'RESOLVED') {
@@ -1347,10 +1355,25 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
         await handoverService.submitDeductionsForApproval(
           currentCase.bookingId,
-          `Nhân viên ${userName} trình duyệt quyết toán: Khấu trừ ${totalDeduction.toLocaleString('vi-VN')}đ`
+          `${isFacilityManager ? 'Quản lý cơ sở' : 'Nhân viên'} ${userName} chuyển duyệt quyết toán: Khấu trừ ${totalDeduction.toLocaleString('vi-VN')}đ`
         )
       }
-      toast.success('Đã trình duyệt quyết toán lên Quản lý cơ sở (Facility Manager)!')
+
+      const successMsg = isFacilityManager
+        ? 'Đã ghi nhận phương án quyết toán & chuyển sang bước Duyệt & Quyết toán!'
+        : 'Đã trình duyệt quyết toán lên Quản lý cơ sở (Quản lý Cơ sở)!'
+      toast.success(successMsg)
+
+      // Cập nhật trạng thái ngay tại client để phản hồi tức thì
+      updateCurrentCase({
+        status: 'REFUND_PENDING_APPROVAL',
+        approvalStatus: 'PENDING_APPROVAL'
+      })
+
+      // Tự động chuyển sang Tab 3 (Duyệt & Quyết Toán) và giữ đúng hồ sơ hiện tại
+      setStatusTabFilter('REFUNDING')
+      setSelectedCaseId(currentCase.id)
+
       await fetchReturnCases()
     } catch (err: any) {
       toast.error(`Lỗi trình duyệt: ${err.response?.data?.message || err.message}`)
@@ -1375,8 +1398,17 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       }
       if (action === 'APPROVE') {
         toast.success('Đã phê duyệt quyết toán thành công!')
+        updateCurrentCase({
+          status: 'REFUND_APPROVED',
+          approvalStatus: 'APPROVED',
+          isDisputed: false
+        })
       } else {
         toast.warning('Đã từ chối và yêu cầu kiểm tra lại hiện trường.')
+        updateCurrentCase({
+          status: 'INSPECTION_ISSUE',
+          approvalStatus: 'REJECTED'
+        })
       }
       await fetchReturnCases()
     } catch (err: any) {
@@ -1390,14 +1422,32 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       toast.warning('Vui lòng nhập lý do khách hàng khiếu nại.')
       return
     }
+    const reason = disputeReasonInput.trim()
     setIsSubmittingDispute(true)
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
-        await handoverService.recordCustomerDispute(currentCase.bookingId, disputeReasonInput.trim())
+        await handoverService.recordCustomerDispute(currentCase.bookingId, reason)
       }
-      toast.warning(`Đã ghi nhận tranh chấp cho hồ sơ #${currentCase.unitCode}!`)
+      toast.warning(`Đã ghi nhận khiếu nại cho hồ sơ #${currentCase.unitCode}!`)
       setShowDisputeModal(false)
       setDisputeReasonInput('')
+
+      const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('vi-VN')
+      updateCurrentCase({
+        status: 'DISPUTED',
+        approvalStatus: 'DISPUTED',
+        isDisputed: true,
+        disputeReason: reason,
+        historyNotes: [
+          ...(currentCase.historyNotes || []),
+          `[${nowStr}] [KHIẾU NẠI] Ghi nhận khiếu nại tranh chấp từ khách hàng: ${reason}`
+        ]
+      })
+
+      // Tự động chuyển sang Tab 3 (Duyệt & Quyết Toán) để quản lý xử lý khiếu nại
+      setStatusTabFilter('REFUNDING')
+      setSelectedCaseId(currentCase.id)
+
       await fetchReturnCases()
     } catch (err: any) {
       toast.error(`Lỗi ghi nhận tranh chấp: ${err.response?.data?.message || err.message}`)
@@ -1724,6 +1774,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         Lý do: <span className="font-medium text-slate-800">{c.reason}</span>
                       </div>
 
+                      {(c.status === 'DISPUTED' || c.approvalStatus === 'DISPUTED' || c.isDisputed) && (
+                        <div className="mt-1.5 p-1.5 rounded-lg bg-red-50 border border-red-200 text-[10px] text-red-800 flex items-center gap-1 font-medium truncate">
+                          <MessageSquareWarning size={12} className="text-red-600 shrink-0" />
+                          <span className="truncate">Khiếu nại: {c.disputeReason || c.approvalNotes || 'Khách không đồng ý bồi thường'}</span>
+                        </div>
+                      )}
+
                       <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500 font-mono">
                         <span>HĐ: {c.contractCode}</span>
                         <span className="font-bold text-slate-700">Cọc: {c.depositAmount.toLocaleString('vi-VN')}đ</span>
@@ -1819,6 +1876,34 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   <span className="font-bold">Lý do trả kho: </span>
                   <span>{currentCase.reason}</span>
                 </div>
+
+                {/* Dispute / Complaint Alert Banner */}
+                {(currentCase.status === 'DISPUTED' || currentCase.approvalStatus === 'DISPUTED' || currentCase.isDisputed) && (
+                  <div className="p-4 rounded-xl bg-red-50 border-2 border-red-300 text-red-950 space-y-2 shadow-xs animate-in fade-in">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <MessageSquareWarning size={18} className="text-red-600 shrink-0" />
+                        <strong className="text-sm text-red-900 font-bold uppercase tracking-tight">
+                          Hồ Sơ Đang Trong Trạng Thái Khiếu Nại / Tranh Chấp
+                        </strong>
+                      </div>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-red-600 text-white animate-pulse">
+                        {isFacilityManager ? 'CẦN QUẢN LÝ XỬ LÝ' : 'ĐANG CHỜ QUẢN LÝ HÒA GIẢI'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-red-900 bg-white/90 p-3 rounded-lg border border-red-200 space-y-1">
+                      <span className="font-bold text-red-950 block">Nội dung khiếu nại của khách hàng:</span>
+                      <p className="italic text-slate-800">
+                        "{currentCase.disputeReason || currentCase.approvalNotes || 'Khách hàng không đồng ý với chi phí khấu trừ hoặc kết quả biên bản nghiệm thu.'}"
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-red-700">
+                      {isFacilityManager
+                        ? '💡 Quản lý cơ sở: Vui lòng xem xét ý kiến khách hàng. Bạn có thể Phê Duyệt quyết toán với số tiền đã thỏa thuận hoặc Yêu Cầu Kiểm Tra Lại.'
+                        : '💡 Nhân viên: Hồ sơ đã được ghi nhận khiếu nại và chuyển lên Quản lý cơ sở để tiến hành xem xét hòa giải.'}
+                    </p>
+                  </div>
+                )}
 
                 {currentCase.status === 'RETURN_REQUESTED' && (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-3 border-t border-slate-100 gap-3 bg-amber-50/70 p-3.5 rounded-xl border border-amber-200">
@@ -2865,14 +2950,26 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </div>
 
                     {/* Timeline Notes */}
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs max-h-36 overflow-y-auto">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs max-h-48 overflow-y-auto">
                       {currentCase.historyNotes && currentCase.historyNotes.length > 0 ? (
-                        currentCase.historyNotes.map((note, idx) => (
-                          <div key={idx} className="flex items-center gap-2 text-slate-700">
-                            <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                            <span>{note}</span>
-                          </div>
-                        ))
+                        currentCase.historyNotes.map((note, idx) => {
+                          const isDisputeNote = note.includes('[KHIẾU NẠI]') || note.toLowerCase().includes('khiếu nại') || note.toLowerCase().includes('tranh chấp')
+                          return (
+                            <div
+                              key={idx}
+                              className={`flex items-start gap-2 p-1.5 rounded-lg text-xs transition ${
+                                isDisputeNote ? 'bg-red-50 text-red-900 border border-red-200 font-semibold' : 'text-slate-700'
+                              }`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                                  isDisputeNote ? 'bg-red-600' : 'bg-slate-400'
+                                }`}
+                              ></span>
+                              <span>{note}</span>
+                            </div>
+                          )
+                        })
                       ) : (
                         <span className="text-slate-400">Chưa có bản ghi lịch sử xử lý.</span>
                       )}
@@ -2893,7 +2990,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       )}
 
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
-                        {/* STAFF action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
+                        {/* STAFF / FM action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
                         {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') && (
                           <button
                             type="button"
@@ -2902,15 +2999,22 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           >
                             <Send size={15} />
                             <span>
-                              {isOverDeposit
-                                ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                              {isFacilityManager
+                                ? (isOverDeposit
+                                    ? `Chuyển Quyết Toán Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                    : `Chuyển Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)
+                                : (isOverDeposit
+                                    ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                    : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)}
                             </span>
                           </button>
                         )}
 
-                        {/* FACILITY_MANAGER action: Phê duyệt hoàn cọc */}
-                        {currentCase.status === 'REFUND_PENDING_APPROVAL' && (
+                        {/* FACILITY_MANAGER action: Phê duyệt hoàn cọc hoặc xử lý khiếu nại */}
+                        {(currentCase.status === 'REFUND_PENDING_APPROVAL' ||
+                          currentCase.status === 'DISPUTED' ||
+                          currentCase.approvalStatus === 'PENDING_APPROVAL' ||
+                          currentCase.approvalStatus === 'DISPUTED') && (
                           <div className="flex items-center gap-2">
                             <button
                               type="button"

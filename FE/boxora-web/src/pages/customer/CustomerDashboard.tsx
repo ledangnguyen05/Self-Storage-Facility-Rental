@@ -2630,9 +2630,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               Mã PIN truy cập cửa kho
                             </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-[10px] font-mono text-blue-700 font-semibold">
-                            Bảo mật AES-256
-                          </span>
                         </div>
 
                         {!isRevealed ? (
@@ -2653,14 +2650,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
                               >
                                 <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openPinChangeModal(c.unitCode, targetId, pin)}
-                                className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[15px] text-blue-600">lock_reset</span>
-                                <span>Đổi mã PIN</span>
                               </button>
                             </div>
                           </div>

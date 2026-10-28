@@ -2584,16 +2584,30 @@ public class HandoverServiceImpl implements HandoverService {
             returnReason = "Khách hàng kết thúc hợp đồng thuê kho";
         }
 
+        String disputeReason = null;
+        if ("DISPUTED".equalsIgnoreCase(approvalStatus)) {
+            if (inspectionRecord != null && inspectionRecord.getApprovalNotes() != null && !inspectionRecord.getApprovalNotes().isBlank()) {
+                disputeReason = inspectionRecord.getApprovalNotes();
+            } else if (inspectionRecord != null && inspectionRecord.getNotes() != null && inspectionRecord.getNotes().contains("[KHIẾU NẠI]")) {
+                int idx = inspectionRecord.getNotes().indexOf("[KHIẾU NẠI]");
+                disputeReason = inspectionRecord.getNotes().substring(idx + "[KHIẾU NẠI]".length()).trim();
+            }
+        }
+
         String caseStatus = "RETURN_REQUESTED";
         if (booking.getStatus() == BookingStatus.COMPLETED && (inspectionRecord == null || !"PENDING".equalsIgnoreCase(inspectionRecord.getRefundStatus()))) {
             caseStatus = "COMPLETED";
+        } else if ("DISPUTED".equalsIgnoreCase(approvalStatus)) {
+            caseStatus = "DISPUTED";
         } else if ("COMPLETED".equalsIgnoreCase(refStatus) || "REFUNDED".equalsIgnoreCase(refStatus)) {
             caseStatus = "REFUNDED";
         } else if ("PROCESSING".equalsIgnoreCase(refStatus) || "REFUND_PROCESSING".equalsIgnoreCase(refStatus)) {
             caseStatus = "REFUND_PROCESSING";
         } else if ("APPROVED".equalsIgnoreCase(approvalStatus) || "REFUND_APPROVED".equalsIgnoreCase(approvalStatus)) {
             caseStatus = "REFUND_APPROVED";
-        } else if ("PENDING".equalsIgnoreCase(approvalStatus) || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)) {
+        } else if ("PENDING".equalsIgnoreCase(approvalStatus)
+                || "PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)
+                || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)) {
             caseStatus = "REFUND_PENDING_APPROVAL";
         } else if ("ISSUE".equalsIgnoreCase(inspStatus) || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus)) {
             caseStatus = "INSPECTION_ISSUE";
@@ -2638,6 +2652,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .status(caseStatus)
                 .inspectionStatus(inspStatus)
                 .approvalStatus(approvalStatus)
+                .disputeReason(disputeReason)
                 .additionalPaymentStatus(addPaymentStatus)
                 .additionalPaymentTxnRef(inspectionRecord != null ? inspectionRecord.getAdditionalPaymentTxnRef() : null)
                 .refundStatus(refStatus)
@@ -3195,6 +3210,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         record.setApprovalStatus("DISPUTED");
+        record.setApprovalNotes(disputeReason);
         record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHIẾU NẠI] " + disputeReason);
         record = handoverRecordRepository.save(record);
 
