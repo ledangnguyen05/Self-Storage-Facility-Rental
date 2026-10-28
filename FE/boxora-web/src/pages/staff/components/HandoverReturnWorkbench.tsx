@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import {
   ClipboardCheck,
+  CalendarCheck,
   Building2,
   Calendar,
   AlertTriangle,
@@ -128,6 +129,19 @@ const normalizeStatus = (rawStatus: any): ReturnStepStatus => {
   return 'RETURN_REQUESTED'
 }
 
+const STATUS_RANK: Record<ReturnStepStatus, number> = {
+  RETURN_REQUESTED: 1,
+  INSPECTION_SCHEDULED: 2,
+  INSPECTION_IN_PROGRESS: 3,
+  INSPECTION_PASSED: 4,
+  INSPECTION_ISSUE: 4,
+  REFUND_PENDING_APPROVAL: 5,
+  REFUND_APPROVED: 6,
+  REFUND_PROCESSING: 6,
+  REFUNDED: 7,
+  COMPLETED: 8
+}
+
 const DEFAULT_PROOF_PHOTOS = [
   'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80',
   'https://images.unsplash.com/photo-1558002038-1055907df827?auto=format&fit=crop&w=600&q=80'
@@ -186,9 +200,13 @@ const syncReturnCases = (
         (req.unitCode ? savedMap[req.unitCode] : undefined)
 
       if (saved) {
+        const savedSt = normalizeStatus(saved.status)
+        const incomingSt = normalizeStatus(req.status)
+        const finalStatus = (STATUS_RANK[savedSt] || 1) >= (STATUS_RANK[incomingSt] || 1) ? savedSt : incomingSt
+
         list.push({
           ...saved,
-          status: saved.status ? normalizeStatus(saved.status) : normalizeStatus(req.status),
+          status: finalStatus,
           depositAmount: saved.depositAmount || req.depositAmount || req.depositPaid || 3500000,
           unitCode: req.unitCode || saved.unitCode || 'TD-B102',
           customerName: req.customerName || saved.customerName || 'Khách hàng',
@@ -566,25 +584,53 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     return { pending, inspecting, refunding, completed, total: returnCases.length }
   }, [returnCases])
 
-  // Workflow Action Handlers
-  const handleScheduleInspection = () => {
+  // Modal states for scheduling inspection
+  const [showScheduleConfirmModal, setShowScheduleConfirmModal] = useState(false)
+  const [scheduleDatetimeInput, setScheduleDatetimeInput] = useState('')
+
+  const handleOpenScheduleModal = () => {
     if (!currentCase) return
+    const now = new Date()
+    const defaultTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
+    setScheduleDatetimeInput(currentCase.inspectionDate || defaultTime)
+    setShowScheduleConfirmModal(true)
+  }
+
+  const confirmScheduleInspection = (scheduledTime?: string) => {
+    if (!currentCase) return
+    const inspectTime = scheduledTime || new Date().toLocaleString('vi-VN')
     updateCurrentCase({
       status: 'INSPECTION_SCHEDULED',
-      inspectionDate: new Date().toLocaleString('vi-VN'),
-      historyNotes: [...(currentCase.historyNotes || []), `Nhân viên ${userName} đã xác nhận lịch hẹn nghiệm thu`]
+      inspectionDate: inspectTime,
+      historyNotes: [
+        ...(currentCase.historyNotes || []),
+        `Nhân viên ${userName} đã tiếp nhận hồ sơ & lên lịch nghiệm thu vào ${inspectTime}`
+      ]
     })
-    toast.success('Đã xác nhận và lên lịch nghiệm thu hiện trường!')
+    setShowScheduleConfirmModal(false)
+    toast.success('Đã tiếp nhận hồ sơ & lên lịch nghiệm thu hiện trường!')
   }
 
   const handleStartInspection = () => {
     if (!currentCase) return
+    const updatedStatus: ReturnStepStatus = 'INSPECTION_IN_PROGRESS'
     updateCurrentCase({
-      status: 'INSPECTION_IN_PROGRESS',
+      status: updatedStatus,
       inspectorName: userName,
-      historyNotes: [...(currentCase.historyNotes || []), `Bắt đầu kiểm tra hiện trường kho #${currentCase.unitCode} bởi ${userName}`]
+      historyNotes: [
+        ...(currentCase.historyNotes || []),
+        `Bắt đầu kiểm tra hiện trường kho #${currentCase.unitCode} bởi ${userName}`
+      ]
     })
-    toast.info('Bắt đầu kiểm tra 7 hạng mục nghiệm thu hiện trường.')
+
+    // If currently filtered by PENDING, switch to ALL so this dossier stays active and does not jump away!
+    if (statusTabFilter === 'PENDING') {
+      setStatusTabFilter('ALL')
+    }
+
+    toast.info(`Bắt đầu nghiệm thu kho #${currentCase.unitCode}. Trạng thái: Đang nghiệm thu.`, {
+      title: 'Tiến trình kiểm định'
+    })
   }
 
   const handleSaveInspection = (resultType: 'PASSED' | 'ISSUE') => {
@@ -1049,11 +1095,47 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </span>
                     <button
                       type="button"
-                      onClick={handleScheduleInspection}
-                      className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-2xs transition"
+                      onClick={handleOpenScheduleModal}
+                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-xs transition flex items-center gap-1.5"
                     >
-                      Tiếp Nhận &amp; Lên Lịch Nghiệm Thu
+                      <CalendarCheck size={15} />
+                      <span>Tiếp Nhận &amp; Lên Lịch Nghiệm Thu</span>
                     </button>
+                  </div>
+                )}
+
+                {currentCase.status === 'INSPECTION_SCHEDULED' && (
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2 bg-indigo-50/70 p-3 rounded-xl border border-indigo-100">
+                    <div>
+                      <span className="text-xs font-bold text-indigo-950 block">
+                        ✓ Đã lên lịch nghiệm thu: <span className="font-mono">{currentCase.inspectionDate || currentCase.expectedReturnDate}</span>
+                      </span>
+                      <span className="text-[11px] text-indigo-700 mt-0.5 block">
+                        Nhân viên có mặt tại buồng kho #{currentCase.unitCode} bấm nút để bắt đầu thẩm định 7 tiêu chí.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleStartInspection}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+                    >
+                      <ClipboardCheck size={16} />
+                      <span>Bắt Đầu Nghiệm Thu Hiện Trường</span>
+                    </button>
+                  </div>
+                )}
+
+                {currentCase.status === 'INSPECTION_IN_PROGRESS' && (
+                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
+                      <span className="text-xs font-bold text-emerald-950">
+                        Hồ sơ đang trong tiến trình nghiệm thu thực địa 7 tiêu chuẩn (Khối B bên dưới).
+                      </span>
+                    </div>
+                    <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200 animate-pulse">
+                      Đang nghiệm thu hiện trường
+                    </span>
                   </div>
                 )}
               </div>
@@ -1084,6 +1166,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       <ClipboardCheck size={14} />
                       <span>Bắt Đầu Nghiệm Thu Hiện Trường</span>
                     </button>
+                  )}
+
+                  {currentCase.status === 'INSPECTION_IN_PROGRESS' && (
+                    <span className="px-3 py-1 rounded-xl bg-indigo-100 text-indigo-900 border border-indigo-200 text-xs font-bold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-indigo-600 animate-ping"></span>
+                      <span>Đang nghiệm thu hiện trường</span>
+                    </span>
                   )}
                 </div>
 
@@ -1926,6 +2015,86 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             </div>
             <div className="rounded-xl overflow-hidden max-h-[70vh] flex items-center justify-center bg-slate-900">
               <img src={previewImageModal} alt="Preview" className="max-w-full max-h-[70vh] object-contain" />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL XÁC NHẬN TIẾP NHẬN & LÊN LỊCH NGHIỆM THU */}
+      {showScheduleConfirmModal && currentCase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl p-6 space-y-5 animate-in zoom-in-95">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                  <CalendarCheck size={22} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Xác Nhận Tiếp Nhận &amp; Lên Lịch Nghiệm Thu</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">Tiếp nhận yêu cầu thanh lý trả kho và lên lịch thẩm định hiện trường</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScheduleConfirmModal(false)}
+                className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Thông tin hồ sơ tóm tắt */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Khách hàng:</span>
+                <strong className="text-slate-900">{currentCase.customerName} ({currentCase.customerPhone})</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Buồng kho trả:</span>
+                <strong className="font-mono text-blue-700 font-bold">#{currentCase.unitCode} ({currentCase.facilityName})</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Mã hợp đồng:</span>
+                <strong className="font-mono text-slate-800">{currentCase.contractCode}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Tiền cọc giữ chỗ:</span>
+                <strong className="font-mono text-amber-700 font-bold">{currentCase.depositAmount.toLocaleString('vi-VN')}đ</strong>
+              </div>
+              <div className="pt-2 border-t border-slate-200 flex flex-col gap-1.5">
+                <label className="text-slate-700 font-bold">Thời gian hẹn nghiệm thu hiện trường:</label>
+                <input
+                  type="text"
+                  value={scheduleDatetimeInput}
+                  onChange={(e) => setScheduleDatetimeInput(e.target.value)}
+                  placeholder="Ví dụ: 10:00 28/10/2026"
+                  className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-amber-400"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+              <AlertTriangle size={16} className="text-amber-700 shrink-0 mt-0.5" />
+              <span>
+                Sau khi xác nhận, hồ sơ sẽ chuyển sang trạng thái <strong>Đã lên lịch nghiệm thu</strong>. Bạn có thể nhấn <strong>Bắt Đầu Nghiệm Thu Hiện Trường</strong> để tiến hành kiểm định 7 tiêu chí buồng kho.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowScheduleConfirmModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-bold text-xs cursor-pointer transition"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmScheduleInspection(scheduleDatetimeInput)}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+              >
+                <CheckCircle2 size={15} />
+                <span>Xác Nhận &amp; Lên Lịch Nghiệm Thu</span>
+              </button>
             </div>
           </div>
         </div>
