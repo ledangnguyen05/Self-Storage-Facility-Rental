@@ -415,9 +415,44 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     }, 400)
   }
 
+  // Filtered cases for list
+  const filteredCases = useMemo(() => {
+    return returnCases.filter((c) => {
+      const st = String(c.status || '').toUpperCase()
+      if (statusTabFilter !== 'ALL') {
+        if (statusTabFilter === 'PENDING' && !(st === 'RETURN_REQUESTED' || st === 'PENDING')) return false
+        if (statusTabFilter === 'INSPECTING' && !(st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_SCHEDULED' || st === 'INSPECTION_ISSUE' || st === 'INSPECTION_PASSED' || st === 'INSPECTING')) return false
+        if (statusTabFilter === 'REFUNDING' && !(st === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_APPROVED' || st === 'REFUND_PROCESSING' || st === 'REFUNDED')) return false
+        if (statusTabFilter === 'COMPLETED' && st !== 'COMPLETED') return false
+      }
+      if (searchFilter.trim()) {
+        const q = searchFilter.trim().toLowerCase()
+        const matchUnit = c.unitCode.toLowerCase().includes(q)
+        const matchCust = c.customerName.toLowerCase().includes(q)
+        const matchPhone = c.customerPhone.includes(q)
+        const matchCode = c.bookingCode.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+        if (!matchUnit && !matchCust && !matchPhone && !matchCode) return false
+      }
+      return true
+    })
+  }, [returnCases, statusTabFilter, searchFilter])
+
   const currentCase = useMemo(() => {
-    return returnCases.find((c) => c.id === selectedCaseId) || returnCases[0] || null
-  }, [returnCases, selectedCaseId])
+    if (filteredCases.length === 0) return null
+    const found = filteredCases.find((c) => c.id === selectedCaseId)
+    return found || filteredCases[0] || null
+  }, [filteredCases, selectedCaseId])
+
+  // Synchronize selectedCaseId whenever filteredCases or statusTabFilter changes
+  useEffect(() => {
+    if (filteredCases.length > 0) {
+      if (!selectedCaseId || !filteredCases.some((c) => c.id === selectedCaseId)) {
+        setSelectedCaseId(filteredCases[0].id)
+      }
+    } else {
+      setSelectedCaseId('')
+    }
+  }, [statusTabFilter, filteredCases, selectedCaseId])
 
   // Save changes helper that persists to localStorage immediately
   const updateCurrentCase = (updates: Partial<ReturnCaseItem>) => {
@@ -558,28 +593,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   // 6. Tiền dự kiến hoàn trả (nếu chi phí sửa chữa <= tiền cọc)
   const netRefundAmount = currentCase ? Math.max(0, deposit - totalVerifiedRepairCost) : 0
 
-  // Filtered cases for list
-  const filteredCases = useMemo(() => {
-    return returnCases.filter((c) => {
-      const st = String(c.status || '').toUpperCase()
-      if (statusTabFilter !== 'ALL') {
-        if (statusTabFilter === 'PENDING' && !(st === 'RETURN_REQUESTED' || st === 'INSPECTION_SCHEDULED' || st === 'PENDING')) return false
-        if (statusTabFilter === 'INSPECTING' && !(st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_ISSUE' || st === 'INSPECTION_PASSED' || st === 'INSPECTING')) return false
-        if (statusTabFilter === 'REFUNDING' && !(st === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_APPROVED' || st === 'REFUND_PROCESSING' || st === 'REFUNDED')) return false
-        if (statusTabFilter === 'COMPLETED' && st !== 'COMPLETED') return false
-      }
-      if (searchFilter.trim()) {
-        const q = searchFilter.trim().toLowerCase()
-        const matchUnit = c.unitCode.toLowerCase().includes(q)
-        const matchCust = c.customerName.toLowerCase().includes(q)
-        const matchPhone = c.customerPhone.includes(q)
-        const matchCode = c.bookingCode.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
-        if (!matchUnit && !matchCust && !matchPhone && !matchCode) return false
-      }
-      return true
-    })
-  }, [returnCases, statusTabFilter, searchFilter])
-
   // Count metrics correctly for all 4 phases
   const metrics = useMemo(() => {
     let pending = 0
@@ -588,9 +601,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     let completed = 0
     returnCases.forEach((c) => {
       const st = String(c.status || '').toUpperCase()
-      if (st === 'RETURN_REQUESTED' || st === 'INSPECTION_SCHEDULED' || st === 'PENDING' || !st) {
+      if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) {
         pending++
-      } else if (st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_ISSUE' || st === 'INSPECTION_PASSED' || st === 'INSPECTING') {
+      } else if (st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_SCHEDULED' || st === 'INSPECTION_ISSUE' || st === 'INSPECTION_PASSED' || st === 'INSPECTING') {
         inspecting++
       } else if (st === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_APPROVED' || st === 'REFUND_PROCESSING' || st === 'REFUNDED' || st === 'REFUNDING') {
         refunding++
@@ -625,16 +638,36 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const confirmScheduleInspection = (scheduledTime?: string) => {
     if (!currentCase) return
     const inspectTime = scheduledTime || new Date().toLocaleString('vi-VN')
-    updateCurrentCase({
-      status: 'INSPECTION_SCHEDULED',
-      inspectionDate: inspectTime,
-      historyNotes: [
-        ...(currentCase.historyNotes || []),
-        `Nhân viên ${userName} đã tiếp nhận hồ sơ & lên lịch nghiệm thu vào ${inspectTime}`
-      ]
+    const updatedStatus: ReturnStepStatus = 'INSPECTION_IN_PROGRESS'
+    const targetId = currentCase.id
+
+    setReturnCases((prev) => {
+      const updated = prev.map((c) =>
+        c.id === targetId
+          ? {
+              ...c,
+              status: updatedStatus,
+              inspectionDate: inspectTime,
+              inspectorName: userName,
+              historyNotes: [
+                ...(c.historyNotes || []),
+                `Nhân viên ${userName} đã tiếp nhận hồ sơ & lên lịch nghiệm thu (${inspectTime}). Bắt đầu thẩm định hiện trường kho #${c.unitCode}.`
+              ]
+            }
+          : c
+      )
+      try {
+        localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(updated))
+      } catch {}
+      return updated
     })
+
     setShowScheduleConfirmModal(false)
-    toast.success('Đã tiếp nhận hồ sơ & lên lịch nghiệm thu hiện trường!')
+    setStatusTabFilter('INSPECTING')
+    setSelectedCaseId(targetId)
+    toast.success(`Đã tiếp nhận hồ sơ kho #${currentCase.unitCode} và chuyển sang trạng thái Đang Nghiệm Thu!`, {
+      title: 'Tiếp nhận thành công'
+    })
   }
 
   const handleStartInspection = () => {
@@ -1058,6 +1091,28 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         <span>HĐ: {c.contractCode}</span>
                         <span className="font-bold text-slate-700">Cọc: {c.depositAmount.toLocaleString('vi-VN')}đ</span>
                       </div>
+
+                      {/* Quick action button for pending cases */}
+                      {c.status === 'RETURN_REQUESTED' && (
+                        <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-amber-700 font-medium italic">Chưa tiếp nhận</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedCaseId(c.id)
+                              const now = new Date()
+                              const defaultTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
+                              setScheduleDatetimeInput(c.inspectionDate || defaultTime)
+                              setShowScheduleConfirmModal(true)
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white font-bold text-[11px] border border-amber-300 hover:border-amber-600 transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <CalendarCheck size={12} />
+                            <span>Tiếp nhận &amp; Lên lịch</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -1128,14 +1183,19 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 </div>
 
                 {currentCase.status === 'RETURN_REQUESTED' && (
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2">
-                    <span className="text-xs text-slate-500">
-                      Hồ sơ mới gửi từ khách hàng. Nhân viên chi nhánh cần xác nhận lịch hẹn nghiệm thu hiện trường.
-                    </span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-3 border-t border-slate-100 gap-3 bg-amber-50/70 p-3.5 rounded-xl border border-amber-200">
+                    <div>
+                      <span className="text-xs font-bold text-amber-950 block">
+                        Yêu cầu trả kho đang chờ nhân viên tiếp nhận
+                      </span>
+                      <span className="text-[11px] text-amber-700 mt-0.5 block">
+                        Nhấn nút bên cạnh để xác nhận lịch hẹn và chuyển hồ sơ sang giai đoạn <strong>Đang Nghiệm Thu</strong>.
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={handleOpenScheduleModal}
-                      className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-xs transition flex items-center gap-1.5"
+                      className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-xs transition flex items-center justify-center gap-1.5 shrink-0"
                     >
                       <CalendarCheck size={15} />
                       <span>Tiếp Nhận &amp; Lên Lịch Nghiệm Thu</span>
@@ -1166,8 +1226,37 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
               </div>
 
-              {/* KHỐI B: BIÊN BẢN THẨM ĐỊNH HIỆN TRƯỜNG (CHECKLIST 7 HẠNG MỤC) */}
-              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+              {/* KHỐI B & C: Chỉ hiển thị khi hồ sơ đã được tiếp nhận sang giai đoạn Đang nghiệm thu hoặc các giai đoạn sau */}
+              {currentCase.status === 'RETURN_REQUESTED' ? (
+                <div className="p-8 rounded-2xl bg-white border border-dashed border-amber-300 shadow-xs text-center space-y-4">
+                  <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                    <Lock size={26} />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-base text-slate-900">
+                      Biên Bản Thẩm Định Hiện Trường (7 Tiêu Chuẩn) &amp; Quyết Toán Cọc Chưa Kích Hoạt
+                    </h4>
+                    <p className="text-xs text-slate-500 max-w-lg mx-auto mt-1.5 leading-relaxed">
+                      Hồ sơ buồng kho <strong className="text-blue-700 font-mono">#{currentCase.unitCode}</strong> của khách hàng <strong className="text-slate-800">{currentCase.customerName}</strong> đang ở trạng thái <strong>Chờ xử lý</strong>.
+                      <br />
+                      Vui lòng bấm <strong>"Tiếp Nhận &amp; Lên Lịch Nghiệm Thu"</strong> để chuyển sang giai đoạn <strong>2. Đang Nghiệm Thu</strong> trước khi bắt đầu kiểm tra hiện trường và đối soát cọc.
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleOpenScheduleModal}
+                      className="px-6 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shadow-md shadow-amber-600/20 transition hover:scale-[1.02]"
+                    >
+                      <CalendarCheck size={16} />
+                      <span>Tiếp Nhận &amp; Lên Lịch Nghiệm Thu Ngay</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* KHỐI B: BIÊN BẢN THẨM ĐỊNH HIỆN TRƯỜNG (CHECKLIST 7 HẠNG MỤC) */}
+                  <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-800 font-mono font-bold text-xs flex items-center justify-center">
@@ -1913,6 +2002,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   </div>
                 </div>
               </div>
+                </>
+              )}
 
               {/* KHỐI D: LỊCH SỬ XỬ LÝ & NÚT HÀNH ĐỘNG THEO VAI TRÒ */}
               <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
@@ -2235,7 +2326,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
               <AlertTriangle size={16} className="text-amber-700 shrink-0 mt-0.5" />
               <span>
-                Sau khi xác nhận, hồ sơ sẽ chuyển sang trạng thái <strong>Đã lên lịch nghiệm thu</strong>. Bạn có thể nhấn <strong>Bắt Đầu Nghiệm Thu Hiện Trường</strong> để tiến hành kiểm định 7 tiêu chí buồng kho.
+                Sau khi xác nhận, hồ sơ sẽ chuyển sang trạng thái <strong>Đang nghiệm thu</strong> và tự động chuyển sang mục <strong>2. Đang Nghiệm Thu</strong> để nhân viên tiến hành thẩm định 7 tiêu chuẩn hiện trường buồng kho và đối soát hoàn cọc.
               </span>
             </div>
 
@@ -2253,7 +2344,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
               >
                 <CheckCircle2 size={15} />
-                <span>Xác Nhận &amp; Lên Lịch Nghiệm Thu</span>
+                <span>Xác Nhận &amp; Bắt Đầu Nghiệm Thu</span>
               </button>
             </div>
           </div>
