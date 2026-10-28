@@ -35,6 +35,7 @@ import com.boxora.entity.StorageUnit;
 import com.boxora.entity.RentalContract;
 import com.boxora.enums.RentalContractStatus;
 import com.boxora.enums.BookingStatus;
+import com.boxora.enums.UnitStatus;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.RentalContractRepository;
 import com.boxora.repository.NotificationLogRepository;
@@ -42,7 +43,6 @@ import com.boxora.repository.PaymentRepository;
 import com.boxora.entity.NotificationLog;
 import com.boxora.enums.NotificationChannel;
 import com.boxora.enums.NotificationType;
-import com.boxora.enums.UnitStatus;
 import com.boxora.entity.Payment;
 import com.boxora.enums.PaymentType;
 import com.boxora.enums.PaymentStatus;
@@ -1365,18 +1365,79 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         }
     }
 
+    private Booking resolveBookingForTicket(SupportTicket ticket) {
+        Booking booking = ticket.getBooking();
+        if (booking == null && ticket.getStorageUnit() != null) {
+            booking = bookingRepository.findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(
+                    ticket.getStorageUnit().getId(),
+                    List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.READY_FOR_CHECKIN)
+            ).orElse(null);
+        }
+
+        // Tự động tìm kiếm đơn thuê kho đang hoạt động của khách hàng nếu ticket chưa được gán trực tiếp đơn
+        if (booking == null && ticket.getCustomer() != null) {
+            List<Booking> customerBookings = ticket.getFacility() != null
+                    ? bookingRepository.findByCustomer_IdAndStorageUnit_Facility_Id(ticket.getCustomer().getId(), ticket.getFacility().getId())
+                    : Collections.emptyList();
+            if (customerBookings == null || customerBookings.isEmpty()) {
+                customerBookings = bookingRepository.findByCustomer_Id(ticket.getCustomer().getId());
+            }
+
+            if (customerBookings != null && !customerBookings.isEmpty()) {
+                // Ưu tiên đơn có ô kho vật lý trước và trạng thái ACTIVE/CONFIRMED/READY_FOR_CHECKIN
+                booking = customerBookings.stream()
+                        .filter(b -> b.getStorageUnit() != null)
+                        .filter(b -> b.getStatus() == BookingStatus.ACTIVE
+                                || b.getStatus() == BookingStatus.CONFIRMED
+                                || b.getStatus() == BookingStatus.READY_FOR_CHECKIN
+                                || b.getStatus() == BookingStatus.PAID_AND_SIGNED)
+                        .sorted((b1, b2) -> {
+                            int p1 = b1.getStatus() == BookingStatus.ACTIVE ? 3 : (b1.getStatus() == BookingStatus.CONFIRMED ? 2 : 1);
+                            int p2 = b2.getStatus() == BookingStatus.ACTIVE ? 3 : (b2.getStatus() == BookingStatus.CONFIRMED ? 2 : 1);
+                            if (p1 != p2) return Integer.compare(p2, p1);
+                            if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                                return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                            }
+                            return 0;
+                        })
+                        .findFirst()
+                        .orElse(null);
+
+                // Nếu vẫn null thì tìm đơn bất kỳ hợp lệ (kể cả chưa gán kho)
+                if (booking == null) {
+                    booking = customerBookings.stream()
+                            .filter(b -> b.getStatus() == BookingStatus.ACTIVE
+                                    || b.getStatus() == BookingStatus.CONFIRMED
+                                    || b.getStatus() == BookingStatus.READY_FOR_CHECKIN
+                                    || b.getStatus() == BookingStatus.PAID_AND_SIGNED)
+                            .sorted((b1, b2) -> {
+                                if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                                    return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                                }
+                                return 0;
+                            })
+                            .findFirst()
+                            .orElse(null);
+                }
+            }
+
+            if (booking != null) {
+                ticket.setBooking(booking);
+                if (ticket.getStorageUnit() == null && booking.getStorageUnit() != null) {
+                    ticket.setStorageUnit(booking.getStorageUnit());
+                }
+                supportTicketRepository.save(ticket);
+            }
+        }
+        return booking;
+    }
+
     @Override
     public SupportTicketResponse regeneratePin(UUID ticketId) {
         SupportTicket ticket = supportTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        Booking booking = ticket.getBooking();
-        if (booking == null && ticket.getStorageUnit() != null) {
-            booking = bookingRepository.findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(
-                    ticket.getStorageUnit().getId(),
-                    List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED)
-            ).orElse(null);
-        }
+        Booking booking = resolveBookingForTicket(ticket);
 
         if (booking == null) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Không tìm thấy hợp đồng / đơn thuê kho đang hoạt động liên kết với sự cố này.");
@@ -1429,8 +1490,10 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         SupportTicket ticket = supportTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        Booking booking = resolveBookingForTicket(ticket);
+
         String unitCode = ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode()
-                : (ticket.getBooking() != null && ticket.getBooking().getStorageUnit() != null ? ticket.getBooking().getStorageUnit().getUnitCode() : "N/A");
+                : (booking != null && booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A");
 
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
                 "Kích hoạt mở khóa từ xa khẩn cấp cho kho #" + unitCode);
@@ -1487,9 +1550,10 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         SupportTicket ticket = supportTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
+        Booking booking = resolveBookingForTicket(ticket);
         StorageUnit unit = ticket.getStorageUnit();
-        if (unit == null && ticket.getBooking() != null) {
-            unit = ticket.getBooking().getStorageUnit();
+        if (unit == null && booking != null) {
+            unit = booking.getStorageUnit();
         }
         if (unit == null) {
             throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy ô kho liên kết để chuyển trạng thái bảo trì");
@@ -1523,7 +1587,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         SupportTicket ticket = supportTicketRepository.findById(ticketId)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
 
-        Booking booking = ticket.getBooking();
+        Booking booking = resolveBookingForTicket(ticket);
         if (booking == null) {
             throw new AppException(ErrorCode.BOOKING_NOT_FOUND, "Không tìm thấy hợp đồng thuê kho liên kết để điều chuyển");
         }

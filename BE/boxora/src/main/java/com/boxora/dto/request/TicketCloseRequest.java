@@ -20,3 +20,4 @@ public class TicketCloseRequest {
 
     private String feedback;
 }
+

@@ -28,6 +28,7 @@ import { bookingService } from '../../../services/bookingService'
 import { paymentService } from '../../../services/paymentService'
 import { EarlyCheckInConfirmModal } from '../../../components/modals/EarlyCheckInConfirmModal'
 import { ContractDocumentModal } from '../../../components/modals/ContractDocumentModal'
+import { toast } from '../../../utils/toast'
 import { contractService, RentalContract } from '../../../services/contractService'
 import { useAuth } from '../../../context/AuthContext'
 
@@ -986,19 +987,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         isCompleted: true,
         completedAt: nowIso,
         emailSent: emailSentSuccess,
-        webPushSent: webPushSentSuccess
+        webPushSent: webPushSentSuccess,
+        activeStepTab: 'pin'
       })
 
-      setHandoverSuccessModalData({
-        bookingCode: bookingDisplayCode,
-        unitCode: currentSession.assignedUnitCode || unitDisplayCode,
-        customerName: customerDisplayName,
-        customerPhone: customerDisplayPhone,
-        customerEmail: customerDisplayEmail,
-        pin: generatedPin,
-        facilityName: facilityDisplayName,
-        completedAt: nowIso
-      })
+      // Giữ nguyên hiển thị giao diện Bước 4 (Hồ sơ đã bàn giao thành công) ngay trên workbench
+      setHandoverSuccessModalData(null)
+      toast.success('✓ Kích hoạt mã PIN & hoàn tất bàn giao kho thành công!')
 
       if (onHandoverComplete) onHandoverComplete(currentBooking.id)
       if (onRefreshArrivals) onRefreshArrivals()

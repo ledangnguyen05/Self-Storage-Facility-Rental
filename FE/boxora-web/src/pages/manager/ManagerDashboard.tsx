@@ -2020,7 +2020,6 @@ export const ManagerDashboard: React.FC = () => {
                 activeBookingId={activeBookingId}
                 onSelectBooking={setActiveBookingId}
                 onHandoverComplete={(bookingId) => {
-                  setActiveBookingId('')
                   fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
                   const targetFac = selectedFacilityId || user?.facilityId
                   if (targetFac) void fetchUnits(targetFac)

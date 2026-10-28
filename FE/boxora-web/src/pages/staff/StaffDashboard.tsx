@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -168,6 +168,7 @@ export const StaffDashboard: React.FC = () => {
   const [filterFromDate, setFilterFromDate] = useState<string>('')
   const [filterToDate, setFilterToDate] = useState<string>('')
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<AppointmentStatusFilter>('ALL')
+  const [receptionStatusFilter, setReceptionStatusFilter] = useState<'PENDING_CHECKIN' | 'HANDED_OVER' | 'ALL'>('PENDING_CHECKIN')
   const [claimingBookingId, setClaimingBookingId] = useState<string | null>(null)
   const [rejectingBooking, setRejectingBooking] = useState<Booking | null>(null)
   const [rejectionReasonText, setRejectionReasonText] = useState<string>('')
@@ -843,10 +844,46 @@ export const StaffDashboard: React.FC = () => {
     return filteredPendingOrders.slice(start, start + TAB1_PAGE_SIZE)
   }, [filteredPendingOrders, safeTab1Page])
 
-  // Lọc danh sách đơn đã thanh toán chờ check-in cho Tab 2 "Bàn Tiếp Đón & Trả Kho"
-  const checkInArrivals = useMemo(() => {
+  // Helper kiểm tra đơn đã hoàn tất bàn giao & active
+  const isHandedOverBooking = useCallback((b: Booking): boolean => {
+    const s = String(b.status || '').toUpperCase()
+    return s === 'ACTIVE' || s === 'COMPLETED'
+  }, [])
+
+  // Helper kiểm tra đơn chờ check-in tại quầy
+  const isPendingCheckInBooking = useCallback((b: Booking): boolean => {
+    const s = String(b.status || '').toUpperCase()
+    if (s === 'ACTIVE' || s === 'COMPLETED' || s === 'CANCELLED' || s === 'REJECTED') return false
+    return isPaidCheckIn(b) || s === 'CONFIRMED' || s === 'READY_FOR_CHECKIN' || s === 'PAID_AND_SIGNED' || s === 'PAID_PENDING_ASSIGNMENT'
+  }, [])
+
+  // Thống kê số lượng cho 3 trạng thái tại mục 2. Bàn Tiếp Đón nhận kho
+  const receptionCounts = useMemo(() => {
+    let pendingCheckIn = 0
+    let handedOver = 0
+    arrivals.forEach((b) => {
+      if (isHandedOverBooking(b)) {
+        handedOver++
+      } else if (isPendingCheckInBooking(b)) {
+        pendingCheckIn++
+      }
+    })
+    return {
+      pendingCheckIn,
+      handedOver,
+      total: pendingCheckIn + handedOver
+    }
+  }, [arrivals, isHandedOverBooking, isPendingCheckInBooking])
+
+  // Lọc danh sách theo 3 tab trạng thái cho Bàn Tiếp Đón (Chờ check-in, Đã bàn giao, Tổng đơn)
+  const receptionArrivals = useMemo(() => {
     return arrivals.filter((b) => {
-      if (!isPaidCheckIn(b)) return false
+      const isHanded = isHandedOverBooking(b)
+      const isPending = isPendingCheckInBooking(b)
+
+      if (receptionStatusFilter === 'PENDING_CHECKIN' && !isPending) return false
+      if (receptionStatusFilter === 'HANDED_OVER' && !isHanded) return false
+      if (receptionStatusFilter === 'ALL' && (!isPending && !isHanded)) return false
 
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase()
@@ -871,12 +908,14 @@ export const StaffDashboard: React.FC = () => {
       const timeA = new Date((a as any).createdAt || a.expectedCheckInAt || a.startDate || 0).getTime()
       return timeB - timeA
     })
-  }, [arrivals, searchQuery])
+  }, [arrivals, receptionStatusFilter, searchQuery, isHandedOverBooking, isPendingCheckInBooking])
 
-  // Danh sách cho HandoverCheckInWorkbench
+  const checkInArrivals = receptionArrivals
+
+  // Danh sách cho HandoverCheckInWorkbench (hỗ trợ cả đơn đang chờ và đơn đã bàn giao để xem lại hồ sơ)
   const workbenchArrivals = useMemo(() => {
     return arrivals.filter((b) => {
-      return isPaidCheckIn(b) || b.id === activeBookingId
+      return isPaidCheckIn(b) || b.id === activeBookingId || b.status === 'ACTIVE' || b.status === 'COMPLETED'
     })
   }, [arrivals, activeBookingId])
 
@@ -2310,7 +2349,7 @@ export const StaffDashboard: React.FC = () => {
             activeBookingId={activeBookingId}
             onSelectBooking={setActiveBookingId}
             onHandoverComplete={(bookingId) => {
-              setActiveBookingId('')
+              // Giữ lại activeBookingId để hiển thị giao diện Bước 4 ĐÃ BÀN GIAO THÀNH CÔNG cho nhân viên nghiệm thu
               setCheckInSuccessMsg(`Hoàn tất quy trình check-in bàn giao buồng kho cho đơn #${bookingId}`)
               fetchArrivals()
               fetchOccupancy()
@@ -2320,13 +2359,66 @@ export const StaffDashboard: React.FC = () => {
 
           {/* Full-Width Check-in Queue Table */}
           <div id="checkin-queue-table" className="w-full bg-white border border-slate-200 rounded-2xl shadow-sm p-6 scroll-mt-6">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 font-mono flex items-center gap-2">
-                <span className="material-symbols-outlined text-cyan-600 text-[18px]">how_to_reg</span>
-                Danh sách khách hàng chờ Check-in tại cơ sở
-              </span>
+            {/* 3 Status Filter Tabs: Chờ check-in, Đã bàn giao, Tổng đơn */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setReceptionStatusFilter('PENDING_CHECKIN')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    receptionStatusFilter === 'PENDING_CHECKIN'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                  <span>Chờ Check-in</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    receptionStatusFilter === 'PENDING_CHECKIN' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700'
+                  }`}>
+                    {receptionCounts.pendingCheckIn}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setReceptionStatusFilter('HANDED_OVER')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    receptionStatusFilter === 'HANDED_OVER'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">verified</span>
+                  <span>Đã Bàn Giao</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    receptionStatusFilter === 'HANDED_OVER' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {receptionCounts.handedOver}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setReceptionStatusFilter('ALL')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                    receptionStatusFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                  <span>Tổng Đơn Tiếp Đón</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    receptionStatusFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-800'
+                  }`}>
+                    {receptionCounts.total}
+                  </span>
+                </button>
+              </div>
+
               <span className="text-xs text-slate-500 font-mono font-bold">
-                {checkInArrivals.length} khách chờ check-in
+                Hiển thị {receptionArrivals.length} / {receptionCounts.total} đơn
               </span>
             </div>
 
@@ -2415,7 +2507,17 @@ export const StaffDashboard: React.FC = () => {
                           </td>
                           <td className="py-3.5 px-3">
                             <div className="flex flex-col items-start gap-1">
-                              {!hasPhysicalUnit ? (
+                              {b.status === 'ACTIVE' || b.status === 'COMPLETED' ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
+                                    <span className="material-symbols-outlined text-[13px]">verified</span>
+                                    <span>ĐÃ BÀN GIAO KHO</span>
+                                  </span>
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    ✓ Đang hoạt động
+                                  </span>
+                                </>
+                              ) : !hasPhysicalUnit ? (
                                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-xs">
                                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                   <span>ĐÃ THANH TOÁN - CHỜ GÁN KHO</span>
@@ -2426,17 +2528,17 @@ export const StaffDashboard: React.FC = () => {
                                   <span>Chờ check in</span>
                                 </span>
                               )}
-                              {b.status !== 'CANCELLED' && isContractSigned && (
+                              {b.status !== 'CANCELLED' && b.status !== 'ACTIVE' && b.status !== 'COMPLETED' && isContractSigned && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                   ✓ Đã ký HĐ điện tử
                                 </span>
                               )}
-                              {b.signingMethod === 'IN_PERSON' && !isContractSigned && (
+                              {b.signingMethod === 'IN_PERSON' && !isContractSigned && b.status !== 'ACTIVE' && b.status !== 'COMPLETED' && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                                   🏢 Ký giấy tại quầy
                                 </span>
                               )}
-                              {hasContract && !isContractSigned && b.signingMethod !== 'IN_PERSON' && (
+                              {hasContract && !isContractSigned && b.signingMethod !== 'IN_PERSON' && b.status !== 'ACTIVE' && b.status !== 'COMPLETED' && (
                                 <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                                   ⏳ Chờ khách ký HĐ
                                 </span>
@@ -2446,12 +2548,12 @@ export const StaffDashboard: React.FC = () => {
                                   <span className="material-symbols-outlined text-[12px]">person</span>
                                   <span>Tiếp nhận: <strong>{b.assignedStaffName}</strong></span>
                                 </span>
-                              ) : (
+                              ) : b.status !== 'ACTIVE' && b.status !== 'COMPLETED' ? (
                                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Đơn chưa có nhân viên tiếp nhận">
                                   <span className="material-symbols-outlined text-[12px]">person_off</span>
                                   <span>Chưa tiếp nhận</span>
                                 </span>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                           <td className="py-3.5 px-3 font-mono font-bold text-slate-900 tabular-nums">
@@ -2469,31 +2571,47 @@ export const StaffDashboard: React.FC = () => {
                                 <span>Xem chi tiết</span>
                               </button>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const proceed = () => {
+                              {b.status === 'ACTIVE' || b.status === 'COMPLETED' ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
                                     setActiveBookingId(b.id)
-                                    setFocusedBookingNotice(`Đã chọn check-in khách hàng ${b.customerName} (${b.bookingCode})`)
+                                    setFocusedBookingNotice(`Xem hồ sơ bàn giao của khách hàng ${b.customerName} (${b.bookingCode})`)
                                     document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                  }
-                                  const { isPremature } = isBookingBeforeCheckInTime(b)
-                                  if (isPremature) {
-                                    setEarlyConfirmState({
-                                      booking: b,
-                                      actionType: 'ENTER_RECEPTION',
-                                      onConfirm: proceed,
-                                    })
-                                  } else {
-                                    proceed()
-                                  }
-                                }}
-                                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
-                                title="Tiến hành thủ tục Check-in bàn giao kho"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>Check-in</span>
-                              </button>
+                                  }}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                  title="Xem hồ sơ bàn giao & thông tin mã PIN"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">inventory_2</span>
+                                  <span>Hồ Sơ Bàn Giao</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const proceed = () => {
+                                      setActiveBookingId(b.id)
+                                      setFocusedBookingNotice(`Đã chọn tiếp nhận khách hàng ${b.customerName} (${b.bookingCode})`)
+                                      document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                    }
+                                    const { isPremature } = isBookingBeforeCheckInTime(b)
+                                    if (isPremature) {
+                                      setEarlyConfirmState({
+                                        booking: b,
+                                        actionType: 'ENTER_RECEPTION',
+                                        onConfirm: proceed,
+                                      })
+                                    } else {
+                                      proceed()
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                  title="Tiến hành thủ tục tiếp nhận và bàn giao kho"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">desk</span>
+                                  <span>Tiếp nhận</span>
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
