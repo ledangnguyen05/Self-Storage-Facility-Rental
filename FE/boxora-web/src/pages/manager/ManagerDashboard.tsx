@@ -173,7 +173,6 @@ export const ManagerDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUnit, setSelectedUnit] = useState<InspectedUnit | null>(null)
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null)
@@ -873,16 +872,12 @@ export const ManagerDashboard: React.FC = () => {
       if (sizeFilter === 'l' && !(sizeNum > 12)) return false
     }
 
-    if (statusFilter !== 'all' && u.status !== statusFilter) {
-      return false
-    }
-
     return true
   }
 
   const floor1MatchingCount = permanentFloor1.filter(isUnitMatchingFilter).length
   const floor2MatchingCount = permanentFloor2.filter(isUnitMatchingFilter).length
-  const isAnyFilterActive = statusFilter !== 'all' || sizeFilter !== 'all' || searchQuery.trim().length > 0
+  const isAnyFilterActive = sizeFilter !== 'all' || searchQuery.trim().length > 0
 
   // Dynamic KPI counts
   const totalUnitsCount = units.length
@@ -1189,12 +1184,8 @@ export const ManagerDashboard: React.FC = () => {
         
         {/* Total Units */}
         <div 
-          onClick={() => { setStatusFilter('all'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'all' && activeTab === 'overview'
-              ? 'border-slate-800 ring-2 ring-slate-900/10 shadow-xs' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
-          }`}
+          onClick={() => setActiveTab('overview')}
+          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Tổng số kho</span>
@@ -1211,12 +1202,8 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Rented */}
         <div 
-          onClick={() => { setStatusFilter('Rented'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Rented' && activeTab === 'overview'
-              ? 'border-blue-600 ring-2 ring-blue-500/20 bg-blue-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
-          }`}
+          onClick={() => setActiveTab('overview')}
+          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Đang thuê</span>
@@ -1233,12 +1220,8 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Available */}
         <div 
-          onClick={() => { setStatusFilter('Available'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Available' && activeTab === 'overview'
-              ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
-          }`}
+          onClick={() => setActiveTab('overview')}
+          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Kho trống</span>
@@ -1255,12 +1238,8 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Pending */}
         <div 
-          onClick={() => { setStatusFilter('Pending'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Pending' && activeTab === 'overview'
-              ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
-          }`}
+          onClick={() => setActiveTab('overview')}
+          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Chờ bàn giao</span>
@@ -1279,12 +1258,8 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Maintenance */}
         <div 
-          onClick={() => { setStatusFilter('Maintenance'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Maintenance' && activeTab === 'overview'
-              ? 'border-purple-500 ring-2 ring-purple-500/20 bg-purple-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
-          }`}
+          onClick={() => setActiveTab('overview')}
+          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Bảo trì kỹ thuật</span>
@@ -1303,12 +1278,8 @@ export const ManagerDashboard: React.FC = () => {
 
         {/* Overdue */}
         <div 
-          onClick={() => { setStatusFilter('Overdue'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Overdue' && activeTab === 'overview'
-              ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
-          }`}
+          onClick={() => setActiveTab('overview')}
+          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Nợ quá hạn</span>
@@ -1485,7 +1456,7 @@ export const ManagerDashboard: React.FC = () => {
           <div className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             {/* Controls Toolbar */}
             <div className="flex flex-col gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
-              {/* Row 1: Floor Selector + Size Dropdown + Status Dropdown + Search Box */}
+              {/* Floor Selector + Size Dropdown + Search Box + Reset Filter Button */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 {/* Floor Selector Tabs */}
                 <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs shrink-0 self-start">
@@ -1523,21 +1494,8 @@ export const ManagerDashboard: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Dropdowns & Search Input */}
+                {/* Size Filter Dropdown, Search Input & Clear Filters Button */}
                 <div className="flex items-center gap-2 flex-wrap flex-1 lg:justify-end">
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
-                  >
-                    <option value="all">Tất cả trạng thái ({totalUnitsCount})</option>
-                    <option value="Available">Kho trống ({availableUnitsCount})</option>
-                    <option value="Rented">Đang thuê ({rentedUnitsCount})</option>
-                    <option value="Pending">Chờ bàn giao ({pendingUnitsCount})</option>
-                    <option value="Overdue">Quá hạn ({overdueUnitsCount})</option>
-                    <option value="Maintenance">Bảo trì ({maintenanceUnitsCount})</option>
-                  </select>
-
                   <select 
                     value={sizeFilter}
                     onChange={(e) => setSizeFilter(e.target.value as any)}
@@ -1559,113 +1517,22 @@ export const ManagerDashboard: React.FC = () => {
                       className="w-full pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs font-mono"
                     />
                   </div>
+
+                  {isAnyFilterActive && (
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setSizeFilter('all')
+                        setSearchQuery('')
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap transition shadow-2xs"
+                      title="Đặt lại toàn bộ bộ lọc"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+                      <span>Xóa bộ lọc</span>
+                    </button>
+                  )}
                 </div>
-              </div>
-
-              {/* Row 2: Quick Status Filter Chips (Tất cả, Kho trống, Đang thuê, Chờ bàn giao, Quá hạn, Bảo trì) */}
-              <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-slate-200/70">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-semibold text-slate-500 mr-1">Lọc nhanh:</span>
-
-                  {/* Tất cả */}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter('all')}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
-                      statusFilter === 'all'
-                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
-                    }`}
-                  >
-                    <span>Tất cả ({totalUnitsCount})</span>
-                  </button>
-
-                  {/* Kho trống */}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter(prev => prev === 'Available' ? 'all' : 'Available')}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
-                      statusFilter === 'Available'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Available' ? 'bg-white' : 'bg-emerald-500'}`}></span>
-                    <span>Kho trống ({availableUnitsCount})</span>
-                  </button>
-
-                  {/* Đang thuê */}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter(prev => prev === 'Rented' ? 'all' : 'Rented')}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
-                      statusFilter === 'Rented'
-                        ? 'bg-blue-600 text-white border-blue-700 shadow-2xs'
-                        : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Rented' ? 'bg-white' : 'bg-blue-600'}`}></span>
-                    <span>Đang thuê ({rentedUnitsCount})</span>
-                  </button>
-
-                  {/* Chờ bàn giao */}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter(prev => prev === 'Pending' ? 'all' : 'Pending')}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
-                      statusFilter === 'Pending'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
-                        : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Pending' ? 'bg-white' : 'bg-amber-500'}`}></span>
-                    <span>Chờ bàn giao ({pendingUnitsCount})</span>
-                  </button>
-
-                  {/* Quá hạn */}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter(prev => prev === 'Overdue' ? 'all' : 'Overdue')}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
-                      statusFilter === 'Overdue'
-                        ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
-                        : 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Overdue' ? 'bg-white' : 'bg-rose-500'}`}></span>
-                    <span>Quá hạn ({overdueUnitsCount})</span>
-                  </button>
-
-                  {/* Bảo trì */}
-                  <button
-                    type="button"
-                    onClick={() => setStatusFilter(prev => prev === 'Maintenance' ? 'all' : 'Maintenance')}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border whitespace-nowrap ${
-                      statusFilter === 'Maintenance'
-                        ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
-                        : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border-purple-200'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${statusFilter === 'Maintenance' ? 'bg-white' : 'bg-purple-600'}`}></span>
-                    <span>Bảo trì ({maintenanceUnitsCount})</span>
-                  </button>
-                </div>
-
-                {isAnyFilterActive && (
-                  <button 
-                    type="button" 
-                    onClick={() => {
-                      setStatusFilter('all')
-                      setSizeFilter('all')
-                      setSearchQuery('')
-                    }}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
-                    title="Đặt lại toàn bộ bộ lọc"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">restart_alt</span>
-                    <span>Xóa bộ lọc</span>
-                  </button>
-                )}
               </div>
             </div>
 

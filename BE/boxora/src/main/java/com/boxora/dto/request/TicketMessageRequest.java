@@ -13,3 +13,4 @@ public class TicketMessageRequest {
     private String messageType;
     private String content;
 }
+
