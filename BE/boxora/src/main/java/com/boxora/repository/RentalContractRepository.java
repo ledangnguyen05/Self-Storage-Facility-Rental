@@ -54,7 +54,7 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "unit.facility", "facility", "booking"})
     @org.springframework.data.jpa.repository.Query("""
             SELECT c FROM RentalContract c
-            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE)
+            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED)
               AND c.endDate < :currentDate
             ORDER BY c.endDate ASC
             """)
@@ -64,7 +64,7 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     @org.springframework.data.jpa.repository.Query("""
             SELECT COUNT(c) FROM RentalContract c
-            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE)
+            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED)
               AND c.endDate < :currentDate
             """)
     long countActiveOrOverdueContractsBeforeDate(

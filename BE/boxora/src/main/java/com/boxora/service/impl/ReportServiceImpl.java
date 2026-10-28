@@ -180,7 +180,7 @@ public class ReportServiceImpl implements ReportService {
             long[] bucket = counts.computeIfAbsent(fId, k -> new long[5]);
             bucket[0] += count;
             switch (status) {
-                case OCCUPIED -> bucket[1] += count;
+                case OCCUPIED, OVERDUE_LOCKED -> bucket[1] += count;
                 case AVAILABLE -> bucket[2] += count;
                 case RESERVED -> bucket[3] += count;
                 case UNDER_MAINTENANCE -> bucket[4] += count;
@@ -255,10 +255,12 @@ public class ReportServiceImpl implements ReportService {
         List<RentalContract> overdueContracts = allContracts.stream()
                 .filter(c -> (c.getStatus() == RentalContractStatus.ACTIVE
                         || c.getStatus() == RentalContractStatus.OVERDUE
+                        || c.getStatus() == RentalContractStatus.OVERDUE_LOCKED
                         || c.getStatus() == RentalContractStatus.EXPIRED)
                         && c.getEndDate() != null && c.getEndDate().isBefore(today))
                 .filter(c -> c.getBooking() == null
                         || (c.getBooking().getStatus() != BookingStatus.CANCELLED
+                        && c.getBooking().getStatus() != BookingStatus.COMPLETED
                         && !"REFUNDED".equalsIgnoreCase(c.getBooking().getPaymentStatus())))
                 .filter(c -> targetFacilityId == null || (c.getFacility() != null && targetFacilityId.equals(c.getFacility().getId())))
                 .toList();
