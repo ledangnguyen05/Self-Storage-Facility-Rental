@@ -24,6 +24,7 @@ import { CancelOverdueBookingModal } from '../../components/modals/CancelOverdue
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
 import { HandoverReturnWorkbench } from '../staff/components/HandoverReturnWorkbench'
+import { PendingReservationsWorkbench } from '../staff/components/PendingReservationsWorkbench'
 import { reservationEmailService } from '../../services/reservationEmailService'
 import { toast } from '../../utils/toast'
 import { RefundManagementWorkbench } from './components/RefundManagementWorkbench'
@@ -130,7 +131,7 @@ export const ManagerDashboard: React.FC = () => {
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
     if (!tab) return false
     if (role === 'STAFF') {
-      return tab === 'overview'
+      return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets'
     }
     return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'refunds' || tab === 'performance' || tab === 'policy'
   }
@@ -185,6 +186,15 @@ export const ManagerDashboard: React.FC = () => {
   const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
   const [renewalsCount, setRenewalsCount] = useState<number>(0)
+
+  // Đếm đơn đặt giữ chỗ chờ liên hệ / chờ xử lý
+  const pendingOrdersCount = useMemo(() => {
+    return upcomingHandovers.filter(b => {
+      const s = String(b.status || '').toUpperCase()
+      if (s === 'CANCELLED' || s === 'REJECTED' || s === 'ACTIVE' || s === 'COMPLETED' || s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED') return false
+      return s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || s === 'PENDING' || !s
+    }).length
+  }, [upcomingHandovers])
 
   // Check-in Filter & Claim States
   const [checkinTimeframe, setCheckinTimeframe] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('all')
@@ -1324,7 +1334,6 @@ export const ManagerDashboard: React.FC = () => {
       </section>
 
       {/* 7 MANAGEMENT-LEVEL SUMMARIES: TABS NAVIGATION */}
-      {role !== 'STAFF' && (
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1">
         <button
           type="button"
@@ -1346,14 +1355,28 @@ export const ManagerDashboard: React.FC = () => {
           </span>
         </button>
 
-        <Link
-          to="/portal/staff?tab=pending_orders"
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-          title="Chuyển tới Bàn Đơn Chờ Xử Lý tại quầy tiếp đón"
+        <button
+          type="button"
+          onClick={() => setActiveTab('pending_orders')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'pending_orders'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+          title="Quản lý đơn đặt giữ chỗ chờ liên hệ / chờ xử lý"
         >
-          <span className="material-symbols-outlined text-[18px] text-amber-600">pending_actions</span>
+          <span className="material-symbols-outlined text-[18px]">pending_actions</span>
           <span>1. Đơn Chờ Xử Lý</span>
-        </Link>
+          {pendingOrdersCount > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'pending_orders'
+                ? 'bg-white text-amber-700'
+                : 'bg-amber-100 text-amber-800 animate-pulse'
+            }`}>
+              {pendingOrdersCount} đơn
+            </span>
+          )}
+        </button>
 
         <button
           type="button"
@@ -1463,6 +1486,7 @@ export const ManagerDashboard: React.FC = () => {
           </span>
         </button>
 
+        {role !== 'STAFF' && (
           <>
             <button
               type="button"
@@ -1490,8 +1514,8 @@ export const ManagerDashboard: React.FC = () => {
               <span>5. Chính Sách Vận Hành Cơ Sở</span>
             </button>
           </>
+        )}
       </div>
-      )}
 
       {/* ============================================================== */}
       {/* TAB 1: SƠ ĐỒ KHO & GIÁM SÁT THIẾT BỊ (SUMMARY 1) */}
@@ -1864,6 +1888,30 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
+      {/* TAB 1: ĐƠN CHỜ XỬ LÝ (PENDING RESERVATIONS & BOOKINGS) */}
+      {/* ============================================================== */}
+      {activeTab === 'pending_orders' && (
+        <PendingReservationsWorkbench
+          facilityId={selectedFacilityId || user?.facilityId}
+          arrivals={upcomingHandovers}
+          highlightedBookingCode={searchParams.get('bookingCode')}
+          onRefresh={() => {
+            fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+            const targetFac = selectedFacilityId || user?.facilityId
+            if (targetFac) void fetchUnits(targetFac)
+          }}
+          onProceedToReception={(bookingId) => {
+            setActiveBookingId(bookingId)
+            setActiveTab('reception')
+            setTimeout(() => {
+              const el = document.getElementById('handover-workbench-section')
+              if (el) el.scrollIntoView({ behavior: 'smooth' })
+            }, 60)
+          }}
+        />
+      )}
+
+      {/* ============================================================== */}
       {/* TAB: XỬ LÝ GIA HẠN HỢP ĐỒNG (THẨM ĐỊNH & THU CƯỚC) */}
       {/* ============================================================== */}
       {activeTab === 'renewals' && (
@@ -1875,7 +1923,7 @@ export const ManagerDashboard: React.FC = () => {
                 Quản Lý &amp; Thẩm Định Gia Hạn Hợp Đồng
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Xem xét, phê duyệt yêu cầu gia hạn kho và thu cước tại quầy cơ sở theo thẩm quyền
+                Xem xét, phê duyệt yêu cầu gia hạn kho, khách hàng ký hợp đồng và thanh toán trực tuyến.
               </p>
             </div>
           </div>

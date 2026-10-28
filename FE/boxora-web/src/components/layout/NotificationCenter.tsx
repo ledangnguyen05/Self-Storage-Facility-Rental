@@ -91,10 +91,16 @@ const saveReadNotificationIds = (ids: Set<string>) => {
 }
 
 const getNotificationAction = (item: NotificationLog, role?: string | null) => {
-  if (item.notificationType === 'BOOKING_PREPARATION' && role === 'STAFF' && item.referenceId) {
+  if (item.notificationType === 'BOOKING_PREPARATION' && item.referenceId) {
+    if (role === 'STAFF') {
+      return {
+        label: 'Xem chi tiết kho',
+        to: `/portal/staff?bookingId=${encodeURIComponent(item.referenceId)}`,
+      }
+    }
     return {
       label: 'Xem chi tiết kho',
-      to: `/portal/staff?bookingId=${encodeURIComponent(item.referenceId)}`,
+      to: `/portal/facility-manager?tab=pending_orders&bookingCode=${encodeURIComponent(item.referenceId)}`,
     }
   }
 
@@ -249,9 +255,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
       setIsOpen(false)
 
       const userRole = String(user?.role?.name || user?.roleName || '').toUpperCase()
-      if (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'OPERATIONS_STAFF') {
+      if (userRole === 'STAFF') {
         window.dispatchEvent(new CustomEvent('boxora_select_staff_pending_booking', { detail: { bookingCode: code } }))
-        navigate(`/staff?tab=pending_orders${code ? `&bookingCode=${encodeURIComponent(code)}` : ''}`)
+        navigate(`/portal/staff?tab=pending_orders${code ? `&bookingCode=${encodeURIComponent(code)}` : ''}`)
+        return
+      }
+      if (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN' || userRole === 'OPERATIONS_STAFF') {
+        window.dispatchEvent(new CustomEvent('boxora_select_staff_pending_booking', { detail: { bookingCode: code } }))
+        navigate(`/portal/facility-manager?tab=pending_orders${code ? `&bookingCode=${encodeURIComponent(code)}` : ''}`)
         return
       }
 

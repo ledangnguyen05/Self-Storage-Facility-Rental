@@ -142,11 +142,11 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: Staff, Facility Manager */}
+            {/* 2. Staff Portal: Staff, Facility Manager, Business Manager, Admin */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }
@@ -155,7 +155,7 @@ function MainContent() {
             <Route
               path="staff/shifts"
               element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <StaffShiftRosterPage />
                 </ProtectedRoute>
               }
