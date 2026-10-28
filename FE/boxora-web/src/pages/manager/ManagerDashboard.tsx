@@ -2732,12 +2732,12 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
                   <span className="text-3xl font-extrabold font-mono text-emerald-600 tabular-nums">
-                    {facilityPolicy?.cancellationFullRefundHours ?? 48}h
+                    {facilityPolicy?.cancellationFullRefundHours ?? 24}h
                   </span>
-                  <span className="text-xs text-slate-500">hoàn 100%</span>
+                  <span className="text-xs text-slate-500">hoàn 100% kể từ khi đặt</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Hoàn {facilityPolicy?.cancellationPartialRefundPercent ?? 50}% nếu hủy trước <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundHours ?? 24}h</strong>
+                  Hoàn {facilityPolicy?.cancellationPartialRefundPercent ?? 70}% nếu hủy từ {facilityPolicy?.cancellationFullRefundHours ?? 24}h - <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundHours ?? 48}h</strong> (Quá 48h hoàn 50%)
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">

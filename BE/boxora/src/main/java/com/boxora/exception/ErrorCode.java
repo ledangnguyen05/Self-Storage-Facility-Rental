@@ -114,7 +114,7 @@ public enum ErrorCode {
     // ========================= FACILITY_POLICY (1100 - 1199) =========================
     FACILITY_POLICY_NOT_FOUND(1100, "Không tìm thấy chính sách cơ sở kho", HttpStatus.NOT_FOUND),
     FACILITY_POLICY_ALREADY_EXISTS(1101, "Cơ sở này đã được thiết lập chính sách", HttpStatus.BAD_REQUEST),
-    FACILITY_POLICY_INVALID_CANCELLATION(1102, "Thời gian hoàn 100% khi hủy phải lớn hơn hoặc bằng thời gian hoàn một phần", HttpStatus.BAD_REQUEST),
+    FACILITY_POLICY_INVALID_CANCELLATION(1102, "Mốc thời gian hoàn 100% kể từ lúc đặt kho phải nhỏ hơn hoặc bằng mốc hoàn một phần", HttpStatus.BAD_REQUEST),
     FACILITY_POLICY_INVALID_PRICES(1103, "Mỗi loại ngăn kho chỉ có một mức giá trong chính sách cơ sở", HttpStatus.BAD_REQUEST),
 
     // ========================= SUPPORT_TICKET (1200 - 1299) =========================

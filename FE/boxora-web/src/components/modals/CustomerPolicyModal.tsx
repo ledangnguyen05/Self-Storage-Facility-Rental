@@ -68,9 +68,9 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
   const depositPercent = policy?.depositPercentage ?? policy?.depositPercent ?? 100
   const minMonths = policy?.minimumRentalMonths ?? 1
   const renewalDays = policy?.renewalWindowDays ?? 7
-  const cancelFullHours = policy?.cancellationFullRefundHours ?? 48
-  const cancelPartHours = policy?.cancellationPartialRefundHours ?? 24
-  const cancelPartPercent = policy?.cancellationPartialRefundPercent ?? 50
+  const cancelFullHours = policy?.cancellationFullRefundHours ?? 24
+  const cancelPartHours = policy?.cancellationPartialRefundHours ?? 48
+  const cancelPartPercent = policy?.cancellationPartialRefundPercent ?? 70
   const returnNoticeDays = policy?.returnNoticeDays ?? 3
   const depositRefundSla = policy?.depositRefundSlaDays ?? 3
   const dailyLateFee = Number(policy?.dailyLateFee ?? policy?.lateFeePerDay ?? 50000)
@@ -257,12 +257,12 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-amber-600 text-[18px]">rule</span>
-                  Mốc thời gian hủy đơn giữ chỗ &amp; Tỷ lệ hoàn cọc
+                  Mốc thời gian hủy đơn giữ chỗ &amp; Tỷ lệ hoàn cọc (kể từ khi đặt kho)
                 </h4>
                 <div className="space-y-2.5 text-xs">
                   <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
                     <span className="font-semibold text-emerald-900 dark:text-emerald-200">
-                      Hủy trước giờ nhận kho &ge; {cancelFullHours} giờ:
+                      Hủy trong vòng &le; {cancelFullHours} giờ kể từ khi đặt kho:
                     </span>
                     <strong className="font-mono font-bold text-emerald-700 dark:text-emerald-400">
                       Hoàn lại 100% tiền cọc
@@ -271,19 +271,19 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
 
                   <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
                     <span className="font-semibold text-amber-900 dark:text-amber-200">
-                      Hủy trước giờ nhận kho từ {cancelPartHours}h đến &lt; {cancelFullHours}h:
+                      Hủy trong khoảng {cancelFullHours}h - {cancelPartHours}h kể từ khi đặt kho:
                     </span>
                     <strong className="font-mono font-bold text-amber-700 dark:text-amber-400">
                       Hoàn lại {cancelPartPercent}% tiền cọc
                     </strong>
                   </div>
 
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-800/60">
-                    <span className="font-semibold text-rose-900 dark:text-rose-200">
-                      Hủy dưới {cancelPartHours} giờ hoặc không đến nhận kho:
+                  <div className="flex items-center justify-between p-3 rounded-lg bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60">
+                    <span className="font-semibold text-sky-900 dark:text-sky-200">
+                      Hủy quá {cancelPartHours} giờ kể từ khi đặt kho:
                     </span>
-                    <strong className="font-mono font-bold text-rose-700 dark:text-rose-400">
-                      Không hoàn tiền cọc
+                    <strong className="font-mono font-bold text-sky-700 dark:text-sky-400">
+                      Hoàn lại 50% tiền cọc
                     </strong>
                   </div>
                 </div>

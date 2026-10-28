@@ -83,6 +83,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
     (booking.status || '').toUpperCase() === 'PAID_PENDING_ASSIGNMENT' ||
     preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ||
     preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ||
+    preview?.milestoneStage === 'STAGE_3_OVER_48H_REFUND' ||
     preview?.milestoneStage === 'STAGE_3_NO_REFUND'
 
   const depositAmount = preview?.depositPaid ?? booking.depositPaid ?? 0
@@ -253,21 +254,21 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                   </div>
 
                   <p className="text-xs leading-relaxed text-indigo-900/90 dark:text-indigo-200/90">
-                    Đơn hàng đã thanh toán trực tuyến tiền cọc và tiền thuê. Quy định hoàn tiền theo 3 mốc thời gian:
+                    Đơn hàng đã thanh toán trực tuyến tiền cọc và tiền thuê. Quy định hoàn tiền theo thời gian kể từ khi đặt kho:
                   </p>
 
                   <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center font-medium">
                     <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ? 'bg-emerald-100 border-emerald-400 text-emerald-900 font-bold dark:bg-emerald-950 dark:text-emerald-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                      <div>Mốc 1 (≥ 48h)</div>
+                      <div>Mốc 1 (&le; 24h)</div>
                       <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">Hoàn 100% cọc</div>
                     </div>
                     <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold dark:bg-amber-950 dark:text-amber-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
                       <div>Mốc 2 (24h - 48h)</div>
-                      <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn 50% cọc</div>
+                      <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn 70% cọc</div>
                     </div>
-                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_3_NO_REFUND' ? 'bg-rose-100 border-rose-400 text-rose-900 font-bold dark:bg-rose-950 dark:text-rose-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                      <div>Mốc 3 (&lt; 24h)</div>
-                      <div className="font-bold text-rose-600 dark:text-rose-400 mt-0.5">Không hoàn cọc</div>
+                    <div className={`p-1.5 rounded-lg border ${(preview?.milestoneStage === 'STAGE_3_OVER_48H_REFUND' || preview?.milestoneStage === 'STAGE_3_NO_REFUND') ? 'bg-sky-100 border-sky-400 text-sky-900 font-bold dark:bg-sky-950 dark:text-sky-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 3 (&gt; 48h)</div>
+                      <div className="font-bold text-sky-600 dark:text-sky-400 mt-0.5">Hoàn 50% cọc</div>
                     </div>
                   </div>
 

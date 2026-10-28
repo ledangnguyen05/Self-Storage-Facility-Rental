@@ -56,9 +56,9 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
   const depositPct = policy?.depositPercentage ?? policy?.depositPercent ?? 100
   const minMonths = policy?.minimumRentalMonths ?? 1
   const renewalDays = policy?.renewalWindowDays ?? 3
-  const cancelFullHours = policy?.cancellationFullRefundHours ?? 48
-  const cancelPartHours = policy?.cancellationPartialRefundHours ?? 24
-  const cancelPartPct = policy?.cancellationPartialRefundPercent ?? 50
+  const cancelFullHours = policy?.cancellationFullRefundHours ?? 24
+  const cancelPartHours = policy?.cancellationPartialRefundHours ?? 48
+  const cancelPartPct = policy?.cancellationPartialRefundPercent ?? 70
   const noticeDays = policy?.returnNoticeDays ?? 0
   const slaDays = policy?.depositRefundSlaDays ?? 5
   const lateFee = Number(policy?.dailyLateFee ?? policy?.lateFeePerDay ?? 50000)
@@ -167,9 +167,9 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
               <h4 className="font-bold text-xs text-slate-900 uppercase">3. Hướng Dẫn Khách Hủy Booking</h4>
             </div>
             <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
-              <li>Hủy trước &ge; <strong>{cancelFullHours} giờ</strong>: Hoàn 100% tiền cọc tự động về tài khoản.</li>
-              <li>Hủy trong khoảng {cancelPartHours}h - {cancelFullHours}h: Hoàn một phần <strong>{cancelPartPct}% tiền cọc</strong>.</li>
-              <li>Hủy dưới <strong>{cancelPartHours} giờ</strong>: Tịch thu tiền cọc theo BR-RULE-004.</li>
+              <li>Hủy trong vòng &le; <strong>{cancelFullHours} giờ</strong> kể từ lúc đặt kho: Hoàn 100% tiền cọc tự động qua quy trình đối soát hoàn tiền.</li>
+              <li>Hủy trong khoảng {cancelFullHours}h - {cancelPartHours}h kể từ lúc đặt kho: Hoàn <strong>{cancelPartPct}% tiền cọc</strong> (khấu trừ {100 - cancelPartPct}% phí giữ chỗ).</li>
+              <li>Hủy quá <strong>{cancelPartHours} giờ</strong> kể từ lúc đặt kho: Hoàn <strong>50% tiền cọc</strong> (khấu trừ 50% phí cam kết giữ chỗ).</li>
             </ul>
           </div>
 

@@ -248,15 +248,15 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
             <div className="flex flex-col gap-2 text-xs">
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">Hủy hoàn 100% tiền cọc:</span>
-                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Trước check-in &ge; {cancelFullHours ?? '—'}h</span>
+                <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">Trong vòng &le; {cancelFullHours ?? '24'}h kể từ khi đặt</span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                <span className="text-slate-600 dark:text-slate-400">Hủy hoàn một phần ({cancelPartPct == null ? '—' : `${cancelPartPct}%`}):</span>
-                <span className="font-mono font-bold text-amber-700 dark:text-amber-400">Trước check-in &ge; {cancelPartHours ?? '—'}h</span>
+                <span className="text-slate-600 dark:text-slate-400">Hủy hoàn một phần ({cancelPartPct == null ? '70' : `${cancelPartPct}`}%):</span>
+                <span className="font-mono font-bold text-amber-700 dark:text-amber-400">Từ {cancelFullHours ?? '24'}h đến &le; {cancelPartHours ?? '48'}h</span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                <span className="text-slate-600 dark:text-slate-400">Hủy dưới {cancelPartHours ?? '—'}h:</span>
-                <span className="font-mono font-bold text-rose-700 dark:text-rose-400">Không hoàn cọc (Tịch thu)</span>
+                <span className="text-slate-600 dark:text-slate-400">Hủy quá {cancelPartHours ?? '48'}h:</span>
+                <span className="font-mono font-bold text-sky-700 dark:text-sky-400">Hoàn 50% tiền cọc</span>
               </div>
             </div>
           </div>

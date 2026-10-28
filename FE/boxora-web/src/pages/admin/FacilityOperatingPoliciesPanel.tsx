@@ -291,10 +291,13 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                         {hasPolicy ? (
                           <div className="flex flex-col items-center">
                             <span className="font-bold text-emerald-700">
-                              100% (≥ {policy?.cancellationFullRefundHours ?? 48}h)
+                              100% (&le; {policy?.cancellationFullRefundHours ?? 24}h)
                             </span>
                             <span className="text-[10px] text-amber-600">
-                              {policy?.cancellationPartialRefundPercent ?? '—'}% (≥ {policy?.cancellationPartialRefundHours ?? '—'}h)
+                              {policy?.cancellationPartialRefundPercent ?? 70}% ({policy?.cancellationFullRefundHours ?? 24}h - {policy?.cancellationPartialRefundHours ?? 48}h)
+                            </span>
+                            <span className="text-[10px] text-sky-600">
+                              50% (&gt; {policy?.cancellationPartialRefundHours ?? 48}h)
                             </span>
                           </div>
                         ) : (

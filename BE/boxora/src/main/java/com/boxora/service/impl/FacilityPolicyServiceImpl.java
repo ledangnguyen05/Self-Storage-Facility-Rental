@@ -78,7 +78,7 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
     public FacilityPolicyResponse create(FacilityPolicyCreateRequest request) {
         if (request.getCancellationFullRefundHours() != null
                 && request.getCancellationPartialRefundHours() != null
-                && request.getCancellationFullRefundHours() < request.getCancellationPartialRefundHours()) {
+                && request.getCancellationFullRefundHours() > request.getCancellationPartialRefundHours()) {
             throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
         }
 
@@ -134,7 +134,7 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
                 ? request.getCancellationPartialRefundHours()
                 : policy.getCancellationPartialRefundHours();
 
-        if (fullHours < partialHours) {
+        if (fullHours > partialHours) {
             throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
         }
 

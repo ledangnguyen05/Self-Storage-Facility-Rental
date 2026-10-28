@@ -1409,10 +1409,10 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                     </div>
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                       <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                                        {t('Hủy trước check-in', 'Cancellation')}
+                                        {t('Hủy đơn & Hoàn cọc', 'Cancellation & Refund')}
                                       </div>
                                       <div className="mt-0.5 font-bold text-emerald-700 dark:text-emerald-400">
-                                        100% (&ge;{cancelFullHours ?? '—'}h) · {cancelPartPct == null ? '—' : `${cancelPartPct}%`} (&ge;{cancelPartHours ?? '—'}h)
+                                        100% (&le;{cancelFullHours ?? 24}h) · {cancelPartPct ?? 70}% ({cancelFullHours ?? 24}h-{cancelPartHours ?? 48}h) · 50% (&gt;{cancelPartHours ?? 48}h)
                                       </div>
                                     </div>
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">

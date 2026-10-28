@@ -79,10 +79,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     }
 
     /**
-     * Xem trước thông tin hoàn tiền theo chính sách 3 mốc:
-     * - Mốc 1 (>= 48h): Hoàn 100% tiền cọc
-     * - Mốc 2 (24h - 48h): Hoàn 50% tiền cọc (giữ lại 50% phí hủy)
-     * - Mốc 3 (< 24h hoặc sau check-in): Hoàn 0% (khấu trừ 100% tiền cọc)
+     * Xem trước thông tin hoàn tiền theo chính sách 3 mốc tính từ thời gian đặt kho:
+     * - Mốc 1 (trong vòng <= 24h kể từ khi đặt kho): Hoàn 100% tiền cọc
+     * - Mốc 2 (trong khoảng 24h - 48h kể từ khi đặt kho): Hoàn 70% tiền cọc (khấu trừ 30% phí giữ chỗ)
+     * - Mốc 3 (quá > 48h kể từ khi đặt kho): Hoàn 50% tiền cọc (khấu trừ 50% chi phí cam kết giữ chỗ)
      */
     @Override
     @Transactional(readOnly = true)
@@ -94,24 +94,26 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
         FacilityPolicy policy = getFacilityPolicy(booking);
         int fullRefundHours = (policy != null && policy.getCancellationFullRefundHours() != null)
-                ? policy.getCancellationFullRefundHours() : 48;
+                ? policy.getCancellationFullRefundHours() : 24;
         int partialRefundHours = (policy != null && policy.getCancellationPartialRefundHours() != null)
-                ? policy.getCancellationPartialRefundHours() : 24;
+                ? policy.getCancellationPartialRefundHours() : 48;
         double partialRefundPercent = (policy != null && policy.getCancellationPartialRefundPercent() != null)
-                ? policy.getCancellationPartialRefundPercent() : 50.0;
+                ? policy.getCancellationPartialRefundPercent() : 70.0;
 
         String unitCode = booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null;
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
         BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
 
-        // Xác định mốc thời gian nhận kho chuẩn xác:
-        // Ưu tiên expectedCheckInAt của booking (lịch hẹn nhận kho đang có hiệu lực).
-        // Nếu không có, dùng ngày bắt đầu thuê (startDate) kết hợp giờ mở cửa của cơ sở (mặc định 08:00 sáng).
         LocalDateTime checkinDateTime = resolveEffectiveCheckInDateTime(booking);
         LocalDateTime now = LocalDateTime.now();
         Duration durationUntilCheckin = Duration.between(now, checkinDateTime);
         long hoursUntilCheckin = durationUntilCheckin.toHours();
-        String timeRemainingLabel = formatCalmRemainingTime(durationUntilCheckin, hoursUntilCheckin);
+
+        // Căn cứ tính chính sách hủy đặt kho: thời gian kể từ khi đặt kho (booking.getCreatedAt())
+        LocalDateTime bookingCreatedAt = booking.getCreatedAt() != null ? booking.getCreatedAt() : now;
+        Duration durationSinceBooking = Duration.between(bookingCreatedAt, now);
+        long hoursSinceBooking = Math.max(0, durationSinceBooking.toHours());
+        String timeRemainingLabel = formatBookingCancellationTimeLabel(durationSinceBooking, hoursSinceBooking, fullRefundHours, partialRefundHours);
 
         // Nếu booking ở trạng thái PENDING_PAYMENT hoặc PENDING_APPROVAL: chưa thanh toán cọc -> không có tiền hoàn và không phạt
         if (booking.getStatus() == BookingStatus.PENDING_PAYMENT || booking.getStatus() == BookingStatus.PENDING_APPROVAL) {
@@ -120,10 +122,12 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .bookingCode(booking.getBookingCode())
                     .unitCode(unitCode)
                     .startDate(booking.getStartDate())
+                    .bookingDateTime(bookingCreatedAt)
                     .checkInDateTime(checkinDateTime)
                     .depositPaid(depositPaid)
                     .totalRentalFee(totalRentalFee)
                     .hoursUntilCheckin(hoursUntilCheckin)
+                    .hoursSinceBooking(hoursSinceBooking)
                     .timeRemainingLabel(timeRemainingLabel)
                     .milestoneStage("STAGE_PENDING_NO_PAYMENT")
                     .refundPercentage(0.0)
@@ -140,29 +144,30 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         BigDecimal penaltyAmount;
         String policyDescription;
 
-        if (hoursUntilCheckin >= fullRefundHours) {
-            // MỐC 1: >= 48h trước lịch hẹn nhận kho -> Hoàn 100% tiền cọc
+        if (hoursSinceBooking <= fullRefundHours) {
+            // MỐC 1: Trong vòng 24h kể từ thời gian đặt kho -> Hoàn 100% tiền cọc
             milestoneStage = "STAGE_1_FULL_REFUND";
             refundPercentage = 100.0;
             refundAmount = depositPaid;
             penaltyAmount = BigDecimal.ZERO;
-            policyDescription = String.format("Mốc 1: Hủy trước giờ hẹn nhận kho từ %d giờ trở lên. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
-        } else if (hoursUntilCheckin >= partialRefundHours) {
-            // MỐC 2: Từ 24h đến dưới 48h trước lịch hẹn nhận kho -> Hoàn 50% tiền cọc
+            policyDescription = String.format("Mốc 1: Hủy trong vòng %d giờ kể từ thời gian đặt kho. Hoàn 100%% tiền cọc đã đóng.", fullRefundHours);
+        } else if (hoursSinceBooking <= partialRefundHours) {
+            // MỐC 2: Từ 24h đến 48h kể từ thời gian đặt kho -> Hoàn 70% tiền cọc
             milestoneStage = "STAGE_2_PARTIAL_REFUND";
             refundPercentage = partialRefundPercent;
             refundAmount = depositPaid.multiply(BigDecimal.valueOf(partialRefundPercent / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
             penaltyAmount = depositPaid.subtract(refundAmount);
-            policyDescription = String.format("Mốc 2: Hủy trước giờ hẹn nhận kho từ %d đến dưới %d giờ. Hoàn %.0f%% tiền cọc, khấu trừ %.0f%% chi phí giữ chỗ.",
-                    partialRefundHours, fullRefundHours, partialRefundPercent, 100.0 - partialRefundPercent);
+            policyDescription = String.format("Mốc 2: Hủy trong khoảng từ %d đến %d giờ kể từ thời gian đặt kho. Hoàn %.0f%% tiền cọc, khấu trừ %.0f%% chi phí giữ chỗ.",
+                    fullRefundHours, partialRefundHours, partialRefundPercent, 100.0 - partialRefundPercent);
         } else {
-            // MỐC 3: Dưới 24h trước lịch hẹn nhận kho hoặc đã qua lịch hẹn -> Áp dụng chính sách hủy sát giờ
-            milestoneStage = "STAGE_3_NO_REFUND";
-            refundPercentage = 0.0;
-            refundAmount = BigDecimal.ZERO;
-            penaltyAmount = depositPaid;
-            policyDescription = String.format("Mốc 3: Hủy dưới %d giờ trước giờ hẹn nhận kho hoặc đã qua giờ hẹn. Khấu trừ 100%% tiền cọc theo điều khoản hủy sát giờ.",
+            // MỐC 3: Quá 48h kể từ thời gian đặt kho -> Hoàn 50% tiền cọc
+            milestoneStage = "STAGE_3_OVER_48H_REFUND";
+            refundPercentage = 50.0;
+            refundAmount = depositPaid.multiply(BigDecimal.valueOf(50.0 / 100.0))
+                    .setScale(2, RoundingMode.HALF_UP);
+            penaltyAmount = depositPaid.subtract(refundAmount);
+            policyDescription = String.format("Mốc 3: Hủy quá %d giờ kể từ thời gian đặt kho. Hoàn 50%% tiền cọc, khấu trừ 50%% chi phí cam kết giữ chỗ.",
                     partialRefundHours);
         }
 
@@ -173,10 +178,12 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .bookingCode(booking.getBookingCode())
                 .unitCode(unitCode)
                 .startDate(booking.getStartDate())
+                .bookingDateTime(bookingCreatedAt)
                 .checkInDateTime(checkinDateTime)
                 .depositPaid(depositPaid)
                 .totalRentalFee(totalRentalFee)
                 .hoursUntilCheckin(hoursUntilCheckin)
+                .hoursSinceBooking(hoursSinceBooking)
                 .timeRemainingLabel(timeRemainingLabel)
                 .milestoneStage(milestoneStage)
                 .refundPercentage(refundPercentage)
@@ -585,6 +592,28 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
         // Fallback an toàn nếu thiếu cả startDate: lấy ngày tạo đơn cộng 1 ngày lúc 08:00
         return LocalDateTime.now().plusDays(1).withHour(8).withMinute(0).withSecond(0);
+    }
+
+    /**
+     * Định dạng nhãn thời gian tính từ khi đặt kho phục vụ hiển thị chính sách hủy:
+     */
+    private String formatBookingCancellationTimeLabel(Duration durationSinceBooking, long hoursSinceBooking, int fullRefundHours, int partialRefundHours) {
+        if (hoursSinceBooking < 1) {
+            long minutes = Math.max(1, durationSinceBooking.toMinutes());
+            return String.format("Đã đặt kho %d phút trước (Trong khung %dh đầu - Hoàn 100%% cọc)", minutes, fullRefundHours);
+        }
+        if (hoursSinceBooking <= fullRefundHours) {
+            return String.format("Đã đặt kho %d giờ (Trong khung %dh đầu - Hoàn 100%% cọc)", hoursSinceBooking, fullRefundHours);
+        }
+        if (hoursSinceBooking <= partialRefundHours) {
+            return String.format("Đã đặt kho %d giờ (Khung %dh - %dh - Hoàn 70%% cọc)", hoursSinceBooking, fullRefundHours, partialRefundHours);
+        }
+        long days = durationSinceBooking.toDays();
+        long remainingHours = hoursSinceBooking % 24;
+        if (days >= 1) {
+            return String.format("Đã đặt kho %d ngày %d giờ (Quá %dh - Hoàn 50%% cọc)", days, remainingHours, partialRefundHours);
+        }
+        return String.format("Đã đặt kho %d giờ (Quá %dh - Hoàn 50%% cọc)", hoursSinceBooking, partialRefundHours);
     }
 
     /**
