@@ -30,6 +30,7 @@ import com.boxora.repository.UserRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.FileStorageService;
 import com.boxora.service.SupportTicketService;
+import com.boxora.service.EmailService;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.RentalContract;
 import com.boxora.enums.RentalContractStatus;
@@ -41,6 +42,7 @@ import com.boxora.repository.PaymentRepository;
 import com.boxora.entity.NotificationLog;
 import com.boxora.enums.NotificationChannel;
 import com.boxora.enums.NotificationType;
+import com.boxora.enums.UnitStatus;
 import com.boxora.entity.Payment;
 import com.boxora.enums.PaymentType;
 import com.boxora.enums.PaymentStatus;
@@ -74,6 +76,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
     private final RequestContext requestContext;
     private final NotificationLogRepository notificationLogRepository;
     private final PaymentRepository paymentRepository;
+    private final EmailService emailService;
 
     @Override
     public SupportTicketResponse createTicket(SupportTicketRequest request) {
@@ -238,6 +241,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         // Audit log
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus().name(),
                 "Tạo phiếu báo cáo sự cố mới " + ticketCode + " (" + category + ", " + priority + ")");
+
+        notifyFacilityStaffNewTicket(ticket);
 
         log.info("Created support ticket {} for customer {} at facility {}", ticketCode, customer.getId(),
                 facility != null ? facility.getCode() : "UNKNOWN");
@@ -443,6 +448,11 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_ASSIGN, oldStatus.name(), ticket.getStatus().name(),
                 currentUser.getFullName() + " đã tiếp nhận xử lý ticket tại cơ sở");
 
+        sendCustomerTicketNotification(ticket,
+                "Nhân viên tiếp nhận yêu cầu #" + ticket.getTicketCode(),
+                "Nhân viên " + currentUser.getFullName() + " đang xử lý yêu cầu #" + ticket.getTicketCode() + " của bạn.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
         return mapToResponse(ticket);
     }
 
@@ -627,11 +637,32 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 "Đội ngũ Boxora đã xử lý xong yêu cầu #" + ticket.getTicketCode() + " của bạn. Ghi chú: " + note,
                 NotificationType.SUPPORT_TICKET_UPDATE);
 
+        try {
+            if (ticket.getCustomer() != null && ticket.getCustomer().getEmail() != null) {
+                emailService.sendSimpleEmail(
+                        ticket.getCustomer().getEmail(),
+                        "Boxora - Yêu cầu hỗ trợ #" + ticket.getTicketCode() + " đã được giải quyết",
+                        "Kính chào " + ticket.getCustomer().getFullName() + ",\n\n"
+                                + "Yêu cầu hỗ trợ #" + ticket.getTicketCode() + " (" + ticket.getTitle() + ") của quý khách đã được nhân viên hoàn tất xử lý.\n"
+                                + "Nội dung giải quyết: " + note + "\n\n"
+                                + "Quý khách vui lòng kiểm tra và xác nhận đóng yêu cầu hoặc đánh giá mức độ hài lòng trên hệ thống Boxora.\n\n"
+                                + "Trân trọng,\nĐội ngũ Boxora."
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to send resolve notification email for ticket {}: {}", ticket.getTicketCode(), ex.getMessage());
+        }
+
         return mapToResponse(ticket);
     }
 
     @Override
     public SupportTicketResponse closeTicket(UUID id, String closingNote) {
+        return closeTicketWithRating(id, closingNote, null, null);
+    }
+
+    @Override
+    public SupportTicketResponse closeTicketWithRating(UUID id, String closingNote, Integer rating, String feedback) {
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
         String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
         if ("BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) || "ADMIN".equalsIgnoreCase(currentUserRole)) {
@@ -665,14 +696,23 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         TicketStatus oldStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.CLOSED);
         ticket.setClosedAt(LocalDateTime.now());
+        if (rating != null && rating >= 1 && rating <= 5) {
+            ticket.setRating(rating);
+        }
+        if (feedback != null && !feedback.isBlank()) {
+            ticket.setCustomerFeedback(feedback.trim());
+        }
 
-        String feedback = (closingNote != null && !closingNote.isBlank()) ? closingNote.trim() : "Xác nhận đóng hoàn tất";
-        ticket.setResolutionNote(ticket.getResolutionNote() + "\n[ĐÓNG PHIẾU]: " + feedback);
+        String noteText = (closingNote != null && !closingNote.isBlank()) ? closingNote.trim() : (feedback != null ? feedback : "Xác nhận đóng hoàn tất");
+        if (rating != null) {
+            noteText += " [Đánh giá: " + rating + " sao]";
+        }
+        ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n[ĐÓNG PHIẾU]: " + noteText : "[ĐÓNG PHIẾU]: " + noteText);
 
         ticket = supportTicketRepository.save(ticket);
 
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_CLOSE, oldStatus.name(), TicketStatus.CLOSED.name(),
-                "Đóng phiếu sự cố: " + feedback);
+                "Đóng phiếu sự cố: " + noteText);
 
         sendCustomerTicketNotification(ticket,
                 "Đã đóng phiếu yêu cầu #" + ticket.getTicketCode(),
@@ -1235,6 +1275,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .fmApprovedByName(t.getFmApprovedBy() != null ? t.getFmApprovedBy().getFullName() : null)
                 .fmApprovalNote(t.getFmApprovalNote())
                 .refundStatus(t.getRefundStatus())
+                .rating(t.getRating())
+                .customerFeedback(t.getCustomerFeedback())
                 .build();
     }
 
@@ -1290,6 +1332,276 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             return "*".repeat(rawAccount.length() - 4) + rawAccount.substring(rawAccount.length() - 4);
         }
         return rawAccount;
+    }
+
+    private void notifyFacilityStaffNewTicket(SupportTicket ticket) {
+        if (ticket.getFacility() == null) return;
+        try {
+            List<User> staffList = userRepository.findByFacility_IdAndRole_Name(ticket.getFacility().getId(), "STAFF");
+            List<User> fmList = userRepository.findByFacility_IdAndRole_Name(ticket.getFacility().getId(), "FACILITY_MANAGER");
+            List<User> recipients = new ArrayList<>();
+            if (staffList != null) recipients.addAll(staffList);
+            if (fmList != null) recipients.addAll(fmList);
+
+            for (User staff : recipients) {
+                if (staff.getIsActive() != null && !staff.getIsActive()) continue;
+                NotificationLog logEntry = NotificationLog.builder()
+                        .recipient(staff)
+                        .recipientEmail(staff.getEmail())
+                        .recipientName(staff.getFullName())
+                        .facility(ticket.getFacility())
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.SUPPORT_TICKET_UPDATE)
+                        .referenceType("SUPPORT_TICKET")
+                        .referenceId(ticket.getId())
+                        .title("Sự cố mới tại cơ sở #" + ticket.getTicketCode())
+                        .content("Có yêu cầu hỗ trợ mới [" + ticket.getTitle() + "] tại ô kho " + (ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode() : "N/A"))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(logEntry);
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to notify facility staff about new ticket {}: {}", ticket.getTicketCode(), ex.getMessage());
+        }
+    }
+
+    @Override
+    public SupportTicketResponse regeneratePin(UUID ticketId) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Booking booking = ticket.getBooking();
+        if (booking == null && ticket.getStorageUnit() != null) {
+            booking = bookingRepository.findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(
+                    ticket.getStorageUnit().getId(),
+                    List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED)
+            ).orElse(null);
+        }
+
+        if (booking == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Không tìm thấy hợp đồng / đơn thuê kho đang hoạt động liên kết với sự cố này.");
+        }
+
+        String newPin = String.format("%06d", ThreadLocalRandom.current().nextInt(100000, 999999));
+        booking.setAccessPin(newPin);
+        bookingRepository.save(booking);
+
+        String unitCode = ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode()
+                : (booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A");
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
+                "Cấp lại mã PIN khẩn cấp (" + newPin + ") cho kho #" + unitCode);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Hệ thống đã kích hoạt lệnh cấp lại mã PIN mới cho kho #" + unitCode)
+                .result("Mã PIN mới đã được đồng bộ xuống khóa thông minh: " + newPin)
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Cấp lại mã PIN mới cho kho #" + unitCode,
+                "Mã PIN khóa điện tử mới của quý khách là: " + newPin + ". Vui lòng thử mở kho bằng mã số mới này.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        if (ticket.getCustomer() != null && ticket.getCustomer().getEmail() != null) {
+            try {
+                emailService.sendHandoverPinEmail(
+                        ticket.getCustomer().getEmail(),
+                        ticket.getCustomer().getFullName(),
+                        unitCode,
+                        booking.getBookingCode(),
+                        newPin,
+                        ticket.getFacility() != null ? ticket.getFacility().getName() : "Boxora"
+                );
+            } catch (Exception ignored) {}
+        }
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse remoteUnlock(UUID ticketId) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        String unitCode = ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode()
+                : (ticket.getBooking() != null && ticket.getBooking().getStorageUnit() != null ? ticket.getBooking().getStorageUnit().getUnitCode() : "N/A");
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
+                "Kích hoạt mở khóa từ xa khẩn cấp cho kho #" + unitCode);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Nhân viên kích hoạt lệnh mở khóa từ xa khẩn cấp cho kho #" + unitCode)
+                .result("Lệnh mở khóa từ xa đã gửi đến khóa IoT thành công.")
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Mở khóa từ xa kho #" + unitCode,
+                "Nhân viên vận hành đã kích hoạt mở khóa từ xa khẩn cấp cho kho #" + unitCode + " của bạn.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse adjustBilling(UUID ticketId, BigDecimal amount, String note) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        String details = "Điều chỉnh / miễn trừ phụ phí (" + (amount != null ? String.format("%,dđ", amount.longValue()) : "0đ") + "): " + (note != null ? note : "Theo yêu cầu rà soát của khách hàng");
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(), details);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Điều chỉnh phí / hóa đơn: " + details)
+                .result("Đã ghi nhận điều chỉnh thanh toán.")
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Cập nhật hóa đơn / phí dịch vụ #" + ticket.getTicketCode(),
+                "Đội ngũ vận hành đã rà soát và điều chỉnh hóa đơn của quý khách: " + details,
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse setUnitMaintenance(UUID ticketId, String reason, String maintainerName) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        StorageUnit unit = ticket.getStorageUnit();
+        if (unit == null && ticket.getBooking() != null) {
+            unit = ticket.getBooking().getStorageUnit();
+        }
+        if (unit == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy ô kho liên kết để chuyển trạng thái bảo trì");
+        }
+
+        unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+        unit.setMaintenanceReason(reason != null && !reason.isBlank() ? reason : "Báo cáo bảo trì từ sự cố #" + ticket.getTicketCode());
+        unit.setMaintenanceBy(maintainerName != null && !maintainerName.isBlank() ? maintainerName : "Nhân viên vận hành");
+        unit.setMaintenanceAt(LocalDateTime.now());
+        storageUnitRepository.save(unit);
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
+                "Chuyển ô kho #" + unit.getUnitCode() + " sang trạng thái BẢO TRÌ (MAINTENANCE): " + reason);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("STAFF")
+                .contactTarget(ticket.getFacility() != null ? ticket.getFacility().getName() : "Facility")
+                .summary("Đã chuyển kho #" + unit.getUnitCode() + " sang trạng thái BẢO TRÌ")
+                .result("Lý do: " + reason + " - Người xử lý: " + maintainerName)
+                .build();
+        contactLogRepository.save(logEntry);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse transferUnit(UUID ticketId, UUID targetUnitId, String reason) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Booking booking = ticket.getBooking();
+        if (booking == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND, "Không tìm thấy hợp đồng thuê kho liên kết để điều chuyển");
+        }
+
+        StorageUnit targetUnit = storageUnitRepository.findById(targetUnitId)
+                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy ô kho chuyển đến"));
+
+        StorageUnit oldUnit = booking.getStorageUnit();
+        if (oldUnit != null) {
+            oldUnit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+            oldUnit.setMaintenanceReason("Đã chuyển khách sang kho #" + targetUnit.getUnitCode() + " do sự cố #" + ticket.getTicketCode());
+            oldUnit.setMaintenanceAt(LocalDateTime.now());
+            storageUnitRepository.save(oldUnit);
+        }
+
+        targetUnit.setStatus(UnitStatus.OCCUPIED);
+        storageUnitRepository.save(targetUnit);
+
+        booking.setStorageUnit(targetUnit);
+        bookingRepository.save(booking);
+
+        ticket.setStorageUnit(targetUnit);
+        ticket = supportTicketRepository.save(ticket);
+
+        String desc = "Đã chuyển đổi kho từ #" + (oldUnit != null ? oldUnit.getUnitCode() : "cũ") + " sang kho #" + targetUnit.getUnitCode() + ". Lý do: " + reason;
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(), desc);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("CUSTOMER_REPLY")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Thực hiện chuyển kho tạm thời: " + desc)
+                .result("Đã cập nhật vị trí kho mới trong hợp đồng.")
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Hỗ trợ chuyển ô kho #" + targetUnit.getUnitCode(),
+                "Hệ thống đã hỗ trợ chuyển đồ sang ô kho mới #" + targetUnit.getUnitCode() + " (" + (targetUnit.getUnitType() != null ? targetUnit.getUnitType().getTypeName() : "") + ").",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketContactLogResponse addTicketMessage(UUID ticketId, String messageType, String content) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        User sender = requestContext.currentUserId() != null
+                ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer())
+                : ticket.getCustomer();
+
+        boolean isCustomerReply = "CUSTOMER_REPLY".equalsIgnoreCase(messageType) || "REPLY".equalsIgnoreCase(messageType);
+        String method = isCustomerReply ? "CUSTOMER_REPLY" : "INTERNAL_NOTE";
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod(method)
+                .contactedBy(sender)
+                .targetRole(isCustomerReply ? "CUSTOMER" : "STAFF")
+                .contactTarget(isCustomerReply ? (ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer") : "Internal Team")
+                .summary(content)
+                .result(isCustomerReply ? "Đã gửi phản hồi đến khách hàng" : "Ghi chú nội bộ nhân viên")
+                .build();
+
+        logEntry = contactLogRepository.save(logEntry);
+
+        if (isCustomerReply) {
+            sendCustomerTicketNotification(ticket,
+                    "Phản hồi từ nhân viên xử lý yêu cầu #" + ticket.getTicketCode(),
+                    content,
+                    NotificationType.SUPPORT_TICKET_UPDATE);
+        }
+
+        return mapToContactLogResponse(logEntry);
     }
 
 }

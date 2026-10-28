@@ -49,6 +49,8 @@ export interface SupportTicketRecord {
   createdByStaffName?: string
   createdByStaffRole?: string
   isStaffRecorded?: boolean
+  rating?: number
+  customerFeedback?: string
   createdAt?: string
   updatedAt?: string
 
@@ -213,6 +215,41 @@ export const supportTicketService = {
       params: { note },
     })
     return response.data?.data as SupportTicketRecord
+  },
+
+  async closeTicketWithRating(id: string, data: { rating: number; feedback?: string; note?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/close`, data)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async regeneratePin(id: string) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/regenerate-pin`)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async remoteUnlock(id: string) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/remote-unlock`)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async adjustBilling(id: string, data: { amount?: number; note?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/adjust-billing`, data)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async setUnitMaintenance(id: string, data: { reason?: string; maintainerName?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/maintenance`, data)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async transferUnit(id: string, data: { targetUnitId: string; reason?: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/transfer-unit`, data)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async addTicketMessage(id: string, data: { messageType: 'INTERNAL_NOTE' | 'CUSTOMER_REPLY'; content: string }) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/messages`, data)
+    return response.data?.data as ContactLogRecord
   },
 
   async reopenTicket(id: string, reason: string) {

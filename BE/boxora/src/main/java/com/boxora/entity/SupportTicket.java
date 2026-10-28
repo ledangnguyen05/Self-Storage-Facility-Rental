@@ -117,4 +117,10 @@ public class SupportTicket extends BaseEntity {
     @Column(name = "refund_status", length = 50)
     @Builder.Default
     private String refundStatus = "NONE";
+
+    @Column(name = "rating")
+    private Integer rating;
+
+    @Column(name = "customer_feedback", columnDefinition = "TEXT")
+    private String customerFeedback;
 }

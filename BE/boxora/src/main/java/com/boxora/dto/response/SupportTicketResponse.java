@@ -61,4 +61,6 @@ public class SupportTicketResponse {
     private String fmApprovedByName;
     private String fmApprovalNote;
     private String refundStatus;
+    private Integer rating;
+    private String customerFeedback;
 }

@@ -22,6 +22,7 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: string; color: stri
   CLIMATE_TEMP: { label: 'Kiểm tra nhiệt độ / độ ẩm', icon: 'thermostat', color: 'bg-teal-100 text-teal-900 border-teal-300' },
   PAYMENT_ISSUE: { label: 'Thanh toán & Hóa đơn', icon: 'receipt_long', color: 'bg-indigo-100 text-indigo-900 border-indigo-300' },
   FACILITY_DAMAGE: { label: 'Hư hỏng cơ sở vật chất', icon: 'build', color: 'bg-orange-100 text-orange-900 border-orange-300' },
+  CLEANLINESS_PEST: { label: 'Vệ sinh & Côn trùng', icon: 'pest_control', color: 'bg-lime-100 text-lime-900 border-lime-300' },
   OTHER: { label: 'Yêu cầu khác', icon: 'help_outline', color: 'bg-slate-100 text-slate-800 border-slate-300' },
 }
 
@@ -53,9 +54,17 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const [ticketCategory, setTicketCategory] = useState<SupportTicketCategory>('LOCK_ISSUE')
   const [ticketTitle, setTicketTitle] = useState<string>('')
   const [ticketContent, setTicketContent] = useState<string>('')
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [evidencePreviewUrl, setEvidencePreviewUrl] = useState<string | null>(null)
   const [isSubmittingTicket, setIsSubmittingTicket] = useState<boolean>(false)
   const [ticketSubmitSuccess, setTicketSubmitSuccess] = useState<boolean>(false)
   const [ticketError, setTicketError] = useState<string>('')
+
+  // Step 9: Flow 7 Rating Modal State
+  const [ratingModalTicket, setRatingModalTicket] = useState<SupportTicketRecord | null>(null)
+  const [ratingStars, setRatingStars] = useState<number>(5)
+  const [ratingFeedback, setRatingFeedback] = useState<string>('')
+  const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false)
 
   // Support Ticket History State
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
@@ -137,6 +146,15 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
         ? `Yêu cầu cấp lại mã PIN kho #${ticketUnit}`
         : `Yêu cầu hỗ trợ kho #${ticketUnit}`
 
+      let uploadedEvidenceUrl: string | undefined = undefined
+      if (evidenceFile) {
+        try {
+          uploadedEvidenceUrl = await supportTicketService.uploadAttachment(evidenceFile)
+        } catch (uploadErr) {
+          console.warn('Lỗi khi tải ảnh minh chứng:', uploadErr)
+        }
+      }
+
       const payload = {
         customerId: user.id,
         bookingId: activeUnit?.bookingId || (activeUnit?.id?.length === 36 ? activeUnit.id : undefined),
@@ -147,12 +165,17 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
         title: ticketTitle.trim() || defaultTitle,
         description: ticketContent.trim(),
         priority: ticketCategory === 'LOCK_ISSUE' || ticketCategory === 'PIN_CODE' ? 'HIGH' : 'MEDIUM',
+        attachmentUrl: uploadedEvidenceUrl,
+        imageEvidence: uploadedEvidenceUrl,
+        evidenceUrls: uploadedEvidenceUrl ? [uploadedEvidenceUrl] : undefined,
       }
 
       await supportTicketService.createTicket(payload)
       setTicketSubmitSuccess(true)
       setTicketContent('')
       setTicketTitle('')
+      setEvidenceFile(null)
+      setEvidencePreviewUrl(null)
       await loadMyTickets()
 
       setTimeout(() => {
@@ -211,19 +234,43 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   }
 
   // Handle Close Ticket (Customer satisfied)
-  const handleCloseTicket = async (ticketId: string) => {
-    setIsActingOnTicket(true)
+  const handleOpenRatingModal = (ticket: SupportTicketRecord) => {
+    setRatingModalTicket(ticket)
+    setRatingStars(5)
+    setRatingFeedback('')
+  }
+
+  const handleSubmitRating = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!ratingModalTicket) return
+    setIsSubmittingRating(true)
     try {
-      await supportTicketService.closeTicket(ticketId, 'Khách hàng xác nhận hài lòng và đóng yêu cầu')
+      await supportTicketService.closeTicketWithRating(ratingModalTicket.id, {
+        rating: ratingStars,
+        feedback: ratingFeedback.trim() || undefined,
+        note: `Khách hàng đánh giá ${ratingStars} sao và xác nhận đóng ticket`,
+      })
+      toast.success('Cảm ơn bạn đã phản hồi và đánh giá dịch vụ!')
+      setRatingModalTicket(null)
       await loadMyTickets()
-      if (selectedTicket?.id === ticketId) {
-        setSelectedTicket(prev => prev ? { ...prev, status: 'CLOSED' } : null)
+      if (selectedTicket?.id === ratingModalTicket.id) {
+        setSelectedTicket(prev => prev ? {
+          ...prev,
+          status: 'CLOSED',
+          rating: ratingStars,
+          customerFeedback: ratingFeedback.trim() || undefined,
+        } : null)
       }
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Không thể đóng yêu cầu.')
+      toast.error(err?.response?.data?.message || 'Không thể gửi đánh giá và đóng ticket.')
     } finally {
-      setIsActingOnTicket(false)
+      setIsSubmittingRating(false)
     }
+  }
+
+  const handleCloseTicket = async (ticketId: string) => {
+    const t = tickets.find(item => item.id === ticketId) || selectedTicket || ({ id: ticketId, title: 'Yêu cầu hỗ trợ' } as SupportTicketRecord)
+    handleOpenRatingModal(t)
   }
 
   // Handle Reopen Ticket
@@ -486,14 +533,24 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       onChange={(e) => setTicketCategory(e.target.value as SupportTicketCategory)}
                       className="h-10 px-3 bg-white border border-slate-300 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="LOCK_ISSUE">Sự cố khóa thông minh / Kẹt cửa cuốn</option>
-                      <option value="PIN_CODE">Yêu cầu cấp lại mã PIN mới</option>
-                      <option value="RETURN_REFUND">👉 Yêu cầu trả kho trước hạn &amp; hoàn tiền</option>
-                      <option value="RETURN_EXPIRED">👉 Yêu cầu trả kho khi hết hạn hợp đồng</option>
-                      <option value="ACCESS_ISSUE">Ủy quyền mở kho cho tài xế / người thân</option>
-                      <option value="CLIMATE_TEMP">Kiểm tra nhiệt độ / độ ẩm phòng kho</option>
-                      <option value="PAYMENT_ISSUE">Hỗ trợ thanh toán &amp; Hóa đơn VAT</option>
-                      <option value="OTHER">Vấn đề khác</option>
+                      <optgroup label="🔐 Lỗi truy cập / Khóa IoT">
+                        <option value="LOCK_ISSUE">Sự cố khóa thông minh / Kẹt cửa cuốn (Lock Issue)</option>
+                        <option value="PIN_CODE">Cấp lại mã PIN mới (PIN Code)</option>
+                        <option value="ACCESS_ISSUE">Ủy quyền mở kho / Ra vào cơ sở (Access)</option>
+                      </optgroup>
+                      <optgroup label="💳 Sự cố thanh toán & Hoàn tiền">
+                        <option value="PAYMENT_ISSUE">Sai sót hóa đơn / Phí phạt quá hạn (Billing)</option>
+                        <option value="RETURN_REFUND">👉 Trả kho trước hạn &amp; hoàn tiền cọc</option>
+                        <option value="RETURN_EXPIRED">👉 Trả kho khi hết hạn hợp đồng</option>
+                      </optgroup>
+                      <optgroup label="🛠️ Vệ sinh / Bảo trì / Hư hỏng vật lý">
+                        <option value="FACILITY_DAMAGE">Kho thấm dột / Hư hỏng cơ sở vật chất (Damage/Leak)</option>
+                        <option value="CLEANLINESS_PEST">Vệ sinh &amp; Côn trùng (Cleanliness/Pest)</option>
+                        <option value="CLIMATE_TEMP">Nhiệt độ &amp; Độ ẩm phòng kho mát</option>
+                      </optgroup>
+                      <optgroup label="❓ Khác">
+                        <option value="OTHER">Yêu cầu hỗ trợ khác</option>
+                      </optgroup>
                     </select>
                   </div>
 
@@ -524,6 +581,54 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       placeholder="Mô tả cụ thể sự cố cần xử lý, thời gian xảy ra, hoặc mong muốn hỗ trợ của bạn..."
                       className="p-3 bg-white border border-slate-300 text-slate-900 text-xs rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                     />
+                  </div>
+
+                  {/* Đính kèm hình ảnh minh chứng hiện trường */}
+                  <div className="sm:col-span-2 flex flex-col gap-1.5">
+                    <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider flex items-center justify-between">
+                      <span>Đính kèm hình ảnh minh chứng hiện trường (tùy chọn)</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Hỗ trợ JPG, PNG, WEBP</span>
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <label className="cursor-pointer px-4 py-2 bg-white border border-dashed border-slate-300 hover:border-blue-500 rounded-lg text-xs font-semibold text-slate-700 flex items-center gap-2 hover:bg-blue-50/50 transition-colors">
+                        <span className="material-symbols-outlined text-[18px] text-blue-600">add_photo_alternate</span>
+                        <span>{evidenceFile ? 'Đổi ảnh khác' : 'Chọn ảnh chụp hiện trường'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            if (file) {
+                              setEvidenceFile(file)
+                              setEvidencePreviewUrl(URL.createObjectURL(file))
+                            }
+                          }}
+                        />
+                      </label>
+                      {evidenceFile && (
+                        <div className="flex items-center gap-2 p-1.5 bg-white border border-slate-200 rounded-lg">
+                          {evidencePreviewUrl && (
+                            <img
+                              src={evidencePreviewUrl}
+                              alt="Minh chứng"
+                              className="w-8 h-8 object-cover rounded border border-slate-200"
+                            />
+                          )}
+                          <span className="text-xs text-slate-600 truncate max-w-[200px]">{evidenceFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEvidenceFile(null)
+                              setEvidencePreviewUrl(null)
+                            }}
+                            className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="sm:col-span-2 flex items-center justify-between pt-2">
@@ -934,6 +1039,21 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 )}
               </div>
 
+              {/* IN_PROGRESS Notification Banner (Flow 7 Bước 5) */}
+              {selectedTicket.status === 'IN_PROGRESS' && (
+                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-start gap-3">
+                  <span className="material-symbols-outlined text-[22px] text-blue-600 shrink-0">engineering</span>
+                  <div>
+                    <div className="font-bold text-xs text-blue-900">
+                      Nhân viên {selectedTicket.assignedStaffName || 'phụ trách cơ sở'} đang trực tiếp xử lý yêu cầu của bạn
+                    </div>
+                    <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                      Đội ngũ kỹ thuật &amp; vận hành đang kiểm tra thực tế hiện trường. Nếu cần phối hợp khẩn cấp, vui lòng liên hệ hotline cơ sở: <strong>1900 6828</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Title & Description */}
               <div className="space-y-1.5">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -946,6 +1066,42 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                   {selectedTicket.description}
                 </div>
               </div>
+
+              {/* Evidence Images */}
+              {(selectedTicket.imageEvidence || (selectedTicket.evidenceUrls && selectedTicket.evidenceUrls.length > 0)) && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Ảnh minh chứng đính kèm:
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {[selectedTicket.imageEvidence, ...(selectedTicket.evidenceUrls || [])].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx).map((imgUrl, i) => (
+                      <a key={i} href={imgUrl} target="_blank" rel="noreferrer" className="block w-20 h-20 rounded-lg overflow-hidden border border-slate-200 hover:opacity-80 transition-opacity">
+                        <img src={imgUrl} alt="Minh chứng" className="w-full h-full object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Customer Rating Display for CLOSED ticket (Flow 7 Bước 9) */}
+              {selectedTicket.status === 'CLOSED' && selectedTicket.rating && (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900">Đánh giá dịch vụ từ bạn:</span>
+                    <div className="flex items-center text-amber-500">
+                      {Array.from({ length: 5 }).map((_, idx) => (
+                        <span key={idx} className="material-symbols-outlined text-[16px]">
+                          {idx < selectedTicket.rating! ? 'star' : 'star_border'}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="font-bold text-xs">({selectedTicket.rating}/5 sao)</span>
+                  </div>
+                  {selectedTicket.customerFeedback && (
+                    <p className="text-xs text-amber-800 italic">"{selectedTicket.customerFeedback}"</p>
+                  )}
+                </div>
+              )}
 
               {/* Refund Info Section for RETURN_REFUND */}
               {selectedTicket.category === 'RETURN_REFUND' && (
@@ -1267,6 +1423,119 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                     <>
                       <span className="material-symbols-outlined text-[16px]">save</span>
                       <span>Xác Nhận Lưu Thông Tin</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RATING MODAL: Đánh giá chất lượng xử lý sự cố & Đóng ticket (Flow 7 Bước 9) */}
+      {ratingModalTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden text-left animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <span className="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
+                  <span className="material-symbols-outlined text-[20px]">star</span>
+                </span>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900">
+                    Đánh Giá Chất Lượng Phục Vụ
+                  </h3>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Phiếu #{ratingModalTicket.ticketCode || ratingModalTicket.id.slice(0, 8)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRatingModalTicket(null)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitRating} className="p-6 space-y-4 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                <span className="text-[10px] text-slate-500 block uppercase font-bold tracking-wider">Tiêu đề sự cố:</span>
+                <p className="font-semibold text-slate-800 text-xs truncate">{ratingModalTicket.title}</p>
+                {ratingModalTicket.resolutionNote && (
+                  <p className="text-[11px] text-emerald-700 bg-emerald-50 p-2 rounded border border-emerald-200 mt-1">
+                    <strong>Kết quả:</strong> {ratingModalTicket.resolutionNote}
+                  </p>
+                )}
+              </div>
+
+              {/* Star Rating Selector */}
+              <div className="flex flex-col items-center justify-center py-2 space-y-2">
+                <span className="text-xs font-bold text-slate-700">Bạn hài lòng với kết quả xử lý này chứ?</span>
+                <div className="flex items-center gap-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      type="button"
+                      onClick={() => setRatingStars(star)}
+                      className="p-1 text-amber-400 hover:scale-125 transition-transform cursor-pointer focus:outline-none"
+                    >
+                      <span className="material-symbols-outlined text-[32px]">
+                        {star <= ratingStars ? 'star' : 'star_border'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs font-bold text-amber-700">
+                  {ratingStars === 5 && '🌟 Rất hài lòng'}
+                  {ratingStars === 4 && '👍 Hài lòng'}
+                  {ratingStars === 3 && '😐 Bình thường'}
+                  {ratingStars === 2 && '👎 Chưa hài lòng'}
+                  {ratingStars === 1 && '⚠️ Rất không hài lòng'}
+                </span>
+              </div>
+
+              {/* Feedback Comment */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block">
+                  Ý kiến đóng góp / Lời nhắn (tùy chọn)
+                </label>
+                <textarea
+                  rows={3}
+                  value={ratingFeedback}
+                  onChange={(e) => setRatingFeedback(e.target.value)}
+                  placeholder="Chia sẻ trải nghiệm của bạn về thái độ phục vụ và tốc độ xử lý..."
+                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white resize-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  disabled={isSubmittingRating}
+                  onClick={() => setRatingModalTicket(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingRating}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md shadow-emerald-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isSubmittingRating ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      <span>Xác Nhận &amp; Đóng Yêu Cầu</span>
                     </>
                   )}
                 </button>
