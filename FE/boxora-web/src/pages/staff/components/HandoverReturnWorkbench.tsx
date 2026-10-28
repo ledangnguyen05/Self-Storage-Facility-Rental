@@ -26,7 +26,9 @@ import {
   Upload,
   Trash2,
   Eye,
-  X
+  X,
+  Wrench,
+  Receipt
 } from 'lucide-react'
 import { toast } from '../../../utils/toast'
 import { handoverService } from '../../../services/handoverService'
@@ -528,16 +530,31 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [isFinishingHandover, setIsFinishingHandover] = useState(false)
 
   // Financial calculations
-  const totalDeduction =
-    (cleanlinessPassed ? 0 : cleaningFeeInput) +
-    (doorPassed ? 0 : doorFeeInput) +
-    (damagePassed ? 0 : damageFeeInput) +
-    (smartLockPassed ? 0 : smartLockFeeInput) +
-    (currentCase?.lostCardFee || 0)
+  const deposit = currentCase?.depositAmount || 0
+  const cleaningFee = cleanlinessPassed ? 0 : cleaningFeeInput
+  const doorFee = doorPassed ? 0 : doorFeeInput
+  const damageFee = damagePassed ? 0 : damageFeeInput
+  const smartLockFee = smartLockPassed ? 0 : smartLockFeeInput
+  const lostCardFee = currentCase?.lostCardFee || 0
+  const outstandingDebt = currentCase?.outstandingDebt || 0
 
-  const netRefundAmount = currentCase
-    ? Math.max(0, currentCase.depositAmount - totalDeduction - (currentCase.outstandingDebt || 0))
-    : 0
+  // 1. Tổng chi phí bồi thường hư hại & dịch vụ tại kho (chưa tính nợ)
+  const totalDeduction = cleaningFee + doorFee + damageFee + smartLockFee + lostCardFee
+
+  // 2. Chi phí sửa chữa & bảo trì được xác minh (Tổng chi phí khấu trừ gồm hư hại + công nợ)
+  const totalVerifiedRepairCost = totalDeduction + outstandingDebt
+
+  // 3. Điều kiện: Chi phí sửa chữa và bảo trì vượt quá tiền cọc
+  const isOverDeposit = totalVerifiedRepairCost > deposit
+
+  // 4. Tiền cọc được khấu trừ (cấn trừ tối đa bằng đúng tiền cọc ban đầu)
+  const deductedDepositAmount = Math.min(deposit, totalVerifiedRepairCost)
+
+  // 5. Khoản khách còn phải thanh toán (chênh lệch khách nợ thêm sau khi đã khấu trừ hết cọc)
+  const customerPayableAmount = Math.max(0, totalVerifiedRepairCost - deposit)
+
+  // 6. Tiền dự kiến hoàn trả (nếu chi phí sửa chữa <= tiền cọc)
+  const netRefundAmount = currentCase ? Math.max(0, deposit - totalVerifiedRepairCost) : 0
 
   // Filtered cases for list
   const filteredCases = useMemo(() => {
@@ -690,40 +707,60 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   const handleSubmitRefundApproval = () => {
     if (!currentCase) return
+    const noteMsg = isOverDeposit
+      ? `Nhân viên ${userName} đã trình duyệt quyết toán: Khấu trừ 100% cọc (${deductedDepositAmount.toLocaleString('vi-VN')}đ) và thu bổ sung ${customerPayableAmount.toLocaleString('vi-VN')}đ chi phí hư hại`
+      : `Nhân viên ${userName} đã trình duyệt khoản hoàn trả ${netRefundAmount.toLocaleString('vi-VN')}đ`
+
     updateCurrentCase({
       status: 'REFUND_PENDING_APPROVAL',
-      historyNotes: [...(currentCase.historyNotes || []), `Nhân viên ${userName} đã trình duyệt khoản hoàn trả ${netRefundAmount.toLocaleString('vi-VN')}đ`]
+      historyNotes: [...(currentCase.historyNotes || []), noteMsg]
     })
-    toast.success('Đã trình duyệt khoản hoàn cọc lên Quản lý cơ sở (Facility Manager)!')
+    toast.success('Đã trình duyệt quyết toán lên Quản lý cơ sở (Facility Manager)!')
   }
 
   const handleApproveRefund = () => {
     if (!currentCase) return
+    const noteMsg = isOverDeposit
+      ? `Quản lý cơ sở ${userName} đã phê duyệt khấu trừ hết cọc và thu thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ từ khách hàng`
+      : `Quản lý cơ sở ${userName} đã phê duyệt số tiền hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ`
+
     updateCurrentCase({
       status: 'REFUND_APPROVED',
       approverName: userName,
-      historyNotes: [...(currentCase.historyNotes || []), `Quản lý cơ sở ${userName} đã phê duyệt số tiền hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ`]
+      historyNotes: [...(currentCase.historyNotes || []), noteMsg]
     })
-    toast.success(`Đã phê duyệt hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ!`)
+    if (isOverDeposit) {
+      toast.success(`Đã phê duyệt quyết toán! Cần thu thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ từ khách hàng.`)
+    } else {
+      toast.success(`Đã phê duyệt hoàn cọc ${netRefundAmount.toLocaleString('vi-VN')}đ!`)
+    }
   }
 
   const handleExecuteRefund = () => {
     if (!currentCase) return
     setIsSubmittingRefund(true)
     setTimeout(() => {
-      const generatedRef = refundTxnInput.trim() || `TXN-REF-${Date.now().toString().slice(-6)}`
+      const generatedRef = refundTxnInput.trim() || `${isOverDeposit ? 'REC-COMP' : 'TXN-REF'}-${Date.now().toString().slice(-6)}`
+      const historyMsg = isOverDeposit
+        ? `Đã thu đủ khoản bồi thường bổ sung ${customerPayableAmount.toLocaleString('vi-VN')}đ từ khách qua [${refundMethodSelect}], mã biên lai: ${generatedRef}`
+        : `Đã thực hiện lệnh hoàn tiền qua [${refundMethodSelect}], mã giao dịch: ${generatedRef}, số tiền: ${netRefundAmount.toLocaleString('vi-VN')}đ`
+
       updateCurrentCase({
         status: 'REFUNDED',
         refundTxnRef: generatedRef,
         refundProcessedAt: new Date().toLocaleString('vi-VN'),
         historyNotes: [
           ...(currentCase.historyNotes || []),
-          `Đã thực hiện lệnh hoàn tiền qua [${refundMethodSelect}], mã giao dịch: ${generatedRef}, số tiền: ${netRefundAmount.toLocaleString('vi-VN')}đ`
+          historyMsg
         ]
       })
       setIsSubmittingRefund(false)
       setShowRefundModal(false)
-      toast.success(`Đã hoàn tất chuyển tiền cọc ${netRefundAmount.toLocaleString('vi-VN')}đ cho khách hàng!`)
+      if (isOverDeposit) {
+        toast.success(`Đã xác nhận thu đủ khoản bồi thường ${customerPayableAmount.toLocaleString('vi-VN')}đ thành công!`)
+      } else {
+        toast.success(`Đã hoàn tất chuyển tiền cọc ${netRefundAmount.toLocaleString('vi-VN')}đ cho khách hàng!`)
+      }
     }, 600)
   }
 
@@ -774,11 +811,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const renderStatusBadge = (st: ReturnStepStatus) => {
     switch (st) {
       case 'RETURN_REQUESTED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">1. Chờ xử lý</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">Chờ xử lý</span>
       case 'INSPECTION_SCHEDULED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300">1. Đã hẹn lịch</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300">Đã hẹn lịch</span>
       case 'INSPECTION_IN_PROGRESS':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 animate-pulse">2. Đang nghiệm thu</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 animate-pulse">Đang nghiệm thu</span>
       case 'INSPECTION_PASSED':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">2. Nghiệm thu ĐẠT</span>
       case 'INSPECTION_ISSUE':
@@ -809,7 +846,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-headline font-bold">
-                Quy Trình Nghiệm Thu &amp; Trả Kho Thực Địa (Checkout &amp; Return)
+                Quy Trình Nghiệm Thu &amp; Trả Kho Thực Địa
               </h2>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
                 SLA HOÀN CỌC CHUẨN BOXORA
@@ -822,13 +859,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         </div>
 
         <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
-          <span className="px-3 py-1.5 rounded-xl bg-white/10 text-xs font-semibold border border-white/15 flex items-center gap-1.5">
-            <Building2 size={14} className="text-amber-400" />
-            <span>{facilityName}</span>
-          </span>
-          <span className="px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-bold border border-amber-500/30">
-            {userRole}
-          </span>
           <button
             type="button"
             onClick={handleRefreshWorkbench}
@@ -869,10 +899,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               : 'bg-white border-slate-200 hover:border-indigo-300'
           }`}
         >
-          <div className="flex items-center justify-between text-xs font-bold text-indigo-800">
-            <span>2. Đang Nghiệm Thu</span>
-            <ClipboardCheck size={16} />
-          </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-headline text-2xl font-extrabold text-indigo-950">{metrics.inspecting}</span>
             <span className="text-xs text-indigo-700">đang kiểm tra</span>
@@ -1130,7 +1156,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <div className="flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
                       <span className="text-xs font-bold text-emerald-950">
-                        Hồ sơ đang trong tiến trình nghiệm thu thực địa 7 tiêu chuẩn (Khối B bên dưới).
+                        Hồ sơ đang trong tiến trình nghiệm thu thực địa 7 tiêu chuẩn.
                       </span>
                     </div>
                     <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200 animate-pulse">
@@ -1253,7 +1279,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-900 text-sm">2. Vệ sinh kho &amp; Sàn nhà</span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${cleanlinessPassed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>
-                          {cleanlinessPassed ? '✓ Sạch sẽ' : '⚠️ Cần dọn rác/vệ sinh'}
+                          {cleanlinessPassed ? '✓ Sạch sẽ' : '⚠️ Chưa dọn'}
                         </span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -1342,7 +1368,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           type="button"
                           onClick={() => {
                             setDamagePassed(false)
-                            const newFee = damageFeeInput > 0 ? damageFeeInput : 500000
+                            const newFee = damageFeeInput > 0 ? damageFeeInput : 5000000
                             setDamageFeeInput(newFee)
                             updateCurrentCase({ damagePassed: false, damageFeeInput: newFee, damageFee: newFee })
                           }}
@@ -1378,7 +1404,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               updateCurrentCase({ damageFeeInput: val, damageFee: val })
                             }}
                             className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
-                            placeholder="500000"
+                            placeholder="5000000"
                           />
                           <span className="font-bold text-rose-700">VNĐ</span>
                         </div>
@@ -1726,76 +1752,164 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <div className="flex items-center justify-between text-slate-600">
                       <span>1. Tiền cọc ban đầu:</span>
                       <span className="font-mono font-bold text-slate-900">
-                        {currentCase.depositAmount.toLocaleString('vi-VN')}đ
+                        {deposit.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-600">
                       <span>2. Phí vệ sinh dọn kho:</span>
-                      <span className={`font-mono font-bold ${!cleanlinessPassed && cleaningFeeInput > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{((cleanlinessPassed ? 0 : cleaningFeeInput)).toLocaleString('vi-VN')}đ
+                      <span className={`font-mono font-bold ${cleaningFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        -{cleaningFee.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-600">
                       <span>3. Phí khắc phục hư hại cửa cuốn &amp; ray:</span>
-                      <span className={`font-mono font-bold ${!doorPassed && doorFeeInput > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{((doorPassed ? 0 : doorFeeInput)).toLocaleString('vi-VN')}đ
+                      <span className={`font-mono font-bold ${doorFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        -{doorFee.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-600">
                       <span>4. Phí bồi thường hư hại kho (vách, sàn, trần):</span>
-                      <span className={`font-mono font-bold ${!damagePassed && damageFeeInput > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{((damagePassed ? 0 : damageFeeInput)).toLocaleString('vi-VN')}đ
+                      <span className={`font-mono font-bold ${damageFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        -{damageFee.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-600">
                       <span>5. Phí sửa chữa / thay thế khóa SmartLock:</span>
-                      <span className={`font-mono font-bold ${!smartLockPassed && smartLockFeeInput > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
-                        -{((smartLockPassed ? 0 : smartLockFeeInput)).toLocaleString('vi-VN')}đ
+                      <span className={`font-mono font-bold ${smartLockFee > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        -{smartLockFee.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between text-slate-600">
                       <span>6. Công nợ / Cước trễ hạn:</span>
-                      <span className="font-mono text-rose-600 font-bold">
-                        -{(currentCase.outstandingDebt || 0).toLocaleString('vi-VN')}đ
+                      <span className={`font-mono font-bold ${outstandingDebt > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                        -{outstandingDebt.toLocaleString('vi-VN')}đ
                       </span>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm font-extrabold text-slate-900">
-                      <span>Tiền Dự Kiến Hoàn Trả:</span>
-                      <span className="font-mono text-emerald-600 text-base">
-                        {netRefundAmount.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
+                    {/* KẾT QUẢ ĐỐI SOÁT THEO 2 TRƯỜNG HỢP */}
+                    {!isOverDeposit ? (
+                      /* Trường hợp 1: Số tiền sửa chữa và bảo trì <= tiền cọc */
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-sm font-extrabold text-slate-900 bg-emerald-50/70 p-3 rounded-xl border border-emerald-200">
+                        <span className="flex items-center gap-1.5 text-emerald-950 font-bold">
+                          <CheckCircle2 size={16} className="text-emerald-600" />
+                          Tiền Dự Kiến Hoàn Trả:
+                        </span>
+                        <span className="font-mono text-emerald-600 text-base font-extrabold">
+                          {netRefundAmount.toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                    ) : (
+                      /* Trường hợp 2: Số tiền sửa chữa và bảo trì >= tiền cọc */
+                      <div className="pt-2 border-t border-slate-200 space-y-2">
+                        <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5 text-amber-950 font-bold">
+                            <Wrench size={14} className="text-amber-600 shrink-0" />
+                            <span>Chi phí sửa chữa được xác minh</span>
+                          </div>
+                          <span className="font-mono font-extrabold text-amber-900 text-sm">
+                            {totalVerifiedRepairCost.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="p-2.5 bg-blue-50/80 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-1.5 text-blue-950 font-bold">
+                            <ShieldCheck size={14} className="text-blue-600 shrink-0" />
+                            <span>Tiền cọc được khấu trừ</span>
+                          </div>
+                          <span className="font-mono font-extrabold text-blue-900 text-sm">
+                            {deductedDepositAmount.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+
+                        <div className="p-3 bg-rose-50 border-2 border-rose-300 rounded-xl flex items-center justify-between text-xs shadow-xs">
+                          <div className="flex items-center gap-1.5">
+                            <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                            <div>
+                              <span className="font-extrabold text-rose-950 block text-xs uppercase tracking-tight">
+                                Khoản khách còn phải thanh toán
+                              </span>
+                              <span className="text-[10px] text-rose-600 font-medium">
+                                (Tổng chi phí sửa chữa vượt quá số tiền cọc)
+                              </span>
+                            </div>
+                          </div>
+                          <span className="font-mono font-black text-rose-600 text-base">
+                            {customerPayableAmount.toLocaleString('vi-VN')}đ
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Cột 2: Thông tin tài khoản nhận hoàn cọc */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                      Thông Tin Nhận Tiền Cọc Của Khách Hàng
-                    </span>
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Ngân hàng:</span>
-                        <strong className="text-slate-900 font-bold">{currentCase.bankName || 'Vietcombank'}</strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Số tài khoản:</span>
-                        <strong className="text-slate-900 font-mono font-bold">{currentCase.bankAccountNumber || '1029384756'}</strong>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Chủ tài khoản:</span>
-                        <strong className="text-slate-900 font-bold">{currentCase.bankAccountName || currentCase.customerName.toUpperCase()}</strong>
-                      </div>
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-200">
-                        <span className="text-slate-500">Trạng thái hoàn tiền:</span>
-                        <strong className="text-indigo-700 font-bold">{currentCase.refundTxnRef ? `Đã hoàn (${currentCase.refundTxnRef})` : 'Chờ hoàn tiền'}</strong>
-                      </div>
-                    </div>
+                  {/* Cột 2: Thông tin tài khoản nhận hoàn cọc hoặc Thu bù khoản chênh lệch */}
+                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
+                    {!isOverDeposit ? (
+                      <>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          Thông Tin Nhận Tiền Cọc Của Khách Hàng
+                        </span>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Ngân hàng:</span>
+                            <strong className="text-slate-900 font-bold">{currentCase.bankName || 'Vietcombank'}</strong>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Số tài khoản:</span>
+                            <strong className="text-slate-900 font-mono font-bold">{currentCase.bankAccountNumber || '1029384756'}</strong>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Chủ tài khoản:</span>
+                            <strong className="text-slate-900 font-bold">{currentCase.bankAccountName || currentCase.customerName.toUpperCase()}</strong>
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                            <span className="text-slate-500">Trạng thái hoàn tiền:</span>
+                            <strong className="text-indigo-700 font-bold">{currentCase.refundTxnRef ? `Đã hoàn (${currentCase.refundTxnRef})` : 'Chờ hoàn tiền'}</strong>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-bold text-rose-700">
+                            Quyết Toán Cấn Trừ Cọc &amp; Thu Bồi Thường
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                            Cọc không đủ bù hư hại
+                          </span>
+                        </div>
+
+                        <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 space-y-1 text-slate-700">
+                          <p className="font-semibold text-rose-900">
+                            Toàn bộ tiền cọc ({deductedDepositAmount.toLocaleString('vi-VN')}đ) đã được khấu trừ 100%.
+                          </p>
+                          <p className="text-[11px] text-rose-800">
+                            Khách hàng cần thanh toán bổ sung số tiền <strong className="font-mono text-rose-900">{customerPayableAmount.toLocaleString('vi-VN')}đ</strong> tại quầy lễ tân hoặc chuyển khoản trước khi giải phóng kho.
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5 pt-1 border-t border-slate-200">
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Hình thức thu:</span>
+                            <strong className="text-slate-800 font-bold">Tiền mặt / QR POS tại quầy</strong>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Khách hàng:</span>
+                            <strong className="text-slate-900 font-bold">{currentCase.customerName} ({currentCase.customerPhone})</strong>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Trạng thái thanh toán bù:</span>
+                            <strong className={currentCase.refundTxnRef ? 'text-emerald-700 font-bold' : 'text-amber-700 font-bold'}>
+                              {currentCase.refundTxnRef ? `Đã thu (${currentCase.refundTxnRef})` : `Chưa thu (${customerPayableAmount.toLocaleString('vi-VN')}đ)`}
+                            </strong>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1835,7 +1949,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* STAFF action: Trình duyệt hoàn cọc */}
+                    {/* STAFF action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
                     {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') && (
                       <button
                         type="button"
@@ -1843,7 +1957,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                       >
                         <Send size={15} />
-                        <span>Trình Duyệt Khoản Hoàn Trả</span>
+                        <span>
+                          {isOverDeposit
+                            ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                            : `Trình Duyệt Khoản Hoàn Trả (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                        </span>
                       </button>
                     )}
 
@@ -1869,20 +1987,30 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                         >
                           <ShieldCheck size={16} />
-                          <span>Phê Duyệt Hoàn Cọc ({netRefundAmount.toLocaleString('vi-VN')}đ)</span>
+                          <span>
+                            {isOverDeposit
+                              ? `Phê Duyệt Khấu Trừ Hết Cọc & Thu Thêm (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                              : `Phê Duyệt Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                          </span>
                         </button>
                       </div>
                     )}
 
-                    {/* Action: Thực hiện hoàn tiền */}
+                    {/* Action: Thực hiện hoàn tiền hoặc thu tiền bồi thường */}
                     {(currentCase.status === 'REFUND_APPROVED' || (currentCase.status === 'INSPECTION_PASSED' && totalDeduction === 0)) && (
                       <button
                         type="button"
                         onClick={() => setShowRefundModal(true)}
-                        className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                        className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition ${
+                          isOverDeposit ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                        }`}
                       >
-                        <CreditCard size={15} />
-                        <span>Thực Hiện Hoàn Tiền Cho Khách</span>
+                        {isOverDeposit ? <Receipt size={15} /> : <CreditCard size={15} />}
+                        <span>
+                          {isOverDeposit
+                            ? `Thu Tiền Bồi Thường Tại Quầy (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                            : `Thực Hiện Hoàn Tiền Cho Khách (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                        </span>
                       </button>
                     )}
 
@@ -1913,14 +2041,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         </div>
       </div>
 
-      {/* MODAL THỰC HIỆN HOÀN TIỀN (BƯỚC 5) */}
+      {/* MODAL THỰC HIỆN HOÀN TIỀN HOẶC THU TIỀN BỒI THƯỜNG */}
       {showRefundModal && currentCase && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
-                <CreditCard size={20} className="text-blue-600" />
-                <h3 className="font-bold text-base text-slate-900">Thực Hiện Hoàn Tiền Cọc</h3>
+                {isOverDeposit ? <Receipt size={20} className="text-rose-600" /> : <CreditCard size={20} className="text-blue-600" />}
+                <h3 className="font-bold text-base text-slate-900">
+                  {isOverDeposit ? 'Thu Khoản Chênh Lệch Bồi Thường Tại Quầy' : 'Thực Hiện Hoàn Tiền Cọc'}
+                </h3>
               </div>
               <button
                 type="button"
@@ -1932,42 +2062,64 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             </div>
 
             <div className="space-y-3 text-xs">
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
-                <span className="text-[10px] uppercase font-bold text-blue-700 block">Số Tiền Hoàn Trả Đã Duyệt</span>
-                <span className="text-xl font-extrabold font-mono text-blue-950 block">
-                  {netRefundAmount.toLocaleString('vi-VN')} VNĐ
+              <div className={`p-3 border rounded-xl space-y-1 ${isOverDeposit ? 'bg-rose-50 border-rose-200' : 'bg-blue-50 border-blue-200'}`}>
+                <span className={`text-[10px] uppercase font-bold block ${isOverDeposit ? 'text-rose-700' : 'text-blue-700'}`}>
+                  {isOverDeposit ? 'Số Tiền Bồi Thường Cần Thu Thêm' : 'Số Tiền Hoàn Trả Đã Duyệt'}
+                </span>
+                <span className={`text-xl font-extrabold font-mono block ${isOverDeposit ? 'text-rose-950' : 'text-blue-950'}`}>
+                  {(isOverDeposit ? customerPayableAmount : netRefundAmount).toLocaleString('vi-VN')} VNĐ
                 </span>
                 <span className="text-slate-600 text-[11px] block">
-                  Khách nhận: <strong>{currentCase.customerName}</strong> ({currentCase.bankAccountNumber} - {currentCase.bankName})
+                  {isOverDeposit ? (
+                    <>Khách nộp: <strong>{currentCase.customerName}</strong> ({currentCase.customerPhone})</>
+                  ) : (
+                    <>Khách nhận: <strong>{currentCase.customerName}</strong> ({currentCase.bankAccountNumber} - {currentCase.bankName})</>
+                  )}
                 </span>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Phương thức hoàn tiền</label>
+                <label className="block font-bold text-slate-700 mb-1">
+                  {isOverDeposit ? 'Hình thức thu tiền bồi thường' : 'Phương thức hoàn tiền'}
+                </label>
                 <select
                   value={refundMethodSelect}
                   onChange={(e) => setRefundMethodSelect(e.target.value as any)}
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs"
                 >
-                  <option value="BANK_TRANSFER">Chuyển khoản ngân hàng (Ủy nhiệm chi)</option>
-                  <option value="VNPAY_REFUND">Hoàn qua cổng VNPay / Thẻ ngân hàng</option>
-                  <option value="CASH">Chi tiền mặt tại quầy cơ sở</option>
+                  {isOverDeposit ? (
+                    <>
+                      <option value="CASH">Thu tiền mặt trực tiếp tại quầy Boxora</option>
+                      <option value="BANK_TRANSFER">Chuyển khoản QR tài khoản cơ sở</option>
+                      <option value="VNPAY_REFUND">Quẹt thẻ ngân hàng qua máy POS quầy</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="BANK_TRANSFER">Chuyển khoản ngân hàng (Ủy nhiệm chi)</option>
+                      <option value="VNPAY_REFUND">Hoàn qua cổng VNPay / Thẻ ngân hàng</option>
+                      <option value="CASH">Chi tiền mặt tại quầy cơ sở</option>
+                    </>
+                  )}
                 </select>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Mã tham chiếu / Mã giao dịch ngân hàng</label>
+                <label className="block font-bold text-slate-700 mb-1">
+                  {isOverDeposit ? 'Mã biên lai / Hóa đơn thu tiền' : 'Mã tham chiếu / Mã giao dịch ngân hàng'}
+                </label>
                 <input
                   type="text"
                   value={refundTxnInput}
                   onChange={(e) => setRefundTxnInput(e.target.value)}
-                  placeholder="VD: FT2630018942 hoặc REF-VNPAY-9921..."
+                  placeholder={isOverDeposit ? 'VD: REC-COMP-2026-001...' : 'VD: FT2630018942 hoặc REF-VNPAY-9921...'}
                   className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-mono text-slate-800 text-xs"
                 />
               </div>
 
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Hệ thống sẽ lưu mã tham chiếu, thời điểm và tài khoản thực hiện vào audit log của giao dịch hoàn cọc.
+                {isOverDeposit
+                  ? 'Hệ thống sẽ lưu mã biên lai thu, số tiền đã thu và nhân viên thực hiện vào audit log của hợp đồng trước khi cho phép giải phóng kho.'
+                  : 'Hệ thống sẽ lưu mã tham chiếu, thời điểm và tài khoản thực hiện vào audit log của giao dịch hoàn cọc.'}
               </p>
             </div>
 
@@ -1983,10 +2135,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 type="button"
                 onClick={handleExecuteRefund}
                 disabled={isSubmittingRefund}
-                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition ${
+                  isOverDeposit ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
                 <CheckCircle2 size={15} />
-                <span>{isSubmittingRefund ? 'Đang ghi nhận...' : 'Xác Nhận Đã Hoàn Tiền'}</span>
+                <span>
+                  {isSubmittingRefund
+                    ? 'Đang ghi nhận...'
+                    : isOverDeposit
+                    ? `Xác Nhận Đã Thu ${customerPayableAmount.toLocaleString('vi-VN')}đ`
+                    : 'Xác Nhận Đã Hoàn Tiền'}
+                </span>
               </button>
             </div>
           </div>
