@@ -248,7 +248,12 @@ export const supportTicketService = {
   },
 
   async addTicketMessage(id: string, data: { messageType: 'INTERNAL_NOTE' | 'CUSTOMER_REPLY'; content: string }) {
-    const response = await api.post(`/api/v1/support-tickets/${id}/messages`, data)
+    const response = await api.post(`/api/v1/support-tickets/${id}/messages`, data, {
+      params: {
+        messageType: data.messageType,
+        content: data.content,
+      },
+    })
     return response.data?.data as ContactLogRecord
   },
 

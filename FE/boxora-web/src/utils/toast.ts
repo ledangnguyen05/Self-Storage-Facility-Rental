@@ -14,35 +14,37 @@ export interface ToastEventDetail {
 }
 
 class ToastEmitter {
-  show(message: string, type: ToastType = 'info', options?: ToastOptions) {
+  show(message: string, type: ToastType = 'info', options?: ToastOptions | string) {
     if (typeof window === 'undefined') return
     const id = 'toast_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7)
+    const title = typeof options === 'string' ? options : options?.title
+    const duration = typeof options === 'object' ? options?.duration : undefined
     window.dispatchEvent(
       new CustomEvent<ToastEventDetail>('boxora:toast', {
         detail: {
           id,
           message,
           type,
-          title: options?.title,
-          duration: options?.duration ?? 4500,
+          title,
+          duration: duration ?? 4500,
         },
       })
     )
   }
 
-  success(message: string, options?: ToastOptions) {
+  success(message: string, options?: ToastOptions | string) {
     this.show(message, 'success', options)
   }
 
-  error(message: string, options?: ToastOptions) {
+  error(message: string, options?: ToastOptions | string) {
     this.show(message, 'error', options)
   }
 
-  warning(message: string, options?: ToastOptions) {
+  warning(message: string, options?: ToastOptions | string) {
     this.show(message, 'warning', options)
   }
 
-  info(message: string, options?: ToastOptions) {
+  info(message: string, options?: ToastOptions | string) {
     this.show(message, 'info', options)
   }
 }

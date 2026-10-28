@@ -1854,7 +1854,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         actionType: 'SUPPORT_REQUEST',
         title: t.title || `Yêu cầu hỗ trợ kho ${detectedUnit ? `#${detectedUnit}` : ''}`,
         description: `${t.description || 'Yêu cầu hỗ trợ kỹ thuật / vận hành kho.'}${
-          t.resolutionNotes ? ` • Phản hồi xử lý: ${t.resolutionNotes}` : ''
+          (t.resolutionNote || (t as any).resolutionNotes) ? ` • Phản hồi xử lý: ${(t.resolutionNote || (t as any).resolutionNotes)}` : ''
         }`,
         timestamp: t.updatedAt || t.createdAt || new Date().toISOString(),
         actorName: isResolved ? 'Nhân viên kỹ thuật Boxora' : user?.fullName || 'Khách hàng',

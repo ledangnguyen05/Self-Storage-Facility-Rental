@@ -204,10 +204,20 @@ public class SupportTicketController {
     @Operation(summary = "Gửi ghi chú nội bộ hoặc phản hồi trực tiếp cho khách hàng")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.SupportTicketContactLogResponse>> addMessage(
             @PathVariable UUID id,
-            @RequestParam(defaultValue = "CUSTOMER_REPLY") String messageType,
-            @RequestParam String content
+            @RequestBody(required = false) com.boxora.dto.request.TicketMessageRequest body,
+            @RequestParam(required = false) String messageType,
+            @RequestParam(required = false) String content
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Đã lưu tin nhắn thành công", supportTicketService.addTicketMessage(id, messageType, content)));
+        String effectiveContent = (body != null && body.getContent() != null && !body.getContent().isBlank())
+                ? body.getContent() : content;
+        String effectiveType = (body != null && body.getMessageType() != null && !body.getMessageType().isBlank())
+                ? body.getMessageType() : (messageType != null && !messageType.isBlank() ? messageType : "CUSTOMER_REPLY");
+
+        if (effectiveContent == null || effectiveContent.isBlank()) {
+            throw new com.boxora.exception.AppException(com.boxora.exception.ErrorCode.INVALID_REQUEST, "Nội dung tin nhắn không được để trống");
+        }
+
+        return ResponseEntity.ok(ApiResponse.success("Đã lưu tin nhắn thành công", supportTicketService.addTicketMessage(id, effectiveType, effectiveContent)));
     }
 
     @PostMapping("/{id}/reopen")
