@@ -1231,7 +1231,7 @@ export const StaffDashboard: React.FC = () => {
 
 
 
-  // Danh sách các yêu cầu hoàn trả kho của khách hàng
+  // Danh sách các yêu cầu hoàn trả kho của khách hàng đồng bộ với boxora_checkout_return_cases_v4
   const customerReturnRequests = useMemo(() => {
     const list: Array<{
       id: string
@@ -1249,28 +1249,63 @@ export const StaffDashboard: React.FC = () => {
       endDate?: string
     }> = []
 
-    // 1. Yêu cầu trả kho lưu trong localStorage
+    // 1. Đọc từ boxora_checkout_return_cases_v4 (nguồn chuẩn hóa của module Trả kho)
+    try {
+      const rawCheckout = localStorage.getItem('boxora_checkout_return_cases_v4')
+      if (rawCheckout) {
+        const parsed = JSON.parse(rawCheckout)
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (item && item.id) {
+              list.push({
+                id: item.id,
+                bookingId: item.bookingId || item.id,
+                unitCode: item.unitCode || 'N/A',
+                customerName: item.customerName || 'Khách hàng',
+                customerPhone: item.customerPhone || 'Theo hồ sơ',
+                facilityName: item.facilityName || 'Boxora Facility',
+                requestDate: item.requestDate || new Date().toISOString().split('T')[0],
+                reason: item.reason || 'Khách yêu cầu thanh lý hợp đồng & trả buồng kho',
+                status: item.status === 'COMPLETED' ? 'COMPLETED' : (item.status === 'INSPECTION_IN_PROGRESS' || item.status === 'INSPECTING' ? 'INSPECTING' : 'PENDING'),
+                contractCode: item.contractCode,
+                depositPaid: item.depositAmount,
+                depositAmount: item.depositAmount,
+                endDate: item.expectedReturnDate,
+              })
+            }
+          })
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading boxora_checkout_return_cases_v4:', e)
+    }
+
+    // 2. Yêu cầu trả kho lưu trong localStorage cũ 'boxora_return_requests' (nếu chưa có trong list)
     try {
       const raw = localStorage.getItem('boxora_return_requests')
       if (raw) {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
           parsed.forEach((item: any) => {
-            list.push({
-              id: item.id || `RET-${item.bookingId || Math.random()}`,
-              bookingId: item.bookingId || item.id,
-              unitCode: item.unitCode || 'N/A',
-              customerName: item.customerName || 'Khách hàng',
-              customerPhone: item.customerPhone || 'Theo hồ sơ',
-              facilityName: item.facilityName || 'Boxora Facility',
-              requestDate: item.requestDate || item.createdAt || new Date().toISOString().split('T')[0],
-              reason: item.reason || 'Khách yêu cầu thanh lý hợp đồng & trả buồng kho',
-              status: item.status || 'PENDING',
-              contractCode: item.contractCode,
-              depositPaid: item.depositPaid || item.depositAmount,
-              depositAmount: item.depositAmount || item.depositPaid,
-              endDate: item.endDate,
-            })
+            const candidateBookingId = item.bookingId || item.id
+            const exists = list.some((c) => c.bookingId === candidateBookingId || (item.unitCode && c.unitCode === item.unitCode))
+            if (!exists) {
+              list.push({
+                id: item.id || `RET-${item.bookingId || Math.random()}`,
+                bookingId: candidateBookingId,
+                unitCode: item.unitCode || 'N/A',
+                customerName: item.customerName || 'Khách hàng',
+                customerPhone: item.customerPhone || 'Theo hồ sơ',
+                facilityName: item.facilityName || 'Boxora Facility',
+                requestDate: item.requestDate || item.createdAt || new Date().toISOString().split('T')[0],
+                reason: item.reason || 'Khách yêu cầu thanh lý hợp đồng & trả buồng kho',
+                status: item.status || 'PENDING',
+                contractCode: item.contractCode,
+                depositPaid: item.depositPaid || item.depositAmount,
+                depositAmount: item.depositAmount || item.depositPaid,
+                endDate: item.endDate,
+              })
+            }
           })
         }
       }
@@ -1278,7 +1313,7 @@ export const StaffDashboard: React.FC = () => {
       console.warn('Error reading boxora_return_requests:', e)
     }
 
-    // 2. Yêu cầu trả kho từ Support Tickets
+    // 3. Yêu cầu trả kho từ Support Tickets
     tickets.forEach((t: any) => {
       const isReturn =
         t.category === 'return' ||
@@ -1290,7 +1325,7 @@ export const StaffDashboard: React.FC = () => {
       if (isReturn) {
         const unitMatch = t.title?.match(/#([A-Z0-9-]+)/i) || t.description?.match(/#([A-Z0-9-]+)/i)
         const unitCode = unitMatch ? unitMatch[1] : (t.unitCode || 'N/A')
-        const existing = list.find((item) => item.unitCode === unitCode)
+        const existing = list.find((item) => item.unitCode === unitCode || item.bookingId === t.bookingId)
         if (!existing) {
           list.push({
             id: `TICKET-RET-${t.id}`,
@@ -1307,10 +1342,10 @@ export const StaffDashboard: React.FC = () => {
       }
     })
 
-    // 3. Các hợp đồng đang thuê sắp đến hạn trả kho
-    activeRentals.forEach((r, idx) => {
+    // 4. Các hợp đồng đang thuê sắp đến hạn trả kho
+    activeRentals.forEach((r) => {
       const existing = list.find((item) => item.bookingId === r.id || item.unitCode === r.unitCode)
-      if (!existing && idx < 3) {
+      if (!existing) {
         list.push({
           id: `ACT-RET-${r.id}`,
           bookingId: r.id,
@@ -1331,6 +1366,45 @@ export const StaffDashboard: React.FC = () => {
 
     return list
   }, [tickets, activeRentals])
+
+  // Trạng thái đếm số yêu cầu trả kho chờ xử lý đồng bộ với HandoverReturnWorkbench
+  const [returnBadgeCount, setReturnBadgeCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const pending = parsed.filter((c: any) => {
+            const st = String(c.status || '').toUpperCase()
+            return st === 'RETURN_REQUESTED' || st === 'INSPECTION_SCHEDULED' || st === 'PENDING' || !st
+          })
+          if (pending.length > 0) return pending.length
+          return parsed.length
+        }
+      }
+    } catch {}
+    return 0
+  })
+
+  const effectiveReturnPendingCount = useMemo(() => {
+    if (returnBadgeCount > 0) return returnBadgeCount
+    try {
+      const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const pending = parsed.filter((c: any) => {
+            const st = String(c.status || '').toUpperCase()
+            return st === 'RETURN_REQUESTED' || st === 'INSPECTION_SCHEDULED' || st === 'PENDING' || !st
+          })
+          if (pending.length > 0) return pending.length
+          return parsed.length
+        }
+      }
+    } catch {}
+    const pendingList = customerReturnRequests.filter(c => c.status === 'PENDING' || !c.status)
+    return pendingList.length > 0 ? pendingList.length : customerReturnRequests.length
+  }, [returnBadgeCount, customerReturnRequests])
 
   const currentReturnBooking = activeRentals.find(r => r.id === selectedReturnBookingId) || (customerReturnRequests.find(r => r.bookingId === selectedReturnBookingId || r.id === selectedReturnBookingId) as any)
   const returnDepositAmt = currentReturnBooking ? (currentReturnBooking.depositPaid || currentReturnBooking.depositAmount || 0) : 0
@@ -1530,13 +1604,13 @@ export const StaffDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">assignment_return</span>
           <span>3. Trả Kho</span>
-          {customerReturnRequests.length > 0 && (
+          {effectiveReturnPendingCount > 0 && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
               staffActiveTab === 'returns'
                 ? 'bg-white text-amber-900'
                 : 'bg-amber-100 text-amber-800'
             }`}>
-              {customerReturnRequests.length} yêu cầu
+              {effectiveReturnPendingCount} yêu cầu
             </span>
           )}
         </button>
@@ -2121,6 +2195,7 @@ export const StaffDashboard: React.FC = () => {
             userName={user?.fullName || 'Nhân viên trực ca'}
             activeRentals={activeRentals}
             rawReturnRequests={customerReturnRequests}
+            onMetricsChange={(m) => setReturnBadgeCount(m.pending)}
             onReturnCompleted={() => {
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)

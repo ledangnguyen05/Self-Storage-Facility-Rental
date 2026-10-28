@@ -114,6 +114,7 @@ interface HandoverReturnWorkbenchProps {
   rawReturnRequests?: any[]
   onReturnCompleted?: () => void
   onRefresh?: () => void
+  onMetricsChange?: (metrics: { pending: number; inspecting: number; refunding: number; completed: number; total: number }) => void
 }
 
 const normalizeStatus = (rawStatus: any): ReturnStepStatus => {
@@ -368,7 +369,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   activeRentals = [],
   rawReturnRequests = [],
   onReturnCompleted,
-  onRefresh
+  onRefresh,
+  onMetricsChange
 }) => {
   const isFacilityManager = userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER'
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -601,6 +603,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     return { pending, inspecting, refunding, completed, total: returnCases.length }
   }, [returnCases])
 
+  // Synchronize metrics count with parent dashboard in real time
+  useEffect(() => {
+    if (onMetricsChange) {
+      onMetricsChange(metrics)
+    }
+  }, [metrics, onMetricsChange])
+
   // Modal states for scheduling inspection
   const [showScheduleConfirmModal, setShowScheduleConfirmModal] = useState(false)
   const [scheduleDatetimeInput, setScheduleDatetimeInput] = useState('')
@@ -817,21 +826,21 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       case 'INSPECTION_IN_PROGRESS':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-300 animate-pulse">Đang nghiệm thu</span>
       case 'INSPECTION_PASSED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">2. Nghiệm thu ĐẠT</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">Nghiệm thu ĐẠT</span>
       case 'INSPECTION_ISSUE':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-900 border border-rose-300">2. Có hư hại / Khấu trừ</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-900 border border-rose-300">Có hư hại / Khấu trừ</span>
       case 'REFUND_PENDING_APPROVAL':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-400">3. Chờ duyệt cọc</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-950 border border-amber-400">Chờ duyệt cọc</span>
       case 'REFUND_APPROVED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300">3. Đã duyệt hoàn</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300">Đã duyệt hoàn</span>
       case 'REFUND_PROCESSING':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-900 border border-sky-300">3. Đang hoàn tiền</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-sky-100 text-sky-900 border border-sky-300">Đang hoàn tiền</span>
       case 'REFUNDED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-300">3. Đã hoàn tiền</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-300">Đã hoàn tiền</span>
       case 'COMPLETED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">✓ 4. Đã bàn giao xong</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">Đã bàn giao xong</span>
       default:
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">1. Chờ xử lý</span>
+        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">Chờ xử lý</span>
     }
   }
 
@@ -899,6 +908,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               : 'bg-white border-slate-200 hover:border-indigo-300'
           }`}
         >
+          <div className="flex items-center justify-between text-xs font-bold text-indigo-800">
+            <span>2. Đang Nghiệm Thu</span>
+            <Layers size={16} />
+          </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="font-headline text-2xl font-extrabold text-indigo-950">{metrics.inspecting}</span>
             <span className="text-xs text-indigo-700">đang kiểm tra</span>
@@ -1151,19 +1164,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   </div>
                 )}
 
-                {currentCase.status === 'INSPECTION_IN_PROGRESS' && (
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 flex-wrap gap-2 bg-emerald-50/60 p-3 rounded-xl border border-emerald-100">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-                      <span className="text-xs font-bold text-emerald-950">
-                        Hồ sơ đang trong tiến trình nghiệm thu thực địa 7 tiêu chuẩn.
-                      </span>
-                    </div>
-                    <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200 animate-pulse">
-                      Đang nghiệm thu hiện trường
-                    </span>
-                  </div>
-                )}
               </div>
 
               {/* KHỐI B: BIÊN BẢN THẨM ĐỊNH HIỆN TRƯỜNG (CHECKLIST 7 HẠNG MỤC) */}
