@@ -114,23 +114,23 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
     int markTodayEndedUncheckedInAsAbsent(@Param("today") LocalDate today, @Param("nowTime") java.time.LocalTime nowTime);
 
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)
-    @Query("""
-            UPDATE StaffAssignment a
-            SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT,
-                a.notes = CASE
-                    WHEN a.notes IS NULL OR a.notes = '' THEN '[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)'
-                    ELSE CONCAT(a.notes, E'\n[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)')
+    @Query(value = """
+            UPDATE staff_assignments
+            SET status = 'ABSENT',
+                notes = CASE
+                    WHEN notes IS NULL OR notes = '' THEN '[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)'
+                    ELSE CONCAT(notes, E'\\n[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)')
                 END
-            WHERE a.status = com.boxora.enums.StaffAssignmentStatus.CHECKED_IN
-              AND a.checkedOutAt IS NULL
+            WHERE status = 'CHECKED_IN'
+              AND checked_out_at IS NULL
               AND (
-                (a.shift != com.boxora.enums.StaffShift.NIGHT AND a.assignedDate < :today)
+                (shift != 'NIGHT' AND assigned_date < :today)
                 OR
-                (a.shift = com.boxora.enums.StaffShift.NIGHT AND a.assignedDate < :yesterday)
+                (shift = 'NIGHT' AND assigned_date < :yesterday)
                 OR
-                (a.shift = com.boxora.enums.StaffShift.NIGHT AND a.assignedDate = :yesterday AND :nowTime >= '12:00:00')
+                (shift = 'NIGHT' AND assigned_date = :yesterday AND :nowTime >= CAST('12:00:00' AS time))
               )
-            """)
+            """, nativeQuery = true)
     int markOverdueCheckedInAsAbsent(@Param("today") LocalDate today, @Param("yesterday") LocalDate yesterday, @Param("nowTime") java.time.LocalTime nowTime);
 
     @Deprecated
