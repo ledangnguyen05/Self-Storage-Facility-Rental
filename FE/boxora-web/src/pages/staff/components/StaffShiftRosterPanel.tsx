@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { AttendanceReportTab } from '../../manager/components/AttendanceReportTab'
 import { userService } from '../../../services/userService'
 import { facilityService } from '../../../services/facilityService'
 import {
@@ -102,8 +104,17 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   const [dateShortcut, setDateShortcut] = useState<'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH' | 'CUSTOM'>('THIS_WEEK')
   const [dateRangeError, setDateRangeError] = useState<string | null>(null)
 
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE' ? 'ATTENDANCE' : 'ROSTER'
+
   // Sub-tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF'>('ROSTER')
+  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF' | 'ATTENDANCE'>(initialTab)
+
+  useEffect(() => {
+    if (searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE') {
+      setActiveSubTab('ATTENDANCE')
+    }
+  }, [searchParams])
 
   // Real Data States
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
@@ -536,6 +547,17 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
               <span>Làm mới</span>
             </button>
 
+            {/* Nút In Phiếu Chấm Công / Bảng Chấm Công */}
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('ATTENDANCE')}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              title="Xem bảng chấm công và in phiếu báo cáo"
+            >
+              <span className="material-symbols-outlined text-[18px]">print</span>
+              <span>In Phiếu Chấm Công</span>
+            </button>
+
             {/* Shift Swap Button for Staff */}
             <button
               type="button"
@@ -913,6 +935,19 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
         >
           <span className="material-symbols-outlined text-[18px]">badge</span>
           <span>Danh Sách Nhân Sự Cơ Sở ({staffList.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('ATTENDANCE')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'ATTENDANCE'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-white hover:bg-slate-100 text-blue-700 border border-blue-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">fact_check</span>
+          <span>Bảng Chấm Công & In Phiếu Báo Cáo</span>
         </button>
       </div>
 
@@ -1759,6 +1794,16 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
             </table>
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB 5: ATTENDANCE & REPORTING (Chấm công & In phiếu) */}
+      {activeSubTab === 'ATTENDANCE' && (
+        <AttendanceReportTab
+          facilityId={targetFacilityId}
+          facilityName={currentFacilityName}
+          staffList={staffList}
+          currentUserName={user?.fullName || user?.username}
+        />
       )}
 
       {/* MODAL: SHIFT DETAIL MODAL */}
