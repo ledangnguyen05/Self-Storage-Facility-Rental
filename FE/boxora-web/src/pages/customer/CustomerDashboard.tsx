@@ -2707,27 +2707,31 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           {activeTab === 'my-units' && (
             <button
               type="button"
-              onClick={() => {
-                const el = document.getElementById('customer-unit-activity-history-section')
-                if (el) {
-                  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                } else {
-                  handleTabChange('history')
-                }
-              }}
+              onClick={() => handleTabChange('history')}
               className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[15px]">arrow_downward</span>
-              <span>Cuộn xuống lịch sử kho</span>
+              <span className="material-symbols-outlined text-[15px]">history</span>
+              <span>Xem lịch sử kho &amp; thông báo</span>
+            </button>
+          )}
+
+          {activeTab === 'history' && (
+            <button
+              type="button"
+              onClick={() => handleTabChange('my-units')}
+              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[15px]">inventory_2</span>
+              <span>Quay lại Kho của tôi</span>
             </button>
           )}
         </div>
       </div>
 
-      {/* 3. TAB 1 & TAB LỊCH SỬ: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) & LỊCH SỬ KHO (HISTORY) */}
-      {(activeTab === 'my-units' || activeTab === 'history') && (
+      {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
+      {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-          {activeTab === 'my-units' && (loadingContracts ? (
+          {loadingContracts ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : effectiveActiveContracts.length === 0 ? (
             <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-5 max-w-2xl mx-auto my-6 border-dashed border-2 border-slate-200">
@@ -3180,8 +3184,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         onClick={() => {
                           setUnitHistoryUnitFilter(c.unitCode)
                           setUnitHistoryCategory('ALL')
-                          const el = document.getElementById('customer-unit-activity-history-section')
-                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          handleTabChange('history')
                         }}
                         className="px-3.5 h-10 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
@@ -3245,12 +3248,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 )
               })}
             </div>
-          ))}
+          )}
+        </div>
+      )}
 
-          {/* BẢNG LỊCH SỬ THAO TÁC KHO, GIA HẠN & THÔNG BÁO HỆ THỐNG (Ở DƯỚI CÙNG TAB KHO CỦA TÔI & MÃ PIN HOẶC TAB LỊCH SỬ RIÊNG) */}
+      {/* 3B. TAB 2: LỊCH SỬ THAO TÁC KHO, GIA HẠN & THÔNG BÁO HỆ THỐNG (HISTORY) */}
+      {activeTab === 'history' && (
+        <div className="flex flex-col gap-6">
           <div
             id="customer-unit-activity-history-section"
-            className="stitch-card p-6 flex flex-col gap-5 border border-slate-200/90 shadow-xs mt-2"
+            className="stitch-card p-6 flex flex-col gap-5 border border-slate-200/90 shadow-xs"
           >
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
