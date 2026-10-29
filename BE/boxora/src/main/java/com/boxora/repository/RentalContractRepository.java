@@ -31,11 +31,14 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     Optional<RentalContract> findByDocusealSubmitterSlug(String submitterSlug);
 
-    Optional<RentalContract> findByBookingId(UUID bookingId);
+    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.booking.id = :bookingId AND c.status <> com.boxora.enums.RentalContractStatus.SUPERSEDED ORDER BY c.createdAt DESC")
+    Optional<RentalContract> findByBookingId(@org.springframework.data.repository.query.Param("bookingId") UUID bookingId);
 
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
-    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.booking.id = :bookingId")
+    @org.springframework.data.jpa.repository.Query("SELECT c FROM RentalContract c WHERE c.booking.id = :bookingId AND c.status <> com.boxora.enums.RentalContractStatus.SUPERSEDED ORDER BY c.createdAt DESC")
     Optional<RentalContract> findByBookingIdForUpdate(@org.springframework.data.repository.query.Param("bookingId") UUID bookingId);
+
+    List<RentalContract> findAllByBooking_IdOrderByCreatedAtDesc(UUID bookingId);
 
     Optional<RentalContract> findByContractCodeIgnoreCase(String contractCode);
 
@@ -54,7 +57,7 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "unit.facility", "facility", "booking"})
     @org.springframework.data.jpa.repository.Query("""
             SELECT c FROM RentalContract c
-            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE)
+            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED)
               AND c.endDate < :currentDate
             ORDER BY c.endDate ASC
             """)
@@ -64,7 +67,7 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     @org.springframework.data.jpa.repository.Query("""
             SELECT COUNT(c) FROM RentalContract c
-            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE)
+            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED)
               AND c.endDate < :currentDate
             """)
     long countActiveOrOverdueContractsBeforeDate(

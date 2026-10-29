@@ -9,11 +9,14 @@ import lombok.*;
 @Getter
 @Setter
 @Builder
-@NoArgsConstructor
 @AllArgsConstructor
 public class StorageUnit extends BaseEntity {
 
-    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth) {
+    public StorageUnit() {
+        super();
+    }
+
+    public StorageUnit(String unitCode, String floorLevel, UnitStatus status, Facility facility, UnitType unitType, java.math.BigDecimal pricePerMonth, String imageUrl) {
         super();
         this.unitCode = unitCode;
         this.floorLevel = floorLevel;
@@ -21,6 +24,7 @@ public class StorageUnit extends BaseEntity {
         this.facility = facility;
         this.unitType = unitType;
         this.pricePerMonth = pricePerMonth;
+        this.imageUrl = imageUrl;
     }
 
     @Column(name = "unit_code", nullable = false, length = 30)
@@ -46,6 +50,15 @@ public class StorageUnit extends BaseEntity {
 
     @Column(name = "image_url", length = 1000)
     private String imageUrl;
+
+    @Column(name = "maintenance_reason", length = 500)
+    private String maintenanceReason;
+
+    @Column(name = "maintenance_by", length = 150)
+    private String maintenanceBy;
+
+    @Column(name = "maintenance_at")
+    private java.time.LocalDateTime maintenanceAt;
 
     public java.math.BigDecimal getEffectiveBasePrice() {
         if (pricePerMonth != null) {

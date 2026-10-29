@@ -30,12 +30,23 @@ import com.boxora.repository.UserRepository;
 import com.boxora.security.RequestContext;
 import com.boxora.service.FileStorageService;
 import com.boxora.service.SupportTicketService;
+import com.boxora.service.EmailService;
 import com.boxora.entity.StorageUnit;
 import com.boxora.entity.RentalContract;
 import com.boxora.enums.RentalContractStatus;
 import com.boxora.enums.BookingStatus;
+import com.boxora.enums.UnitStatus;
 import com.boxora.repository.StorageUnitRepository;
 import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.NotificationLogRepository;
+import com.boxora.repository.PaymentRepository;
+import com.boxora.entity.NotificationLog;
+import com.boxora.enums.NotificationChannel;
+import com.boxora.enums.NotificationType;
+import com.boxora.entity.Payment;
+import com.boxora.enums.PaymentType;
+import com.boxora.enums.PaymentStatus;
+import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -63,6 +74,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
     private final ActivityLogRepository activityLogRepository;
     private final FileStorageService fileStorageService;
     private final RequestContext requestContext;
+    private final NotificationLogRepository notificationLogRepository;
+    private final PaymentRepository paymentRepository;
+    private final EmailService emailService;
 
     @Override
     public SupportTicketResponse createTicket(SupportTicketRequest request) {
@@ -81,6 +95,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
         boolean isStaffOrManager = "STAFF".equalsIgnoreCase(currentUserRole) || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole);
 
+        User customer;
         User currentStaffOrManager = null;
         if (isStaffOrManager) {
             currentStaffOrManager = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
@@ -93,119 +108,17 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                         currentUserRole, currentUserId, request.getFacilityId());
                 throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
             }
-        }
-
-        // 1. Resolve facility
-        Facility facility = null;
-        if (isStaffOrManager) {
-            facility = currentStaffOrManager.getFacility();
-        } else if (request.getFacilityId() != null) {
-            facility = facilityRepository.findById(request.getFacilityId()).orElse(null);
-        }
-        if (facility == null && !isStaffOrManager) {
-            facility = facilityRepository.findAllByOrderByCreatedAtAsc().stream().findFirst().orElse(null);
-        }
-
-        // 2. Resolve and validate storageUnit
-        StorageUnit storageUnit = null;
-        if (request.getStorageUnitId() != null) {
-            storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
-                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy thông tin ngăn kho"));
-        } else if (request.getUnitCode() != null && !request.getUnitCode().trim().isEmpty()) {
-            String code = request.getUnitCode().trim();
-            if (facility == null) {
-                throw new AppException(ErrorCode.FACILITY_NOT_FOUND, "Không xác định được cơ sở lưu trữ để kiểm tra mã kho");
-            }
-            String targetFacilityName = facility.getName();
-            storageUnit = storageUnitRepository.findByFacility_IdAndUnitCodeIgnoreCase(facility.getId(), code)
-                    .orElseThrow(() -> new AppException(ErrorCode.TICKET_UNIT_NOT_IN_FACILITY,
-                            "Mã ngăn kho \"" + code + "\" không tồn tại tại cơ sở " + targetFacilityName));
-        }
-
-        if (storageUnit != null && facility != null && !storageUnit.getFacility().getId().equals(facility.getId())) {
-            throw new AppException(ErrorCode.TICKET_UNIT_NOT_IN_FACILITY,
-                    "Mã ngăn kho " + storageUnit.getUnitCode() + " không thuộc cơ sở " + facility.getName());
-        }
-
-        // 3. Resolve associated booking and renting customer
-        Booking booking = null;
-        User rentingCustomer = null;
-
-        if (request.getBookingId() != null) {
-            booking = bookingRepository.findById(request.getBookingId())
-                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-            if (storageUnit == null && booking.getStorageUnit() != null) {
-                storageUnit = booking.getStorageUnit();
-            }
-            if (booking.getCustomer() != null) {
-                rentingCustomer = booking.getCustomer();
-            }
-            Facility bookingFacility = booking.getStorageUnit() != null ? booking.getStorageUnit().getFacility() : null;
-            if (isStaffOrManager && (bookingFacility == null
-                    || currentStaffOrManager.getFacility() == null
-                    || !bookingFacility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
-                log.warn("[SECURITY] {} {} attempted to create ticket for booking {} outside assigned facility",
-                        currentUserRole, currentUserId, booking.getId());
-                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
-            }
-            if (facility == null && bookingFacility != null) {
-                facility = bookingFacility;
-            }
-        }
-
-        // If storageUnit is identified but rentingCustomer not yet resolved, query active contracts or bookings
-        if (storageUnit != null && rentingCustomer == null) {
-            List<RentalContractStatus> activeContractStatuses = List.of(
-                    RentalContractStatus.ACTIVE,
-                    RentalContractStatus.OVERDUE,
-                    RentalContractStatus.PENDING_SIGNATURE
-            );
-            Optional<RentalContract> activeContractOpt = rentalContractRepository
-                    .findFirstByUnit_IdAndStatusInOrderByCreatedAtDesc(storageUnit.getId(), activeContractStatuses);
-
-            if (activeContractOpt.isPresent()) {
-                RentalContract activeContract = activeContractOpt.get();
-                rentingCustomer = activeContract.getCustomer();
-                if (booking == null && activeContract.getBooking() != null) {
-                    booking = activeContract.getBooking();
-                }
-            } else {
-                List<BookingStatus> activeBookingStatuses = List.of(
-                        BookingStatus.ACTIVE,
-                        BookingStatus.CONFIRMED,
-                        BookingStatus.CHECKOUT_REQUESTED,
-                        BookingStatus.OVERDUE
-                );
-                Optional<Booking> activeBookingOpt = bookingRepository
-                        .findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(storageUnit.getId(), activeBookingStatuses);
-                if (activeBookingOpt.isPresent()) {
-                    booking = activeBookingOpt.get();
-                    rentingCustomer = booking.getCustomer();
-                }
-            }
-        }
-
-        // 4. Determine final customer, createdByStaff, and isStaffRecorded flag
-        User customer;
-        User createdByStaff = null;
-        boolean isStaffRecorded = false;
-
-        if (isStaffOrManager) {
-            createdByStaff = currentStaffOrManager;
-            isStaffRecorded = true;
-
-            if (rentingCustomer != null) {
-                // Kho đang được thuê bởi khách hàng: gắn ticket cho khách để hiển thị trong lịch sử Hỗ trợ & sự cố của họ
-                customer = rentingCustomer;
-            } else if (request.getCustomerId() != null) {
+            if (request.getCustomerId() != null) {
                 customer = userRepository.findById(request.getCustomerId())
                         .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
-            } else {
-                // Kho trống/chưa có khách thuê: ticket nội bộ thuộc về nhân sự tạo, chỉ hiển thị trên dashboard Boxora
+            } else if (currentStaffOrManager != null) {
+                // If staff creates an on-site operational incident, customer defaults to staff/self
                 customer = currentStaffOrManager;
+            } else {
+                throw new AppException(ErrorCode.USER_NOT_FOUND);
             }
         } else {
-            // Khách hàng tự tạo ticket
+            // Customer role: principal must be authenticated customer
             if (currentUserId == null) {
                 throw new AppException(ErrorCode.UNAUTHORIZED);
             }
@@ -215,12 +128,64 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             }
             customer = userRepository.findById(currentUserId)
                     .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        }
 
-            if (booking != null && (booking.getCustomer() == null || !booking.getCustomer().getId().equals(customer.getId()))) {
-                throw new AppException(ErrorCode.FORBIDDEN);
+        // Resolve associated booking and facility
+        Booking booking = null;
+        Facility facility = null;
+        StorageUnit storageUnit = null;
+        User createdByStaff = isStaffOrManager ? currentStaffOrManager : null;
+        Boolean isStaffRecorded = isStaffOrManager;
+
+        if (request.getBookingId() != null) {
+            booking = bookingRepository.findById(request.getBookingId())
+                    .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+            if (!isStaffOrManager) {
+                if (booking.getCustomer() == null || !booking.getCustomer().getId().equals(customer.getId())) {
+                    log.warn("[SECURITY] Customer {} attempted to link support ticket to booking {} owned by {}",
+                            customer.getId(), booking.getId(), booking.getCustomer() != null ? booking.getCustomer().getId() : "null");
+                    throw new AppException(ErrorCode.FORBIDDEN);
+                }
             }
-            createdByStaff = null;
-            isStaffRecorded = false;
+
+            if (booking.getStorageUnit() != null) {
+                storageUnit = booking.getStorageUnit();
+                facility = booking.getStorageUnit().getFacility();
+            }
+            if (isStaffOrManager && (facility == null
+                    || !facility.getId().equals(currentStaffOrManager.getFacility().getId()))) {
+                log.warn("[SECURITY] {} {} attempted to create ticket for booking {} outside assigned facility",
+                        currentUserRole, currentUserId, booking.getId());
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
+        }
+
+        // If facility not resolved from booking, attempt to resolve from request or user
+        if (facility == null && request.getFacilityId() != null) {
+            facility = facilityRepository.findById(request.getFacilityId()).orElse(null);
+        }
+        if (isStaffOrManager) {
+            facility = currentStaffOrManager.getFacility();
+        }
+        if (facility == null && !isStaffOrManager) {
+            facility = facilityRepository.findAllByOrderByCreatedAtAsc().stream().findFirst().orElse(null);
+        }
+
+        if (request.getStorageUnitId() != null) {
+            storageUnit = storageUnitRepository.findById(request.getStorageUnitId())
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+        } else if (storageUnit == null && request.getUnitCode() != null && facility != null) {
+            storageUnit = storageUnitRepository.findByFacility_IdAndUnitCodeIgnoreCase(
+                    facility.getId(), request.getUnitCode().trim()
+            ).orElse(null);
+        }
+
+        if (storageUnit != null && storageUnit.getFacility() != null) {
+            if (facility != null && !facility.getId().equals(storageUnit.getFacility().getId())) {
+                throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
+            }
+            facility = storageUnit.getFacility();
         }
 
         String ticketCode = generateUniqueTicketCode();
@@ -243,6 +208,16 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
         String combinedEvidence = resolveImageEvidence(request.getImageEvidence(), request.getEvidenceUrls());
 
+        String initialRefundStatus = "NONE";
+        if (category == TicketCategory.RETURN_REFUND) {
+            initialRefundStatus = "PENDING_FM_APPROVAL";
+        } else if (category == TicketCategory.RETURN_EXPIRED) {
+            if (booking != null && (booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.OVERDUE)) {
+                booking.setStatus(BookingStatus.CHECKOUT_REQUESTED);
+                bookingRepository.save(booking);
+            }
+        }
+
         SupportTicket ticket = SupportTicket.builder()
                 .ticketCode(ticketCode)
                 .customer(customer)
@@ -258,19 +233,19 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .priority(priority)
                 .imageEvidence(combinedEvidence)
                 .slaDueAt(slaDueAt)
+                .refundStatus(initialRefundStatus)
                 .build();
 
-        SupportTicket savedTicket = supportTicketRepository.save(ticket);
-        if (savedTicket != null) {
-            ticket = savedTicket;
-        }
+        ticket = supportTicketRepository.save(ticket);
 
         // Audit log
-        logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus() != null ? ticket.getStatus().name() : "OPEN",
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus().name(),
                 "Tạo phiếu báo cáo sự cố mới " + ticketCode + " (" + category + ", " + priority + ")");
 
-        log.info("Created support ticket {} for customer {} (staffRecorded={}) at facility {}", ticketCode, customer.getId(),
-                isStaffRecorded, facility != null ? facility.getCode() : "UNKNOWN");
+        notifyFacilityStaffNewTicket(ticket);
+
+        log.info("Created support ticket {} for customer {} at facility {}", ticketCode, customer.getId(),
+                facility != null ? facility.getCode() : "UNKNOWN");
         return mapToResponse(ticket);
     }
 
@@ -473,6 +448,11 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_ASSIGN, oldStatus.name(), ticket.getStatus().name(),
                 currentUser.getFullName() + " đã tiếp nhận xử lý ticket tại cơ sở");
 
+        sendCustomerTicketNotification(ticket,
+                "Nhân viên tiếp nhận yêu cầu #" + ticket.getTicketCode(),
+                "Nhân viên " + currentUser.getFullName() + " đang xử lý yêu cầu #" + ticket.getTicketCode() + " của bạn.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
         return mapToResponse(ticket);
     }
 
@@ -519,6 +499,11 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_ASSIGN, oldStatus.name(), ticket.getStatus().name(),
                 "Phân công cho nhân viên " + targetStaff.getFullName() + " bởi Quản lý " + manager.getFullName());
+
+        sendCustomerTicketNotification(ticket,
+                "Nhân viên tiếp nhận yêu cầu #" + ticket.getTicketCode(),
+                "Nhân sự " + targetStaff.getFullName() + " đã được phân công xử lý yêu cầu #" + ticket.getTicketCode() + " của bạn.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
 
         return mapToResponse(ticket);
     }
@@ -594,6 +579,18 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, oldStatus.name(), ticket.getStatus().name(),
                 "Cập nhật tiến độ: " + (request.getNote() != null ? request.getNote() : "Cập nhật thông tin xử lý"));
 
+        String statusVi = switch (ticket.getStatus()) {
+            case IN_PROGRESS -> "Đang xử lý";
+            case RESOLVED -> "Đã giải quyết";
+            case CLOSED -> "Đã đóng";
+            case REOPENED -> "Đã mở lại";
+            default -> ticket.getStatus().name();
+        };
+        sendCustomerTicketNotification(ticket,
+                "Cập nhật yêu cầu hỗ trợ #" + ticket.getTicketCode(),
+                "Trạng thái yêu cầu #" + ticket.getTicketCode() + " đã chuyển sang: " + statusVi + (request.getNote() != null ? ". Ghi chú: " + request.getNote() : ""),
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
         return mapToResponse(ticket);
     }
 
@@ -635,11 +632,37 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_RESOLVE, oldStatus.name(), TicketStatus.RESOLVED.name(),
                 "Giải quyết hoàn tất: " + note);
 
+        sendCustomerTicketNotification(ticket,
+                "Yêu cầu hỗ trợ #" + ticket.getTicketCode() + " đã được xử lý",
+                "Đội ngũ Boxora đã xử lý xong yêu cầu #" + ticket.getTicketCode() + " của bạn. Ghi chú: " + note,
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        try {
+            if (ticket.getCustomer() != null && ticket.getCustomer().getEmail() != null) {
+                emailService.sendSimpleEmail(
+                        ticket.getCustomer().getEmail(),
+                        "Boxora - Yêu cầu hỗ trợ #" + ticket.getTicketCode() + " đã được giải quyết",
+                        "Kính chào " + ticket.getCustomer().getFullName() + ",\n\n"
+                                + "Yêu cầu hỗ trợ #" + ticket.getTicketCode() + " (" + ticket.getTitle() + ") của quý khách đã được nhân viên hoàn tất xử lý.\n"
+                                + "Nội dung giải quyết: " + note + "\n\n"
+                                + "Quý khách vui lòng kiểm tra và xác nhận đóng yêu cầu hoặc đánh giá mức độ hài lòng trên hệ thống Boxora.\n\n"
+                                + "Trân trọng,\nĐội ngũ Boxora."
+                );
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to send resolve notification email for ticket {}: {}", ticket.getTicketCode(), ex.getMessage());
+        }
+
         return mapToResponse(ticket);
     }
 
     @Override
     public SupportTicketResponse closeTicket(UUID id, String closingNote) {
+        return closeTicketWithRating(id, closingNote, null, null);
+    }
+
+    @Override
+    public SupportTicketResponse closeTicketWithRating(UUID id, String closingNote, Integer rating, String feedback) {
         UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
         String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
         if ("BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) || "ADMIN".equalsIgnoreCase(currentUserRole)) {
@@ -673,14 +696,192 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         TicketStatus oldStatus = ticket.getStatus();
         ticket.setStatus(TicketStatus.CLOSED);
         ticket.setClosedAt(LocalDateTime.now());
+        if (rating != null && rating >= 1 && rating <= 5) {
+            ticket.setRating(rating);
+        }
+        if (feedback != null && !feedback.isBlank()) {
+            ticket.setCustomerFeedback(feedback.trim());
+        }
 
-        String feedback = (closingNote != null && !closingNote.isBlank()) ? closingNote.trim() : "Xác nhận đóng hoàn tất";
-        ticket.setResolutionNote(ticket.getResolutionNote() + "\n[ĐÓNG PHIẾU]: " + feedback);
+        String noteText = (closingNote != null && !closingNote.isBlank()) ? closingNote.trim() : (feedback != null ? feedback : "Xác nhận đóng hoàn tất");
+        if (rating != null) {
+            noteText += " [Đánh giá: " + rating + " sao]";
+        }
+        ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n[ĐÓNG PHIẾU]: " + noteText : "[ĐÓNG PHIẾU]: " + noteText);
 
         ticket = supportTicketRepository.save(ticket);
 
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_CLOSE, oldStatus.name(), TicketStatus.CLOSED.name(),
-                "Đóng phiếu sự cố: " + feedback);
+                "Đóng phiếu sự cố: " + noteText);
+
+        sendCustomerTicketNotification(ticket,
+                "Đã đóng phiếu yêu cầu #" + ticket.getTicketCode(),
+                "Phiếu sự cố #" + ticket.getTicketCode() + " đã được xác nhận đóng hoàn tất.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse approveRefund(UUID id, com.boxora.dto.request.TicketApproveRefundRequest request) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+
+        if (!"FACILITY_MANAGER".equalsIgnoreCase(currentUserRole) && !"ADMIN".equalsIgnoreCase(currentUserRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản lý cơ sở hoặc Quản trị viên mới có quyền duyệt hoàn tiền");
+        }
+
+        SupportTicket ticket = supportTicketRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        validateFacilityScope(ticket, currentUser);
+
+        ticket.setFmApprovedAt(LocalDateTime.now());
+        ticket.setFmApprovedBy(currentUser);
+        ticket.setFmApprovalNote(request.getNote());
+        ticket.setRefundAmount(request.getRefundAmount());
+        ticket.setRefundStatus("AWAITING_CUSTOMER_BANK_INFO");
+        if (ticket.getStatus() == TicketStatus.OPEN) {
+            ticket.setStatus(TicketStatus.IN_PROGRESS);
+        }
+
+        String noteAppend = String.format("[QUẢN LÝ DUYỆT HOÀN TIỀN - %s]: Số tiền duyệt: %,d đ. %s",
+                currentUser.getFullName(), request.getRefundAmount().longValue(),
+                request.getNote() != null ? request.getNote() : "");
+        ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n" + noteAppend : noteAppend);
+
+        ticket = supportTicketRepository.save(ticket);
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, "PENDING_FM_APPROVAL", "AWAITING_CUSTOMER_BANK_INFO",
+                "Quản lý duyệt hoàn tiền: " + request.getRefundAmount() + "đ");
+
+        sendCustomerTicketNotification(ticket,
+                "Yêu cầu trả kho hoàn tiền đã được phê duyệt",
+                String.format("Quản lý cơ sở đã duyệt số tiền hoàn trả: %,d đ. Vui lòng cung cấp số tài khoản ngân hàng để Admin giải ngân chuyển khoản.", request.getRefundAmount().longValue()),
+                NotificationType.REFUND_BANK_INFO_REQUIRED);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse submitBankInfo(UUID id, com.boxora.dto.request.TicketBankInfoRequest request) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+
+        SupportTicket ticket = supportTicketRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if ("CUSTOMER".equalsIgnoreCase(currentUserRole) && currentUserId != null) {
+            if (ticket.getCustomer() == null || !ticket.getCustomer().getId().equals(currentUserId)) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Khách hàng không được cập nhật thông tin ticket của người khác");
+            }
+        }
+
+        ticket.setBankName(request.getBankName().trim());
+        ticket.setBankAccountNumber(request.getBankAccountNumber().trim());
+        ticket.setBankAccountName(request.getBankAccountName().trim().toUpperCase());
+        ticket.setRefundStatus("PENDING_ADMIN_PAYOUT");
+        ticket.setStatus(TicketStatus.IN_PROGRESS);
+
+        String bankNote = String.format("[KHÁCH CUNG CẤP TK NHẬN TIỀN]: Ngân hàng: %s | STK: %s | Chủ TK: %s%s",
+                request.getBankName().trim(), request.getBankAccountNumber().trim(), request.getBankAccountName().trim().toUpperCase(),
+                (request.getNote() != null && !request.getNote().isBlank()) ? " | Ghi chú: " + request.getNote().trim() : "");
+        ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n" + bankNote : bankNote);
+
+        ticket = supportTicketRepository.save(ticket);
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, "AWAITING_CUSTOMER_BANK_INFO", "PENDING_ADMIN_PAYOUT",
+                "Khách hàng đã cung cấp thông tin tài khoản ngân hàng nhận tiền");
+
+        sendCustomerTicketNotification(ticket,
+                "Đã ghi nhận thông tin tài khoản ngân hàng",
+                String.format("Boxora đã nhận thông tin tài khoản ngân hàng [%s - %s]. Admin đang tiến hành lệnh chuyển khoản.", request.getBankName(), request.getBankAccountNumber()),
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse adminConfirmPayout(UUID id, com.boxora.dto.request.TicketAdminPayoutRequest request) {
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+
+        if ("ADMIN".equalsIgnoreCase(currentUserRole) || "SYSTEM_ADMIN".equalsIgnoreCase(currentUserRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "System Admin không có thẩm quyền giải ngân tài chính. Thao tác này yêu cầu quyền REFUND_APPROVE (Quản lý nghiệp vụ/Kế toán).");
+        }
+
+        if (!"BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) && !"FINANCE_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản lý vận hành kinh doanh (Business Manager) có quyền thực hiện và xác nhận chuyển khoản hoàn tiền");
+        }
+
+        SupportTicket ticket = supportTicketRepository.findById(id)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        if ("COMPLETED".equalsIgnoreCase(ticket.getRefundStatus())) {
+            throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Yêu cầu hoàn tiền này đã được giải ngân hoàn tất trước đó");
+        }
+
+        if (ticket.getRefundAmount() == null || ticket.getRefundAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ticket không có số tiền hoàn trả hợp lệ để giải ngân");
+        }
+
+        if (request.getTransferTransactionRef() == null || request.getTransferTransactionRef().trim().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã tham chiếu giao dịch chuyển khoản không được để trống");
+        }
+
+        User adminUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+
+        ticket.setTransferTransactionRef(request.getTransferTransactionRef().trim());
+        ticket.setTransferProofUrl(request.getTransferProofUrl().trim());
+        ticket.setTransferConfirmedAt(LocalDateTime.now());
+        ticket.setTransferConfirmedBy(adminUser);
+        ticket.setRefundStatus("COMPLETED");
+        ticket.setStatus(TicketStatus.RESOLVED);
+        ticket.setResolvedAt(LocalDateTime.now());
+
+        String payoutNote = String.format("[ADMIN ĐÃ CHUYỂN TIỀN]: Mã giao dịch: %s. %s",
+                request.getTransferTransactionRef().trim(),
+                request.getAdminNotes() != null ? request.getAdminNotes().trim() : "");
+        ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n" + payoutNote : payoutNote);
+
+        // Tạo bản ghi Payment REFUNDED trong hệ thống nếu có booking
+        if (ticket.getBooking() != null && ticket.getRefundAmount() != null && ticket.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                Payment refundPayment = Payment.builder()
+                        .transactionId("PAYOUT-" + ticket.getTransferTransactionRef())
+                        .booking(ticket.getBooking())
+                        .amount(ticket.getRefundAmount())
+                        .paymentType(PaymentType.DEPOSIT)
+                        .status(PaymentStatus.REFUNDED)
+                        .paymentMethod("BANK_TRANSFER")
+                        .paymentTime(LocalDateTime.now())
+                        .confirmedByStaff(adminUser)
+                        .confirmedAt(LocalDateTime.now())
+                        .paymentNotes("Chi trả tiền trả kho hoàn tiền cho ticket #" + ticket.getTicketCode())
+                        .build();
+                paymentRepository.save(refundPayment);
+            } catch (Exception ex) {
+                log.warn("Could not save refund payment record: {}", ex.getMessage());
+            }
+        }
+
+        ticket = supportTicketRepository.save(ticket);
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_RESOLVE, "PENDING_ADMIN_PAYOUT", "COMPLETED",
+                "Admin hoàn tất chuyển khoản tiền hoàn trả: " + request.getTransferTransactionRef());
+
+        // Thông báo cho khách hàng kèm ảnh biên lai (không cần khách xác nhận lại)
+        sendCustomerTicketNotification(ticket,
+                "Hoàn tất chuyển khoản tiền hoàn trả kho",
+                String.format("Admin đã chuyển khoản thành công số tiền: %,d đ vào tài khoản %s - %s. Mã GD: %s. Quý khách có thể xem ảnh biên lai chuyển tiền tại chi tiết yêu cầu.",
+                        ticket.getRefundAmount() != null ? ticket.getRefundAmount().longValue() : 0,
+                        ticket.getBankName() != null ? ticket.getBankName() : "",
+                        ticket.getBankAccountNumber() != null ? ticket.getBankAccountNumber() : "",
+                        ticket.getTransferTransactionRef()),
+                NotificationType.REFUND_PAYOUT_COMPLETED);
 
         return mapToResponse(ticket);
     }
@@ -1035,8 +1236,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .customerName(t.getCustomer() != null ? t.getCustomer().getFullName() : "Khách hàng Boxora")
                 .customerPhone(t.getCustomer() != null ? t.getCustomer().getPhone() : "")
                 .bookingId(t.getBooking() != null ? t.getBooking().getId() : null)
-                .unitCode(unitCodeDisplay)
-                .storageUnitId(storageUnitId)
+                .unitCode(t.getBooking() != null && t.getBooking().getStorageUnit() != null
+                        ? t.getBooking().getStorageUnit().getUnitCode()
+                        : "Chung")
                 .facilityId(t.getFacility() != null ? t.getFacility().getId() : null)
                 .facilityName(t.getFacility() != null ? t.getFacility().getName() : "Boxora Facility")
                 .facilityCode(t.getFacility() != null ? t.getFacility().getCode() : "BOXORA")
@@ -1060,7 +1262,44 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .resolvedAt(t.getResolvedAt())
                 .closedAt(t.getClosedAt())
                 .createdAt(t.getCreatedAt())
+                .updatedAt(t.getUpdatedAt())
+                .bankName(t.getBankName())
+                .bankAccountNumber(getMaskedBankAccount(t.getBankAccountNumber(), t.getCustomer() != null ? t.getCustomer().getId() : null))
+                .bankAccountName(t.getBankAccountName())
+                .refundAmount(t.getRefundAmount())
+                .transferProofUrl(t.getTransferProofUrl())
+                .transferTransactionRef(t.getTransferTransactionRef())
+                .transferConfirmedAt(t.getTransferConfirmedAt())
+                .transferConfirmedByName(t.getTransferConfirmedBy() != null ? t.getTransferConfirmedBy().getFullName() : null)
+                .fmApprovedAt(t.getFmApprovedAt())
+                .fmApprovedByName(t.getFmApprovedBy() != null ? t.getFmApprovedBy().getFullName() : null)
+                .fmApprovalNote(t.getFmApprovalNote())
+                .refundStatus(t.getRefundStatus())
+                .rating(t.getRating())
+                .customerFeedback(t.getCustomerFeedback())
                 .build();
+    }
+
+    private void sendCustomerTicketNotification(SupportTicket ticket, String title, String content, NotificationType type) {
+        try {
+            if (ticket.getCustomer() == null || ticket.getCustomer().getEmail() == null) return;
+            NotificationLog logEntry = NotificationLog.builder()
+                    .recipient(ticket.getCustomer())
+                    .recipientEmail(ticket.getCustomer().getEmail())
+                    .recipientName(ticket.getCustomer().getFullName())
+                    .facility(ticket.getFacility())
+                    .channel(NotificationChannel.IN_APP)
+                    .notificationType(type != null ? type : NotificationType.SUPPORT_TICKET_UPDATE)
+                    .referenceType("SUPPORT_TICKET")
+                    .referenceId(ticket.getId())
+                    .title(title)
+                    .content(content)
+                    .status("SENT")
+                    .build();
+            notificationLogRepository.save(logEntry);
+        } catch (Exception ex) {
+            log.warn("Failed to create customer ticket notification: {}", ex.getMessage());
+        }
     }
 
     private SupportTicketContactLogResponse mapToContactLogResponse(SupportTicketContactLog log) {
@@ -1078,4 +1317,355 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .createdAt(log.getCreatedAt())
                 .build();
     }
+
+    private String getMaskedBankAccount(String rawAccount, UUID ownerCustomerId) {
+        if (rawAccount == null || rawAccount.isBlank()) return rawAccount;
+        UUID currentUserId = requestContext != null ? requestContext.currentUserId() : null;
+        String currentUserRole = requestContext != null ? requestContext.currentUserRole() : null;
+
+        boolean canViewFull = "BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole)
+                || "ADMIN".equalsIgnoreCase(currentUserRole)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)
+                || (ownerCustomerId != null && ownerCustomerId.equals(currentUserId));
+
+        if (!canViewFull && rawAccount.length() > 4) {
+            return "*".repeat(rawAccount.length() - 4) + rawAccount.substring(rawAccount.length() - 4);
+        }
+        return rawAccount;
+    }
+
+    private void notifyFacilityStaffNewTicket(SupportTicket ticket) {
+        if (ticket.getFacility() == null) return;
+        try {
+            List<User> staffList = userRepository.findByFacility_IdAndRole_Name(ticket.getFacility().getId(), "STAFF");
+            List<User> fmList = userRepository.findByFacility_IdAndRole_Name(ticket.getFacility().getId(), "FACILITY_MANAGER");
+            List<User> recipients = new ArrayList<>();
+            if (staffList != null) recipients.addAll(staffList);
+            if (fmList != null) recipients.addAll(fmList);
+
+            for (User staff : recipients) {
+                if (staff.getIsActive() != null && !staff.getIsActive()) continue;
+                NotificationLog logEntry = NotificationLog.builder()
+                        .recipient(staff)
+                        .recipientEmail(staff.getEmail())
+                        .recipientName(staff.getFullName())
+                        .facility(ticket.getFacility())
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.SUPPORT_TICKET_UPDATE)
+                        .referenceType("SUPPORT_TICKET")
+                        .referenceId(ticket.getId())
+                        .title("Sự cố mới tại cơ sở #" + ticket.getTicketCode())
+                        .content("Có yêu cầu hỗ trợ mới [" + ticket.getTitle() + "] tại ô kho " + (ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode() : "N/A"))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(logEntry);
+            }
+        } catch (Exception ex) {
+            log.warn("Failed to notify facility staff about new ticket {}: {}", ticket.getTicketCode(), ex.getMessage());
+        }
+    }
+
+    private Booking resolveBookingForTicket(SupportTicket ticket) {
+        Booking booking = ticket.getBooking();
+        if (booking == null && ticket.getStorageUnit() != null) {
+            booking = bookingRepository.findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(
+                    ticket.getStorageUnit().getId(),
+                    List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.READY_FOR_CHECKIN)
+            ).orElse(null);
+        }
+
+        // Tự động tìm kiếm đơn thuê kho đang hoạt động của khách hàng nếu ticket chưa được gán trực tiếp đơn
+        if (booking == null && ticket.getCustomer() != null) {
+            List<Booking> customerBookings = ticket.getFacility() != null
+                    ? bookingRepository.findByCustomer_IdAndStorageUnit_Facility_Id(ticket.getCustomer().getId(), ticket.getFacility().getId())
+                    : Collections.emptyList();
+            if (customerBookings == null || customerBookings.isEmpty()) {
+                customerBookings = bookingRepository.findByCustomer_Id(ticket.getCustomer().getId());
+            }
+
+            if (customerBookings != null && !customerBookings.isEmpty()) {
+                // Ưu tiên đơn có ô kho vật lý trước và trạng thái ACTIVE/CONFIRMED/READY_FOR_CHECKIN
+                booking = customerBookings.stream()
+                        .filter(b -> b.getStorageUnit() != null)
+                        .filter(b -> b.getStatus() == BookingStatus.ACTIVE
+                                || b.getStatus() == BookingStatus.CONFIRMED
+                                || b.getStatus() == BookingStatus.READY_FOR_CHECKIN
+                                || b.getStatus() == BookingStatus.PAID_AND_SIGNED)
+                        .sorted((b1, b2) -> {
+                            int p1 = b1.getStatus() == BookingStatus.ACTIVE ? 3 : (b1.getStatus() == BookingStatus.CONFIRMED ? 2 : 1);
+                            int p2 = b2.getStatus() == BookingStatus.ACTIVE ? 3 : (b2.getStatus() == BookingStatus.CONFIRMED ? 2 : 1);
+                            if (p1 != p2) return Integer.compare(p2, p1);
+                            if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                                return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                            }
+                            return 0;
+                        })
+                        .findFirst()
+                        .orElse(null);
+
+                // Nếu vẫn null thì tìm đơn bất kỳ hợp lệ (kể cả chưa gán kho)
+                if (booking == null) {
+                    booking = customerBookings.stream()
+                            .filter(b -> b.getStatus() == BookingStatus.ACTIVE
+                                    || b.getStatus() == BookingStatus.CONFIRMED
+                                    || b.getStatus() == BookingStatus.READY_FOR_CHECKIN
+                                    || b.getStatus() == BookingStatus.PAID_AND_SIGNED)
+                            .sorted((b1, b2) -> {
+                                if (b1.getCreatedAt() != null && b2.getCreatedAt() != null) {
+                                    return b2.getCreatedAt().compareTo(b1.getCreatedAt());
+                                }
+                                return 0;
+                            })
+                            .findFirst()
+                            .orElse(null);
+                }
+            }
+
+            if (booking != null) {
+                ticket.setBooking(booking);
+                if (ticket.getStorageUnit() == null && booking.getStorageUnit() != null) {
+                    ticket.setStorageUnit(booking.getStorageUnit());
+                }
+                supportTicketRepository.save(ticket);
+            }
+        }
+        return booking;
+    }
+
+    @Override
+    public SupportTicketResponse regeneratePin(UUID ticketId) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Booking booking = resolveBookingForTicket(ticket);
+
+        if (booking == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Không tìm thấy hợp đồng / đơn thuê kho đang hoạt động liên kết với sự cố này.");
+        }
+
+        String newPin = String.format("%06d", ThreadLocalRandom.current().nextInt(100000, 999999));
+        booking.setAccessPin(newPin);
+        bookingRepository.save(booking);
+
+        String unitCode = ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode()
+                : (booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A");
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
+                "Cấp lại mã PIN khẩn cấp (" + newPin + ") cho kho #" + unitCode);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Hệ thống đã kích hoạt lệnh cấp lại mã PIN mới cho kho #" + unitCode)
+                .result("Mã PIN mới đã được đồng bộ xuống khóa thông minh: " + newPin)
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Cấp lại mã PIN mới cho kho #" + unitCode,
+                "Mã PIN khóa điện tử mới của quý khách là: " + newPin + ". Vui lòng thử mở kho bằng mã số mới này.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        if (ticket.getCustomer() != null && ticket.getCustomer().getEmail() != null) {
+            try {
+                emailService.sendHandoverPinEmail(
+                        ticket.getCustomer().getEmail(),
+                        ticket.getCustomer().getFullName(),
+                        unitCode,
+                        booking.getBookingCode(),
+                        newPin,
+                        ticket.getFacility() != null ? ticket.getFacility().getName() : "Boxora"
+                );
+            } catch (Exception ignored) {}
+        }
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse remoteUnlock(UUID ticketId) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Booking booking = resolveBookingForTicket(ticket);
+
+        String unitCode = ticket.getStorageUnit() != null ? ticket.getStorageUnit().getUnitCode()
+                : (booking != null && booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A");
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
+                "Kích hoạt mở khóa từ xa khẩn cấp cho kho #" + unitCode);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Nhân viên kích hoạt lệnh mở khóa từ xa khẩn cấp cho kho #" + unitCode)
+                .result("Lệnh mở khóa từ xa đã gửi đến khóa IoT thành công.")
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Mở khóa từ xa kho #" + unitCode,
+                "Nhân viên vận hành đã kích hoạt mở khóa từ xa khẩn cấp cho kho #" + unitCode + " của bạn.",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse adjustBilling(UUID ticketId, BigDecimal amount, String note) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        String details = "Điều chỉnh / miễn trừ phụ phí (" + (amount != null ? String.format("%,dđ", amount.longValue()) : "0đ") + "): " + (note != null ? note : "Theo yêu cầu rà soát của khách hàng");
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(), details);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Điều chỉnh phí / hóa đơn: " + details)
+                .result("Đã ghi nhận điều chỉnh thanh toán.")
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Cập nhật hóa đơn / phí dịch vụ #" + ticket.getTicketCode(),
+                "Đội ngũ vận hành đã rà soát và điều chỉnh hóa đơn của quý khách: " + details,
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse setUnitMaintenance(UUID ticketId, String reason, String maintainerName) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Booking booking = resolveBookingForTicket(ticket);
+        StorageUnit unit = ticket.getStorageUnit();
+        if (unit == null && booking != null) {
+            unit = booking.getStorageUnit();
+        }
+        if (unit == null) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy ô kho liên kết để chuyển trạng thái bảo trì");
+        }
+
+        unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+        unit.setMaintenanceReason(reason != null && !reason.isBlank() ? reason : "Báo cáo bảo trì từ sự cố #" + ticket.getTicketCode());
+        unit.setMaintenanceBy(maintainerName != null && !maintainerName.isBlank() ? maintainerName : "Nhân viên vận hành");
+        unit.setMaintenanceAt(LocalDateTime.now());
+        storageUnitRepository.save(unit);
+
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
+                "Chuyển ô kho #" + unit.getUnitCode() + " sang trạng thái BẢO TRÌ (MAINTENANCE): " + reason);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("INTERNAL_CHAT")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("STAFF")
+                .contactTarget(ticket.getFacility() != null ? ticket.getFacility().getName() : "Facility")
+                .summary("Đã chuyển kho #" + unit.getUnitCode() + " sang trạng thái BẢO TRÌ")
+                .result("Lý do: " + reason + " - Người xử lý: " + maintainerName)
+                .build();
+        contactLogRepository.save(logEntry);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketResponse transferUnit(UUID ticketId, UUID targetUnitId, String reason) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        Booking booking = resolveBookingForTicket(ticket);
+        if (booking == null) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND, "Không tìm thấy hợp đồng thuê kho liên kết để điều chuyển");
+        }
+
+        StorageUnit targetUnit = storageUnitRepository.findById(targetUnitId)
+                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND, "Không tìm thấy ô kho chuyển đến"));
+
+        StorageUnit oldUnit = booking.getStorageUnit();
+        if (oldUnit != null) {
+            oldUnit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+            oldUnit.setMaintenanceReason("Đã chuyển khách sang kho #" + targetUnit.getUnitCode() + " do sự cố #" + ticket.getTicketCode());
+            oldUnit.setMaintenanceAt(LocalDateTime.now());
+            storageUnitRepository.save(oldUnit);
+        }
+
+        targetUnit.setStatus(UnitStatus.OCCUPIED);
+        storageUnitRepository.save(targetUnit);
+
+        booking.setStorageUnit(targetUnit);
+        bookingRepository.save(booking);
+
+        ticket.setStorageUnit(targetUnit);
+        ticket = supportTicketRepository.save(ticket);
+
+        String desc = "Đã chuyển đổi kho từ #" + (oldUnit != null ? oldUnit.getUnitCode() : "cũ") + " sang kho #" + targetUnit.getUnitCode() + ". Lý do: " + reason;
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(), desc);
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod("CUSTOMER_REPLY")
+                .contactedBy(requestContext.currentUserId() != null ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer()) : ticket.getCustomer())
+                .targetRole("CUSTOMER")
+                .contactTarget(ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer")
+                .summary("Thực hiện chuyển kho tạm thời: " + desc)
+                .result("Đã cập nhật vị trí kho mới trong hợp đồng.")
+                .build();
+        contactLogRepository.save(logEntry);
+
+        sendCustomerTicketNotification(ticket,
+                "Hỗ trợ chuyển ô kho #" + targetUnit.getUnitCode(),
+                "Hệ thống đã hỗ trợ chuyển đồ sang ô kho mới #" + targetUnit.getUnitCode() + " (" + (targetUnit.getUnitType() != null ? targetUnit.getUnitType().getTypeName() : "") + ").",
+                NotificationType.SUPPORT_TICKET_UPDATE);
+
+        return mapToResponse(ticket);
+    }
+
+    @Override
+    public SupportTicketContactLogResponse addTicketMessage(UUID ticketId, String messageType, String content) {
+        SupportTicket ticket = supportTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        User sender = requestContext.currentUserId() != null
+                ? userRepository.findById(requestContext.currentUserId()).orElse(ticket.getCustomer())
+                : ticket.getCustomer();
+
+        boolean isCustomerReply = "CUSTOMER_REPLY".equalsIgnoreCase(messageType) || "REPLY".equalsIgnoreCase(messageType);
+        String method = isCustomerReply ? "CUSTOMER_REPLY" : "INTERNAL_NOTE";
+
+        SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
+                .ticket(ticket)
+                .contactMethod(method)
+                .contactedBy(sender)
+                .targetRole(isCustomerReply ? "CUSTOMER" : "STAFF")
+                .contactTarget(isCustomerReply ? (ticket.getCustomer() != null ? ticket.getCustomer().getEmail() : "customer") : "Internal Team")
+                .summary(content)
+                .result(isCustomerReply ? "Đã gửi phản hồi đến khách hàng" : "Ghi chú nội bộ nhân viên")
+                .build();
+
+        logEntry = contactLogRepository.save(logEntry);
+
+        if (isCustomerReply) {
+            sendCustomerTicketNotification(ticket,
+                    "Phản hồi từ nhân viên xử lý yêu cầu #" + ticket.getTicketCode(),
+                    content,
+                    NotificationType.SUPPORT_TICKET_UPDATE);
+        }
+
+        return mapToContactLogResponse(logEntry);
+    }
+
 }

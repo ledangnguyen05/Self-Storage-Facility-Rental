@@ -46,6 +46,7 @@ class ReportServiceTest {
     @Mock private EmailService emailService;
     @Mock private ActivityLogService activityLogService;
     @Mock private FacilityAccessGuard facilityAccessGuard;
+    @Mock private RefundRequestRepository refundRequestRepository;
 
     @InjectMocks
     private ReportServiceImpl reportService;
@@ -122,11 +123,15 @@ class ReportServiceTest {
                         new BigDecimal("350"), 3L
                 }));
         when(paymentRepository.countPaidPaymentsByMethod(from, to, selectedFacilityId)).thenReturn(
-                Arrays.asList(new Object[]{"VNPAY", 2L}, new Object[]{null, 1L}));
+                Arrays.asList(new Object[]{"VNPAY", 2L, new BigDecimal("250"), new BigDecimal("250")}, new Object[]{null, 1L, new BigDecimal("100"), BigDecimal.ZERO}));
+        when(rentalContractRepository.findAll()).thenReturn(java.util.Collections.emptyList());
+        when(refundRequestRepository.findAll()).thenReturn(java.util.Collections.emptyList());
 
         RevenueReportResponse report = reportService.getRevenueReport(fromDate, toDate, selectedFacilityId);
 
         assertThat(report.getSystemSummary().getPaymentCount()).isEqualTo(3L);
+        assertThat(report.getSystemSummary().getNetRevenue()).isEqualByComparingTo("250");
+        assertThat(report.getSystemSummary().getTotalCashIn()).isEqualByComparingTo("350");
         assertThat(report.getMonthlyRevenue()).hasSize(1);
         assertThat(report.getMonthlyRevenue().get(0).getMonth()).isEqualTo("2026-03");
         assertThat(report.getMonthlyRevenue().get(0).getTotalRevenue()).isEqualByComparingTo("350");

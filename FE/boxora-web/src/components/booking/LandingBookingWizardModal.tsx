@@ -1,6 +1,7 @@
 import { useLanguage } from '../../context/LanguageContext'
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
+  AlertCircle,
   X,
   MapPin,
   Search,
@@ -29,12 +30,25 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Facility, StorageUnit } from '../../types'
-import { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24, getPeriodForHour } from '../../utils/checkInTimeSlots'
+import {
+  CHECK_IN_PERIOD_GROUPS,
+  CHECK_IN_HOURS_24,
+  getPeriodForHour,
+  isPeriodInPast,
+  getFirstAvailablePeriod,
+  hasAvailablePeriods,
+  formatLocalDate,
+} from '../../utils/checkInTimeSlots'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
+import { contractService } from '../../services/contractService'
+import { paymentService } from '../../services/paymentService'
+import { DocuSealSimulationModal } from '../modals/DocuSealSimulationModal'
+import { RentalContract, Booking as BookingType } from '../../types'
 import { geocodeAddressWithNominatim } from '../../services/nominatimGeocodingService'
 import { calculateDistanceKm } from '../../data/storageUnitsData'
+import { toast } from '../../utils/toast'
 import { useNavigate } from 'react-router-dom'
 
 export type SizeTierKey = 'LOCKER' | 'STANDARD' | 'LARGE' | 'ENTERPRISE'
@@ -58,6 +72,13 @@ interface SizeTierOption {
   badge: string
   door: string
   category: 'mini' | 'personal' | 'business' | 'special'
+}
+
+const FALLBACK_UNIT_TYPE_IDS: Record<SizeTierKey, string> = {
+  LOCKER: '10000000-0000-0000-0000-000000000001',
+  STANDARD: '10000000-0000-0000-0000-000000000003',
+  LARGE: '10000000-0000-0000-0000-000000000004',
+  ENTERPRISE: '10000000-0000-0000-0000-000000000004',
 }
 
 const SIZE_TIERS: Record<SizeTierKey, SizeTierOption> = {
@@ -162,7 +183,13 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     d.setDate(d.getDate() + 1)
     return d.toISOString().split('T')[0]
   })
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string>('morning')
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => getFirstAvailablePeriod(checkInDate))
+
+  useEffect(() => {
+    if (isPeriodInPast(checkInDate, selectedPeriodId)) {
+      setSelectedPeriodId(getFirstAvailablePeriod(checkInDate))
+    }
+  }, [checkInDate, selectedPeriodId])
   const selectedPeriod = useMemo(() => {
     return CHECK_IN_PERIOD_GROUPS.find((g) => g.id === selectedPeriodId) || CHECK_IN_PERIOD_GROUPS[0]
   }, [selectedPeriodId])
@@ -181,6 +208,61 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [sentToStaffTime, setSentToStaffTime] = useState<string>('')
   const [isResendingToStaff, setIsResendingToStaff] = useState<boolean>(false)
   const [sendSuccessToast, setSendSuccessToast] = useState<string | null>(null)
+  const [isPayNowProcessing, setIsPayNowProcessing] = useState<boolean>(false)
+  const [isPayLaterProcessing, setIsPayLaterProcessing] = useState<boolean>(false)
+  const [createdBookingForSigning, setCreatedBookingForSigning] = useState<BookingType | null>(null)
+  const [contractForSigning, setContractForSigning] = useState<RentalContract | null>(null)
+  const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
+  const [paymentRedirectUrl, setPaymentRedirectUrl] = useState<string | null>(null)
+  const [payLaterConfirmed, setPayLaterConfirmed] = useState<boolean>(false)
+  const [hasSignedContract, setHasSignedContract] = useState<boolean>(false)
+  const [contractInvalidatedByChange, setContractInvalidatedByChange] = useState<boolean>(false)
+  const [signingFormSnapshot, setSigningFormSnapshot] = useState<{
+    facilityId: string
+    sizeTierKey: string
+    rentalMonths: number
+    startDate: string
+    checkInDate: string
+    selectedPeriodId: string
+    fullName: string
+    phone: string
+    email: string
+    idCard: string
+    idCardType: string
+  } | null>(null)
+
+  useEffect(() => {
+    const handlePageShow = () => {
+      setIsPayNowProcessing(false)
+      setIsPayLaterProcessing(false)
+    }
+    window.addEventListener('pageshow', handlePageShow)
+    return () => window.removeEventListener('pageshow', handlePageShow)
+  }, [])
+
+  useEffect(() => {
+    setIsPayNowProcessing(false)
+    setIsPayLaterProcessing(false)
+  }, [currentStep])
+
+  // Refresh storage units
+  const refreshStorageUnits = useCallback(() => {
+    storageUnitService.getUnits().then((units) => {
+      if (Array.isArray(units)) {
+        setStorageUnits(units)
+      }
+    }).catch(err => {
+      console.warn('Failed to refresh storage units:', err)
+    })
+  }, [])
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      refreshStorageUnits()
+    }
+    window.addEventListener('boxora:storage-units-refresh', handleRefresh)
+    return () => window.removeEventListener('boxora:storage-units-refresh', handleRefresh)
+  }, [refreshStorageUnits])
 
   // Load facilities and storage units
   useEffect(() => {
@@ -331,7 +413,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       return {
         ...fac,
         distanceKm,
-        availableCount: availableCount > 0 ? availableCount : (unitsInFac.length > 0 ? 0 : 8), // sensible fallback if mockup
+        availableCount: availableCount, // Real available count only
       }
     }).sort((a, b) => {
       if (a.distanceKm != null && b.distanceKm != null) {
@@ -343,6 +425,22 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     })
   }, [facilities, storageUnits, customerCoords, selectedCityFilter])
 
+  // Helper to count available units for any specific size tier
+  const getTierAvailableCount = useCallback((tierKey: SizeTierKey) => {
+    if (!selectedFacility) return 0
+    const facUnits = storageUnits.filter((u) => u.facilityId === selectedFacility.id)
+    const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+    return available.filter((u) => {
+      const typeName = (u.unitTypeName || (u as any).unitType?.name || (u as any).type || '').toLowerCase()
+      const area = u.areaSqMeters || (u as any).area || 0
+      if (tierKey === 'LOCKER' && (typeName.includes('mini') || typeName.includes('locker') || typeName.includes('cá nhân') || (area > 0 && area <= 3))) return true
+      if (tierKey === 'STANDARD' && (typeName.includes('tiêu chuẩn') || typeName.includes('standard') || (area > 3 && area <= 7))) return true
+      if (tierKey === 'LARGE' && (typeName.includes('lớn') || typeName.includes('large') || (area > 7 && area <= 14))) return true
+      if (tierKey === 'ENTERPRISE' && (typeName.includes('doanh nghiệp') || typeName.includes('business') || area > 14)) return true
+      return false
+    }).length
+  }, [selectedFacility, storageUnits])
+
   // Count units available for selected tier in chosen facility
   const tierAvailability = useMemo(() => {
     if (!selectedFacility) return { count: 0, matchedUnit: null as StorageUnit | null }
@@ -350,9 +448,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     const facUnits = storageUnits.filter((u) => u.facilityId === selectedFacility.id)
     const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
 
-    // Find unit that roughly matches selected tier
-    const tier = SIZE_TIERS[selectedTierKey]
-    const matched = available.find((u) => {
+    const matchedUnits = available.filter((u) => {
       const typeName = (u.unitTypeName || (u as any).unitType?.name || (u as any).type || '').toLowerCase()
       const area = u.areaSqMeters || (u as any).area || 0
       if (selectedTierKey === 'LOCKER' && (typeName.includes('mini') || typeName.includes('locker') || typeName.includes('cá nhân') || (area > 0 && area <= 3))) return true
@@ -360,10 +456,12 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       if (selectedTierKey === 'LARGE' && (typeName.includes('lớn') || typeName.includes('large') || (area > 7 && area <= 14))) return true
       if (selectedTierKey === 'ENTERPRISE' && (typeName.includes('doanh nghiệp') || typeName.includes('business') || area > 14)) return true
       return false
-    }) || available[0] || null
+    })
+
+    const matched = matchedUnits[0] || null
 
     return {
-      count: available.length > 0 ? available.length : 5,
+      count: matchedUnits.length,
       matchedUnit: matched,
     }
   }, [selectedFacility, storageUnits, selectedTierKey])
@@ -397,20 +495,131 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     }
   }, [selectedTierKey, rentalMonths])
 
+  // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
+  const captureSigningSnapshot = useCallback(() => ({
+    facilityId: selectedFacility?.id || '',
+    sizeTierKey: selectedTierKey,
+    rentalMonths,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    fullName: fullName.trim(),
+    phone: phone.trim().replace(/[\s.-]/g, ''),
+    email: email.trim().toLowerCase(),
+    idCard: idCard.trim(),
+    idCardType,
+  }), [
+    selectedFacility?.id,
+    selectedTierKey,
+    rentalMonths,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    fullName,
+    phone,
+    email,
+    idCard,
+    idCardType,
+  ])
+
+  // Kiểm tra xem form hiện tại có khớp hoàn toàn với thông tin của hợp đồng đã ký trước đó hay không
+  const isContractFormMatching = useMemo(() => {
+    if (!signingFormSnapshot) return false
+    return (
+      signingFormSnapshot.facilityId === (selectedFacility?.id || '') &&
+      signingFormSnapshot.sizeTierKey === selectedTierKey &&
+      signingFormSnapshot.rentalMonths === rentalMonths &&
+      signingFormSnapshot.startDate === startDate &&
+      signingFormSnapshot.checkInDate === checkInDate &&
+      signingFormSnapshot.selectedPeriodId === selectedPeriodId &&
+      signingFormSnapshot.fullName.toLowerCase() === fullName.trim().toLowerCase() &&
+      signingFormSnapshot.phone === phone.trim().replace(/[\s.-]/g, '') &&
+      signingFormSnapshot.email.toLowerCase() === email.trim().toLowerCase() &&
+      signingFormSnapshot.idCard === idCard.trim() &&
+      signingFormSnapshot.idCardType === idCardType
+    )
+  }, [
+    signingFormSnapshot,
+    selectedFacility?.id,
+    selectedTierKey,
+    rentalMonths,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    fullName,
+    phone,
+    email,
+    idCard,
+    idCardType,
+  ])
+
+  // Nếu người dùng quay lại thay đổi bất kỳ thông tin nào (cơ sở, loại kho, tháng thuê, khách hàng, ngày check-in),
+  // tự động hủy hợp đồng cũ và reset trạng thái ký để người dùng ký hợp đồng mới
+  useEffect(() => {
+    if (signingFormSnapshot && !isContractFormMatching) {
+      setHasSignedContract(false)
+      setContractForSigning(null)
+      setContractInvalidatedByChange(true)
+      setCreatedBookingForSigning((prev) => prev ? ({ ...prev, contractSigned: false, status: 'PENDING_SIGNATURE' as any, contractStatus: 'PENDING_SIGNATURE' }) : prev)
+      if (createdBookingForSigning?.id) {
+        void bookingService.invalidateSignedContract(createdBookingForSigning.id).catch(() => {})
+      }
+      setSigningFormSnapshot(null)
+    }
+  }, [signingFormSnapshot, isContractFormMatching])
+
+  const isContractAlreadySigned = Boolean(
+    !contractInvalidatedByChange &&
+    isContractFormMatching &&
+    (hasSignedContract ||
+      contractForSigning?.signedAt ||
+      createdBookingForSigning?.contractSigned ||
+      (createdBookingForSigning as any)?.status === 'SIGNED_PENDING_PAYMENT' ||
+      (createdBookingForSigning as any)?.status === 'PAID_AND_SIGNED') &&
+    createdBookingForSigning?.id
+  )
+
   // Form Validation
   const validateStep3 = () => {
     const errors: Record<string, string> = {}
-    if (!fullName.trim()) errors.fullName = 'Vui lòng nhập họ và tên của bạn'
-    if (!phone.trim()) {
+    // Họ và tên: chỉ cần có chữ cái, không space rỗng hoặc ký tự đặc biệt
+    const nameTrim = fullName.trim()
+    if (!nameTrim) {
+      errors.fullName = 'Vui lòng nhập họ và tên của bạn'
+    } else if (!/^[\p{L}\s]+$/u.test(nameTrim)) {
+      errors.fullName = 'Họ và tên chỉ được chứa chữ cái, không chứa số hoặc ký tự đặc biệt'
+    } else if (nameTrim.length > 100) {
+      errors.fullName = 'Họ và tên không được vượt quá 100 ký tự'
+    }
+
+    const cleanPhone = phone.trim().replace(/[\s.-]/g, '')
+    if (!cleanPhone) {
       errors.phone = 'Vui lòng nhập số điện thoại liên hệ'
-    } else if (!/^(0[3|5|7|8|9])[0-9]{8}$/.test(phone.trim().replace(/\s/g, ''))) {
-      errors.phone = 'Số điện thoại không đúng định dạng (10 số, bắt đầu bằng 03, 05, 07, 08, 09)'
+    } else if (!/^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone)) {
+      errors.phone = 'Số điện thoại di động Việt Nam không hợp lệ (10 số, bắt đầu bằng 03, 05, 07, 08, 09 hoặc +84)'
     }
-    if (!idCard.trim()) {
-      errors.idCard = 'Vui lòng nhập số CCCD hoặc Hộ chiếu'
-    } else if (idCard.trim().length < 8 || idCard.trim().length > 15) {
-      errors.idCard = 'Số CCCD/Hộ chiếu hợp lệ từ 9 đến 12 ký tự'
+
+    const cleanId = idCard.trim().toUpperCase()
+    if (!cleanId) {
+      errors.idCard = idCardType === 'CCCD' ? 'Vui lòng nhập số CCCD 12 chữ số' : 'Vui lòng nhập số Hộ chiếu'
+    } else if (idCardType === 'CCCD') {
+      if (!/^\d{12}$/.test(cleanId)) {
+        errors.idCard = 'Số CCCD phải bao gồm đúng 12 chữ số'
+      }
+    } else {
+      if (!/^[A-Z][0-9]{7,8}$/.test(cleanId)) {
+        errors.idCard = 'Số Hộ chiếu không hợp lệ (1 chữ cái in hoa theo sau là 7-8 chữ số)'
+      }
     }
+
+    if (email.trim() && !/^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/.test(email.trim())) {
+      errors.email = 'Địa chỉ email không đúng định dạng (ví dụ: name@domain.com)'
+    }
+
+    if (specialNotes && specialNotes.length > 500) {
+      errors.specialNotes = 'Ghi chú tối đa 500 ký tự'
+    }
+
     if (!checkInDate) {
       errors.checkInDate = 'Vui lòng chọn ngày dự kiến đến nhận kho'
     }
@@ -426,11 +635,15 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const handleNextStep = () => {
     if (currentStep === 1) {
       if (!selectedFacility) {
-        alert('Vui lòng chọn một cơ sở kho lưu trữ để tiếp tục.')
+        toast.warning('Vui lòng chọn một cơ sở kho lưu trữ để tiếp tục.')
         return
       }
       setCurrentStep(2)
     } else if (currentStep === 2) {
+      if (tierAvailability.count === 0) {
+        toast.warning('Gói kích thước đã chọn tại cơ sở này hiện đã hết buồng kho khả dụng. Vui lòng chọn gói khác hoặc đổi cơ sở.')
+        return
+      }
       setCurrentStep(3)
     } else if (currentStep === 3) {
       if (validateStep3()) {
@@ -446,63 +659,192 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     }
   }
 
-  // Confirm Reservation (Step 4 -> Step 5)
-  const handleConfirmReservation = async () => {
-    setIsSubmitting(true)
-    setSubmitError(null)
-
-    // Generate readable booking code fallback
-    const randomSuffix = Math.floor(1000 + Math.random() * 9000)
-    const nowStr = new Date().toISOString().slice(2, 10).replace(/-/g, '')
-    const generatedCode = `BX-${nowStr}-${randomSuffix}`
+  // Luồng 1: Thanh toán ngay (DocuSeal E-signing -> VNPay Sandbox)
+  const handlePayNow = async () => {
+    setIsPayNowProcessing(true)
+      let resBooking: BookingType | null = null
+      setSubmitError(null)
+      if (false) console.log(resBooking)
 
     try {
-      // If user is authenticated and we have a backend storage unit ID, submit real booking
-      if (isAuthenticated && tierAvailability.matchedUnit?.id) {
-        try {
-          const res = await bookingService.createBooking({
-            storageUnitId: tierAvailability.matchedUnit.id,
-            startDate: startDate,
-            rentalMonths: rentalMonths,
-            totalRentalFee: quoteCalculation.totalRent,
-            depositPaid: 0,
-            signingMethod: 'IN_PERSON',
-            expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
-            checkInTime: checkInTime,
-            identityCardNumber: idCard.trim(),
-            identityCardType: idCardType,
-          })
+      const unitTypeId = tierAvailability.matchedUnit?.unitTypeId || FALLBACK_UNIT_TYPE_IDS[selectedTierKey]
+      const bookingPayload = {
+        bookingCode: createdBookingForSigning?.bookingCode || undefined,
+        facilityId: selectedFacility?.id,
+        unitTypeId: unitTypeId,
+        customerName: fullName.trim(),
+        customerPhone: phone.trim(),
+        customerEmail: email.trim(),
+        identityCardNumber: idCard.trim(),
+        identityCardType: idCardType,
+        startDate: startDate,
+        rentalMonths: rentalMonths,
+        totalRentalFee: quoteCalculation.totalRent,
+        depositAmount: quoteCalculation.depositAmount,
+        depositPaid: 0,
+        signingMethod: 'ONLINE',
+        initialStatus: 'PENDING_SIGNATURE',
+        expectedArrivalAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+        expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+        checkInTime: selectedPeriod.hours[0]?.value || '09:00',
+      } as const
+      const newBooking = createdBookingForSigning?.id
+        ? await bookingService.updateUnpaidBooking(createdBookingForSigning.id, bookingPayload)
+        : await bookingService.createBooking(bookingPayload)
+        resBooking = newBooking
+        if (false) console.log({
+      })
 
-          if (res?.bookingCode || res?.id) {
-            setBookingCode(res.bookingCode || `BX-${res.id.slice(0, 8).toUpperCase()}`)
-          } else {
-            setBookingCode(generatedCode)
-          }
-        } catch (apiErr: any) {
-          console.warn('Backend booking API error, using safe reservation log:', apiErr)
-          // Even if backend fails (e.g., token expired or permission constraint), we don't block the user's booking request!
-          setBookingCode(generatedCode)
-        }
-      } else {
-        setBookingCode(generatedCode)
+      setCreatedBookingForSigning(newBooking)
+      setBookingCode(newBooking.bookingCode)
+
+      // Gọi API DocuSeal tạo hợp đồng số (mẫu theo kích thước Size_ID)
+      const contract = await contractService.getContractByBookingId(newBooking.id)
+      if (!contract) {
+        throw new Error('Không thể khởi tạo hợp đồng điện tử DocuSeal.')
       }
+
+      setContractForSigning(contract)
+      // Snapshot is only captured upon actual signature completion
+      setShowDocuSealModal(true)
+    } catch (err: any) {
+      console.error('Pay now initiation error:', err)
+      setSubmitError(err?.response?.data?.message || err?.message || 'Có lỗi xảy ra khi tạo hợp đồng điện tử.')
+    } finally {
+      setIsPayNowProcessing(false)
+    }
+  }
+
+  // Callback sau khi ký DocuSeal thành công -> Chuyển hướng sang VNPay Sandbox
+  const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
+    setShowDocuSealModal(false)
+    setHasSignedContract(true)
+    setContractInvalidatedByChange(false)
+    setSigningFormSnapshot(captureSigningSnapshot())
+    setCreatedBookingForSigning((prev) => prev ? ({ ...prev, contractSigned: true, status: 'SIGNED_PENDING_PAYMENT' as any }) : prev)
+    if (_signedContract) {
+      setContractForSigning(_signedContract)
+    }
+    setIsPayNowProcessing(true)
+
+    try {
+      if (!createdBookingForSigning) return
+      const payableTotal = (createdBookingForSigning.totalRentalFee || quoteCalculation.totalRent) +
+        (createdBookingForSigning.depositAmount || quoteCalculation.depositAmount)
+
+      const vnpayRes = await paymentService.createVNPayPayment({
+        bookingId: createdBookingForSigning.id,
+        amount: payableTotal,
+        paymentType: 'BOOKING_PAYMENT',
+        orderInfo: `Thanh toan don dat cho ${createdBookingForSigning.bookingCode}`,
+      })
+
+      if (vnpayRes?.paymentUrl) {
+        setPaymentRedirectUrl(vnpayRes.paymentUrl)
+        window.location.href = vnpayRes.paymentUrl
+      } else {
+        throw new Error('Cổng thanh toán không trả về đường dẫn thanh toán hợp lệ.')
+      }
+    } catch (paymentErr: any) {
+      console.error('VNPay create error:', paymentErr)
+      setSubmitError(paymentErr?.response?.data?.message || 'Hợp đồng đã ký thành công, nhưng không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
+    } finally {
+      setIsPayNowProcessing(false)
+    }
+  }
+
+  // Tiếp tục thực hiện thanh toán cho đơn và hợp đồng đã ký trước đó
+  const handleContinuePayment = async () => {
+    setIsPayNowProcessing(true)
+      let resBooking: BookingType | null = null
+      setSubmitError(null)
+      if (false) console.log(resBooking)
+
+    try {
+      if (!createdBookingForSigning) return
+      const payableTotal = (createdBookingForSigning.totalRentalFee || quoteCalculation.totalRent) +
+        (createdBookingForSigning.depositAmount || quoteCalculation.depositAmount)
+
+      const vnpayRes = await paymentService.createVNPayPayment({
+        bookingId: createdBookingForSigning.id,
+        amount: payableTotal,
+        paymentType: 'BOOKING_PAYMENT',
+        orderInfo: `Thanh toan don dat cho ${createdBookingForSigning.bookingCode}`,
+      })
+
+      if (vnpayRes?.paymentUrl) {
+        setPaymentRedirectUrl(vnpayRes.paymentUrl)
+        window.location.href = vnpayRes.paymentUrl
+      } else {
+        throw new Error('Cổng thanh toán không trả về đường dẫn thanh toán hợp lệ.')
+      }
+    } catch (paymentErr: any) {
+      console.error('VNPay continue payment error:', paymentErr)
+      setSubmitError(paymentErr?.response?.data?.message || 'Không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
+    } finally {
+      setIsPayNowProcessing(false)
+    }
+  }
+
+  // Luồng 2: Thanh toán sau (Tư vấn hotline, lưu PENDING_CONTACT, unit_id = null)
+  const handlePayLater = async () => {
+    setIsPayLaterProcessing(true)
+      let resBooking: BookingType | null = null
+      setSubmitError(null)
+      if (false) console.log(resBooking)
+
+    try {
+      const unitTypeId = tierAvailability.matchedUnit?.unitTypeId || FALLBACK_UNIT_TYPE_IDS[selectedTierKey]
+      let resBooking: BookingType | null = null
+
+      try {
+        const bookingPayload = {
+          bookingCode: createdBookingForSigning?.bookingCode || undefined,
+          facilityId: selectedFacility?.id,
+          unitTypeId: unitTypeId,
+          customerName: fullName.trim(),
+          customerPhone: phone.trim(),
+          customerEmail: email.trim(),
+          identityCardNumber: idCard.trim(),
+          identityCardType: idCardType,
+          startDate: startDate,
+          rentalMonths: rentalMonths,
+          totalRentalFee: quoteCalculation.totalRent,
+          depositAmount: quoteCalculation.depositAmount,
+          depositPaid: 0,
+          signingMethod: 'IN_PERSON',
+          initialStatus: 'PENDING_CONTACT',
+          expectedArrivalAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+          expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+          checkInTime: selectedPeriod.hours[0]?.value || '09:00',
+      } as const
+      const newBooking = createdBookingForSigning?.id
+        ? await bookingService.updateUnpaidBooking(createdBookingForSigning.id, bookingPayload)
+        : await bookingService.createBooking(bookingPayload)
+        resBooking = newBooking
+        if (false) console.log({
+        })
+      } catch (beErr) {
+        console.warn('Backend booking fallback for pay later:', beErr)
+      }
+
+      const generatedCode = resBooking?.bookingCode || `BX-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${Math.floor(1000 + Math.random() * 9000)}`
+      setBookingCode(generatedCode)
 
       const nowIso = new Date().toISOString()
       const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ngày ' + new Date().toLocaleDateString('vi-VN')
       setSentToStaffTime(timeStr)
 
-      // Save reservation to local storage for Staff and Customer
+      // Lưu log cho Staff
       const savedReservations = JSON.parse(localStorage.getItem('boxora_guest_reservations') || '[]')
       const reservationRecord = {
-        id: `LOCAL-RES-${generatedCode}`,
+        id: resBooking?.id || `LOCAL-RES-${generatedCode}`,
         bookingCode: generatedCode,
         createdAt: nowIso,
-        customer: { fullName, phone, idCard, email, notes: specialNotes },
         customerName: fullName,
         customerPhone: phone,
-        identityCardNumber: idCard,
         customerEmail: email,
-        facility: { id: selectedFacility?.id, name: selectedFacility?.name, address: selectedFacility?.address, contactPhone: selectedFacility?.contactPhone },
+        identityCardNumber: idCard,
         facilityId: selectedFacility?.id,
         facilityName: selectedFacility?.name,
         unitCode: SIZE_TIERS[selectedTierKey].name,
@@ -515,44 +857,30 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         totalRentalFee: quoteCalculation.totalRent,
         depositAmount: quoteCalculation.depositAmount,
         status: 'PENDING_CONTACT',
+        paymentMethod: 'AT_FACILITY',
+        signingMethod: 'IN_PERSON',
         sentToStaff: true,
         sentToStaffAt: nowIso,
       }
       savedReservations.unshift(reservationRecord)
       localStorage.setItem('boxora_guest_reservations', JSON.stringify(savedReservations))
+      window.dispatchEvent(new CustomEvent('boxora_staff_reservation_created', { detail: reservationRecord }))
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      refreshStorageUnits()
 
-      // Push in-app notification to Staff
-      try {
-        const staffNotification = {
-          id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          facilityId: selectedFacility?.id,
-          facilityName: selectedFacility?.name,
-          channel: 'STAFF_PORTAL',
-          notificationType: 'NEW_BOOKING_RESERVATION',
-          referenceType: 'BOOKING',
-          referenceId: generatedCode,
-          title: `Đơn giữ chỗ mới: ${generatedCode}`,
-          content: `Khách hàng ${fullName} (${phone}) đã gửi đơn đặt giữ chỗ ${SIZE_TIERS[selectedTierKey].name} tại ${selectedFacility?.name}. Lịch hẹn: ${checkInDate} (${checkInTime}).`,
-          status: 'UNREAD',
-          createdAt: nowIso,
-        }
-        const existingNotifs = JSON.parse(localStorage.getItem('boxora_in_app_notifications') || '[]')
-        existingNotifs.unshift(staffNotification)
-        localStorage.setItem('boxora_in_app_notifications', JSON.stringify(existingNotifs))
-        window.dispatchEvent(new CustomEvent('boxora_notification_pushed', { detail: staffNotification }))
-        window.dispatchEvent(new CustomEvent('boxora_staff_reservation_created', { detail: reservationRecord }))
-      } catch (e) {
-        console.warn('Modal staff notification error:', e)
-      }
-
-      // Move to step 5!
+      setPayLaterConfirmed(true)
       setCurrentStep(5)
     } catch (err: any) {
-      console.error('Reservation submission error:', err)
-      setSubmitError('Có lỗi xảy ra khi xử lý yêu cầu đặt kho. Vui lòng thử lại hoặc gọi hotline 1900-BOXORA.')
+      console.error('Pay later error:', err)
+      setSubmitError('Có lỗi xảy ra khi xử lý yêu cầu đặt kho. Vui lòng thử lại.')
     } finally {
-      setIsSubmitting(false)
+      setIsPayLaterProcessing(false)
     }
+  }
+
+  // Confirm Reservation (Step 4 -> Step 5)
+  const handleConfirmReservation = async () => {
+    setCurrentStep(5)
   }
 
   // Copy booking code to clipboard
@@ -847,6 +1175,12 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
               </div>
 
               {/* 4 Size Tier Options */}
+              {tierAvailability.count === 0 && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
+                  <AlertCircle size={16} className="text-amber-600 flex-shrink-0" />
+                  <span>Cơ sở này hiện chưa có kho khả dụng cho gói này. Vui lòng chọn gói kích thước khác hoặc đổi cơ sở.</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(Object.keys(SIZE_TIERS) as SizeTierKey[]).map((tierKey) => {
                   const tier = SIZE_TIERS[tierKey]
@@ -864,9 +1198,20 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                     >
                       <div className="space-y-2.5">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900">
-                            {tier.badge}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-900">
+                              {tier.badge}
+                            </span>
+                            {getTierAvailableCount(tierKey) > 0 ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Còn {getTierAvailableCount(tierKey)} kho
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+                                Hết kho
+                              </span>
+                            )}
+                          </div>
                           <span className="text-xs font-mono font-bold text-slate-500">
                             {tier.area}
                           </span>
@@ -1153,30 +1498,54 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                     {CHECK_IN_PERIOD_GROUPS.map((group) => {
-                      const isSelected = selectedPeriodId === group.id
+                      const isPast = isPeriodInPast(checkInDate, group.id)
+                      const isSelected = selectedPeriodId === group.id && !isPast
                       return (
                         <button
                           key={group.id}
                           type="button"
-                          onClick={() => setSelectedPeriodId(group.id)}
-                          className={`p-2.5 rounded-xl text-left border-2 transition-all cursor-pointer flex flex-col justify-between ${
-                            isSelected
-                              ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                          disabled={isPast}
+                          onClick={() => {
+                            if (!isPast) setSelectedPeriodId(group.id)
+                          }}
+                          title={isPast ? 'Khung giờ này đã kết thúc đối với ngày đã chọn' : undefined}
+                          className={`p-2.5 rounded-xl text-left border-2 transition-all flex flex-col justify-between ${
+                            isPast
+                              ? 'opacity-40 cursor-not-allowed bg-slate-100 border-slate-200 text-slate-400 select-none'
+                              : isSelected
+                              ? 'bg-blue-50 border-blue-600 text-blue-900 ring-2 ring-blue-500/20 cursor-pointer'
+                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center justify-between w-full">
-                            <span className="text-lg">{group.icon}</span>
-                            {isSelected && <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />}
+                            <span className={`text-lg ${isPast ? 'grayscale opacity-60' : ''}`}>{group.icon}</span>
+                            {isPast ? (
+                              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">
+                                Đã qua
+                              </span>
+                            ) : isSelected ? (
+                              <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                            ) : null}
                           </div>
                           <div className="mt-1">
-                            <strong className="block text-xs text-slate-900">{group.name}</strong>
+                            <strong className={`block text-xs ${isPast ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{group.name}</strong>
                             <span className="block text-[10px] text-slate-500 font-mono leading-tight">{group.rangeText}</span>
                           </div>
                         </button>
                       )
                     })}
                   </div>
+                  {formErrors.checkInTime && (
+                    <p className="text-xs text-red-500 flex items-center gap-1 mt-1 font-medium">
+                      <AlertCircle size={12} /> {formErrors.checkInTime}
+                    </p>
+                  )}
+                  {!hasAvailablePeriods(checkInDate) && (
+                    <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200 flex items-center gap-1.5 mt-1 font-medium">
+                      <AlertCircle size={14} className="shrink-0 text-amber-600" />
+                      Tất cả các ca tiếp đón trong ngày đã chọn đã kết thúc. Vui lòng chọn ngày nhận kho từ ngày mai.
+                    </p>
+                  )}
 
                 {/* Special Notes */}
                 <div className="space-y-1 pt-2">
@@ -1427,24 +1796,234 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
           {/* ============================================================== */}
           {/* BƯỚC 5: HIỂN THỊ THÔNG BÁO ĐẶT GIỮ CHỖ THÀNH CÔNG              */}
           {/* ============================================================== */}
-          {currentStep === 5 && (
+          {/* ============================================================== */}
+          {/* BƯỚC 5: CHỌN PHƯƠNG THỨC THANH TOÁN & HOÀN TẤT                   */}
+          {/* ============================================================== */}
+          {currentStep === 5 && !payLaterConfirmed && (
+            <div className="space-y-6 py-2">
+              <div className="text-center space-y-1">
+                <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-cyan-700 bg-cyan-50 px-3 py-1 rounded-full border border-cyan-200">
+                  Bước 5: Hợp đồng &amp; Thanh toán
+                </span>
+                <h4 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                  Phương thức Hợp đồng &amp; Thanh toán
+                </h4>
+                <p className="text-xs sm:text-sm text-slate-600 max-w-lg mx-auto">
+                  Quý khách vui lòng chọn 1 trong 2 phương thức hợp đồng &amp; thanh toán bên dưới:
+                </p>
+              </div>
+
+              {submitError && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 max-w-2xl mx-auto flex items-center gap-2">
+                  <span className="material-symbols-outlined text-base">error</span>
+                  <span>{submitError}</span>
+                </div>
+              )}
+
+              {paymentRedirectUrl && (
+                <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 max-w-xl mx-auto text-center space-y-2">
+                  <div className="font-bold flex items-center justify-center gap-2">
+                    <span className="animate-spin text-sm">⟳</span>
+                    <span>Đang chuyển hướng sang cổng thanh toán VNPay Sandbox...</span>
+                  </div>
+                  <p className="text-[11px] text-blue-700">
+                    Nếu trang không tự chuyển hướng trong vài giây:
+                  </p>
+                  <a
+                    href={paymentRedirectUrl}
+                    className="inline-block px-4 py-2 rounded-lg bg-blue-600 text-white font-bold hover:bg-blue-700"
+                  >
+                    Mở cổng thanh toán VNPay Sandbox ngay
+                  </a>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto pt-2">
+                
+                {/* PHƯƠNG THỨC 1: KÝ HỢP ĐỒNG VÀ THANH TOÁN TRỰC TUYẾN */}
+                <div className="rounded-2xl border-2 border-emerald-500 bg-gradient-to-b from-emerald-50/40 via-white to-white p-5 flex flex-col justify-between shadow-md relative overflow-hidden">
+                  <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-bold px-3 py-1 rounded-bl-xl uppercase tracking-wider">
+                    Khuyên Dùng
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-xs">
+                      <CreditCard size={24} />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-slate-900 text-base">
+                        1. Ký hợp đồng và thanh toán trực tuyến
+                      </h5>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Ký hợp đồng thuê tự quản trực tuyến qua <strong>DocuSeal</strong>, sau đó thanh toán an toàn qua cổng <strong>VNPay Sandbox</strong>.
+                      </p>
+                    </div>
+
+                    <ul className="text-xs space-y-1.5 text-slate-700 pt-2 border-t border-emerald-100">
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-emerald-600 shrink-0" />
+                        <span>Ký hợp đồng online bảo mật qua DocuSeal</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-emerald-600 shrink-0" />
+                        <span>Thanh toán VNPay Sandbox đối soát tức thì</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-emerald-600 shrink-0" />
+                        <span>Được ưu tiên gán kho và nhận mã khóa IoT qua email</span>
+                      </li>
+                    </ul>
+
+                    <div className="p-2.5 rounded-xl bg-emerald-100/60 font-mono text-xs text-emerald-950 flex justify-between items-center">
+                      <span>Tổng thanh toán:</span>
+                      <strong className="text-sm text-emerald-800 font-bold">
+                        {(quoteCalculation.totalRent + quoteCalculation.depositAmount).toLocaleString('vi-VN')} ₫
+                      </strong>
+                    </div>
+
+                    {contractInvalidatedByChange && !isContractAlreadySigned && (
+                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2 shadow-xs">
+                        <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <p className="font-bold">
+                            Thông tin đặt kho của quý khách đã thay đổi so với hợp đồng đã ký trước đó. Vui lòng xem lại và ký hợp đồng mới trước khi thanh toán.
+                          </p>
+                          <p className="text-[11px] text-amber-800">
+                            Hợp đồng cũ của đơn <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã chuyển sang trạng thái hết hiệu lực (SUPERSEDED). Vui lòng nhấn <strong>"Xem và ký lại hợp đồng"</strong> bên dưới.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {isContractAlreadySigned && (
+                      <div className="p-3 rounded-xl bg-emerald-100/80 border border-emerald-300 text-emerald-950 text-xs flex items-start gap-2 shadow-xs">
+                        <Check size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <p className="font-bold">Hợp đồng điện tử đã ký thành công!</p>
+                          <p className="text-[11px] text-emerald-800">
+                            Đơn <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã hoàn tất ký hợp đồng. Nhấn <strong>"Tiếp tục thực hiện thanh toán"</strong> để chuyển sang VNPay.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-4 mt-2">
+                    <button
+                      type="button"
+                      disabled={isPayNowProcessing}
+                      onClick={isContractAlreadySigned ? handleContinuePayment : handlePayNow}
+                      className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPayNowProcessing ? (
+                        <>
+                          <span className="animate-spin text-sm">⟳</span>
+                          <span>Đang xử lý...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>{isContractAlreadySigned ? 'Tiếp tục thực hiện thanh toán' : (contractInvalidatedByChange ? 'Xem và ký lại hợp đồng' : 'Ký hợp đồng & Thanh toán ngay')}</span>
+                          <ArrowRight size={16} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* PHƯƠNG THỨC 2: KÝ HỢP ĐỒNG VÀ THANH TOÁN TẠI CƠ SỞ VÀO NGÀY TỚI NHẬN KHO */}
+                <div className="rounded-2xl border border-slate-300 bg-white p-5 flex flex-col justify-between shadow-sm hover:border-slate-400 transition-all">
+                  <div className="space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs">
+                      <PhoneCall size={24} />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-slate-900 text-base">
+                        2. Ký hợp đồng và thanh toán tại cơ sở vào ngày tới nhận kho
+                      </h5>
+                      <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                        Chuyên viên Boxora sẽ gọi điện qua số điện thoại để hỗ trợ tư vấn kích thước, chốt ngày giờ nhận kho và gửi link thanh toán sau.
+                      </p>
+                    </div>
+
+                    <ul className="text-xs space-y-1.5 text-slate-600 pt-2 border-t border-slate-100">
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-blue-600 shrink-0" />
+                        <span>Chưa cần thanh toán tại bước này</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-blue-600 shrink-0" />
+                        <span>Hệ thống chưa khóa bất kỳ ô kho vật lý nào</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <Check size={14} className="text-blue-600 shrink-0" />
+                        <span>Nhận link thanh toán chuyển sang luồng gán kho</span>
+                      </li>
+                    </ul>
+
+                    <div className="p-2.5 rounded-xl bg-slate-50 font-mono text-xs text-slate-700 flex justify-between items-center">
+                      <span>Phí thanh toán hiện tại:</span>
+                      <strong className="text-sm text-slate-900 font-bold">
+                        0 ₫
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-2">
+                    <button
+                      type="button"
+                      disabled={isPayLaterProcessing}
+                      onClick={handlePayLater}
+                      className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-900 active:scale-98 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isPayLaterProcessing ? (
+                        <>
+                          <span className="animate-spin text-sm">⟳</span>
+                          <span>Đang gửi yêu cầu...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Xác nhận đặt giữ chỗ (Trả sau)</span>
+                          <CheckCircle2 size={16} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Back to Step 4 button */}
+              <div className="text-center pt-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(4)}
+                  className="text-xs text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                >
+                  ← Quay lại kiểm tra thông tin đơn đặt hàng (Bước 4)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* HIỂN THỊ KẾT QUẢ KHI CHỌN THANH TOÁN SAU (PENDING_CONTACT) */}
+          {currentStep === 5 && payLaterConfirmed && (
             <div className="space-y-6 text-center py-4">
               
               {/* Success Badge Animation */}
-              <div className="mx-auto w-20 h-20 rounded-full bg-emerald-100 border-4 border-emerald-300 text-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <div className="mx-auto w-20 h-20 rounded-full bg-amber-100 border-4 border-amber-300 text-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
                 <CheckCircle2 size={44} className="stroke-[2.5]" />
               </div>
 
               <div className="space-y-2 max-w-lg mx-auto">
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
-                  Bước 5: Đơn Đặt Giữ Chỗ - Chờ Xác Nhận
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                  ĐÃ TIẾP NHẬN ĐƠN — CHỜ LIÊN HỆ (PENDING_CONTACT)
                 </span>
                 <h4 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                  Đơn Giữ Chỗ Đang Ở Trạng Thái Chờ Xác Nhận
+                  Đơn Đặt Giữ Chỗ Đã Được Ghi Nhận
                 </h4>
                 <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-                  Đơn giữ chỗ của bạn đang ở trạng thái <strong className="text-amber-700 font-bold">Chờ xác nhận</strong>. Chuyên viên Boxora sẽ gọi điện qua số điện thoại{' '}
-                  <strong className="text-blue-700 font-mono">{phone}</strong> trong vòng <strong>15–30 phút</strong> để đối soát thông tin. Sau khi nhân viên xác nhận, đơn sẽ tự động chuyển sang trạng thái <strong className="text-emerald-700 font-bold">Chờ check in</strong>.
+                  Đơn của bạn đang ở trạng thái <strong className="text-amber-700 font-bold">Chờ liên hệ (PENDING_CONTACT)</strong>. Hệ thống chưa khóa bất kỳ ô kho vật lý nào. Chuyên viên Boxora sẽ gọi điện qua số{' '}
+                  <strong className="text-blue-700 font-mono">{phone}</strong> trong vòng <strong>15–30 phút</strong> để tư vấn, chốt lịch và gửi link thanh toán trực tuyến.
                 </p>
               </div>
 
@@ -1471,26 +2050,6 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                     Đã sao chép mã đơn vào bộ nhớ tạm!
                   </span>
                 )}
-              </div>
-
-              {/* THẺ XÁC NHẬN ĐÃ GỬI ĐƠN CHO STAFF TIẾP ĐÓN */}
-              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-left max-w-xl mx-auto shadow-xs space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping" />
-                    <strong className="text-emerald-950 font-bold">Đã gửi đơn giữ chỗ cho nhân viên (Staff)</strong>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono text-[10px] font-bold">
-                    ĐÃ GỬI TỚI STAFF TRỰC CA
-                  </span>
-                </div>
-                <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Đơn giữ chỗ <strong>{bookingCode}</strong> đã được chuyển trực tiếp vào ca trực của Staff cơ sở <strong>{selectedFacility?.name}</strong>. Nhân viên sẽ gọi điện cho quý khách trong 15-30 phút.
-                </p>
-                <div className="flex items-center justify-between pt-1 border-t border-emerald-200/80 text-[10px] text-emerald-700 font-mono">
-                  <span>Gửi lúc: {sentToStaffTime || 'Vừa xong'}</span>
-                  <span>Hotline: {selectedFacility?.contactPhone || '1900-BOXORA'}</span>
-                </div>
               </div>
 
               {/* Quick Summary Box */}
@@ -1520,11 +2079,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 leading-relaxed">
-                  💡 <strong>Bước tiếp theo:</strong> Khi đến cơ sở nhận kho, vui lòng mang theo CCCD/Hộ chiếu bản gốc để đối chiếu và nhận mã PIN truy cập kho độc quyền trên ứng dụng Boxora.
+                  💡 <strong>Bước tiếp theo:</strong> Sau khi hoàn tất thanh toán qua link do nhân viên gửi, hệ thống sẽ tự động gán mã kho vật lý và gửi mã PIN truy cập IoT tới email của quý khách.
                 </div>
               </div>
 
-              {/* Action Buttons for Step 5 */}
+              {/* Action Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   type="button"
@@ -1534,19 +2093,6 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   <span>Hoàn tất &amp; Về trang chủ</span>
                   <Check size={16} />
                 </button>
-
-                {isAuthenticated && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose()
-                      navigate('/portal/customer')
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-xs transition-colors cursor-pointer"
-                  >
-                    Vào trang quản lý của tôi
-                  </button>
-                )}
               </div>
 
             </div>
@@ -1593,21 +2139,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
               ) : (
                 <button
                   type="button"
-                  onClick={handleConfirmReservation}
-                  disabled={isSubmitting}
-                  className="px-7 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-bold shadow-md shadow-emerald-600/30 flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  onClick={() => setCurrentStep(5)}
+                  className="px-7 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-xs font-bold shadow-md shadow-blue-600/30 flex items-center gap-2 transition-all cursor-pointer"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <span className="animate-spin text-sm">⟳</span>
-                      <span>Đang xác nhận đặt chỗ...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Xác nhận đặt giữ chỗ kho</span>
-                      <CheckCircle2 size={16} />
-                    </>
-                  )}
+                  <span>Tiếp tục sang Bước 5: Hợp đồng &amp; Thanh toán</span>
+                  <ArrowRight size={16} />
                 </button>
               )}
             </div>
@@ -1615,6 +2151,32 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         )}
 
       </div>
+
+      {showDocuSealModal && contractForSigning && (
+        <DocuSealSimulationModal
+          contract={contractForSigning}
+          booking={createdBookingForSigning}
+          onClose={() => setShowDocuSealModal(false)}
+          onSignedSuccess={handleDocuSealSignedSuccess}
+          onContractSigned={(signed) => {
+            setHasSignedContract(true)
+            setContractInvalidatedByChange(false)
+            setSigningFormSnapshot(captureSigningSnapshot())
+            setContractForSigning(signed)
+            setCreatedBookingForSigning((prev) =>
+              prev ? ({ ...prev, contractSigned: true, status: 'SIGNED_PENDING_PAYMENT' as any, contractStatus: signed.status, contractCode: signed.contractCode }) : prev
+            )
+          }}
+          financialSummary={{
+            sizeName: SIZE_TIERS[selectedTierKey]?.name || 'Kho tiêu chuẩn',
+            rentalMonths: rentalMonths,
+            monthlyFee: quoteCalculation.monthlyAfterDiscount,
+            totalRent: quoteCalculation.totalRent,
+            depositAmount: quoteCalculation.depositAmount,
+            totalPayment: quoteCalculation.totalRent + quoteCalculation.depositAmount,
+          }}
+        />
+      )}
     </div>
   )
 }

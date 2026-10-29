@@ -2,7 +2,15 @@ package com.boxora.service.impl;
 
 import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
+import com.boxora.dto.request.ToggleMaintenanceRequest;
 import com.boxora.dto.response.StorageUnitResponse;
+import com.boxora.dto.response.UnitAvailabilityResponse;
+import com.boxora.enums.BookingStatus;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 import com.boxora.entity.Facility;
 import com.boxora.entity.FacilityPolicy;
 import com.boxora.entity.StorageUnit;
@@ -70,9 +78,21 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         this.activityLogService = activityLogService;
     }
 
+    private static final List<BookingStatus> INVENTORY_HOLDING_STATUSES = List.of(
+            BookingStatus.PENDING_APPROVAL,
+            BookingStatus.PAID_PENDING_ASSIGNMENT,
+            BookingStatus.PAID_AND_SIGNED,
+            BookingStatus.PENDING_CONTACT,
+            BookingStatus.READY_FOR_CHECKIN,
+            BookingStatus.CONFIRMED,
+            BookingStatus.ACTIVE,
+            BookingStatus.CHECKOUT_REQUESTED,
+            BookingStatus.INSPECTED
+    );
+
     @Override
     @Transactional(readOnly = true)
-    public List<StorageUnitResponse> getUnits(UUID facilityId, String floorLevel, String status) {
+    public List<StorageUnitResponse> getUnits(UUID facilityId, String floorLevel, String status, Boolean forAssignment) {
         if (facilityAccessGuard.isFacilityScoped()) {
             UUID scopedId = facilityAccessGuard.scopedFacilityIdOrNull();
             if (facilityId != null && !facilityId.equals(scopedId)) {
@@ -92,15 +112,15 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         }
 
         List<StorageUnit> units;
-        if (facilityId != null && floorLevel != null && !floorLevel.isBlank() && unitStatus != null) {
+        if (facilityId != null && floorLevel != null && !floorLevel.isBlank() && unitStatus != null && Boolean.TRUE.equals(forAssignment)) {
             units = storageUnitRepository.findByFacility_IdAndFloorLevelAndStatus(facilityId, floorLevel, unitStatus);
         } else if (facilityId != null && floorLevel != null && !floorLevel.isBlank()) {
             units = storageUnitRepository.findByFacility_IdAndFloorLevel(facilityId, floorLevel);
-        } else if (facilityId != null && unitStatus != null) {
+        } else if (facilityId != null && unitStatus != null && Boolean.TRUE.equals(forAssignment)) {
             units = storageUnitRepository.findByFacility_IdAndStatus(facilityId, unitStatus);
         } else if (facilityId != null) {
             units = storageUnitRepository.findByFacility_Id(facilityId);
-        } else if (unitStatus != null) {
+        } else if (unitStatus != null && Boolean.TRUE.equals(forAssignment)) {
             units = storageUnitRepository.findByStatus(unitStatus);
         } else {
             units = storageUnitRepository.findAll();
@@ -108,9 +128,154 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
         Map<UUID, FacilityPolicy> activePolicies = facilityPolicyRepository.findByIsActiveTrue().stream()
                 .collect(Collectors.toMap(policy -> policy.getFacility().getId(), Function.identity()));
-        return units.stream()
-                .map(unit -> mapToResponse(unit, activePolicies.get(unit.getFacility().getId())))
-                .collect(Collectors.toList());
+
+        if (Boolean.TRUE.equals(forAssignment)) {
+            List<StorageUnitResponse> result = new ArrayList<>();
+            for (StorageUnit unit : units) {
+                if (unitStatus == null || unit.getStatus() == unitStatus) {
+                    result.add(mapToResponse(unit, activePolicies.get(unit.getFacility().getId())));
+                }
+            }
+            return result;
+        }
+
+        List<Object[]> unassignedList = bookingRepository.countAllUnassignedHoldingGroupedByFacilityAndUnitType(
+                INVENTORY_HOLDING_STATUSES,
+                Instant.now()
+        );
+        Map<String, Long> unassignedMap = new HashMap<>();
+        for (Object[] row : unassignedList) {
+            if (row[0] != null && row[1] != null && row[2] != null) {
+                String key = row[0].toString() + "_" + row[1].toString();
+                unassignedMap.put(key, ((Number) row[2]).longValue());
+            }
+        }
+
+        Map<String, List<StorageUnit>> groupedAvailable = new HashMap<>();
+        for (StorageUnit u : units) {
+            if (u.getStatus() == UnitStatus.AVAILABLE && u.getFacility() != null && u.getUnitType() != null) {
+                String key = u.getFacility().getId().toString() + "_" + u.getUnitType().getId().toString();
+                groupedAvailable.computeIfAbsent(key, k -> new ArrayList<>()).add(u);
+            }
+        }
+
+        Set<UUID> virtualReservedUnitIds = new HashSet<>();
+        for (Map.Entry<String, List<StorageUnit>> entry : groupedAvailable.entrySet()) {
+            long unassignedCount = unassignedMap.getOrDefault(entry.getKey(), 0L);
+            List<StorageUnit> availList = entry.getValue();
+            long toReserve = Math.min(availList.size(), unassignedCount);
+            for (int i = 0; i < toReserve; i++) {
+                virtualReservedUnitIds.add(availList.get(i).getId());
+            }
+        }
+
+        List<StorageUnitResponse> responses = new ArrayList<>();
+        for (StorageUnit u : units) {
+            boolean isVirtualReserved = virtualReservedUnitIds.contains(u.getId());
+            UnitStatus effectiveStatus = isVirtualReserved ? UnitStatus.RESERVED : u.getStatus();
+
+            if (unitStatus != null && effectiveStatus != unitStatus) {
+                continue;
+            }
+
+            StorageUnitResponse resp = mapToResponse(u, activePolicies.get(u.getFacility().getId()));
+            if (isVirtualReserved) {
+                resp.setStatus(UnitStatus.RESERVED.name());
+                resp.setTenantName("Đang giữ chỗ (chờ nhận kho)");
+            }
+            responses.add(resp);
+        }
+
+        return responses;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long getAvailableUnitsCount(UUID facilityId, UUID unitTypeId) {
+        if (facilityId == null || unitTypeId == null) {
+            return 0;
+        }
+        long totalUnits = storageUnitRepository.countByFacility_IdAndUnitType_Id(facilityId, unitTypeId);
+        long physicalAvailable = storageUnitRepository.countByFacility_IdAndUnitType_IdAndStatus(facilityId, unitTypeId, UnitStatus.AVAILABLE);
+        long unassignedHolding = bookingRepository.countUnassignedHoldingBookings(facilityId, unitTypeId, INVENTORY_HOLDING_STATUSES, Instant.now());
+        long netAvailable = physicalAvailable - unassignedHolding;
+        return Math.max(0, Math.min(totalUnits, netAvailable));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long getFacilityAvailableUnitsCount(UUID facilityId) {
+        if (facilityId == null) {
+            return 0;
+        }
+        long totalUnits = storageUnitRepository.countByFacility_Id(facilityId);
+        long physicalAvailable = storageUnitRepository.countByFacility_IdAndStatus(facilityId, UnitStatus.AVAILABLE);
+        long unassignedHolding = bookingRepository.countUnassignedHoldingBookingsByFacility(facilityId, INVENTORY_HOLDING_STATUSES, Instant.now());
+        long netAvailable = physicalAvailable - unassignedHolding;
+        return Math.max(0, Math.min(totalUnits, netAvailable));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UnitAvailabilityResponse getUnitAvailability(UUID facilityId, UUID unitTypeId) {
+        facilityAccessGuard.checkFacilityAccess(facilityId);
+        Facility facility = facilityRepository.findById(facilityId)
+                .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
+        UnitType unitType = unitTypeRepository.findById(unitTypeId)
+                .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
+
+        long totalUnits = storageUnitRepository.countByFacility_IdAndUnitType_Id(facilityId, unitTypeId);
+        long physicalAvailable = storageUnitRepository.countByFacility_IdAndUnitType_IdAndStatus(facilityId, unitTypeId, UnitStatus.AVAILABLE);
+        long unassignedHolding = bookingRepository.countUnassignedHoldingBookings(facilityId, unitTypeId, INVENTORY_HOLDING_STATUSES, Instant.now());
+        long availableUnits = Math.max(0, Math.min(totalUnits, physicalAvailable - unassignedHolding));
+
+        return UnitAvailabilityResponse.builder()
+                .facilityId(facilityId)
+                .facilityName(facility.getName())
+                .unitTypeId(unitTypeId)
+                .unitTypeName(unitType.getTypeName())
+                .totalUnits(totalUnits)
+                .physicalAvailableUnits(physicalAvailable)
+                .unassignedHoldingBookings(unassignedHolding)
+                .availableUnits(availableUnits)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UnitAvailabilityResponse> getFacilityAvailability(UUID facilityId) {
+        facilityAccessGuard.checkFacilityAccess(facilityId);
+        Facility facility = facilityRepository.findById(facilityId)
+                .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
+        List<UnitType> allTypes = unitTypeRepository.findAllByOrderByCreatedAtAsc();
+
+        List<Object[]> unassignedList = bookingRepository.countUnassignedHoldingGroupedByUnitType(facilityId, INVENTORY_HOLDING_STATUSES, Instant.now());
+        Map<UUID, Long> unassignedMap = new HashMap<>();
+        for (Object[] row : unassignedList) {
+            if (row[0] != null && row[1] != null) {
+                unassignedMap.put((UUID) row[0], ((Number) row[1]).longValue());
+            }
+        }
+
+        List<UnitAvailabilityResponse> responses = new ArrayList<>();
+        for (UnitType ut : allTypes) {
+            long total = storageUnitRepository.countByFacility_IdAndUnitType_Id(facilityId, ut.getId());
+            if (total == 0) continue;
+            long physical = storageUnitRepository.countByFacility_IdAndUnitType_IdAndStatus(facilityId, ut.getId(), UnitStatus.AVAILABLE);
+            long unassigned = unassignedMap.getOrDefault(ut.getId(), 0L);
+            long available = Math.max(0, Math.min(total, physical - unassigned));
+            responses.add(UnitAvailabilityResponse.builder()
+                    .facilityId(facilityId)
+                    .facilityName(facility.getName())
+                    .unitTypeId(ut.getId())
+                    .unitTypeName(ut.getTypeName())
+                    .totalUnits(total)
+                    .physicalAvailableUnits(physical)
+                    .unassignedHoldingBookings(unassigned)
+                    .availableUnits(available)
+                    .build());
+        }
+        return responses;
     }
 
     @Override
@@ -267,6 +432,11 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
     @Override
     public StorageUnitResponse toggleMaintenance(UUID id) {
+        return toggleMaintenance(id, null);
+    }
+
+    @Override
+    public StorageUnitResponse toggleMaintenance(UUID id, ToggleMaintenanceRequest request) {
         StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(id)
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
@@ -295,7 +465,21 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             if (hasActiveContract || hasActiveBooking) {
                 throw new AppException(ErrorCode.STORAGE_UNIT_IN_USE);
             }
+            if ( request != null && (request.getReason() == null || request.getReason().trim().isEmpty()) ) {
+                throw new IllegalArgumentException("Vui lòng nhập lý do bảo trì kỹ thuật.");
+            }
+            String reason = (request != null && request.getReason() != null && !request.getReason().trim().isEmpty())
+                    ? request.getReason().trim()
+                    : "Bảo trì kỹ thuật định kỳ";
+            String maintenanceBy = (request != null && request.getMaintenanceBy() != null && !request.getMaintenanceBy().trim().isEmpty())
+                    ? request.getMaintenanceBy().trim()
+                    : (org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication() != null
+                        ? org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication().getName()
+                        : "Kỹ thuật viên cơ sở");
             unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+            unit.setMaintenanceReason(reason);
+            unit.setMaintenanceBy(maintenanceBy);
+            unit.setMaintenanceAt(java.time.LocalDateTime.now());
         } else if (unit.getStatus() == UnitStatus.UNDER_MAINTENANCE) {
             // Tắt bảo trì: Phục hồi trạng thái thực tế dựa trên hợp đồng/booking, KHÔNG đưa kho đang thuê về AVAILABLE
             boolean hasActiveContract = rentalContractRepository.existsByUnit_IdAndStatusIn(
@@ -314,6 +498,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 unit.setStatus(UnitStatus.RESERVED);
             } else {
                 unit.setStatus(UnitStatus.AVAILABLE);
+            unit.setMaintenanceReason(null);
+            unit.setMaintenanceBy(null);
+            unit.setMaintenanceAt(null);
             }
         }
 
@@ -324,7 +511,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 ActivityAction.STORAGE_UNIT_STATUS_CHANGE,
                 "StorageUnit",
                 unit.getId(),
-                String.format("Chuyển trạng thái bảo trì ngăn kho %s từ %s sang %s", unit.getUnitCode(), oldStatus, unit.getStatus()),
+                unit.getStatus() == UnitStatus.UNDER_MAINTENANCE
+                        ? String.format("Chuyển ngăn kho %s sang bảo trì kỹ thuật (Người phụ trách: %s | Lý do: %s)", unit.getUnitCode(), unit.getMaintenanceBy(), unit.getMaintenanceReason())
+                        : String.format("Hoàn tất bảo trì ngăn kho %s, chuyển từ %s sang %s", unit.getUnitCode(), oldStatus, unit.getStatus()),
                 oldStatus,
                 unit.getStatus()
         );
@@ -423,6 +612,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .startDate(startDate)
                 .dueDate(dueDate)
                 .imageUrl(u.getImageUrl())
+                .maintenanceReason(u.getMaintenanceReason())
+                .maintenanceBy(u.getMaintenanceBy())
+                .maintenanceAt(u.getMaintenanceAt() != null ? u.getMaintenanceAt().toString() : null)
                 .build();
     }
 }

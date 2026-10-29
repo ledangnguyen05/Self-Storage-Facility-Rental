@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { LayoutDashboard, CheckCircle2, CreditCard, FileText, Lock } from 'lucide-react'
 import axios from 'axios'
 import { useAuth } from '../../context/AuthContext'
-import { activateCustomerRental } from '../../utils/rentalAccess'
+import { activateCustomerRental, checkCustomerPortalAccess } from '../../utils/rentalAccess'
 import { Booking, RentalContract, FacilityPolicy } from '../../types'
 import { bookingService } from '../../services/bookingService'
 import { contractService } from '../../services/contractService'
@@ -20,6 +20,9 @@ const dateTime = (value?: string | null) => value
   : 'Chưa xác định'
 
 function isSigned(contract: RentalContract | null) {
+  if (!contract || contract.status === 'SUPERSEDED' || contract.status === 'PENDING_SIGNATURE' || contract.status === 'CANCELLED') {
+    return false
+  }
   return Boolean(contract?.signedAt)
     || contract?.status === 'PENDING_ACTIVATION'
     || contract?.status === 'ACTIVE'
@@ -92,7 +95,7 @@ export const OnlineBookingContractPage = () => {
   const paidPayment = paidTransactions.find(payment => payment.paymentType === 'BOOKING_PAYMENT') || paidTransactions[0] || null
   const paidAmount = paidTransactions.reduce((total, payment) => total + Number(payment.amount || 0), 0)
   const paymentConfirmed = booking?.paymentStatus?.toUpperCase() === 'PAID' || Boolean(paidPayment) || paidAmount > 0
-  const signed = isSigned(contract) || Boolean(booking?.contractSigned)
+  const signed = isSigned(contract) || (Boolean(booking?.contractSigned) && contract?.status !== 'SUPERSEDED' && contract?.status !== 'PENDING_SIGNATURE' && booking?.status !== 'PENDING_SIGNATURE')
   const payableTotal = Number(booking?.totalRentalFee || 0) + Number(booking?.depositAmount || 0)
 
   // Auto-open signing modal when paymentConfirmed is true and autoSign=true or mockSignContractId is present
@@ -163,7 +166,7 @@ export const OnlineBookingContractPage = () => {
           <p className="mt-3 text-sm text-rose-700">{error || 'Không tìm thấy đơn đặt thuê này.'}</p>
           <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
             <button onClick={() => void refresh(true)} className="rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-800 transition cursor-pointer">Thử tải lại</button>
-            <Link to="/my-bookings" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
+            <Link to="/portal/customer?tab=bookings" className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-xs hover:bg-slate-50 transition">
               <LayoutDashboard className="h-4 w-4 text-slate-500" />
               <span>Về đơn đặt chỗ của tôi</span>
             </Link>
@@ -185,7 +188,7 @@ export const OnlineBookingContractPage = () => {
           </div>
           <div className="flex items-center gap-2.5">
             <Link
-              to="/my-bookings"
+              to="/portal/customer?tab=bookings"
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
@@ -440,7 +443,9 @@ export const OnlineBookingContractPage = () => {
               <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/70 p-4 text-sm text-blue-950">
                 <p className="font-bold">Hiệu lực hợp đồng &amp; Bàn giao kho</p>
                 <p className="mt-1 text-xs leading-relaxed">
-                  Hợp đồng điện tử có giá trị pháp lý ngay sau khi quý khách ký xác nhận trực tuyến. Khi đến cơ sở theo lịch hẹn, nhân viên sẽ đối chiếu CCCD và kích hoạt bàn giao kho cùng mã PIN khóa thông minh.
+                  {signed
+                    ? `Hợp đồng điện tử đã ký kết thành công và có hiệu lực ngay lập tức! Hệ thống đã tự động gán ô kho ${booking.unitCode ? `số #${booking.unitCode}` : ''} và gửi email thông tin nhận kho cùng mã khóa thông minh IoT thẳng đến email của quý khách.`
+                    : 'Hợp đồng điện tử có giá trị pháp lý ngay sau khi quý khách ký xác nhận trực tuyến. Hệ thống sẽ tự động gán ô kho vật lý và gửi email mã khóa thông minh IoT ngay lập tức cho quý khách.'}
                 </p>
               </div>
 
@@ -464,7 +469,7 @@ export const OnlineBookingContractPage = () => {
                   </button>
                 )}
                 <Link
-                  to="/my-bookings"
+                  to="/portal/customer?tab=bookings"
                   className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50 transition"
                 >
                   <LayoutDashboard className="h-4 w-4" />

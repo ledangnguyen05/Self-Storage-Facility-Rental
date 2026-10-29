@@ -3,7 +3,9 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.dto.request.StorageUnitCreateRequest;
 import com.boxora.dto.request.StorageUnitUpdateRequest;
+import com.boxora.dto.request.ToggleMaintenanceRequest;
 import com.boxora.dto.response.StorageUnitResponse;
+import com.boxora.dto.response.UnitAvailabilityResponse;
 import com.boxora.service.StorageUnitService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -37,9 +39,25 @@ public class StorageUnitController {
     public ResponseEntity<ApiResponse<List<StorageUnitResponse>>> getUnits(
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) String floorLevel,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) Boolean forAssignment
     ) {
-        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnits(facilityId, floorLevel, status)));
+        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnits(facilityId, floorLevel, status, forAssignment)));
+    }
+
+    @GetMapping("/availability")
+    public ResponseEntity<ApiResponse<UnitAvailabilityResponse>> getUnitAvailability(
+            @RequestParam UUID facilityId,
+            @RequestParam UUID unitTypeId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getUnitAvailability(facilityId, unitTypeId)));
+    }
+
+    @GetMapping("/availability/facility/{facilityId}")
+    public ResponseEntity<ApiResponse<List<UnitAvailabilityResponse>>> getFacilityAvailability(
+            @PathVariable UUID facilityId
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(storageUnitService.getFacilityAvailability(facilityId)));
     }
 
     @GetMapping("/{id}")
@@ -55,7 +73,7 @@ public class StorageUnitController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_STAFF', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> updateUnit(
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
@@ -71,8 +89,11 @@ public class StorageUnitController {
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
-    public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái bảo trì ngăn kho thành công", storageUnitService.toggleMaintenance(id)));
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_STAFF', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(
+            @PathVariable UUID id,
+            @RequestBody(required = false) ToggleMaintenanceRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật trạng thái bảo trì ngăn kho thành công", storageUnitService.toggleMaintenance(id, request)));
     }
 }

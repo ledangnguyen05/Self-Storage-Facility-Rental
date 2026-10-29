@@ -2,10 +2,9 @@ package com.boxora.enums;
 
 public enum ShiftHandoverStatus {
     DRAFT,
-    SUBMITTED,
     PENDING_DISPATCH,
+    SUBMITTED,
     DISCREPANCY,
     ACKNOWLEDGED,
-    REJECTED,
-    CANCELLED
+    REJECTED
 }

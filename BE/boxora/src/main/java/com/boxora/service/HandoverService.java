@@ -21,6 +21,11 @@ public interface HandoverService {
      */
     HandoverPrerequisitesResponse getCheckInPrerequisites(UUID bookingId);
 
+    /**
+     * Bước 2: Nhân viên chọn và gán vị trí ô kho vật lý (Unit Selection & Assignment)
+     */
+    HandoverPrerequisitesResponse assignUnitToBooking(UUID bookingId, String unitCode);
+
     HandoverResponse checkIn(HandoverRequest request);
 
     /**
@@ -79,7 +84,7 @@ public interface HandoverService {
     /** Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định */
     HandoverResponse recordCheckInInspection(com.boxora.dto.request.CheckInInspectionRequest request);
 
-    /** Tải lên tài liệu nghiệp vụ bàn giao (Hợp đồng giấy scan / Chứng từ chuyển khoản: PDF, JPG, JPEG, PNG, WEBP) */
+    /** Tải lên tài liệu nghiệp vụ bàn giao (Hợp đồng giấy scan / Chứng từ chuyển khoản / Ảnh nghiệm thu: PDF, JPG, JPEG, PNG, WEBP) */
     com.boxora.dto.response.FileUploadResponse uploadHandoverDocument(
             UUID bookingId,
             org.springframework.web.multipart.MultipartFile file,
@@ -88,5 +93,68 @@ public interface HandoverService {
 
     /** Kiểm tra quyền truy cập và phân giải đường dẫn tệp tài liệu nhạy cảm (Hợp đồng giấy / Chứng từ thanh toán) */
     java.nio.file.Path getAuthorizedHandoverDocumentPath(UUID bookingId, String fileUrl);
-}
 
+    // =========================================================================
+    // QUY TRÌNH TOÀN DIỆN: NGHIỆM THU HIỆN TRƯỜNG & TRẢ KHO (WAREHOUSE RETURN)
+    // =========================================================================
+
+    /** Danh sách hồ sơ trả kho của cơ sở với tìm kiếm và lọc đa tiêu chí */
+    List<com.boxora.dto.response.ReturnCaseResponse> getReturnCases(
+            UUID facilityId,
+            String search,
+            String status,
+            java.time.LocalDate dateFrom,
+            java.time.LocalDate dateTo
+    );
+
+    /** Chi tiết hồ sơ trả kho */
+    com.boxora.dto.response.ReturnCaseResponse getReturnCaseDetail(UUID bookingId);
+
+    /** Xác nhận hoặc đổi lịch hẹn nghiệm thu hiện trường */
+    HandoverResponse scheduleInspection(UUID bookingId, java.time.LocalDateTime scheduledAt, String notes);
+
+    /** Bắt đầu nghiệm thu hiện trường */
+    HandoverResponse startInspection(UUID bookingId);
+
+    /** Lưu biên bản kiểm định 7 tiêu chí hiện trường (hỗ trợ lưu nháp hoặc chốt biên bản) */
+    HandoverResponse saveInspection(HandoverRequest request);
+
+    /** Tính toán đối soát quyết toán tiền cọc, công nợ và chi phí hư hại */
+    ReturnSettlementResponse calculateSettlement(UUID bookingId, HandoverRequest request);
+
+    /** Trình cấp quản lý phê duyệt các khoản khấu trừ bồi thường */
+    HandoverResponse submitDeductionsForApproval(UUID bookingId, String notes);
+
+    /** Quản lý cơ sở / Ban quản lý phê duyệt hoặc từ chối quyết toán khấu trừ */
+    ReturnSettlementResponse approveSettlement(UUID bookingId, HandoverRequest request);
+
+    /** Ghi nhận khiếu nại / tranh chấp từ khách hàng đối với số tiền bồi thường */
+    HandoverResponse recordCustomerDispute(UUID bookingId, String disputeReason);
+
+    /** Thu khoản bồi thường bổ sung khi chi phí vượt quá tiền cọc */
+    com.boxora.dto.response.PaymentResponse collectAdditionalPayment(UUID bookingId, HandoverRequest request);
+
+    /** Thực hiện lệnh hoàn trả tiền cọc cho khách hàng */
+    ReturnSettlementResponse executeRefund(UUID bookingId, HandoverRequest request);
+
+    /** Xác nhận nhận lại kho vật lý & đồ đạc đã dọn sạch */
+    HandoverResponse confirmPhysicalReturn(UUID bookingId, HandoverRequest request);
+
+    /** Thu hồi mã PIN SmartLock và quyền truy cập kho của khách hàng */
+    HandoverResponse revokeAccess(UUID bookingId);
+
+    /** Hoàn tất toàn bộ hồ sơ trả kho, thanh lý hợp đồng và chuyển trạng thái kho */
+    ReturnSettlementResponse completeReturn(UUID bookingId);
+
+    /** Task 16.1: Nhân viên xác nhận đã kiểm tra hiện trường & chốt tính phí quyết toán gửi khách hàng */
+    ReturnSettlementResponse confirmSettlementCalculation(UUID bookingId, com.boxora.dto.request.SettlementConfirmRequest request);
+
+    /** Task 16.3 & 16.4: Khách hàng đồng ý hoặc khiếu nại đối với kết quả quyết toán */
+    ReturnSettlementResponse handleCustomerDecision(UUID bookingId, com.boxora.dto.request.CustomerDecisionRequest request);
+
+    /** Task 16.3: Quản lý cơ sở (FACILITY_MANAGER) giải quyết khiếu nại từ khách hàng */
+    ReturnSettlementResponse resolveDispute(UUID bookingId, com.boxora.dto.request.DisputeResolveRequest request);
+
+    /** Task 16.4: Kế toán / Quản lý kinh doanh (BUSINESS_MANAGER/ADMIN) thực hiện giải ngân tiền hoàn */
+    ReturnSettlementResponse executePayout(UUID bookingId, com.boxora.dto.request.ReturnPayoutRequest request);
+}

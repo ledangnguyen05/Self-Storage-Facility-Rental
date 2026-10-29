@@ -59,8 +59,8 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
 
     @Override
     public ShiftHandoverResponse createHandover(ShiftHandoverCreateRequest request) {
-        log.info("Creating shift handover: facilityId={}, type={}, shift={}, date={}",
-                request.getFacilityId(), request.getHandoverType(), request.getShift(), request.getHandoverDate());
+        log.info("Creating shift handover for facilityId={}, shift={}, date={}",
+                request.getFacilityId(), request.getShift(), request.getHandoverDate());
 
         facilityAccessGuard.checkFacilityAccess(request.getFacilityId());
 
@@ -79,47 +79,9 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
                 ? request.getHandoverType()
                 : ShiftHandoverType.ROUTINE;
 
-        // Bàn giao đột xuất bắt buộc phải có lý do
-        if (handoverType == ShiftHandoverType.EMERGENCY) {
-            if (request.getEmergencyReason() == null || request.getEmergencyReason().trim().isEmpty()) {
-                throw new AppException(ErrorCode.SHIFT_HANDOVER_EMERGENCY_REASON_REQUIRED);
-            }
-        }
-
         User incomingStaff = null;
         if (request.getIncomingStaffId() != null) {
-            // Không được tự nhận chính mình
-            if (request.getIncomingStaffId().equals(currentUserId)) {
-                throw new AppException(ErrorCode.SHIFT_HANDOVER_SELF_RECEIVE_FORBIDDEN);
-            }
-
-            incomingStaff = userRepository.findById(request.getIncomingStaffId())
-                    .orElseThrow(() -> new AppException(ErrorCode.STAFF_USER_NOT_FOUND));
-
-            if (!Boolean.TRUE.equals(incomingStaff.getIsActive())) {
-                throw new AppException(ErrorCode.USER_INACTIVE, "Tài khoản nhân sự tiếp nhận đã bị vô hiệu hóa");
-            }
-
-            // Kiểm tra quyền hạn của nhân sự tiếp nhận
-            String roleName = incomingStaff.getRole() != null ? incomingStaff.getRole().getName() : "";
-            if (!"STAFF".equalsIgnoreCase(roleName) && !"FACILITY_MANAGER".equalsIgnoreCase(roleName)) {
-                throw new AppException(ErrorCode.SHIFT_HANDOVER_INVALID_RECIPIENT,
-                        "Chỉ nhân viên (STAFF) hoặc Quản lý cơ sở (FACILITY_MANAGER) mới có quyền tiếp nhận bàn giao");
-            }
-
-            // Kiểm tra thuộc cơ sở phù hợp
-            boolean belongsToFacility = isStaffBelongingToFacility(incomingStaff, facility.getId());
-            if (!belongsToFacility) {
-                throw new AppException(ErrorCode.SHIFT_HANDOVER_INVALID_RECIPIENT,
-                        "Nhân sự tiếp nhận phải thuộc cùng chi nhánh cơ sở " + facility.getName());
-            }
-        } else {
-            // Nếu không có người nhận:
-            // Chỉ bàn giao đột xuất (EMERGENCY) mới cho phép lưu trạng thái Chờ Quản lý điều phối
-            if (handoverType != ShiftHandoverType.EMERGENCY) {
-                throw new AppException(ErrorCode.INVALID_REQUEST,
-                        "Biên bản bàn giao định kỳ hoặc chuyển giao trách nhiệm bắt buộc phải chọn nhân sự tiếp nhận.");
-            }
+            incomingStaff = userRepository.findById(request.getIncomingStaffId()).orElse(null);
         }
 
         StaffAssignment outgoingAssignment = null;
@@ -176,8 +138,8 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
                 ActivityAction.SHIFT_HANDOVER_CREATE,
                 "ShiftHandover",
                 saved.getId(),
-                String.format("Lập biên bản bàn giao [%s] ca %s tại %s bởi %s (Trạng thái: %s)",
-                        saved.getHandoverType(), saved.getShift(), facility.getName(), outgoingStaff.getFullName(), saved.getStatus()),
+                String.format("Bàn giao ca trực %s tại %s ngày %s bởi %s",
+                        saved.getShift(), facility.getName(), saved.getHandoverDate(), outgoingStaff.getFullName()),
                 null,
                 saved.getId().toString()
         );
@@ -199,47 +161,13 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
         }
 
         UUID currentUserId = requestContext.currentUserId();
+        User currentUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
 
-        // Không cho phép người tạo tự xác nhận biên bản của chính mình
-        if (currentUserId != null && handover.getOutgoingStaff() != null && currentUserId.equals(handover.getOutgoingStaff().getId())) {
-            throw new AppException(ErrorCode.FORBIDDEN, "Người lập biên bản không thể tự xác nhận tiếp nhận bàn giao");
+        if (handover.getIncomingStaff() == null && currentUser != null) {
+            handover.setIncomingStaff(currentUser);
         }
 
-        boolean isManagerOrAdmin = requestContext.hasAnyRole("FACILITY_MANAGER", "BUSINESS_MANAGER", "ADMIN");
-        boolean isDesignatedIncoming = handover.getIncomingStaff() != null && currentUserId != null && currentUserId.equals(handover.getIncomingStaff().getId());
-
-        // Nếu biên bản chưa có người nhận (ví dụ do PENDING_DISPATCH), nhân sự hiện tại đăng nhập có thể nhận
-        if (handover.getIncomingStaff() == null && currentUserId != null) {
-            User currentUser = userRepository.findById(currentUserId).orElse(null);
-            if (currentUser != null && isStaffBelongingToFacility(currentUser, handover.getFacility().getId())) {
-                handover.setIncomingStaff(currentUser);
-                isDesignatedIncoming = true;
-            }
-        }
-
-        if (!isDesignatedIncoming && !isManagerOrAdmin) {
-            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ nhân viên được chỉ định tiếp nhận hoặc Quản lý cơ sở mới có quyền xác nhận bàn giao");
-        }
-
-        // Cập nhật số tiền thực đếm và chênh lệch nếu có khai báo từ phía người nhận
-        if (request.getCashCounted() != null) {
-            handover.setCashCounted(request.getCashCounted());
-        }
-        if (request.getCashDiscrepancy() != null) {
-            handover.setCashDiscrepancy(request.getCashDiscrepancy());
-        }
-        if (request.getCashDiscrepancyReason() != null && !request.getCashDiscrepancyReason().isBlank()) {
-            handover.setCashDiscrepancyReason(request.getCashDiscrepancyReason());
-        }
-
-        ShiftHandoverStatus nextStatus = request.getStatus();
-        // Nếu có chênh lệch tiền mặt mà người nhận tiếp nhận, đánh dấu DISCREPANCY để Quản lý nắm bắt
-        if (nextStatus == ShiftHandoverStatus.ACKNOWLEDGED
-                && handover.getCashDiscrepancy() != null
-                && handover.getCashDiscrepancy().compareTo(BigDecimal.ZERO) != 0) {
-            nextStatus = ShiftHandoverStatus.DISCREPANCY;
-        }
-
+        ShiftHandoverStatus nextStatus = request.getStatus() != null ? request.getStatus() : ShiftHandoverStatus.ACKNOWLEDGED;
         handover.setStatus(nextStatus);
         handover.setAcknowledgedAt(LocalDateTime.now());
         if (request.getNotes() != null && !request.getNotes().isBlank()) {
@@ -250,16 +178,12 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
 
         ShiftHandover updated = shiftHandoverRepository.save(handover);
 
-        ActivityAction action = nextStatus == ShiftHandoverStatus.REJECTED
-                ? ActivityAction.SHIFT_HANDOVER_REJECT
-                : ActivityAction.SHIFT_HANDOVER_ACKNOWLEDGE;
-
         activityLogService.record(
                 handover.getFacility().getId(),
-                action,
+                ActivityAction.SHIFT_HANDOVER_ACKNOWLEDGE,
                 "ShiftHandover",
                 updated.getId(),
-                String.format("Phản hồi biên bản bàn giao ca id=%s trạng thái: %s", updated.getId(), nextStatus),
+                String.format("Tiếp nhận bàn giao ca trực id=%s trạng thái: %s", updated.getId(), request.getStatus()),
                 null,
                 updated.getId().toString()
         );

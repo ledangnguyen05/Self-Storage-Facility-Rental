@@ -30,7 +30,20 @@ public interface SupportTicketService {
     SupportTicketResponse updateStatus(UUID id, TicketStatusUpdateRequest request);
     SupportTicketResponse resolveTicket(UUID id, String resolutionNote);
     SupportTicketResponse closeTicket(UUID id, String closingNote);
+    SupportTicketResponse closeTicketWithRating(UUID id, String closingNote, Integer rating, String feedback);
     SupportTicketResponse reopenTicket(UUID id, String reopenReason);
+
+    // Flow 7 System Actions
+    SupportTicketResponse regeneratePin(UUID ticketId);
+    SupportTicketResponse remoteUnlock(UUID ticketId);
+    SupportTicketResponse adjustBilling(UUID ticketId, java.math.BigDecimal amount, String note);
+    SupportTicketResponse setUnitMaintenance(UUID ticketId, String reason, String maintainerName);
+    SupportTicketResponse transferUnit(UUID ticketId, UUID targetUnitId, String reason);
+    SupportTicketContactLogResponse addTicketMessage(UUID ticketId, String messageType, String content);
+
+    SupportTicketResponse approveRefund(UUID id, com.boxora.dto.request.TicketApproveRefundRequest request);
+    SupportTicketResponse submitBankInfo(UUID id, com.boxora.dto.request.TicketBankInfoRequest request);
+    SupportTicketResponse adminConfirmPayout(UUID id, com.boxora.dto.request.TicketAdminPayoutRequest request);
 
     SupportTicketContactLogResponse recordContactLog(UUID ticketId, SupportTicketContactLogRequest request);
     List<SupportTicketContactLogResponse> getContactLogs(UUID ticketId);

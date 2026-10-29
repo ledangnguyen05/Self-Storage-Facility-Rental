@@ -51,7 +51,21 @@ public class SecurityConfig {
             "/api/v1/payments/vnpay-return",
             "/api/v1/payments/vnpay-ipn",
             "/api/v1/payments/vnpay-verify",
+            "/api/v1/payments/vnpay/create",
+            "/api/v1/payments/transaction/**",
+            "/api/v1/payments/booking/*",
+            "/api/v1/bookings/*",
+            "/api/v1/bookings/*/cancel",
+            "/api/v1/bookings/*/confirm",
+            "/api/v1/bookings/*/cancellation-preview",
+            "/api/v1/bookings/code/*",
+            "/api/v1/bookings/code/*/cancel",
+            "/api/v1/bookings/code/*/confirm",
             "/api/v1/contracts/webhook/**",
+            "/api/v1/contracts/booking/**",
+            "/api/v1/contracts/*/mock-sign",
+            "/api/v1/contracts/*/signing-url",
+            "/api/v1/contracts/*/send-for-signature",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/api-docs/**",
@@ -77,6 +91,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/unit-types/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/facility-policies/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/bookings").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/bookings/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/bookings/code/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/payments/booking/*").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/payments/vnpay/create").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/contracts/booking/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/contracts/*/signing-url").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/contracts/*/send-for-signature").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/contracts/*/mock-sign").permitAll()
                         .anyRequest().authenticated()
                 )
 

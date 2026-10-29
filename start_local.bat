@@ -53,6 +53,7 @@ if exist "C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot\bin\java.exe" (
 
 if defined FOUND_JDK (
     echo   - Su dung JDK: !FOUND_JDK!
+    set "JAVA_HOME=!FOUND_JDK!"
     set "PATH=!FOUND_JDK!\bin;!PATH!"
 )
 
@@ -60,7 +61,7 @@ echo   - Dang bat Backend trong cua so rieng...
 if exist "%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar" (
     start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && java -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
 ) else (
-    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && mvnw.cmd spring-boot:run"
+    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && java -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
 )
 
 echo   - Dang cho Backend san sang tren Port 8080...
@@ -88,8 +89,11 @@ echo.
 echo [3/4] Chuan bi moi truong Frontend Local...
 
 :: Dam bao file .env trong FE tro ve localhost:8080 khi chay local
-echo VITE_API_BASE_URL=http://localhost:8080> "%~dp0FE\boxora-web\.env"
-echo [OK] Da cau hinh VITE_API_BASE_URL=http://localhost:8080 cho Frontend.
+(
+    echo VITE_API_BASE_URL=http://localhost:8080
+    echo VITE_GOOGLE_CLIENT_ID=564968487479-aooibm2esqg9bic2iuu1a729ci4qfo3q.apps.googleusercontent.com
+) > "%~dp0FE\boxora-web\.env"
+echo [OK] Da cau hinh VITE_API_BASE_URL va VITE_GOOGLE_CLIENT_ID cho Frontend.
 
 echo.
 echo [4/4] Khoi dong Frontend Vite Dev Server...

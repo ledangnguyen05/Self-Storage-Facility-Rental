@@ -46,4 +46,21 @@ public class SupportTicketResponse {
     private String createdByStaffRole;
     private Boolean isStaffRecorded;
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+
+    // Refund & Bank Transfer Workflow
+    private String bankName;
+    private String bankAccountNumber;
+    private String bankAccountName;
+    private java.math.BigDecimal refundAmount;
+    private String transferProofUrl;
+    private String transferTransactionRef;
+    private LocalDateTime transferConfirmedAt;
+    private String transferConfirmedByName;
+    private LocalDateTime fmApprovedAt;
+    private String fmApprovedByName;
+    private String fmApprovalNote;
+    private String refundStatus;
+    private Integer rating;
+    private String customerFeedback;
 }

@@ -36,12 +36,24 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/bookings/{id}/cancel")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Hủy đơn đặt kho, giải phóng ngăn kho và hoàn tiền cọc theo 3 mốc")
     public ResponseEntity<ApiResponse<BookingCancelResponse>> cancelBooking(
             @PathVariable UUID id,
             @Valid @RequestBody(required = false) BookingCancelRequest request
     ) {
         BookingCancelResponse response = bookingCancellationService.cancelBooking(id, request);
+        return ResponseEntity.ok(ApiResponse.success(response.getMessage(), response));
+    }
+
+    @PostMapping("/bookings/code/{bookingCode}/cancel")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER')")
+    @Operation(summary = "Hủy đơn đặt kho qua mã đặt chỗ (bookingCode)")
+    public ResponseEntity<ApiResponse<BookingCancelResponse>> cancelBookingByCode(
+            @PathVariable String bookingCode,
+            @Valid @RequestBody(required = false) BookingCancelRequest request
+    ) {
+        BookingCancelResponse response = bookingCancellationService.cancelBookingByCode(bookingCode, request);
         return ResponseEntity.ok(ApiResponse.success(response.getMessage(), response));
     }
 

@@ -10,7 +10,18 @@ import {
 import { PageResult } from './userService'
 
 export interface BookingCreatePayload {
-  storageUnitId: string
+  bookingCode?: string
+  storageUnitId?: string
+  facilityId?: string
+  unitTypeId?: string
+  fullName?: string
+  phone?: string
+  email?: string
+  customerName?: string
+  customerPhone?: string
+  customerEmail?: string
+  specialNotes?: string
+  initialStatus?: string
   customerId?: string
   startDate: string
   expectedArrivalAt?: string
@@ -47,13 +58,21 @@ export interface BookingPinData {
 export const bookingService = {
   async create(data: BookingCreatePayload) {
     const response = await api.post('/api/v1/bookings', data)
-    const booking = response.data?.data as Booking
-    window.dispatchEvent(new Event('boxora:notifications-refresh'))
-    return booking
+    return response.data?.data as Booking
   },
 
   async createBooking(data: BookingCreatePayload) {
     return this.create(data)
+  },
+
+  async updateUnpaidBooking(id: string, data: BookingCreatePayload) {
+    const response = await api.put(`/api/v1/bookings/${id}/unpaid-revision`, data)
+    return response.data?.data as Booking
+  },
+
+  async invalidateSignedContract(id: string) {
+    const response = await api.post(`/api/v1/bookings/${id}/invalidate-signed-contract`)
+    return response.data?.data as Booking
   },
 
   async getMyActive(customerId?: string) {
@@ -202,10 +221,59 @@ export const bookingService = {
     return response.data?.data as BookingCancellationPreview
   },
 
-  async cancelBooking(id: string, cancellationReason?: string) {
-    const response = await api.post(`/api/v1/bookings/${id}/cancel`, {
-      cancellationReason: cancellationReason?.trim() || undefined,
-    })
+  async cancelBooking(
+    idOrCode: string,
+    cancellationReasonOrData?: string | {
+      cancellationReason?: string
+      bankName?: string
+      bankAccountNumber?: string
+      bankAccountName?: string
+    }
+  ) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/cancel`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/cancel`
+    const body = typeof cancellationReasonOrData === 'string'
+      ? { cancellationReason: cancellationReasonOrData.trim() || undefined }
+      : {
+          cancellationReason: cancellationReasonOrData?.cancellationReason?.trim() || undefined,
+          bankName: cancellationReasonOrData?.bankName?.trim() || undefined,
+          bankAccountNumber: cancellationReasonOrData?.bankAccountNumber?.trim() || undefined,
+          bankAccountName: cancellationReasonOrData?.bankAccountName?.trim() || undefined,
+        }
+    const response = await api.post(url, body)
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
     return response.data?.data as BookingCancelResponse
+  },
+
+  async confirmBooking(idOrCode: string, notes?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/confirm`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/confirm`
+    const response = await api.post(url, {
+      notes: notes?.trim() || undefined,
+    })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return response.data?.data as Booking
+  },
+
+    async assignUnitAndProvision(idOrCode: string, unitId: string, notes?: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/assign-unit`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/assign-unit`
+    const response = await api.post(url, {
+      unitId,
+      notes,
+    })
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return response.data?.data as Booking
+  },
+
+  async getByBookingCode(code: string) {
+    const response = await api.get(`/api/v1/bookings/code/${encodeURIComponent(code)}`)
+    return response.data?.data as Booking
   },
 }

@@ -568,6 +568,109 @@ class EmailServiceTest {
         assertThat(text).contains("Cổng web chưa cấu hình liên kết trực tiếp");
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // 13. Booking Cancellation & Rejection Email
+    // ─────────────────────────────────────────────────────────────────────────
+    @Test
+    @DisplayName("Email từ chối đặt kho bởi nhân viên: Hiển thị badge từ chối, lý do và hotline hỗ trợ")
+    void testSendBookingCancellationEmail_StaffRejected_DisplaysRejectionNoticeAndHotline() throws Exception {
+        emailService.sendBookingCancellationEmail(
+                "khach@boxora.vn",
+                "Trần Văn Bình",
+                "BX-2026-8888",
+                "Boxora Thủ Đức",
+                "TD-C208",
+                "Loại hàng hóa không phù hợp với quy chuẩn phòng cháy",
+                true,
+                BigDecimal.ZERO
+        );
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender, times(1)).send(captor.capture());
+
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).contains("Thông báo từ chối đơn đặt giữ chỗ BX-2026-8888");
+
+        String html = extractHtml(message);
+        assertThat(html).contains("Trần Văn Bình");
+        assertThat(html).contains("ĐƠN ĐÃ TỪ CHỐI");
+        assertThat(html).contains("BX-2026-8888");
+        assertThat(html).contains("Boxora Thủ Đức");
+        assertThat(html).contains("TD-C208");
+        assertThat(html).contains("Loại hàng hóa không phù hợp với quy chuẩn phòng cháy");
+        assertThat(html).contains("1900-BOXORA");
+
+        String plainText = extractPlainText(message);
+        assertThat(plainText).contains("THÔNG BÁO TỪ CHỐI ĐƠN ĐẶT GIỮ CHỖ");
+        assertThat(plainText).contains("BX-2026-8888");
+        assertThat(plainText).contains("Boxora Thủ Đức");
+    }
+
+    @Test
+    @DisplayName("Email hủy đặt kho bởi khách hàng có hoàn tiền: Hiển thị thông tin hoàn tiền cọc")
+    void testSendBookingCancellationEmail_CustomerCancelled_WithRefund_DisplaysRefundDetails() throws Exception {
+        emailService.sendBookingCancellationEmail(
+                "khach@boxora.vn",
+                "Lê Thị Thảo",
+                "BX-2026-9999",
+                "Boxora Bình Thạnh",
+                "BT-A101",
+                "Thay đổi kế hoạch chuyển nhà",
+                false,
+                new BigDecimal("500000.00")
+        );
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender, times(1)).send(captor.capture());
+
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).contains("Xác nhận hủy đơn đặt kho BX-2026-9999");
+
+        String html = extractHtml(message);
+        assertThat(html).contains("Lê Thị Thảo");
+        assertThat(html).contains("ĐÃ HỦY ĐƠN");
+        assertThat(html).contains("BX-2026-9999");
+        assertThat(html).contains("500.000");
+        assertThat(html).contains("Thay đổi kế hoạch chuyển nhà");
+
+        String plainText = extractPlainText(message);
+        assertThat(plainText).contains("XÁC NHẬN HỦY ĐƠN ĐẶT KHO THEO YÊU CẦU");
+        assertThat(plainText).contains("BX-2026-9999");
+    }
+
+    @Test
+    @DisplayName("Gửi email nhắc nhở quá hạn 24h check-in thành công")
+    void sendCheckinOverdueReminderEmail_Success() throws Exception {
+        java.time.LocalDateTime checkInTime = java.time.LocalDateTime.of(2026, 10, 26, 9, 0);
+        emailService.sendCheckinOverdueReminderEmail(
+                "customer@boxora.vn",
+                "Nguyễn Văn C",
+                "BX-2025-3080",
+                "Boxora Thủ Đức",
+                "123 Võ Văn Ngân, TP. Thủ Đức",
+                "028-1234-5678",
+                "TD-B102",
+                checkInTime
+        );
+
+        ArgumentCaptor<MimeMessage> captor = ArgumentCaptor.forClass(MimeMessage.class);
+        verify(mailSender, times(1)).send(captor.capture());
+
+        MimeMessage message = captor.getValue();
+        assertThat(message.getSubject()).contains("Quá hạn 24 giờ tiếp nhận buồng kho TD-B102 - Đơn BX-2025-3080");
+
+        String html = extractHtml(message);
+        assertThat(html).contains("Nguyễn Văn C");
+        assertThat(html).contains("BX-2025-3080");
+        assertThat(html).contains("Boxora Thủ Đức");
+        assertThat(html).contains("TD-B102");
+        assertThat(html).contains("QUÁ HẠN 24H TIẾP NHẬN");
+
+        String plainText = extractPlainText(message);
+        assertThat(plainText).contains("QUÁ 24 GIỜ");
+        assertThat(plainText).contains("BX-2025-3080");
+    }
+
     private MimeMessage msgOrCaptor(MimeMessage msg) {
         return msg;
     }

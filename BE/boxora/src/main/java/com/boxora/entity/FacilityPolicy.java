@@ -53,19 +53,18 @@ public class FacilityPolicy extends BaseEntity {
     // --- Cancellation ---
     @Column(name = "cancellation_full_refund_hours", nullable = false)
     @Builder.Default
-    // số giờ trước khi checkin ma khách cancel thuê sẽ trả 100% tiền cọc cho khách
-    private Integer cancellationFullRefundHours = 48;
+    // số giờ kể từ khi đặt kho mà khách hủy sẽ được hoàn 100% tiền cọc
+    private Integer cancellationFullRefundHours = 24;
 
     @Column(name = "cancellation_partial_refund_hours", nullable = false)
     @Builder.Default
-    // số giờ trước giờ check-in sẽ được hoàn một phần tiền coc cho khách,
-    // phần refund được trả phụ thuộc Double cancellationPartialRefundPercent
-    private Integer cancellationPartialRefundHours = 24;
+    // số giờ kể từ khi đặt kho mà khách hủy sẽ được hoàn một phần tiền cọc (70%)
+    private Integer cancellationPartialRefundHours = 48;
 
     @Column(name = "cancellation_partial_refund_percent", nullable = false)
     @Builder.Default
-    // tỷ lệ refund khi nằm trong trường hợp cancellationPartialRefundHours
-    private Double cancellationPartialRefundPercent = 50.0;
+    // tỷ lệ hoàn cọc khi hủy trong khoảng 24h - 48h kể từ lúc đặt kho (70%)
+    private Double cancellationPartialRefundPercent = 70.0;
 
     // --- Unit Return ---
     @Column(name = "return_notice_days", nullable = false)

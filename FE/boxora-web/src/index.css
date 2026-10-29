@@ -101,6 +101,14 @@ body {
   font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 #root {
   min-height: 100vh;
   display: flex;
@@ -1275,4 +1283,36 @@ html.dark .border-cyan-100 {
 
 html.dark .bg-slate-100\/70 {
   background-color: #161f33 !important;
+}
+
+
+
+
+
+/* ===== Leaflet map helpers (Boxora) ===== */
+.boxora-map-pin,
+.sovereignty-label {
+  background: transparent !important;
+  border: none !important;
+}
+.boxora-pin-pulse {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-bottom: -6px;
+  border-radius: 9999px;
+  background: rgba(2, 132, 199, 0.35);
+  animation: boxora-pin-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes boxora-pin-pulse {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+.leaflet-container {
+  font-family: inherit;
+  z-index: 0;
 }

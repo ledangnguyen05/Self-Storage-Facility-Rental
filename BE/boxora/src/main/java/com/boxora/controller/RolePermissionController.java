@@ -83,9 +83,26 @@ public class RolePermissionController {
     }
 
     @GetMapping("/by-role/{roleId}")
-    @PreAuthorize("hasAuthority('ROLE_PERMISSION_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiResponse<List<RolePermissionResponse>>> getByRoleId(@PathVariable UUID roleId) {
         List<RolePermissionResponse> response = rolePermissionService.getByRoleId(roleId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
+
+    @GetMapping("/my-permissions")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<List<String>>> getMyPermissions(
+            org.springframework.security.core.Authentication authentication
+    ) {
+        if (authentication == null) {
+            return ResponseEntity.ok(ApiResponse.success(List.of()));
+        }
+        List<String> list = authentication.getAuthorities().stream()
+                .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                .filter(a -> a != null && !a.startsWith("ROLE_"))
+                .distinct()
+                .toList();
+        return ResponseEntity.ok(ApiResponse.success(list));
+    }
+
 }

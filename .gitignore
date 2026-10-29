@@ -27,3 +27,6 @@ target/
 **/target/
 .wrangler/
 **/.wrangler/
+
+scratch/
+**/scratch/

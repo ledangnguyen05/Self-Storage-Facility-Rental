@@ -15,7 +15,7 @@ interface WebSettingsModalProps {
 }
 
 export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onClose }) => {
-  const { language, setLanguage, t } = useLanguage()
+  const { t } = useLanguage()
   const [settings, setSettings] = useState<WebSettings>(getWebSettings())
   const [savedSuccess, setSavedSuccess] = useState(false)
 
@@ -29,11 +29,7 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
   const handleUpdate = <K extends keyof WebSettings>(key: K, value: WebSettings[K]) => {
     const updated = { ...settings, [key]: value }
     setSettings(updated)
-    if (key === 'language') {
-      setLanguage(value as 'vi' | 'en')
-    } else {
-      saveWebSettings({ [key]: value })
-    }
+    saveWebSettings({ [key]: value })
   }
 
   const handleReset = () => {
@@ -44,11 +40,7 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
   }
 
   const handleSaveAndClose = () => {
-    if (settings.language !== language) {
-      setLanguage(settings.language)
-    } else {
-      saveWebSettings(settings)
-    }
+    saveWebSettings(settings)
     setSavedSuccess(true)
     setTimeout(() => {
       setSavedSuccess(false)
@@ -155,45 +147,38 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
             </div>
           </div>
 
-          {/* Section 3: Ngôn ngữ & Vùng */}
-          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-2.5">
+          {/* Section 3: Thông báo & Cảnh báo hệ thống */}
+          <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] text-slate-500">translate</span>
-                <span className="text-xs font-bold text-slate-900">{t('Ngôn ngữ hiển thị')}</span>
+                <span className="material-symbols-outlined text-[18px] text-slate-500">notifications_active</span>
+                <span className="text-xs font-bold text-slate-900">{t('Thông báo & Cảnh báo hệ thống')}</span>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              {[
-                { id: 'vi', label: t('Tiếng Việt'), desc: t('Ngôn ngữ mặc định hệ thống') },
-                { id: 'en', label: t('English'), desc: t('Global English interface') },
-              ].map(item => {
-                const isActive = settings.language === item.id
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => handleUpdate('language', item.id as any)}
-                    className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                      isActive
-                        ? 'border-blue-600 bg-blue-50/70 text-blue-900 shadow-xs'
-                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-xs font-bold">{item.label}</p>
-                      <p className="text-[10px] text-slate-500">{item.desc}</p>
-                    </div>
-                    {isActive && (
-                      <span className="material-symbols-outlined text-[18px] text-blue-600">check</span>
-                    )}
-                  </button>
-                )
-              })}
+
+            <div className="flex items-center justify-between py-1">
+              <div className="flex flex-col">
+                <span className="text-xs font-medium text-slate-800">{t('Thông báo trình duyệt & IoT')}</span>
+                <span className="text-[10px] text-slate-500">{t('Bật thông báo đẩy trạng thái mở khóa và hợp đồng')}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleUpdate('enableNotifications', !settings.enableNotifications)}
+                className={`w-10 h-6 rounded-full p-0.5 transition-colors cursor-pointer ${
+                  settings.enableNotifications ? 'bg-blue-600' : 'bg-slate-300'
+                }`}
+              >
+                <div
+                  className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
+                    settings.enableNotifications ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
             </div>
           </div>
 
-          {/* Section 4: Phiên đăng nhập */}
+
+          {/* Section 5: Phiên đăng nhập */}
           <div className="rounded-xl border border-slate-200/80 p-3.5 bg-white flex items-center justify-between">
             <div className="flex flex-col">
               <div className="flex items-center gap-2">

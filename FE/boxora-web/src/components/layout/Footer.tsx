@@ -40,22 +40,22 @@ export const Footer: React.FC = () => {
             </h4>
             <ul className="space-y-2.5 text-sm text-slate-600 dark:text-slate-400">
               <li>
-                <Link to="/units" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                <Link to="/booking" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   Locker Cá Nhân XS (1m³ - Vali & Tài liệu)
                 </Link>
               </li>
               <li>
-                <Link to="/units" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                <Link to="/booking" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   Kho Mini S (3m³ - Đồ đạc phòng trọ)
                 </Link>
               </li>
               <li>
-                <Link to="/units" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                <Link to="/booking" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   Kho Gia Đình M & L (6 - 15m³ - Nội thất nhà)
                 </Link>
               </li>
               <li>
-                <Link to="/units" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                <Link to="/booking" className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                   Kho Doanh Nghiệp XL (20 - 45m³ - Hàng TMĐT)
                 </Link>
               </li>

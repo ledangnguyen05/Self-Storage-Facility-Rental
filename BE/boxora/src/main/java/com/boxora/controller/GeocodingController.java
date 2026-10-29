@@ -24,7 +24,7 @@ public class GeocodingController {
     private final GeocodingService geocodingService;
 
     @PostMapping("/search")
-    @Operation(summary = "Tìm danh sách tọa độ GPS theo tên địa chỉ (POST)")
+    @Operation(summary = "Tìm danh sách tọa độ GPS theo tên địa chỉ")
     public ResponseEntity<ApiResponse<List<GeocodeResponse>>> search(
             @Valid @RequestBody GeocodeRequest request
     ) {

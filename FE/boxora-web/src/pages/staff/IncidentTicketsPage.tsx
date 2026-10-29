@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useOutletContext } from 'react-router-dom'
 import {
   supportTicketService,
   SupportTicketRecord,
@@ -12,20 +11,9 @@ import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { useAuth } from '../../context/AuthContext'
 import { User, Facility, StorageUnit } from '../../types'
-
-interface DashboardContextType {
-  selectedFacility?: string
-  setSelectedFacility?: (facId: string) => void
-  facilities?: Facility[]
-}
+import { toast } from '../../utils/toast'
 
 export const IncidentTicketsPage: React.FC = () => {
-  const {
-    selectedFacility: contextFacilityId,
-    setSelectedFacility: setContextFacilityId,
-    facilities: contextFacilities = []
-  } = useOutletContext<DashboardContextType>() || {}
-
   const { user, role } = useAuth()
   const effectiveRole = role || (typeof user?.role === 'string' ? user.role : user?.role?.name) || 'STAFF'
   const isStaff = effectiveRole === 'STAFF'
@@ -36,25 +24,17 @@ export const IncidentTicketsPage: React.FC = () => {
 
   // Task 3: Strictly enforce facility scope.
   // - Staff is always confined to assigned facility.
-  // - Facility Manager is strictly confined to assigned facility.
-  // - Facility filter dropdown is hidden for Staff & Facility Manager to avoid redundancy.
+  // - Facility Manager assigned to a facility is strictly confined to that facility.
   // - "Tất cả cơ sở" option is only available to Admin & BOM (Business Operations Manager).
-  const isFacilityScoped = isStaff || isFacilityManager || Boolean(user?.facilityId && !isAdmin && !isBusinessManager)
+  const isFacilityScoped = isStaff || (isFacilityManager && Boolean(user?.facilityId))
   const canSelectAllFacilities = !isFacilityScoped && (isAdmin || isBusinessManager)
 
   // Tickets & data
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
-  const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
+  const [facilities, setFacilities] = useState<Facility[]>([])
   const [stats, setStats] = useState<SupportTicketStats | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
-
-  // Synchronize facility list from Outlet context if available
-  useEffect(() => {
-    if (contextFacilities && contextFacilities.length > 0) {
-      setFacilities(contextFacilities)
-    }
-  }, [contextFacilities])
 
   // Accessible facilities according to role permission
   const accessibleFacilities = useMemo(() => {
@@ -81,29 +61,8 @@ export const IncidentTicketsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>(() => {
     if (isFacilityScoped && user?.facilityId) return user.facilityId
-    if (contextFacilityId !== undefined) {
-      return (!contextFacilityId || contextFacilityId.toUpperCase() === 'ALL') ? 'ALL' : contextFacilityId
-    }
     return canSelectAllFacilities ? 'ALL' : (user?.facilityId || 'ALL')
   })
-
-  // Synchronize with topbar facility selector ("Cơ sở trực thuộc")
-  useEffect(() => {
-    if (isFacilityScoped) return
-    if (contextFacilityId !== undefined) {
-      const nextScope = (!contextFacilityId || contextFacilityId.toUpperCase() === 'ALL') ? 'ALL' : contextFacilityId
-      if (nextScope !== selectedFacilityFilter) {
-        setSelectedFacilityFilter(nextScope)
-      }
-    }
-  }, [contextFacilityId, isFacilityScoped, selectedFacilityFilter])
-
-  const handleFacilityFilterChange = (facId: string) => {
-    if (isFacilityScoped) return
-    setSelectedFacilityFilter(facId)
-    setContextFacilityId?.(facId)
-    setCurrentPage(1)
-  }
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL')
   const [priorityFilter, setPriorityFilter] = useState<'ALL' | 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'>('ALL')
   const [statusFilter, setStatusFilter] = useState<string>('ALL')
@@ -126,11 +85,6 @@ export const IncidentTicketsPage: React.FC = () => {
   const [newDescription, setNewDescription] = useState('')
   const [newFacilityId, setNewFacilityId] = useState<string>('')
   const [isSubmittingCreate, setIsSubmittingCreate] = useState(false)
-
-  // Facility units for autocomplete suggest & live validation
-  const [facilityUnits, setFacilityUnits] = useState<StorageUnit[]>([])
-  const [isLoadingUnits, setIsLoadingUnits] = useState(false)
-  const [showUnitSuggest, setShowUnitSuggest] = useState(false)
 
   // Assign Modal (FM only)
   const [assigningTicket, setAssigningTicket] = useState<SupportTicketRecord | null>(null)
@@ -173,6 +127,35 @@ export const IncidentTicketsPage: React.FC = () => {
   const [isSubmittingClose, setIsSubmittingClose] = useState(false)
   const [closeTicketError, setCloseTicketError] = useState<string | null>(null)
 
+  // Flow 7 System Actions States
+  // 6A: IoT Lock Actions
+  const [isRegeneratingPin, setIsRegeneratingPin] = useState(false)
+  const [isRemoteUnlocking, setIsRemoteUnlocking] = useState(false)
+
+  // 6B: Billing Adjustment Modal
+  const [showBillingModal, setShowBillingModal] = useState(false)
+  const [billingAmount, setBillingAmount] = useState('')
+  const [billingNote, setBillingNote] = useState('')
+  const [isSubmittingBilling, setIsSubmittingBilling] = useState(false)
+
+  // 6C: Maintenance & Unit Transfer Modals
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false)
+  const [maintenanceReason, setMaintenanceReason] = useState('')
+  const [maintenancePerson, setMaintenancePerson] = useState('')
+  const [isSubmittingMaintenance, setIsSubmittingMaintenance] = useState(false)
+
+  const [showTransferModal, setShowTransferModal] = useState(false)
+  const [transferTargetUnitId, setTransferTargetUnitId] = useState('')
+  const [transferReason, setTransferReason] = useState('')
+  const [availableUnitsForTransfer, setAvailableUnitsForTransfer] = useState<StorageUnit[]>([])
+  const [isLoadingAvailableUnits, setIsLoadingAvailableUnits] = useState(false)
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false)
+
+  // Step 7: Tabbed Messaging Box in Detail Modal
+  const [messageTab, setMessageTab] = useState<'INTERNAL_NOTE' | 'CUSTOMER_REPLY'>('INTERNAL_NOTE')
+  const [messageContent, setMessageContent] = useState('')
+  const [isSubmittingMessage, setIsSubmittingMessage] = useState(false)
+
   const fetchTicketsAndData = useCallback(async (facilityIdOverride?: string) => {
     setIsLoading(true)
     setFetchError(null)
@@ -194,11 +177,7 @@ export const IncidentTicketsPage: React.FC = () => {
       ])
 
       if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value)) {
-        let list = queueRes.value
-        if (effectiveFacilityId) {
-          list = list.filter(t => t.facilityId === effectiveFacilityId)
-        }
-        setTickets(list)
+        setTickets(queueRes.value)
       } else {
         setTickets([])
         if (queueRes.status === 'rejected') {
@@ -252,74 +231,158 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }, [isFacilityScoped, canSelectAllFacilities, user?.facilityId, facilities, selectedFacilityFilter])
 
-  // Effective facility for create modal
-  const effectiveModalFacilityId = isFacilityScoped && user?.facilityId
-    ? user.facilityId
-    : (newFacilityId || (selectedFacilityFilter !== 'ALL' ? selectedFacilityFilter : (facilities[0]?.id || '')))
-
-  // Fetch all storage units of the target facility for suggest and validation
-  useEffect(() => {
-    if (!isCreateModalOpen) return
-    const targetFacId = effectiveModalFacilityId
-    if (!targetFacId) return
-
-    let isSubscribed = true
-    setIsLoadingUnits(true)
-    storageUnitService.getUnits({ facilityId: targetFacId })
-      .then((units) => {
-        if (isSubscribed && Array.isArray(units)) {
-          setFacilityUnits(units)
-        }
-      })
-      .catch((err) => {
-        console.warn('Failed to load facility units for suggest:', err)
-        if (isSubscribed) setFacilityUnits([])
-      })
-      .finally(() => {
-        if (isSubscribed) setIsLoadingUnits(false)
-      })
-
-    return () => {
-      isSubscribed = false
-    }
-  }, [isCreateModalOpen, effectiveModalFacilityId])
-
-  // Filter suggestions based on typed unit code
-  const filteredSuggestedUnits = useMemo(() => {
-    const query = newUnitCode.trim().toUpperCase()
-    if (!query) return facilityUnits.slice(0, 8)
-    return facilityUnits.filter((u) => u.unitCode.toUpperCase().includes(query)).slice(0, 10)
-  }, [facilityUnits, newUnitCode])
-
-  // Real-time validation of entered unitCode
-  const unitValidation = useMemo(() => {
-    const trimmed = newUnitCode.trim().toUpperCase()
-    if (!trimmed) {
-      return { status: 'EMPTY' as const, message: '', unit: null }
-    }
-    const match = facilityUnits.find((u) => u.unitCode.toUpperCase() === trimmed)
-    if (match) {
-      return {
-        status: 'VALID' as const,
-        message: `Mã kho hợp lệ (${match.floorLevel || 'Tầng 1'} • ${match.tenantName ? 'Đang thuê bởi: ' + match.tenantName : 'Kho chưa có khách thuê / Kho trống'})`,
-        unit: match
-      }
-    }
-    return {
-      status: 'INVALID' as const,
-      message: `Mã kho "${newUnitCode}" không tồn tại tại cơ sở này. Vui lòng kiểm tra lại hoặc chọn từ danh sách gợi ý!`,
-      unit: null
-    }
-  }, [facilityUnits, newUnitCode])
-
-  // Handle Take Ticket (Staff / FM)
+  // Handle Take Ticket (Staff / FM - Flow 7 Bước 5)
   const handleTakeTicket = async (ticket: SupportTicketRecord) => {
     if (isReadOnly) return
     try {
-      await supportTicketService.takeTicket(ticket.id)
+      const updated = await supportTicketService.takeTicket(ticket.id)
+      toast.success(`Đã tiếp nhận xử lý sự cố #${ticket.ticketCode || ticket.id.slice(0, 8)}. Trạng thái chuyển sang ĐANG XỬ LÝ (IN_PROGRESS).`)
+      if (detailTicket?.id === ticket.id) {
+        setDetailTicket(updated)
+      }
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể tiếp nhận ticket')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể tiếp nhận ticket')
+    }
+  }
+
+  // Flow 7 Bước 6A: IoT Lock Actions
+  const handleRegeneratePin = async (ticketId: string) => {
+    setIsRegeneratingPin(true)
+    try {
+      const res = await supportTicketService.regeneratePin(ticketId)
+      toast.success('Đã tạo và đồng bộ mã PIN mới cho ô kho thành công!')
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể cấp lại mã PIN.')
+    } finally {
+      setIsRegeneratingPin(false)
+    }
+  }
+
+  const handleRemoteUnlock = async (ticketId: string) => {
+    if (!window.confirm('CẢNH BÁO: Bạn có chắc chắn muốn phát lệnh MỞ KHÓA TỪ XA KHẨN CẤP cho ô kho này không?')) return
+    setIsRemoteUnlocking(true)
+    try {
+      const res = await supportTicketService.remoteUnlock(ticketId)
+      toast.success('Đã gửi lệnh mở khóa từ xa khẩn cấp thành công!')
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể mở khóa từ xa.')
+    } finally {
+      setIsRemoteUnlocking(false)
+    }
+  }
+
+  // Flow 7 Bước 6B: Billing Adjustment
+  const handleSubmitBillingAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket) return
+    setIsSubmittingBilling(true)
+    try {
+      const amountNum = billingAmount ? Number(billingAmount) : undefined
+      const res = await supportTicketService.adjustBilling(detailTicket.id, {
+        amount: amountNum,
+        note: billingNote.trim() || undefined,
+      })
+      toast.success('Đã cập nhật điều chỉnh/miễn trừ phụ phí thành công!')
+      setShowBillingModal(false)
+      setBillingAmount('')
+      setBillingNote('')
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể điều chỉnh phụ phí.')
+    } finally {
+      setIsSubmittingBilling(false)
+    }
+  }
+
+  // Flow 7 Bước 6C: Maintenance & Unit Transfer
+  const handleSubmitMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket) return
+    setIsSubmittingMaintenance(true)
+    try {
+      const res = await supportTicketService.setUnitMaintenance(detailTicket.id, {
+        reason: maintenanceReason.trim() || undefined,
+        maintainerName: maintenancePerson.trim() || user?.fullName || undefined,
+      })
+      toast.success('Đã chuyển ô kho sang trạng thái BẢO TRÌ (UNDER_MAINTENANCE) thành công!')
+      setShowMaintenanceModal(false)
+      setMaintenanceReason('')
+      setMaintenancePerson('')
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể chuyển trạng thái bảo trì.')
+    } finally {
+      setIsSubmittingMaintenance(false)
+    }
+  }
+
+  const handleOpenTransferModal = async (ticket: SupportTicketRecord) => {
+    setShowTransferModal(true)
+    setTransferTargetUnitId('')
+    setTransferReason(`Điều chuyển kho tạm thời để xử lý sự cố #${ticket.ticketCode || ticket.id.slice(0, 8)}`)
+    setIsLoadingAvailableUnits(true)
+    try {
+      const units = await storageUnitService.getUnits({
+        facilityId: ticket.facilityId,
+        status: 'AVAILABLE',
+      })
+      setAvailableUnitsForTransfer(units || [])
+    } catch (err: any) {
+      console.warn('Failed to load available units:', err)
+      setAvailableUnitsForTransfer([])
+    } finally {
+      setIsLoadingAvailableUnits(false)
+    }
+  }
+
+  const handleSubmitTransfer = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket || !transferTargetUnitId) {
+      toast.warning('Vui lòng chọn ô kho đích để chuyển đến')
+      return
+    }
+    setIsSubmittingTransfer(true)
+    try {
+      const res = await supportTicketService.transferUnit(detailTicket.id, {
+        targetUnitId: transferTargetUnitId,
+        reason: transferReason.trim() || undefined,
+      })
+      toast.success('Đã điều chuyển khách hàng sang ô kho mới thành công!')
+      setShowTransferModal(false)
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể điều chuyển ô kho.')
+    } finally {
+      setIsSubmittingTransfer(false)
+    }
+  }
+
+  // Flow 7 Bước 7: Send Message / Log (Internal Note vs Customer Reply)
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket || !messageContent.trim()) return
+    setIsSubmittingMessage(true)
+    try {
+      await supportTicketService.addTicketMessage(detailTicket.id, {
+        messageType: messageTab,
+        content: messageContent.trim(),
+      })
+      toast.success(messageTab === 'INTERNAL_NOTE' ? 'Đã lưu ghi chú nội bộ' : 'Đã gửi phản hồi đến khách hàng')
+      setMessageContent('')
+      const logs = await supportTicketService.getContactLogs(detailTicket.id)
+      setDetailContactLogs(logs)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể lưu tin nhắn/ghi chú.')
+    } finally {
+      setIsSubmittingMessage(false)
     }
   }
 
@@ -334,7 +397,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setResolutionText('')
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể cập nhật hoàn tất ticket')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể cập nhật hoàn tất ticket')
     } finally {
       setIsSubmittingResolve(false)
     }
@@ -375,7 +438,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setFmReopenReason('')
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể yêu cầu xử lý lại')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể yêu cầu xử lý lại')
     } finally {
       setIsSubmittingReopen(false)
     }
@@ -411,7 +474,7 @@ export const IncidentTicketsPage: React.FC = () => {
       setAssigningTicket(null)
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể phân công ticket')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể phân công ticket')
     } finally {
       setIsSubmittingAssign(false)
     }
@@ -463,9 +526,9 @@ export const IncidentTicketsPage: React.FC = () => {
       setContactLogs(updatedLogs)
       setContactSummary('')
       setContactResult('')
-      alert('Đã lưu nhật ký liên hệ thành công. (Lưu ý: Không thay đổi trạng thái ticket)')
+      toast.success('Đã lưu nhật ký liên hệ thành công. (Lưu ý: Không thay đổi trạng thái ticket)')
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể lưu nhật ký liên hệ')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể lưu nhật ký liên hệ')
     } finally {
       setIsSubmittingContactLog(false)
     }
@@ -497,13 +560,6 @@ export const IncidentTicketsPage: React.FC = () => {
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault()
     if (isReadOnly || !newTitle.trim()) return
-
-    // Validate unit code if entered
-    if (newUnitCode.trim() && unitValidation.status === 'INVALID') {
-      alert(`Mã kho "${newUnitCode}" không tồn tại tại cơ sở này! Vui lòng chọn mã kho hợp lệ từ danh sách gợi ý.`)
-      return
-    }
-
     setIsSubmittingCreate(true)
     try {
       await supportTicketService.createTicket({
@@ -511,18 +567,15 @@ export const IncidentTicketsPage: React.FC = () => {
         title: newTitle.trim(),
         description: newDescription.trim() || 'Báo cáo sự cố tại hiện trường',
         priority: newPriority,
-        facilityId: effectiveModalFacilityId || undefined,
-        unitCode: unitValidation.unit ? unitValidation.unit.unitCode : (newUnitCode.trim().toUpperCase() || undefined),
-        storageUnitId: unitValidation.unit?.id || undefined
+        facilityId: newFacilityId || user?.facilityId || undefined
       })
       setIsCreateModalOpen(false)
       setNewTitle('')
       setNewUnitCode('')
       setNewDescription('')
-      setShowUnitSuggest(false)
       await fetchTicketsAndData()
     } catch (err: any) {
-      alert(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
     } finally {
       setIsSubmittingCreate(false)
     }
@@ -803,20 +856,24 @@ export const IncidentTicketsPage: React.FC = () => {
               />
             </div>
 
-            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & BOM, hidden for Staff & Facility Manager) */}
-            {!isFacilityScoped && (
-              <select
-                value={selectedFacilityFilter}
-                onChange={(e) => handleFacilityFilterChange(e.target.value)}
-                title="Chọn cơ sở cần lọc"
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none cursor-pointer"
-              >
-                {canSelectAllFacilities && <option value="ALL">Tất cả cơ sở</option>}
-                {accessibleFacilities.map(f => (
-                  <option key={f.id} value={f.id}>{f.name}</option>
-                ))}
-              </select>
-            )}
+            {/* Facility filter (Task 3: 'Tất cả cơ sở' is restricted to Admin & BOM, Scoped roles locked to assigned facility) */}
+            <select
+              value={selectedFacilityFilter}
+              onChange={(e) => {
+                if (isFacilityScoped) return
+                setSelectedFacilityFilter(e.target.value)
+              }}
+              disabled={isFacilityScoped}
+              title={isFacilityScoped ? 'Bạn đang xem dữ liệu cơ sở được phân công' : 'Chọn cơ sở cần lọc'}
+              className={`px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:outline-none ${
+                isFacilityScoped ? 'opacity-80 cursor-not-allowed bg-slate-100' : 'cursor-pointer'
+              }`}
+            >
+              {canSelectAllFacilities && <option value="ALL">Tất cả cơ sở</option>}
+              {accessibleFacilities.map(f => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
 
             {/* Category filter */}
             <select
@@ -963,21 +1020,8 @@ export const IncidentTicketsPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-3.5">
                         <div className="text-slate-800 font-medium text-xs">{t.facilityName || 'N/A'}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {t.unitCode ? (
-                            <span className="inline-flex items-center gap-1 font-mono font-bold text-[11px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">
-                              <span className="material-symbols-outlined text-[12px]">warehouse</span>
-                              <span>#{t.unitCode}</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-500 text-[11px]">Khu vực chung</span>
-                          )}
-                          {t.isStaffRecorded && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-800 border border-amber-200" title={`Ghi nhận bởi nhân sự: ${t.createdByStaffName || 'Đội ngũ kho'}`}>
-                              <span className="material-symbols-outlined text-[10px]">engineering</span>
-                              <span>Đội ngũ kho</span>
-                            </span>
-                          )}
+                        <div className="text-slate-500 text-[11px] mt-0.5">
+                          {t.unitCode ? `Kho #${t.unitCode}` : 'Khu vực chung'}
                         </div>
                       </td>
                       <td className="py-3 px-3.5 text-center">
@@ -994,31 +1038,11 @@ export const IncidentTicketsPage: React.FC = () => {
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">Chưa phân công</span>
                         )}
-                        <div className="mt-1 space-y-0.5 text-[10px]">
-                          {t.createdByStaffName && (
-                            <div className="text-slate-600 flex items-center gap-1">
-                              <span className="text-slate-400">Tạo bởi:</span>
-                              <span className="font-semibold text-slate-700">{t.createdByStaffName}</span>
-                            </div>
-                          )}
-                          {t.unitCode ? (
-                            t.customerName && t.customerId !== t.createdByStaffId ? (
-                              <div className="text-blue-700 flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[11px]">person</span>
-                                <span>Khách: {t.customerName}</span>
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center gap-0.5 text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-medium">
-                                <span className="material-symbols-outlined text-[11px]">lock_open</span>
-                                <span>Sự cố nội bộ / Kho chưa thuê</span>
-                              </div>
-                            )
-                          ) : (
-                            t.customerName && (
-                              <div className="text-slate-500">Khách: {t.customerName}</div>
-                            )
-                          )}
-                        </div>
+                        {t.customerName && (
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            Khách: {t.customerName}
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-3.5 text-slate-500 text-[11px] whitespace-nowrap">
                         <div>{t.createdAt ? new Date(t.createdAt).toLocaleDateString('vi-VN') : 'N/A'}</div>
@@ -1684,30 +1708,13 @@ export const IncidentTicketsPage: React.FC = () => {
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                   <span className="text-[10px] text-slate-400 block">Vị trí / Ngăn kho:</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <strong className="text-slate-800">{detailTicket.unitCode ? `Kho #${detailTicket.unitCode}` : 'Khu vực chung'}</strong>
-                    {detailTicket.isStaffRecorded && (
-                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold">
-                        Đội ngũ ghi nhận
-                      </span>
-                    )}
-                  </div>
+                  <strong className="text-slate-800">{detailTicket.unitCode ? `Kho #${detailTicket.unitCode}` : 'Khu vực chung'}</strong>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-400 block">Người tạo phiếu:</span>
-                  <strong className="text-slate-800">
-                    {detailTicket.createdByStaffName ? `${detailTicket.createdByStaffName} (${detailTicket.createdByStaffRole || 'Nhân sự kho'})` : (detailTicket.customerName || 'Khách hàng')}
-                  </strong>
+                  <span className="text-[10px] text-slate-400 block">Người báo cáo:</span>
+                  <strong className="text-slate-800">{detailTicket.customerName || 'Nhân viên cơ sở'}</strong>
                 </div>
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[10px] text-slate-400 block">Đối tượng / Khách thuê:</span>
-                  <strong className="text-slate-800">
-                    {detailTicket.customerName && detailTicket.customerId !== detailTicket.createdByStaffId
-                      ? `Khách thuê: ${detailTicket.customerName}`
-                      : 'Sự cố nội bộ (Kho chưa có khách thuê)'}
-                  </strong>
-                </div>
-                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 col-span-2">
                   <span className="text-[10px] text-slate-400 block">Nhân viên phụ trách:</span>
                   <strong className="text-slate-800">{detailTicket.assignedStaffName || 'Chưa phân công'}</strong>
                 </div>
@@ -1732,21 +1739,220 @@ export const IncidentTicketsPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Customer Rating for CLOSED ticket (Flow 7 Bước 9) */}
+              {detailTicket.status === 'CLOSED' && detailTicket.rating && (
+                <div className="text-xs bg-amber-50 p-3.5 rounded-xl border border-amber-300 space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider">
+                      Đánh giá từ khách hàng:
+                    </span>
+                    <div className="flex items-center text-amber-500">
+                      {Array.from({ length: 5 }).map((_, idx) => (
+                        <span key={idx} className="material-symbols-outlined text-[16px]">
+                          {idx < detailTicket.rating! ? 'star' : 'star_border'}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="font-bold text-amber-900">({detailTicket.rating}/5 sao)</span>
+                  </div>
+                  {detailTicket.customerFeedback && (
+                    <div className="text-amber-800 italic mt-1 bg-white/70 p-2 rounded border border-amber-200">
+                      "{detailTicket.customerFeedback}"
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* FLOW 7: HỘP NGHIỆP VỤ XỬ LÝ SỰ CỐ TẠI CHỖ */}
+              {!isReadOnly && detailTicket.status !== 'CLOSED' && (
+                <div className="p-4 rounded-xl bg-slate-900 text-white space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-amber-400 text-[18px]">bolt</span>
+                      <span className="font-bold text-xs uppercase tracking-wider text-slate-100">
+                        Nghiệp Vụ Xử Lý Sự Cố (Flow 7)
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Trạng thái: {detailTicket.status}
+                    </span>
+                  </div>
+
+                  {/* Bước 5: Tiếp nhận nếu chưa nhận việc */}
+                  {(detailTicket.status === 'OPEN' || !detailTicket.assignedStaffId) && (
+                    <div className="p-2.5 bg-blue-900/60 rounded-lg border border-blue-700/60 flex items-center justify-between">
+                      <span className="text-[11px] text-blue-200">Ticket chưa có người tiếp nhận</span>
+                      <button
+                        type="button"
+                        onClick={() => handleTakeTicket(detailTicket)}
+                        className="px-3 py-1 bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">handshake</span>
+                        <span>Nhận việc ngay</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Bước 6: Các nút hành động theo phân loại */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-xs">
+                    {/* 6A: IoT Lock */}
+                    <button
+                      type="button"
+                      disabled={isRegeneratingPin}
+                      onClick={() => handleRegeneratePin(detailTicket.id)}
+                      className="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 text-left"
+                      title="Tạo và đồng bộ mã PIN mới cho ô kho"
+                    >
+                      <span className="material-symbols-outlined text-blue-400 text-[18px]">key</span>
+                      <div>
+                        <div className="font-bold text-[11px]">Cấp lại mã PIN mới</div>
+                        <div className="text-[10px] text-slate-400">Đồng bộ SmartLock IoT</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isRemoteUnlocking}
+                      onClick={() => handleRemoteUnlock(detailTicket.id)}
+                      className="p-2.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/80 text-rose-200 flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 text-left"
+                      title="Mở khóa từ xa khẩn cấp qua IoT"
+                    >
+                      <span className="material-symbols-outlined text-rose-400 text-[18px]">lock_open</span>
+                      <div>
+                        <div className="font-bold text-[11px]">Mở khóa từ xa khẩn cấp</div>
+                        <div className="text-[10px] text-rose-300/80">Remote Unlock</div>
+                      </div>
+                    </button>
+
+                    {/* 6B: Billing */}
+                    <button
+                      type="button"
+                      onClick={() => setShowBillingModal(true)}
+                      className="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-2 transition-colors cursor-pointer text-left"
+                      title="Điều chỉnh / Miễn trừ phụ phí hoặc hoàn tiền"
+                    >
+                      <span className="material-symbols-outlined text-emerald-400 text-[18px]">price_change</span>
+                      <div>
+                        <div className="font-bold text-[11px]">Điều chỉnh phụ phí</div>
+                        <div className="text-[10px] text-slate-400">Xử lý hóa đơn sai lệch</div>
+                      </div>
+                    </button>
+
+                    {/* 6C: Maintenance */}
+                    <button
+                      type="button"
+                      onClick={() => setShowMaintenanceModal(true)}
+                      className="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-2 transition-colors cursor-pointer text-left"
+                      title="Chuyển ô kho sang trạng thái BẢO TRÌ"
+                    >
+                      <span className="material-symbols-outlined text-amber-400 text-[18px]">build</span>
+                      <div>
+                        <div className="font-bold text-[11px]">Kho sang Bảo Trì</div>
+                        <div className="text-[10px] text-slate-400">Hư hỏng vật lý / Thấm dột</div>
+                      </div>
+                    </button>
+
+                    {/* 6C: Transfer Unit */}
+                    <button
+                      type="button"
+                      onClick={() => handleOpenTransferModal(detailTicket)}
+                      className="p-2.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/90 border border-indigo-700/80 text-indigo-200 flex items-center gap-2 transition-colors cursor-pointer sm:col-span-2 text-left"
+                      title="Điều chuyển khách sang ô kho khả dụng khác"
+                    >
+                      <span className="material-symbols-outlined text-indigo-400 text-[18px]">swap_horiz</span>
+                      <div>
+                        <div className="font-bold text-[11px]">Điều chuyển sang ô kho khác (Unit Transfer)</div>
+                        <div className="text-[10px] text-indigo-300/80">Chuyển sang ô kho trống cùng loại trong cơ sở khi kho cũ gặp sự cố</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* FLOW 7 BƯỚC 7: CẬP NHẬT TIẾN ĐỘ & TRAO ĐỔI (TABBED MESSAGING) */}
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setMessageTab('INTERNAL_NOTE')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                        messageTab === 'INTERNAL_NOTE'
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          : 'text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      🔒 Ghi chú nội bộ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMessageTab('CUSTOMER_REPLY')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                        messageTab === 'CUSTOMER_REPLY'
+                          ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                          : 'text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      💬 Phản hồi khách hàng
+                    </button>
+                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    {messageTab === 'INTERNAL_NOTE' ? 'Chỉ nhân viên nhìn thấy' : 'Hiển thị trên app khách hàng'}
+                  </span>
+                </div>
+
+                {!isReadOnly && detailTicket.status !== 'CLOSED' && (
+                  <form onSubmit={handleSendMessage} className="space-y-2">
+                    <textarea
+                      rows={2}
+                      value={messageContent}
+                      onChange={(e) => setMessageContent(e.target.value)}
+                      placeholder={
+                        messageTab === 'INTERNAL_NOTE'
+                          ? 'Ghi chú kỹ thuật hiện trường, vật tư cần thay, liên hệ thợ...'
+                          : 'Soạn phản hồi gửi khách hàng về tiến độ khắc phục sự cố...'
+                      }
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isSubmittingMessage || !messageContent.trim()}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">send</span>
+                        <span>{isSubmittingMessage ? 'Đang gửi...' : 'Gửi'}</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+
               {/* Evidence photo preview */}
               <div>
                 <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-2">
-                  Minh chứng hiện trường (Camera &amp; Ảnh)
+                  Minh chứng hiện trường (Camera &amp; Ảnh đính kèm)
                 </span>
-                <div className="w-full h-44 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative">
-                  <img
-                    src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=80"
-                    alt="Hiện trường sự cố"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-2 left-2 px-2 py-1 bg-slate-900/80 backdrop-blur-xs rounded text-white text-[10px] font-mono">
-                    Ảnh ghi nhận camera giám sát tại cơ sở
+                {detailTicket.imageEvidence || (detailTicket.evidenceUrls && detailTicket.evidenceUrls.length > 0) ? (
+                  <div className="flex flex-wrap gap-2">
+                    {[detailTicket.imageEvidence, ...(detailTicket.evidenceUrls || [])].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx).map((imgUrl, i) => (
+                      <a key={i} href={imgUrl} target="_blank" rel="noreferrer" className="block w-28 h-28 rounded-xl overflow-hidden border border-slate-200 hover:opacity-80 transition-opacity">
+                        <img src={imgUrl} alt="Hiện trường sự cố" className="w-full h-full object-cover" />
+                      </a>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <div className="w-full h-40 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative">
+                    <img
+                      src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=80"
+                      alt="Hiện trường sự cố"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute bottom-2 left-2 px-2 py-1 bg-slate-900/80 backdrop-blur-xs rounded text-white text-[10px] font-mono">
+                      Ảnh ghi nhận camera giám sát tại cơ sở
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Contact history in detail modal */}
@@ -1851,165 +2057,26 @@ export const IncidentTicketsPage: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Cơ sở xảy ra sự cố</label>
-                  {isFacilityScoped ? (
-                    <div className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-700 font-semibold flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] text-slate-500">store</span>
-                      <span>{facilities.find(f => f.id === newFacilityId)?.name || user?.facilityName || 'Cơ sở được phân công'}</span>
-                    </div>
-                  ) : (
-                    <select
-                      value={newFacilityId}
-                      onChange={(e) => setNewFacilityId(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none cursor-pointer"
-                    >
-                      {facilities.map((f) => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
-                      ))}
-                    </select>
-                  )}
+                  <select
+                    value={newFacilityId}
+                    onChange={(e) => setNewFacilityId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none cursor-pointer"
+                  >
+                    {facilities.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
                 </div>
 
-                <div className="relative">
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-semibold text-slate-700">Mã kho liên quan</label>
-                    <span className="text-[10px] text-slate-400 font-normal">Gợi ý từ dữ liệu cơ sở</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={newUnitCode}
-                      onFocus={() => setShowUnitSuggest(true)}
-                      onChange={(e) => {
-                        setNewUnitCode(e.target.value)
-                        setShowUnitSuggest(true)
-                      }}
-                      placeholder="Ví dụ: A-102, B-205..."
-                      className={`w-full px-3 py-2 pr-16 bg-slate-50 border rounded-xl text-xs text-slate-900 focus:outline-none font-mono uppercase transition-colors ${
-                        unitValidation.status === 'VALID'
-                          ? 'border-emerald-400 bg-emerald-50/20 focus:ring-1 focus:ring-emerald-500'
-                          : unitValidation.status === 'INVALID'
-                          ? 'border-rose-400 bg-rose-50/20 focus:ring-1 focus:ring-rose-500'
-                          : 'border-slate-200 focus:ring-1 focus:ring-rose-500'
-                      }`}
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                      {newUnitCode.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setNewUnitCode('')
-                            setShowUnitSuggest(false)
-                          }}
-                          className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                          title="Xóa mã kho"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">close</span>
-                        </button>
-                      )}
-                      {isLoadingUnits ? (
-                        <span className="material-symbols-outlined animate-spin text-[16px] text-slate-400">progress_activity</span>
-                      ) : unitValidation.status === 'VALID' ? (
-                        <span className="material-symbols-outlined text-[16px] text-emerald-600" title="Mã kho hợp lệ trong cơ sở">check_circle</span>
-                      ) : unitValidation.status === 'INVALID' ? (
-                        <span className="material-symbols-outlined text-[16px] text-rose-500" title="Mã kho không tồn tại tại cơ sở này">error</span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {/* Backdrop overlay for closing dropdown */}
-                  {showUnitSuggest && (
-                    <div
-                      className="fixed inset-0 z-20 cursor-default"
-                      onClick={() => setShowUnitSuggest(false)}
-                    />
-                  )}
-
-                  {/* Suggest Dropdown */}
-                  {showUnitSuggest && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-30 max-h-52 overflow-y-auto divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100">
-                      <div className="p-2 bg-slate-50 text-[11px] font-semibold text-slate-500 flex items-center justify-between sticky top-0 border-b border-slate-100">
-                        <span>Kho thuộc cơ sở ({filteredSuggestedUnits.length}/{facilityUnits.length})</span>
-                        <span className="text-[10px] text-slate-400">Chọn để điền</span>
-                      </div>
-                      {isLoadingUnits ? (
-                        <div className="p-3 text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
-                          <span className="material-symbols-outlined animate-spin text-[16px] text-slate-400">progress_activity</span>
-                          <span>Đang tải danh sách kho cơ sở...</span>
-                        </div>
-                      ) : filteredSuggestedUnits.length === 0 ? (
-                        <div className="p-3 text-center text-xs text-slate-400 italic">
-                          Không tìm thấy kho nào có mã khớp "{newUnitCode}"
-                        </div>
-                      ) : (
-                        filteredSuggestedUnits.map((u) => {
-                          const isRented = Boolean(u.tenantName) || u.status === 'OCCUPIED' || u.status === 'RESERVED'
-                          return (
-                            <button
-                              key={u.id}
-                              type="button"
-                              onClick={() => {
-                                setNewUnitCode(u.unitCode)
-                                setShowUnitSuggest(false)
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-rose-50/60 transition-colors flex items-center justify-between gap-2 cursor-pointer group"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono font-bold text-xs text-slate-800 group-hover:text-rose-600">
-                                  #{u.unitCode}
-                                </span>
-                                <span className="text-[11px] text-slate-400">
-                                  {u.floorLevel || 'Tầng 1'}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                {isRented ? (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200" title={`Khách thuê: ${u.tenantName || 'Có khách thuê'}`}>
-                                    Đang thuê {u.tenantName ? `(${u.tenantName})` : ''}
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                    Kho trống
-                                  </span>
-                                )}
-                              </div>
-                            </button>
-                          )
-                        })
-                      )}
-                    </div>
-                  )}
-
-                  {/* Validation message banner */}
-                  <div className="mt-1">
-                    {unitValidation.status === 'VALID' && (
-                      <div className="text-[11px] text-emerald-700 bg-emerald-50 p-2 rounded-lg border border-emerald-200 flex items-start gap-1.5 leading-tight">
-                        <span className="material-symbols-outlined text-[14px] text-emerald-600 shrink-0 mt-0.5">check_circle</span>
-                        <span>
-                          <strong>Kho hợp lệ:</strong> {unitValidation.message}
-                          {unitValidation.unit?.tenantName ? (
-                            <span className="block text-[10px] text-emerald-800 mt-0.5">
-                              → Sự cố sẽ được lưu vào lịch sử của khách hàng kèm ghi chú "Do đội ngũ kho ghi nhận".
-                            </span>
-                          ) : (
-                            <span className="block text-[10px] text-emerald-800 mt-0.5">
-                              → Sự cố nội bộ (Kho chưa có khách thuê), chỉ hiển thị trên dashboard của đội ngũ Boxora.
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    )}
-                    {unitValidation.status === 'INVALID' && (
-                      <div className="text-[11px] text-rose-700 bg-rose-50 p-2 rounded-lg border border-rose-200 flex items-start gap-1.5 leading-tight">
-                        <span className="material-symbols-outlined text-[14px] text-rose-600 shrink-0 mt-0.5">warning</span>
-                        <span>{unitValidation.message}</span>
-                      </div>
-                    )}
-                    {unitValidation.status === 'EMPTY' && (
-                      <span className="text-[10px] text-slate-400 block italic">
-                        * Để trống nếu sự cố xảy ra tại khu vực chung (sảnh, thang máy, bãi đỗ...)
-                      </span>
-                    )}
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Vị trí / Mã kho liên quan</label>
+                  <input
+                    type="text"
+                    value={newUnitCode}
+                    onChange={(e) => setNewUnitCode(e.target.value)}
+                    placeholder="Ví dụ: A-102, B-205..."
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none font-mono"
+                  />
                 </div>
               </div>
 
@@ -2034,7 +2101,7 @@ export const IncidentTicketsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingCreate || !newTitle.trim() || unitValidation.status === 'INVALID'}
+                  disabled={isSubmittingCreate || !newTitle.trim()}
                   className="px-5 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <span className="material-symbols-outlined text-[16px]">save</span>
@@ -2112,6 +2179,232 @@ export const IncidentTicketsPage: React.FC = () => {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 7 MODAL 6B: Điều Chỉnh / Miễn Trừ Phụ Phí */}
+      {showBillingModal && detailTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">price_change</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Điều Chỉnh / Miễn Trừ Phụ Phí (Billing)</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Xử lý tranh chấp hóa đơn, phí phạt quá hạn do lỗi hệ thống hoặc bồi hoàn cho khách hàng.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmitBillingAdjustment} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Số tiền điều chỉnh / miễn trừ (VNĐ)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  value={billingAmount}
+                  onChange={(e) => setBillingAmount(e.target.value)}
+                  placeholder="Ví dụ: 200000 (Để trống nếu chỉ ghi nhận đối soát)"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Căn cứ / Lý do điều chỉnh *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={billingNote}
+                  onChange={(e) => setBillingNote(e.target.value)}
+                  placeholder="Ghi rõ: Lỗi cổng tự động kẹt xe quá giờ, hệ thống tính thừa phí quá hạn, hoặc bồi hoàn sự cố..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingBilling}
+                  onClick={() => setShowBillingModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingBilling}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                  <span>{isSubmittingBilling ? 'Đang lưu...' : 'Xác Nhận Điều Chỉnh'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 7 MODAL 6C: Chuyển Kho Sang Trạng Thái BẢO TRÌ */}
+      {showMaintenanceModal && detailTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">build</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Chuyển Kho Sang Trạng Thái Bảo Trì</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Khóa ô kho #{detailTicket.unitCode || 'hiện tại'} để bảo trì kỹ thuật (UNDER_MAINTENANCE).
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmitMaintenance} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lý do chuyển bảo trì *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={maintenanceReason}
+                  onChange={(e) => setMaintenanceReason(e.target.value)}
+                  placeholder="Ví dụ: Cửa cuốn kẹt ray, tường bị thấm dột sau mưa bão, cần sơn sửa và chống thấm..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500 resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Đơn vị / Kỹ thuật viên phụ trách
+                </label>
+                <input
+                  type="text"
+                  value={maintenancePerson}
+                  onChange={(e) => setMaintenancePerson(e.target.value)}
+                  placeholder={user?.fullName || 'Tổ kỹ thuật cơ sở'}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingMaintenance}
+                  onClick={() => setShowMaintenanceModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingMaintenance}
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">engineering</span>
+                  <span>{isSubmittingMaintenance ? 'Đang lưu...' : 'Xác Nhận Bảo Trì'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 7 MODAL 6C: Điều Chuyển Sang Ô Kho Khác (Unit Transfer) */}
+      {showTransferModal && detailTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">swap_horiz</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Điều Chuyển Ô Kho (Unit Transfer)</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Chuyển hợp đồng của khách hàng từ kho <strong>#{detailTicket.unitCode || 'cũ'}</strong> sang một ô kho trống khả dụng khác tại cơ sở.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmitTransfer} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Chọn ô kho mới khả dụng (Status: AVAILABLE) *
+                </label>
+                {isLoadingAvailableUnits ? (
+                  <div className="py-4 text-center text-slate-400 flex items-center justify-center gap-2">
+                    <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                    <span>Đang tải danh sách ô kho trống...</span>
+                  </div>
+                ) : availableUnitsForTransfer.length === 0 ? (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
+                    Hiện không còn ô kho nào ở trạng thái AVAILABLE tại cơ sở này.
+                  </div>
+                ) : (
+                  <select
+                    value={transferTargetUnitId}
+                    onChange={(e) => setTransferTargetUnitId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="">-- Chọn ô kho nhận bàn giao mới --</option>
+                    {availableUnitsForTransfer.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        Kho #{u.unitCode} - Tầng {u.floorLevel || '1'} ({u.unitTypeName || 'Standard'} - {u.areaSqMeters || 6}m²)
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lý do điều chuyển kho *
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={transferReason}
+                  onChange={(e) => setTransferReason(e.target.value)}
+                  placeholder="Ghi rõ lý do điều chuyển: Ô kho cũ bị ẩm mốc/thấm dột, chuyển tạm để sửa chữa..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] space-y-1">
+                <strong>Quy trình xử lý hệ thống:</strong>
+                <div>• Ô kho cũ sẽ tự động chuyển sang trạng thái <strong>UNDER_MAINTENANCE (Bảo trì)</strong>.</div>
+                <div>• Hợp đồng thuê và phiếu sự cố sẽ được cập nhật sang mã kho mới.</div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingTransfer}
+                  onClick={() => setShowTransferModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingTransfer || !transferTargetUnitId}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                  <span>{isSubmittingTransfer ? 'Đang chuyển...' : 'Xác Nhận Điều Chuyển Kho'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

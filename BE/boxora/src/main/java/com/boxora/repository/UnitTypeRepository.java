@@ -18,4 +18,8 @@ public interface UnitTypeRepository extends JpaRepository<UnitType, UUID> {
     Optional<UnitType> findByTypeNameIgnoreCase(String typeName);
 
     List<UnitType> findAllByOrderByCreatedAtAsc();
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("SELECT ut FROM UnitType ut WHERE ut.id = :id")
+    Optional<UnitType> findByIdForUpdate(@org.springframework.data.repository.query.Param("id") UUID id);
 }

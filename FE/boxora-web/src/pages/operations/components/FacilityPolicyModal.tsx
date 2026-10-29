@@ -27,9 +27,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
   const [minimumRentalMonths, setMinimumRentalMonths] = useState<number>(1)
   const [renewalWindowDays, setRenewalWindowDays] = useState<number>(7)
 
-  const [cancellationFullRefundHours, setCancellationFullRefundHours] = useState<number>(48)
-  const [cancellationPartialRefundHours, setCancellationPartialRefundHours] = useState<number>(24)
-  const [cancellationPartialRefundPercent, setCancellationPartialRefundPercent] = useState<number>(50)
+  const [cancellationFullRefundHours, setCancellationFullRefundHours] = useState<number>(24)
+  const [cancellationPartialRefundHours, setCancellationPartialRefundHours] = useState<number>(48)
+  const [cancellationPartialRefundPercent, setCancellationPartialRefundPercent] = useState<number>(70)
 
   const [returnNoticeDays, setReturnNoticeDays] = useState<number>(3)
   const [depositRefundSlaDays, setDepositRefundSlaDays] = useState<number>(3)
@@ -52,9 +52,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setDepositPercentage(existingPolicy.depositPercentage ?? existingPolicy.depositPercent ?? 100)
       setMinimumRentalMonths(existingPolicy.minimumRentalMonths ?? 1)
       setRenewalWindowDays(existingPolicy.renewalWindowDays ?? 7)
-      setCancellationFullRefundHours(existingPolicy.cancellationFullRefundHours ?? 48)
-      setCancellationPartialRefundHours(existingPolicy.cancellationPartialRefundHours ?? 24)
-      setCancellationPartialRefundPercent(existingPolicy.cancellationPartialRefundPercent ?? 50)
+      setCancellationFullRefundHours(existingPolicy.cancellationFullRefundHours ?? 24)
+      setCancellationPartialRefundHours(existingPolicy.cancellationPartialRefundHours ?? 48)
+      setCancellationPartialRefundPercent(existingPolicy.cancellationPartialRefundPercent ?? 70)
       setReturnNoticeDays(existingPolicy.returnNoticeDays ?? 3)
       setDepositRefundSlaDays(existingPolicy.depositRefundSlaDays ?? 3)
       setDailyLateFee(existingPolicy.dailyLateFee ?? existingPolicy.lateFeePerDay ?? 50000)
@@ -67,9 +67,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setDepositPercentage(100)
       setMinimumRentalMonths(1)
       setRenewalWindowDays(7)
-      setCancellationFullRefundHours(48)
-      setCancellationPartialRefundHours(24)
-      setCancellationPartialRefundPercent(50)
+      setCancellationFullRefundHours(24)
+      setCancellationPartialRefundHours(48)
+      setCancellationPartialRefundPercent(70)
       setReturnNoticeDays(3)
       setDepositRefundSlaDays(3)
       setDailyLateFee(50000)
@@ -96,8 +96,8 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       return
     }
 
-    if (cancellationFullRefundHours < cancellationPartialRefundHours) {
-      setErrorMsg('Thời gian hủy hoàn cọc 100% (giờ) phải lớn hơn hoặc bằng thời gian hủy hoàn cọc một phần.')
+    if (cancellationFullRefundHours > cancellationPartialRefundHours) {
+      setErrorMsg('Mốc thời gian hủy hoàn cọc 100% (giờ) phải nhỏ hơn hoặc bằng mốc hoàn cọc một phần.')
       return
     }
 
@@ -330,7 +330,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                   required
                 />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Hủy trước N giờ nhận kho (vd: 48h)</span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">Hủy trong vòng N giờ kể từ khi đặt (vd: 24h)</span>
               </div>
 
               <div>
@@ -346,7 +346,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                   required
                 />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Hủy trước M giờ nhận kho (vd: 24h)</span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">Khung hủy hoàn một phần kể từ khi đặt (vd: 48h)</span>
               </div>
 
               <div>
@@ -366,12 +366,12 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   />
                   <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
                 </div>
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Hoàn lại % cọc đã thanh toán</span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">Hoàn lại % cọc đã thanh toán (vd: 70%)</span>
               </div>
             </div>
-            {cancellationFullRefundHours < cancellationPartialRefundHours && (
+            {cancellationFullRefundHours > cancellationPartialRefundHours && (
               <p className="text-[11px] font-semibold text-rose-500">
-                * Hạn hủy hoàn 100% phải lớn hơn hoặc bằng hạn hủy hoàn một phần.
+                * Hạn hủy hoàn 100% phải nhỏ hơn hoặc bằng hạn hủy hoàn một phần.
               </p>
             )}
           </div>

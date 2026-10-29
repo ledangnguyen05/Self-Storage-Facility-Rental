@@ -36,29 +36,86 @@ public class ReturnSettlementResponse {
     /** Phí mất thẻ từ / khóa */
     private BigDecimal lostCardFee;
 
+    /** Phí sửa cửa */
+    private BigDecimal doorFee;
+
+    /** Phí sửa SmartLock */
+    private BigDecimal smartLockFee;
+    private String smartLockIssueType;
+
+    /** Phí sửa kết cấu vách/sàn/trần */
+    private BigDecimal wallStructureFee;
+
     /** Công nợ quá hạn / trễ hạn */
     private BigDecimal overdueDebt;
 
     /** Tổng các khoản khấu trừ */
     private BigDecimal totalDeduction;
 
-    /** Số tiền thực hoàn trả cho khách (depositPaid - totalDeduction) */
+    /** Tổng chi phí khấu trừ đã duyệt */
+    private BigDecimal approvedDeductions;
+
+    /** Số tiền thực hoàn trả cho khách (depositPaid - totalDeduction) (không âm) */
     private BigDecimal netRefundAmount;
+
+    /** Khoản bồi thường bổ sung còn phải thu khi chi phí > cọc */
+    private BigDecimal additionalAmountDue;
 
     /** Trạng thái duyệt hoàn tiền: AUTO_REFUND_APPROVED hoặc PENDING_ACCOUNTING_REVIEW */
     private String reviewStatus;
+    private String approvalStatus;
+    private String approverName;
+    private LocalDateTime approvedAt;
+    private String approvalNotes;
+
+    /** Trạng thái thanh toán bổ sung */
+    private String additionalPaymentStatus;
+    private String additionalPaymentTxnRef;
+
+    /** Trạng thái hoàn tiền */
+    private String refundStatus;
+    private String refundTransactionId;
 
     /** Cam kết thời gian hoàn tiền (SLA số ngày) */
     private Integer depositRefundSlaDays;
 
-    /** Mã giao dịch hoàn tiền nếu đã sinh */
-    private String refundTransactionId;
-
-    /** Đạt toàn bộ 5/5 tiêu chuẩn hiện trường */
+    /** Đạt toàn bộ 7/7 tiêu chuẩn hiện trường */
     private boolean checklistAllPassed;
 
-    /** Tóm tắt 5 điểm kiểm tra hiện trường */
+    /** Tóm tắt kiểm tra hiện trường */
     private String checklistSummary;
+
+    /** Chi tiết 7 tiêu chuẩn */
+    private Boolean doorConditionPassed;
+    private Boolean cleanlinessPassed;
+    private Boolean wallStructurePassed;
+    private Boolean smartLockPassed;
+    private Boolean assetsClearedPassed;
+    private Boolean sensorPassed;
+
+    /** Bàn giao vật lý & truy cập */
+    private Boolean unitReturnedPhysically;
+    private LocalDateTime returnedAt;
+    private Boolean accessRevoked;
+    private LocalDateTime accessRevokedAt;
+    private String postReturnUnitStatus;
+
+    /** Task 16: Quyết toán, khiếu nại, giải quyết khiếu nại và thông tin ngân hàng */
+    private Integer settlementVersion;
+    private Boolean settlementConfirmed;
+    private LocalDateTime settlementConfirmedAt;
+    private String settlementConfirmedByName;
+    private String customerDecision;
+    private LocalDateTime customerDecisionAt;
+    private String disputeReason;
+    private String disputeEvidenceUrls;
+    private LocalDateTime disputeResolvedAt;
+    private String disputeResolvedByName;
+    private String disputeResolutionNote;
+    private String bankName;
+    private String bankAccountNumber;
+    private String bankAccountName;
+    private UUID refundRequestId;
 
     /** Số lượng ảnh bằng chứng hiện trường */
     private int evidencePhotoCount;
@@ -72,4 +129,3 @@ public class ReturnSettlementResponse {
     /** Ghi chú */
     private String notes;
 }
-

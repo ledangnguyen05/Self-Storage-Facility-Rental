@@ -60,7 +60,11 @@ public class GlobalExceptionHandler {
         response.put("status", 400);
         response.put("code", ErrorCode.INVALID_REQUEST.getCode());
         response.put("error", "Bad Request");
-        response.put("message", "Dữ liệu yêu cầu không hợp lệ. Vui lòng kiểm tra lại các trường thông tin.");
+        String detailedErrors = errors.entrySet().stream()
+                .map(entry -> entry.getKey() + ": " + entry.getValue())
+                .reduce((a, b) -> a + "; " + b)
+                .orElse("Vui lòng kiểm tra lại các trường thông tin");
+        response.put("message", "Dữ liệu yêu cầu không hợp lệ (" + detailedErrors + ").");
         response.put("errors", errors);
 
         return ResponseEntity

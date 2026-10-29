@@ -20,6 +20,11 @@ public interface BookingCancellationService {
     BookingCancelResponse cancelBooking(UUID bookingId, BookingCancelRequest request);
 
     /**
+     * Thực hiện hủy booking theo mã đặt chỗ (bookingCode).
+     */
+    BookingCancelResponse cancelBookingByCode(String bookingCode, BookingCancelRequest request);
+
+    /**
      * Kích hoạt quét tự động hủy các booking PENDING_PAYMENT quá hạn thanh toán (mặc định 15 phút).
      */
     AutoCancelResult triggerAutoCancel(Integer timeoutMinutes);

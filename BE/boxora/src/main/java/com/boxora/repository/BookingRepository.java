@@ -25,6 +25,94 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
     @Query("SELECT b FROM Booking b WHERE b.id = :id")
     Optional<Booking> findByIdForUpdate(@Param("id") UUID id);
 
+    Optional<Booking> findByBookingCode(String bookingCode);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT b FROM Booking b WHERE b.bookingCode = :bookingCode")
+    Optional<Booking> findByBookingCodeForUpdate(@Param("bookingCode") String bookingCode);
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility", "facility", "unitType"})
+    @Query("SELECT b FROM Booking b WHERE (b.storageUnit IS NOT NULL AND b.storageUnit.facility.id = :facilityId) OR (b.storageUnit IS NULL AND b.facility.id = :facilityId)")
+    List<Booking> findAllByFacilityIdIncludingNullUnit(@Param("facilityId") UUID facilityId);
+
+    @Query("""
+        SELECT COUNT(b) FROM Booking b
+        WHERE b.facility.id = :facilityId
+          AND b.unitType.id = :unitTypeId
+          AND b.storageUnit IS NULL
+          AND b.status IN :holdingStatuses
+          AND (
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
+            OR (
+              (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
+              AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
+            )
+          )
+    """)
+    long countUnassignedHoldingBookings(
+        @Param("facilityId") UUID facilityId,
+        @Param("unitTypeId") UUID unitTypeId,
+        @Param("holdingStatuses") java.util.Collection<BookingStatus> holdingStatuses,
+        @Param("now") java.time.Instant now
+    );
+
+    @Query("""
+        SELECT COUNT(b) FROM Booking b
+        WHERE b.facility.id = :facilityId
+          AND b.storageUnit IS NULL
+          AND b.status IN :holdingStatuses
+          AND (
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
+            OR (
+              (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
+              AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
+            )
+          )
+    """)
+    long countUnassignedHoldingBookingsByFacility(
+        @Param("facilityId") UUID facilityId,
+        @Param("holdingStatuses") java.util.Collection<BookingStatus> holdingStatuses,
+        @Param("now") java.time.Instant now
+    );
+
+    @Query("""
+        SELECT b.facility.id, b.unitType.id, COUNT(b) FROM Booking b
+        WHERE b.storageUnit IS NULL
+          AND b.status IN :holdingStatuses
+          AND (
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
+            OR (
+              (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
+              AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
+            )
+          )
+        GROUP BY b.facility.id, b.unitType.id
+    """)
+    List<Object[]> countAllUnassignedHoldingGroupedByFacilityAndUnitType(
+        @Param("holdingStatuses") java.util.Collection<BookingStatus> holdingStatuses,
+        @Param("now") java.time.Instant now
+    );
+
+    @Query("""
+        SELECT b.unitType.id, COUNT(b) FROM Booking b
+        WHERE b.facility.id = :facilityId
+          AND b.storageUnit IS NULL
+          AND b.status IN :holdingStatuses
+          AND (
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
+            OR (
+              (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
+              AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
+            )
+          )
+        GROUP BY b.unitType.id
+    """)
+    List<Object[]> countUnassignedHoldingGroupedByUnitType(
+        @Param("facilityId") UUID facilityId,
+        @Param("holdingStatuses") java.util.Collection<BookingStatus> holdingStatuses,
+        @Param("now") java.time.Instant now
+    );
+
     List<Booking> findByCustomer_Id(UUID customerId);
 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility"})
@@ -79,4 +167,17 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
         LocalDate todayThreshold = LocalDate.now();
         return findExpiredHoldCandidates(statuses, now, checkInThreshold, todayThreshold);
     }
+
+    @Query("SELECT b FROM Booking b WHERE b.signingMethod = 'IN_PERSON' "
+            + "AND b.status NOT IN ('ACTIVE', 'COMPLETED', 'CANCELLED') "
+            + "AND b.handoverTime IS NULL "
+            + "AND b.checkinOverdueReminderSentAt IS NULL "
+            + "AND ("
+            + "  (b.expectedCheckInAt IS NOT NULL AND b.expectedCheckInAt <= :threshold) "
+            + "  OR (b.expectedCheckInAt IS NULL AND b.startDate <= :todayThreshold)"
+            + ")")
+    List<Booking> findOverdueInPersonCheckinReminders(
+            @Param("threshold") LocalDateTime threshold,
+            @Param("todayThreshold") LocalDate todayThreshold
+    );
 }

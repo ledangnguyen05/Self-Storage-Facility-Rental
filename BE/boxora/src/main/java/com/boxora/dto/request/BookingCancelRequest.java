@@ -21,5 +21,6 @@ public class BookingCancelRequest {
 
     @Size(max = 100, message = "Tên chủ tài khoản không được vượt quá 100 ký tự")
     private String bankAccountName;
-}
 
+    private String customerEmail;
+}

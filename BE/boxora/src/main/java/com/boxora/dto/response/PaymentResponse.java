@@ -22,8 +22,11 @@ public class PaymentResponse {
     private UUID contractId;
 
     private String unitCode;
+    private UUID facilityId;
     private String facilityName;
     private String customerName;
+    private String contractCode;
+    private String reconciliationStatus;
 
     private BigDecimal amount;
     private PaymentType paymentType;

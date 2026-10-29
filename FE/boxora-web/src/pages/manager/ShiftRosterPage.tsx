@@ -7,8 +7,11 @@ import {
   StaffAssignmentResponse,
   ShiftSwapRequest,
   ShiftHandover,
-  isShiftAbsent
+  isShiftAbsent,
+  isShiftForgottenCheckout,
+  calculateShiftWorkHours
 } from '../../services/staffAssignmentService'
+import { AttendanceReportTab } from './components/AttendanceReportTab'
 import { useAuth } from '../../context/AuthContext'
 import { Facility, User } from '../../types'
 import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
@@ -78,7 +81,7 @@ export const ShiftRosterPage: React.FC = () => {
 
   const userRole = (typeof user?.role === 'object' ? user?.role?.name : user?.role) || user?.roleName
   const isBusinessManager = userRole === 'BUSINESS_MANAGER'
-  const isAdmin = userRole === 'ADMIN'
+  const isAdmin = userRole === 'ADMIN' || userRole === 'SYSTEM_ADMIN'
   const isFacilityManager = userRole === 'FACILITY_MANAGER'
   const canFilterFacility = isBusinessManager || isAdmin
 
@@ -99,7 +102,7 @@ export const ShiftRosterPage: React.FC = () => {
   const [dateShortcut, setDateShortcut] = useState<'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH' | 'CUSTOM'>('THIS_WEEK')
   const [dateRangeError, setDateRangeError] = useState<string | null>(null)
 
-  const [activeTab, setActiveTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF'>('ROSTER')
+  const [activeTab, setActiveTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF' | 'ATTENDANCE'>('ROSTER')
 
   // Real Data States
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
@@ -390,6 +393,10 @@ export const ShiftRosterPage: React.FC = () => {
   }
 
   const handleDeleteAssignment = async (id: string) => {
+    if (isAdmin) {
+      showToast('Tài khoản Quản trị viên chỉ có quyền xem, giám sát ca trực toàn hệ thống.')
+      return
+    }
     if (!window.confirm('Bạn có chắc chắn muốn hủy phân công ca trực này?')) return
     setActionLoadingId(id)
     try {
@@ -405,6 +412,10 @@ export const ShiftRosterPage: React.FC = () => {
 
   // Swap Review Actions
   const handleReviewSwap = async (swapId: string, status: 'APPROVED' | 'REJECTED') => {
+    if (isAdmin) {
+      showToast('Tài khoản Quản trị viên chỉ có quyền xem, giám sát ca trực toàn hệ thống.')
+      return
+    }
     setActionLoadingId(swapId)
     try {
       await staffAssignmentService.reviewSwapRequest(swapId, {
@@ -619,7 +630,12 @@ export const ShiftRosterPage: React.FC = () => {
               <span>Làm mới</span>
             </button>
 
-            {isBusinessManager ? (
+            {isAdmin ? (
+              <div className="px-3.5 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-semibold border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+                <span className="material-symbols-outlined text-[16px] text-slate-500">visibility</span>
+                <span>Giám sát hệ thống (Chỉ xem)</span>
+              </div>
+            ) : isBusinessManager ? (
               <button
                 type="button"
                 onClick={() => setShowShiftModal(true)}
@@ -791,17 +807,21 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('CHECKED_IN')
+            setFilterStatus(prev => (prev === 'CHECKED_IN' ? 'ALL' : 'CHECKED_IN'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
             filterStatus === 'CHECKED_IN' ? 'ring-2 ring-emerald-500 border-emerald-400' : 'border-slate-200 hover:border-emerald-300'
           }`}
-          title="Bấm để lọc ca đang trực"
+          title={
+            filterStatus === 'CHECKED_IN'
+              ? 'Đang lọc ca đang trực (Bấm để xem tất cả)'
+              : 'Bấm để lọc ca đang trực'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Đang trực ca</span>
+              <span className={filterStatus === 'CHECKED_IN' ? 'text-emerald-700 font-bold' : ''}>Đang trực ca</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Thời gian thực
@@ -830,17 +850,21 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('ASSIGNED')
+            setFilterStatus(prev => (prev === 'ASSIGNED' ? 'ALL' : 'ASSIGNED'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
             filterStatus === 'ASSIGNED' ? 'ring-2 ring-amber-500 border-amber-400' : 'border-slate-200 hover:border-amber-300'
           }`}
-          title="Bấm để lọc ca chưa vào"
+          title={
+            filterStatus === 'ASSIGNED'
+              ? 'Đang lọc ca chưa vào (Bấm để xem tất cả)'
+              : 'Bấm để lọc ca chưa vào'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Chưa vào ca</span>
+              <span className={filterStatus === 'ASSIGNED' ? 'text-amber-700 font-bold' : ''}>Chưa vào ca</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                 Khoảng ngày
               </span>
@@ -868,7 +892,7 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('ABSENT')
+            setFilterStatus(prev => (prev === 'ABSENT' ? 'ALL' : 'ABSENT'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
@@ -878,7 +902,11 @@ export const ShiftRosterPage: React.FC = () => {
               ? 'border-rose-200 hover:border-rose-300 bg-rose-50/20'
               : 'border-slate-200 hover:border-rose-300'
           }`}
-          title="Bấm để lọc ca không đi làm / vắng mặt"
+          title={
+            filterStatus === 'ABSENT'
+              ? 'Đang lọc ca vắng mặt (Bấm để xem tất cả)'
+              : 'Bấm để lọc ca không đi làm / vắng mặt'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
@@ -910,31 +938,51 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('ALL')
+            setFilterStatus(prev => (prev === 'COMPLETED' ? 'ALL' : 'COMPLETED'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
-            filterStatus === 'ALL' ? 'border-slate-200 hover:border-blue-300' : 'border-slate-200 hover:border-blue-300'
+            filterStatus === 'COMPLETED'
+              ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/20'
+              : 'border-slate-200 hover:border-blue-300'
           }`}
-          title="Bấm để xem tất cả ca trực"
+          title={
+            filterStatus === 'COMPLETED'
+              ? 'Đang lọc ca trực đã hoàn thành (Bấm để xem tất cả ca)'
+              : 'Bấm để lọc ca trực đã hoàn thành'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Ca trực &amp; Hoàn thành</span>
+              <span className={filterStatus === 'COMPLETED' ? 'text-blue-700 font-bold' : ''}>
+                Ca trực &amp; Hoàn thành
+              </span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 Khoảng ngày
               </span>
             </div>
-            <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 transition-colors">
-              <span className="material-symbols-outlined text-[18px]">calendar_view_day</span>
+            <div className={`p-1.5 rounded-lg transition-colors ${
+              filterStatus === 'COMPLETED' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100'
+            }`}>
+              <span className="material-symbols-outlined text-[18px]">task_alt</span>
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-blue-700 tracking-tight">
-              {assignments.length} ca trực
+            <div className="text-2xl font-bold text-blue-700 tracking-tight flex items-center gap-2">
+              <span>{assignments.length} ca trực</span>
+              {completedCount > 0 && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                  filterStatus === 'COMPLETED' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800'
+                }`}>
+                  {completedCount} hoàn thành
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              {completedCount} hoàn thành • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
+              <span className={filterStatus === 'COMPLETED' ? 'font-bold text-blue-700 underline' : 'font-medium text-slate-700'}>
+                {completedCount} hoàn thành
+              </span>{' '}
+              • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
             </div>
           </div>
         </div>
@@ -997,6 +1045,19 @@ export const ShiftRosterPage: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">badge</span>
           <span>Danh Sách Nhân Sự Cơ Sở ({staffList.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('ATTENDANCE')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'ATTENDANCE'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-white hover:bg-slate-100 text-blue-700 border border-blue-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">fact_check</span>
+          <span>Bảng Chấm Công & Báo Cáo</span>
         </button>
       </div>
 
@@ -1162,14 +1223,16 @@ export const ShiftRosterPage: React.FC = () => {
                               Cơ sở hiện có {totalStaffCount} nhân viên thuộc biên chế. Quản lý có thể chọn nút bên dưới để lên lịch phân công ca trực hoặc chuyển sang xem tuần này / tháng này.
                             </p>
                             <div className="flex items-center gap-2 mt-2 flex-wrap justify-center">
-                              <button
-                                type="button"
-                                onClick={() => setShowShiftModal(true)}
-                                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[18px]">person_add</span>
-                                <span>Phân công ca trực ngay</span>
-                              </button>
+                              {!isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowShiftModal(true)}
+                                  className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[18px]">person_add</span>
+                                  <span>Phân công ca trực ngay</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => applyShortcut('THIS_WEEK')}
@@ -1278,7 +1341,11 @@ export const ShiftRosterPage: React.FC = () => {
                         </td>
 
                         <td className="py-3 px-4 text-center">
-                          {isAbsent ? (
+                          {isShiftForgottenCheckout(assignment) ? (
+                            <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-rose-50 text-rose-700 border border-rose-200" title="Quên ra ca sau 23:59:59 ngày làm việc -> Ghi nhận không đi làm (0 công)">
+                              Không đi làm (Quên ra ca)
+                            </span>
+                          ) : isAbsent ? (
                             <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-rose-50 text-rose-700 border border-rose-200">
                               Không đi làm
                             </span>
@@ -1570,7 +1637,12 @@ export const ShiftRosterPage: React.FC = () => {
                               Quá hạn
                             </span>
                           ) : isPending && (
-                            swap.requesterId === user?.id || swap.targetStaffId === user?.id ? (
+                            isAdmin ? (
+                              <span className="text-[11px] font-medium text-slate-500 italic flex items-center justify-end gap-1">
+                                <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                Giám sát (Chỉ xem)
+                              </span>
+                            ) : swap.requesterId === user?.id || swap.targetStaffId === user?.id ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">
                                 Đơn cá nhân (Chờ cấp trên duyệt)
                               </span>
@@ -2033,6 +2105,16 @@ export const ShiftRosterPage: React.FC = () => {
         </div>
       )}
 
+      {/* TAB 5: ATTENDANCE & REPORTING (Chấm công & In báo cáo) */}
+      {activeTab === 'ATTENDANCE' && (
+        <AttendanceReportTab
+          facilityId={selectedFacilityId === 'ALL' ? undefined : selectedFacilityId}
+          facilityName={currentFacilityName}
+          staffList={staffList}
+          currentUserName={user?.fullName || user?.username}
+        />
+      )}
+
       {/* Modal: Shift Assignment */}
       {showShiftModal && (
         <ShiftAssignmentModal
@@ -2081,7 +2163,9 @@ export const ShiftRosterPage: React.FC = () => {
                     <h3 className="text-base font-bold text-slate-900">Chi Tiết Ca Làm Việc</h3>
                     <span
                       className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                        selectedAssignmentForDetail.status === 'CHECKED_IN'
+                        isShiftForgottenCheckout(selectedAssignmentForDetail) || isShiftAbsent(selectedAssignmentForDetail)
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : selectedAssignmentForDetail.status === 'CHECKED_IN'
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           : selectedAssignmentForDetail.status === 'COMPLETED'
                           ? 'bg-slate-100 text-slate-700 border-slate-200'
@@ -2090,7 +2174,9 @@ export const ShiftRosterPage: React.FC = () => {
                           : 'bg-amber-50 text-amber-700 border-amber-200'
                       }`}
                     >
-                      {isShiftAbsent(selectedAssignmentForDetail)
+                      {isShiftForgottenCheckout(selectedAssignmentForDetail)
+                        ? 'Không đi làm (Quên ra ca)'
+                        : isShiftAbsent(selectedAssignmentForDetail)
                         ? 'Không đi làm'
                         : selectedAssignmentForDetail.status === 'CHECKED_IN'
                         ? 'Đang trực ca'
@@ -2191,10 +2277,22 @@ export const ShiftRosterPage: React.FC = () => {
                   <div>
                     <span className="text-slate-500">Giờ ra thực tế:</span>{' '}
                     <strong className="text-blue-700 font-mono">
-                      {formatDateTime(selectedAssignmentForDetail.checkedOutAt)}
+                      {selectedAssignmentForDetail.checkedOutAt
+                        ? formatDateTime(selectedAssignmentForDetail.checkedOutAt)
+                        : isShiftForgottenCheckout(selectedAssignmentForDetail)
+                        ? 'Quên ra ca (>23:59:59)'
+                        : '—'}
                     </strong>
                   </div>
                 </div>
+                {isShiftForgottenCheckout(selectedAssignmentForDetail) && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-[11px] flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0">warning</span>
+                    <span>
+                      Nhân viên quên ra ca trước 23:59:59 của ngày làm việc. Hệ thống đã tự động ghi nhận là <strong>KHÔNG ĐI LÀM (VẮNG MẶT - không tính công)</strong>.
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Notes / Instructions */}

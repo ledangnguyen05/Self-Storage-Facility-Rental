@@ -20,8 +20,6 @@ export interface User {
   isActive?: boolean
   createdAt?: string
   updatedAt?: string
-  identityCardNumber?: string
-  identityCardType?: string
 }
 
 export interface Facility {
@@ -44,46 +42,24 @@ export interface Facility {
   status?: string
 }
 
-export interface FloorOperationPoint {
-  id: string
-  name: string
-}
-
-export interface FloorFunctionalZone {
-  id: string
-  code: string
-  name: string
-  description?: string
-}
-
-export interface FacilityFloorConfig {
-  id: string
-  floorNumber: number
-  name: string
-  totalArea?: string
-  operationPoints: FloorOperationPoint[]
-  zones: FloorFunctionalZone[]
-}
-
 export interface FacilityLayoutConfig {
   title: string
-  floors?: FacilityFloorConfig[]
-  floor1Name?: string
-  floor2Name?: string
-  zoneAName?: string
-  zoneADesc?: string
-  zoneBName?: string
-  zoneBDesc?: string
-  zoneCName?: string
-  zoneCDesc?: string
-  loadingBayFloor1?: string
-  corridorNorth?: string
-  exitFloor1?: string
-  loadingBayFloor2?: string
-  corridorClimate?: string
-  exitFloor2?: string
-  totalAreaFloor1?: string
-  totalAreaFloor2?: string
+  floor1Name: string
+  floor2Name: string
+  zoneAName: string
+  zoneADesc: string
+  zoneBName: string
+  zoneBDesc: string
+  zoneCName: string
+  zoneCDesc: string
+  loadingBayFloor1: string
+  corridorNorth: string
+  exitFloor1: string
+  loadingBayFloor2: string
+  corridorClimate: string
+  exitFloor2: string
+  totalAreaFloor1: string
+  totalAreaFloor2: string
 }
 
 export interface UnitType {
@@ -124,7 +100,7 @@ export type UnitStatusType = 'AVAILABLE' | 'RESERVED' | 'OCCUPIED' | 'MAINTENANC
 
 export interface StorageUnit {
   id: string
-  unitCode: string
+  unitCode: string // e.g. "A-102"
   floorLevel: string // e.g. "Floor 1"
   status: UnitStatusType
   facilityId: string
@@ -134,6 +110,8 @@ export interface StorageUnit {
   unitTypeName: string
   pricePerMonth: number
   depositAmount?: number
+  imageUrl?: string
+  images?: string[]
   areaSqMeters?: number
   batteryLevel?: string
   smartLockSerial?: string
@@ -144,12 +122,26 @@ export interface StorageUnit {
   bookingId?: string
   startDate?: string
   dueDate?: string
-  imageUrl?: string
-  images?: string[]
   primaryImageUrl?: string
+  maintenanceReason?: string
+  maintenanceBy?: string
+  maintenanceAt?: string
 }
 
-export type BookingStatusType = 'PENDING_APPROVAL' | 'PENDING_CONTACT' | 'PENDING_PAYMENT' | 'CONFIRMED' | 'PENDING_SIGNATURE' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'OVERDUE'
+export type BookingStatusType =
+  | 'PENDING_APPROVAL'
+  | 'PENDING_CONTACT'
+  | 'PENDING_PAYMENT'
+  | 'PAID_PENDING_ASSIGNMENT'
+  | 'PAID_AND_SIGNED'
+  | 'CONFIRMED'
+  | 'PENDING_SIGNATURE'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'OVERDUE'
+  | 'SUPERSEDED'
+  | string
 
 export interface Booking {
   id: string
@@ -158,9 +150,11 @@ export interface Booking {
   customerName: string
   customerEmail: string
   customerPhone: string
-  storageUnitId: string
-  unitCode: string
-  unitTypeName?: string
+  storageUnitId?: string | null
+  unitCode?: string | null
+  unitTypeId?: string | null
+  unitTypeName?: string | null
+  areaSqMeters?: number | null
   facilityId?: string
   facilityName: string
   floorLevel?: string
@@ -195,6 +189,11 @@ export interface Booking {
   contractCode?: string | null
   contractStatus?: string | null
   contractSigned?: boolean | null
+  checkinOverdueReminderSentAt?: string | null
+  rejectionReason?: string | null
+  cancellationReason?: string | null
+  createdAt?: string
+  updatedAt?: string
 }
 
 export interface BookingCancellationPreview {
@@ -202,12 +201,14 @@ export interface BookingCancellationPreview {
   bookingCode: string
   unitCode?: string
   startDate: string
+  bookingDateTime?: string
   checkInDateTime?: string
   depositPaid: number
   totalRentalFee: number
+  hoursSinceBooking?: number
   hoursUntilCheckin: number
   timeRemainingLabel?: string
-  milestoneStage: 'STAGE_1_FULL_REFUND' | 'STAGE_2_PARTIAL_REFUND' | 'STAGE_3_NO_REFUND' | 'STAGE_PENDING_NO_PAYMENT' | string
+  milestoneStage: 'STAGE_1_FULL_REFUND' | 'STAGE_2_PARTIAL_REFUND' | 'STAGE_3_OVER_48H_REFUND' | 'STAGE_3_NO_REFUND' | 'STAGE_PENDING_NO_PAYMENT' | string
   refundPercentage: number
   refundAmount: number
   penaltyAmount: number
@@ -224,6 +225,11 @@ export interface BookingCancelResponse {
   refundAmount: number
   penaltyAmount: number
   refundTransactionId?: string
+  refundRequestId?: string
+  refundRequestCode?: string
+  bankName?: string
+  bankAccountNumber?: string
+  bankAccountName?: string
   unitReleased: boolean
   cancelledAt: string
   cancellationReason?: string
@@ -303,6 +309,7 @@ export type RentalContractStatus =
   | 'TERMINATED'
   | 'CANCELLED'
   | 'OVERDUE'
+  | 'SUPERSEDED'
 
 export interface RentalContract {
   id: string
@@ -317,7 +324,6 @@ export interface RentalContract {
   storageUnitId?: string
   facilityId?: string
   unitCode: string
-  unitTypeName?: string | null
   facilityName: string
   startDate: string
   endDate: string
@@ -325,18 +331,15 @@ export interface RentalContract {
   depositHeld: number
   status: RentalContractStatus
   signedDocumentUrl?: string | null
+  paperContractUrl?: string | null
+  paperVerifiedAt?: string | null
   docusealSubmissionId?: string | null
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
-  signingMethod?: 'ONLINE' | 'IN_PERSON' | string
+  signingMethod?: 'ONLINE' | 'IN_PERSON'
   signatureData?: string | null
+  unitTypeName?: string | null
   unitPricePerMonth?: number | null
-  paperContractUrl?: string | null
-  paperOriginalLocation?: string | null
-  paperVerifiedById?: string | null
-  paperVerifiedByName?: string | null
-  paperVerifiedAt?: string | null
-  paperNotes?: string | null
 }
 
 export type ContractRenewalStatus =
@@ -357,7 +360,6 @@ export interface ContractRenewal {
   facilityId?: string
   facilityName: string
   unitCode: string
-  unitTypeName?: string
   oldEndDate: string
   newEndDate: string
   cycleMonths: number
@@ -433,7 +435,6 @@ export interface HandoverRecord {
   bookingCode: string
   customerName: string
   unitCode: string
-  unitTypeName?: string
   staffName: string
   recordType: 'CHECK_IN' | 'RETURN'
   status?: 'PENDING_CHECKIN' | 'HANDED_OVER' | 'RETURN_INSPECTED'
@@ -571,6 +572,32 @@ export interface MonthlyRevenueBreakdown {
   total: number
 }
 
+export interface DebtBreakdown {
+  gracePeriodAmount: number
+  gracePeriodCount: number
+  warningAmount: number
+  warningCount: number
+  accessBlockedAmount: number
+  accessBlockedCount: number
+  eligibleForSealingAmount: number
+  eligibleForSealingCount: number
+  totalDebt: number
+  totalCount: number
+}
+
+export interface RefundBreakdown {
+  completedRefundAmount: number
+  completedRefundCount: number
+  pendingReviewAmount: number
+  pendingReviewCount: number
+  processingTransferAmount: number
+  processingTransferCount: number
+  rejectedRefundAmount: number
+  rejectedRefundCount: number
+  totalRequestedAmount: number
+  totalRefundRequests: number
+}
+
 export interface RevenueReport {
   fromDate?: string
   toDate?: string
@@ -586,7 +613,14 @@ export interface RevenueReport {
     bookingPaymentRevenue?: number
     paymentCount: number
     netRevenue?: number
+    totalCashIn?: number
     totalCollected?: number
+    rentalRevenue?: number
+    totalOverdueDebt?: number
+    depositsHeld?: number
+    refundedAmount?: number
+    pendingRefundAmount?: number
+    pendingReconciliationCount?: number
   }
   byFacility?: Array<{
     facilityId: string
@@ -599,22 +633,32 @@ export interface RevenueReport {
     bookingPaymentRevenue?: number
     paymentCount?: number
     netRevenue?: number
+    totalCashIn?: number
     totalCollected?: number
+    rentalRevenue?: number
+    totalOverdueDebt?: number
+    depositsHeld?: number
+    refundedAmount?: number
+    pendingRefundAmount?: number
   }>
-    monthlyRevenue?: Array<{
-      month: string | null
-      totalRevenue: number
-      rentalFeeRevenue: number
-      depositRevenue: number
-      renewalFeeRevenue: number
-      extraChargeRevenue: number
-      bookingPaymentRevenue: number
-      paymentCount: number
-    }>
-    paymentsByMethod?: Array<{
-      paymentMethod: string | null
-      paymentCount: number
-    }>
+  monthlyRevenue?: Array<{
+    month: string | null
+    totalRevenue: number
+    rentalFeeRevenue: number
+    depositRevenue: number
+    renewalFeeRevenue: number
+    extraChargeRevenue: number
+    bookingPaymentRevenue: number
+    paymentCount: number
+  }>
+  paymentsByMethod?: Array<{
+    paymentMethod: string | null
+    paymentCount: number
+    totalAmount?: number
+    reconciledAmount?: number
+  }>
+  debtBreakdown?: DebtBreakdown
+  refundBreakdown?: RefundBreakdown
 }
 
 export interface OverdueDebtReport {
@@ -646,7 +690,6 @@ export interface OverdueDebtItem {
   customerEmail?: string
   unitId?: string
   unitCode: string
-  unitTypeName?: string
   facilityId?: string
   facilityName?: string
   startDate?: string

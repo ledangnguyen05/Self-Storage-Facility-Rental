@@ -497,6 +497,33 @@ class StaffAssignmentServiceTest {
             verify(activityLogService).record(eq(facilityId), eq(ActivityAction.STAFF_ASSIGNMENT_UPDATE),
                     eq("StaffAssignment"), eq(assignmentId), any(), isNull(), any());
         }
+
+        @Test
+        @DisplayName("Lỗi khi cập nhật ca trực có thời gian đã trôi qua")
+        void shouldThrowWhenUpdatingPastAssignment() {
+            UUID assignmentId = UUID.randomUUID();
+            LocalDate yesterday = LocalDate.now(ZoneId.of("Asia/Ho_Chi_Minh")).minusDays(1);
+            StaffAssignment assignment = StaffAssignment.builder()
+                    .staff(staffUser)
+                    .facility(facility)
+                    .assignedDate(yesterday)
+                    .shift(StaffShift.MORNING)
+                    .assignedZone("Zone A")
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .build();
+            assignment.setId(assignmentId);
+
+            StaffAssignmentUpdateRequest updateRequest = StaffAssignmentUpdateRequest.builder()
+                    .shift(StaffShift.AFTERNOON)
+                    .assignedZone("Zone B")
+                    .build();
+
+            when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+
+            AppException ex = assertThrows(AppException.class,
+                    () -> staffAssignmentService.updateAssignment(assignmentId, updateRequest));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_ASSIGNMENT_DATE);
+        }
     }
 
     @Nested
@@ -845,6 +872,27 @@ class StaffAssignmentServiceTest {
             AppException ex = assertThrows(AppException.class, () -> staffAssignmentService.createAssignment(request));
             assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
             assertThat(ex.getMessage()).contains("3 ca chuẩn");
+        }
+
+        @Test
+        @DisplayName("Admin không được phép tạo phân công ca trực (chỉ có quyền xem/giám sát)")
+        void shouldRejectAssignmentCreationByAdmin() {
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+            LocalDate tomorrow = LocalDate.now().plusDays(1);
+
+            StaffAssignmentCreateRequest request = StaffAssignmentCreateRequest.builder()
+                    .staffId(staffId)
+                    .facilityId(facilityId)
+                    .assignedDate(tomorrow)
+                    .shift(StaffShift.MORNING)
+                    .build();
+
+            when(facilityRepository.findById(facilityId)).thenReturn(Optional.of(facility));
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+
+            AppException ex = assertThrows(AppException.class, () -> staffAssignmentService.createAssignment(request));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+            assertThat(ex.getMessage()).contains("Admin chỉ có quyền xem, giám sát ca trực");
         }
 
         @Test

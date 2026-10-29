@@ -82,7 +82,7 @@ public class ShiftSwapController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Danh sách yêu cầu đổi ca trực có lọc và phân trang")
     public ResponseEntity<ApiResponse<PageResponse<ShiftSwapResponse>>> getSwapRequests(
             @RequestParam(required = false) UUID facilityId,

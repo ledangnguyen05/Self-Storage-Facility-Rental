@@ -35,8 +35,9 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
   const isPendingPayment = renewal.status === 'PENDING_PAYMENT'
 
   return (
-    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/75 p-3 sm:p-6 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:fixed-none">
-      <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 print:p-0 print:bg-white print:fixed-none">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
 
         {/* Modal Top Bar - Hidden when printing */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 border-b border-slate-200 text-slate-900 print:hidden shrink-0">
@@ -401,6 +402,7 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
           </div>
         </div>
 
+        </div>
       </div>
     </div>
   )

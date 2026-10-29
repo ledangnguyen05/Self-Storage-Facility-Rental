@@ -27,12 +27,21 @@ import com.boxora.service.BookingService;
 import com.boxora.service.EncryptionService;
 import com.boxora.service.PricingService;
 import com.boxora.service.StorageUnitLockService;
+import com.boxora.service.StorageUnitService;
 import com.boxora.dto.request.BookingRescheduleRequest;
 import com.boxora.dto.response.BookingRescheduleEligibilityResponse;
 import com.boxora.dto.response.BookingRescheduleHistoryResponse;
 import com.boxora.dto.response.BookingRescheduleResponse;
 import com.boxora.entity.BookingRescheduleHistory;
 import com.boxora.entity.Facility;
+import com.boxora.entity.UnitType;
+import com.boxora.entity.Role;
+import com.boxora.repository.FacilityRepository;
+import com.boxora.repository.UnitTypeRepository;
+import com.boxora.repository.RoleRepository;
+import com.boxora.service.EmailService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+
 import com.boxora.entity.RentalContract;
 import com.boxora.entity.StaffAssignment;
 import com.boxora.enums.RentalContractStatus;
@@ -40,6 +49,9 @@ import com.boxora.enums.StaffAssignmentStatus;
 import com.boxora.enums.StaffShift;
 import com.boxora.repository.BookingRescheduleHistoryRepository;
 import com.boxora.repository.RentalContractRepository;
+import com.boxora.repository.RefundRequestRepository;
+import com.boxora.enums.RefundStatus;
+import com.boxora.entity.RefundRequest;
 import com.boxora.repository.StaffAssignmentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,8 +69,10 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -78,6 +92,7 @@ public class BookingServiceImpl implements BookingService {
     private final StorageUnitLockService storageUnitLockService;
     private final ActivityLogService activityLogService;
     private final PaymentRepository paymentRepository;
+    private final RefundRequestRepository refundRequestRepository;
     private final FacilityAccessGuard facilityAccessGuard;
     private final EncryptionService encryptionService;
     private final PricingService pricingService;
@@ -86,6 +101,12 @@ public class BookingServiceImpl implements BookingService {
     private final BookingRescheduleHistoryRepository bookingRescheduleHistoryRepository;
     private final RentalContractRepository rentalContractRepository;
     private final StaffAssignmentRepository staffAssignmentRepository;
+    private final FacilityRepository facilityRepository;
+    private final UnitTypeRepository unitTypeRepository;
+    private final RoleRepository roleRepository;
+    private final EmailService emailService;
+    private final org.springframework.beans.factory.ObjectProvider<StorageUnitService> storageUnitServiceProvider;
+
 
     @Value("${app.booking.soft-lock-hours:24}")
     private long softLockHours;
@@ -101,81 +122,149 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     public BookingResponse createBooking(BookingCreateRequest request) {
-        // 1. Khóa và kiểm tra nguyên tử bản ghi kho trong database (Pessimistic Write Lock)
-        StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(request.getStorageUnitId())
-                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
-
-        // 1.1 Kiểm tra trạng thái hoạt động của chi nhánh/cơ sở trực thuộc
-        if (unit.getFacility() != null) {
-            Facility facility = unit.getFacility();
-            if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
-                log.warn("[FACILITY_INACTIVE] Booking rejected. Facility {} ({}) is INACTIVE", facility.getId(), facility.getName());
-                throw new AppException(ErrorCode.FACILITY_INACTIVE,
-                        String.format("Chi nhánh %s hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
-            }
-            if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
-                log.warn("[FACILITY_MAINTENANCE] Booking rejected. Facility {} ({}) is under MAINTENANCE", facility.getId(), facility.getName());
-                throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE,
-                        String.format("Chi nhánh %s hiện đang trong thời gian bảo trì kỹ thuật. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
+        if (request.getBookingCode() != null && !request.getBookingCode().isBlank()) {
+            Optional<Booking> existingByCode = bookingRepository.findByBookingCode(request.getBookingCode().trim());
+            if (existingByCode.isPresent()) {
+                return updateUnpaidBooking(existingByCode.get().getId(), request);
             }
         }
+        StorageUnit unit = null;
+        Facility facility = null;
+        UnitType unitType = null;
 
-        boolean alreadyOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
-                unit.getId(),
-                List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL)
-        );
-        if (unit.getStatus() == UnitStatus.RESERVED && !alreadyOccupied) {
-            unit.setStatus(UnitStatus.AVAILABLE);
-            storageUnitRepository.save(unit);
-        }
-        if (unit.getStatus() != UnitStatus.AVAILABLE || alreadyOccupied) {
-            StorageUnit fallbackUnit = null;
+        if (request.getStorageUnitId() != null) {
+            unit = storageUnitRepository.findWithDetailsByIdForUpdate(request.getStorageUnitId())
+                    .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+            if (request.getFacilityId() != null && unit.getFacility() != null && !request.getFacilityId().equals(unit.getFacility().getId())) {
+                log.warn("[FACILITY_MISMATCH] Storage unit {} belongs to facility {}, but request specified facility {}",
+                        unit.getId(), unit.getFacility().getId(), request.getFacilityId());
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Kho đã chọn không thuộc về cơ sở lưu trữ tương ứng.");
+            }
+
             if (unit.getFacility() != null) {
-                UUID facId = unit.getFacility().getId();
-                List<StorageUnit> candidates = new ArrayList<>();
-                if (unit.getUnitType() != null) {
-                    candidates.addAll(storageUnitRepository.findByFacility_IdAndUnitType_IdAndStatus(facId, unit.getUnitType().getId(), UnitStatus.AVAILABLE));
+                facility = unit.getFacility();
+                if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
+                    log.warn("[FACILITY_INACTIVE] Booking rejected. Facility {} ({}) is INACTIVE", facility.getId(), facility.getName());
+                    throw new AppException(ErrorCode.FACILITY_INACTIVE,
+                            String.format("Chi nhánh %s hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
                 }
-                candidates.addAll(storageUnitRepository.findByFacility_IdAndStatus(facId, UnitStatus.AVAILABLE));
-                for (StorageUnit cand : candidates) {
-                    if (cand.getId().equals(unit.getId())) continue;
-                    boolean candOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
-                            cand.getId(),
-                            List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT, BookingStatus.PENDING_APPROVAL)
-                    );
-                    if (!candOccupied) {
-                        fallbackUnit = storageUnitRepository.findWithDetailsByIdForUpdate(cand.getId()).orElse(null);
-                        if (fallbackUnit != null && fallbackUnit.getStatus() == UnitStatus.AVAILABLE) {
-                            break;
+                if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
+                    log.warn("[FACILITY_MAINTENANCE] Booking rejected. Facility {} ({}) is under MAINTENANCE", facility.getId(), facility.getName());
+                    throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE,
+                            String.format("Chi nhánh %s hiện đang trong thời gian bảo trì kỹ thuật. Quý khách vui lòng chọn chi nhánh khác.", facility.getName()));
+                }
+            }
+
+            boolean alreadyOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
+                    unit.getId(),
+                    List.of(
+                            BookingStatus.ACTIVE,
+                            BookingStatus.CONFIRMED,
+                            BookingStatus.PENDING_PAYMENT,
+                            BookingStatus.PENDING_APPROVAL,
+                            BookingStatus.PENDING_SIGNATURE,
+                            BookingStatus.PENDING_CONTACT,
+                            BookingStatus.PAID_AND_SIGNED,
+                            BookingStatus.PAID_PENDING_ASSIGNMENT,
+                            BookingStatus.READY_FOR_CHECKIN
+                    )
+            );
+            if (unit.getStatus() == UnitStatus.RESERVED && !alreadyOccupied) {
+                unit.setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(unit);
+            }
+            if (unit.getStatus() != UnitStatus.AVAILABLE || alreadyOccupied) {
+                StorageUnit fallbackUnit = null;
+                if (unit.getFacility() != null) {
+                    UUID facId = unit.getFacility().getId();
+                    List<StorageUnit> candidates = new ArrayList<>();
+                    if (unit.getUnitType() != null) {
+                        candidates.addAll(storageUnitRepository.findByFacility_IdAndUnitType_IdAndStatus(facId, unit.getUnitType().getId(), UnitStatus.AVAILABLE));
+                    }
+                    candidates.addAll(storageUnitRepository.findByFacility_IdAndStatus(facId, UnitStatus.AVAILABLE));
+                    for (StorageUnit cand : candidates) {
+                        if (cand.getId().equals(unit.getId())) continue;
+                        boolean candOccupied = bookingRepository.existsByStorageUnit_IdAndStatusIn(
+                                cand.getId(),
+                                List.of(
+                                        BookingStatus.ACTIVE,
+                                        BookingStatus.CONFIRMED,
+                                        BookingStatus.PENDING_PAYMENT,
+                                        BookingStatus.PENDING_APPROVAL,
+                                        BookingStatus.PENDING_SIGNATURE,
+                                        BookingStatus.PENDING_CONTACT,
+                                        BookingStatus.PAID_AND_SIGNED,
+                                        BookingStatus.PAID_PENDING_ASSIGNMENT,
+                                        BookingStatus.READY_FOR_CHECKIN
+                                )
+                        );
+                        if (!candOccupied) {
+                            fallbackUnit = storageUnitRepository.findWithDetailsByIdForUpdate(cand.getId()).orElse(null);
+                            if (fallbackUnit != null && fallbackUnit.getStatus() == UnitStatus.AVAILABLE) {
+                                break;
+                            }
                         }
                     }
                 }
+                if (fallbackUnit != null) {
+                    log.info("[UNIT_FALLBACK] Auto-switched from occupied unit {} to available unit {} in same facility", unit.getUnitCode(), fallbackUnit.getUnitCode());
+                    unit = fallbackUnit;
+                } else {
+                    log.warn("[UNIT_LOCK] Storage unit {} status is {}, alreadyOccupied={}", unit.getUnitCode(), unit.getStatus(), alreadyOccupied);
+                    throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
+                }
             }
-            if (fallbackUnit != null) {
-                log.info("[UNIT_FALLBACK] Auto-switched from occupied unit {} to available unit {} in same facility", unit.getUnitCode(), fallbackUnit.getUnitCode());
-                unit = fallbackUnit;
-                alreadyOccupied = false;
-            } else {
-                log.warn("[UNIT_LOCK] Storage unit {} status is {}, alreadyOccupied={}", unit.getUnitCode(), unit.getStatus(), alreadyOccupied);
-                throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
+            try {
+                if (storageUnitLockService.isUnitLocked(unit.getId())) {
+                    log.warn("[SOFT_LOCK] Releasing stale Redis soft-lock for available unit {}", unit.getId());
+                    storageUnitLockService.releaseLock(unit.getId());
+                }
+            } catch (Exception e) {
+                log.warn("[REDIS_OPTIMIZATION_BYPASS] Redis lock check error for unit {}: {}. Proceeding with authoritative DB pessimistic lock.",
+                        unit.getId(), e.getMessage());
+            }
+
+            facility = unit.getFacility();
+            unitType = unit.getUnitType();
+        } else {
+            if (request.getFacilityId() != null) {
+                facility = facilityRepository.findById(request.getFacilityId())
+                        .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
+            }
+            if (request.getUnitTypeId() != null) {
+                unitType = unitTypeRepository.findByIdForUpdate(request.getUnitTypeId())
+                        .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
+            }
+            if (facility != null) {
+                if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
+                    throw new AppException(ErrorCode.FACILITY_INACTIVE, "Chi nhánh " + facility.getName() + " hiện đang tạm ngưng hoạt động.");
+                }
+                if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
+                    throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE, "Chi nhánh " + facility.getName() + " hiện đang bảo trì.");
+                }
+
+                // Kiểm tra xem cơ sở còn buồng kho khả dụng (AVAILABLE) thực tế theo loại kho hay không
+                long availableCount = (unitType != null)
+                        ? storageUnitServiceProvider.getObject().getAvailableUnitsCount(facility.getId(), unitType.getId())
+                        : storageUnitServiceProvider.getObject().getFacilityAvailableUnitsCount(facility.getId());
+
+                if (availableCount <= 0) {
+                    log.warn("[AUTO_ALLOCATE_FAILED] No available storage unit found for facility {} and unitType {}",
+                            facility.getId(), unitType != null ? unitType.getId() : "null");
+                    throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE, "Rất tiếc, cơ sở hiện đã hết buồng kho khả dụng cho kích thước này.");
+                }
+
+                // Không tự động gán buồng kho cụ thể khi đặt chỗ mới.
+                // Khách hàng và nhân viên sẽ chọn vị trí kho mong muốn khi check-in tại cơ sở.
+                unit = null;
             }
         }
-
-        // 3. Kiểm tra Soft-lock trong Redis (tối ưu hóa - bắt lỗi an toàn nếu Redis không phản hồi)
-        try {
-            if (storageUnitLockService.isUnitLocked(unit.getId())) {
-                log.warn("[SOFT_LOCK] Releasing stale Redis soft-lock for available unit {}", unit.getId());
-                storageUnitLockService.releaseLock(unit.getId());
-            }
-        } catch (Exception e) {
-            log.warn("[REDIS_OPTIMIZATION_BYPASS] Redis lock check error for unit {}: {}. Proceeding with authoritative DB pessimistic lock.",
-                    unit.getId(), e.getMessage());
-        }
-
-        // 4. Validation ngày bắt đầu (< 30 ngày so với hôm nay và >= hôm nay)
         LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now(BUSINESS_ZONE);
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
+        if (startDate.isBefore(today) && request.getBookingCode() != null && !request.getBookingCode().isBlank()) {
+            startDate = today;
+        }
         if (startDate.isBefore(today)) {
             throw new AppException(ErrorCode.BOOKING_START_DATE_PAST);
         }
@@ -184,15 +273,15 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.BOOKING_ADVANCE_NOTICE_EXCEEDED);
         }
 
-        // 5. Validation thời gian thuê (rentalMonths >= 1 và tuân theo chính sách cơ sở)
         int months = request.getRentalMonths() != null ? request.getRentalMonths() : 1;
         if (months < 1) {
             throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
         }
 
-        FacilityPolicy activePolicy = unit.getFacility() == null
+        UUID effectiveFacilityId = facility != null ? facility.getId() : (unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null);
+        FacilityPolicy activePolicy = effectiveFacilityId == null
                 ? null
-                : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(unit.getFacility().getId()).orElse(null);
+                : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(effectiveFacilityId).orElse(null);
         if (activePolicy != null && activePolicy.getMinimumRentalMonths() != null
                 && months < activePolicy.getMinimumRentalMonths()) {
             throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
@@ -200,7 +289,6 @@ public class BookingServiceImpl implements BookingService {
 
         LocalDate endDate = startDate.plusMonths(months);
 
-        // 6. Xác định khách hàng từ Context hoặc Request
         User customer;
         boolean isStaffOrAdmin = requestContext != null && (
                 "ADMIN".equalsIgnoreCase(requestContext.currentUserRole())
@@ -208,7 +296,35 @@ public class BookingServiceImpl implements BookingService {
                 || "STAFF".equalsIgnoreCase(requestContext.currentUserRole())
         );
 
+        String reqCustEmail = (request.getCustomerEmail() != null && !request.getCustomerEmail().isBlank())
+                ? request.getCustomerEmail().trim().toLowerCase()
+                : ((request.getEmail() != null && !request.getEmail().isBlank()) ? request.getEmail().trim().toLowerCase() : null);
+
         if (isStaffOrAdmin && request.getCustomerId() != null) {
+            customer = userRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        } else if (isStaffOrAdmin && reqCustEmail != null) {
+            final String targetEmail = reqCustEmail;
+            customer = userRepository.findByEmail(targetEmail).orElseGet(() -> {
+                Role customerRole = roleRepository.findByName("CUSTOMER").orElse(null);
+                String name = request.getCustomerName() != null && !request.getCustomerName().isBlank()
+                        ? request.getCustomerName().trim()
+                        : (request.getFullName() != null && !request.getFullName().isBlank() ? request.getFullName().trim() : "Khách hàng Boxora");
+                String phone = request.getCustomerPhone() != null && !request.getCustomerPhone().isBlank()
+                        ? request.getCustomerPhone().trim()
+                        : (request.getPhone() != null ? request.getPhone().trim() : "");
+                User newUser = User.builder()
+                        .email(targetEmail)
+                        .username(targetEmail)
+                        .fullName(name)
+                        .phone(phone)
+                        .password(new BCryptPasswordEncoder().encode(UUID.randomUUID().toString()))
+                        .role(customerRole)
+                        .isActive(true)
+                        .build();
+                return userRepository.save(newUser);
+            });
+        } else if (isStaffOrAdmin && request.getCustomerId() != null) {
             customer = userRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
         } else if (requestContext != null && requestContext.currentUserId() != null) {
@@ -217,32 +333,59 @@ public class BookingServiceImpl implements BookingService {
         } else if (request.getCustomerId() != null) {
             customer = userRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+        } else if (request.getCustomerEmail() != null && !request.getCustomerEmail().isBlank()) {
+            String email = request.getCustomerEmail().trim().toLowerCase();
+            customer = userRepository.findByEmail(email).orElseGet(() -> {
+                Role customerRole = roleRepository.findByName("CUSTOMER").orElse(null);
+                User newUser = User.builder()
+                        .email(email)
+                        .username(email)
+                        .fullName(request.getCustomerName() != null && !request.getCustomerName().isBlank() ? request.getCustomerName().trim() : "Khách hàng Boxora")
+                        .phone(request.getCustomerPhone() != null ? request.getCustomerPhone().trim() : "")
+                        .password(new BCryptPasswordEncoder().encode(UUID.randomUUID().toString()))
+                        .role(customerRole)
+                        .isActive(true)
+                        .build();
+                return userRepository.save(newUser);
+            });
         } else {
             throw new AppException(ErrorCode.UNAUTHORIZED);
         }
 
-        // 7. Một nguồn tính giá duy nhất: Sử dụng PricingService (không nhận giá do client tự gửi)
-        com.boxora.dto.request.PricingQuoteRequest quoteRequest = com.boxora.dto.request.PricingQuoteRequest.builder()
-                .storageUnitId(unit.getId())
-                .rentalMonths(months)
-                .discountCode(request.getDiscountCode())
-                .startDate(startDate)
-                .build();
-        com.boxora.dto.response.PricingQuoteResponse quote = pricingService.calculateQuote(quoteRequest);
-
-        BigDecimal totalFee = (request.getTotalRentalFee() != null && request.getTotalRentalFee().compareTo(BigDecimal.ZERO) > 0)
-                ? request.getTotalRentalFee()
-                : quote.getTotalRentalFee();
-        BigDecimal deposit = (request.getDepositAmount() != null && request.getDepositAmount().compareTo(BigDecimal.ZERO) > 0)
-                ? request.getDepositAmount()
-                : ((request.getDepositPaid() != null && request.getDepositPaid().compareTo(BigDecimal.ZERO) > 0)
+        BigDecimal totalFee = request.getTotalRentalFee();
+        BigDecimal deposit = request.getDepositAmount();
+        if (unit != null) {
+            com.boxora.dto.request.PricingQuoteRequest quoteRequest = com.boxora.dto.request.PricingQuoteRequest.builder()
+                    .storageUnitId(unit.getId())
+                    .rentalMonths(months)
+                    .discountCode(request.getDiscountCode())
+                    .startDate(startDate)
+                    .build();
+            com.boxora.dto.response.PricingQuoteResponse quote = pricingService.calculateQuote(quoteRequest);
+            if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
+                totalFee = quote.getTotalRentalFee();
+            }
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                deposit = (request.getDepositPaid() != null && request.getDepositPaid().compareTo(BigDecimal.ZERO) > 0)
                         ? request.getDepositPaid()
-                        : quote.getDepositAmount());
+                        : quote.getDepositAmount();
+            }
+        } else if (unitType != null) {
+            BigDecimal baseMonthly = unitType.getBasePricePerMonth() != null ? unitType.getBasePricePerMonth() : BigDecimal.valueOf(1500000);
+            if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
+                totalFee = baseMonthly.multiply(BigDecimal.valueOf(months));
+            }
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                deposit = unitType.getDepositAmount() != null && unitType.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
+                        ? unitType.getDepositAmount()
+                        : baseMonthly;
+            }
+        }
 
-        // 8. Tạo mã đặt kho duy nhất
-        String code = "BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000));
+        String code = (request.getBookingCode() != null && !request.getBookingCode().isBlank())
+                ? request.getBookingCode().trim()
+                : ("BX-" + (2025 + new Random().nextInt(2)) + "-" + String.format("%04d", new Random().nextInt(10000)));
 
-        // 9. Xác định ngày/giờ nhận kho dự kiến (expectedCheckInAt)
         LocalDateTime expectedCheckInAt = request.getExpectedCheckInAt();
         if (expectedCheckInAt == null && request.getCheckInTime() != null && !request.getCheckInTime().isBlank()) {
             try {
@@ -256,20 +399,11 @@ public class BookingServiceImpl implements BookingService {
             expectedCheckInAt = startDate.atTime(LocalTime.of(9, 0));
         }
 
-        // Validate: Lịch hẹn nhận kho phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho
         LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
         if (expectedCheckInAt.isBefore(minAllowedCheckIn)) {
             expectedCheckInAt = minAllowedCheckIn.plusMinutes(15);
         }
-        if (false && expectedCheckInAt.isBefore(minAllowedCheckIn)) {
-            DateTimeFormatter dtf = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
-            throw new AppException(ErrorCode.INVALID_REQUEST,
-                    String.format("Lịch hẹn nhận kho (%s) phải cách thời điểm hiện tại ít nhất 5 tiếng để cơ sở kịp chuẩn bị kho (sớm nhất có thể chọn: %s).",
-                            expectedCheckInAt.format(dtf),
-                            minAllowedCheckIn.format(dtf)));
-        }
 
-        // 10. Xác định chính sách giữ chỗ và thời hạn giữ chỗ (holdExpiresAt)
         int holdGraceHours = (activePolicy != null && activePolicy.getHoldGraceHours() != null)
                 ? activePolicy.getHoldGraceHours()
                 : 24;
@@ -279,7 +413,14 @@ public class BookingServiceImpl implements BookingService {
 
         boolean isDirect = request.getSigningMethod() != null &&
                 ("DIRECT".equalsIgnoreCase(request.getSigningMethod().trim()) || "IN_PERSON".equalsIgnoreCase(request.getSigningMethod().trim()));
-        BookingStatus initialStatus = isDirect ? BookingStatus.CONFIRMED : BookingStatus.PENDING_PAYMENT;
+        BookingStatus initialStatus;
+        if ("PENDING_CONTACT".equalsIgnoreCase(request.getInitialStatus()) || isDirect) {
+            initialStatus = BookingStatus.PENDING_CONTACT;
+        } else if ("PENDING_SIGNATURE".equalsIgnoreCase(request.getInitialStatus()) || unit == null) {
+            initialStatus = BookingStatus.PENDING_SIGNATURE;
+        } else {
+            initialStatus = BookingStatus.PENDING_PAYMENT;
+        }
         String resolvedSigningMethod = isDirect ? "IN_PERSON" : (request.getSigningMethod() != null && !request.getSigningMethod().isBlank() ? request.getSigningMethod().trim().toUpperCase() : "ONLINE");
 
         Instant now = Instant.now();
@@ -287,101 +428,132 @@ public class BookingServiceImpl implements BookingService {
         Instant holdExpiresAt;
 
         if (isDirect) {
-            // Giữ chỗ miễn phí theo lịch hẹn: giữ đến giờ hẹn cộng khoảng gia hạn chính sách
             Instant appointmentInstant = expectedCheckInAt != null
                     ? expectedCheckInAt.atZone(BUSINESS_ZONE).toInstant()
                     : now;
             holdExpiresAt = appointmentInstant.plus(java.time.Duration.ofHours(holdGraceHours));
-            // Đảm bảo giữ tối thiểu 24h từ lúc tạo (đặc biệt khi khách đặt nhận trong ngày)
             if (holdExpiresAt.isBefore(now.plus(java.time.Duration.ofHours(24)))) {
                 holdExpiresAt = now.plus(java.time.Duration.ofHours(24));
             }
-            // Giới hạn tối đa theo chính sách cơ sở
             Instant maxHoldLimit = now.plus(java.time.Duration.ofDays(policyMaxHoldDays));
             if (holdExpiresAt.isAfter(maxHoldLimit)) {
                 holdExpiresAt = maxHoldLimit;
             }
         } else {
-            // Thanh toán ngay qua trực tuyến: hạn giữ chỗ theo timeout thanh toán
-            long timeoutSec = (paymentTimeoutMinutes > 0 ? (long) paymentTimeoutMinutes * 60L : softLockHours * 3600L);
-            holdExpiresAt = now.plusSeconds(timeoutSec);
+            holdExpiresAt = now.plus(java.time.Duration.ofHours(softLockHours));
+        }
+
+        // Task 3: Validation thông tin người đặt & nhận bàn giao kho
+        String fullName = request.getFullName();
+        if (fullName != null && !fullName.isBlank()) {
+            fullName = fullName.trim();
+            if (fullName.length() > 100) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt không được vượt quá 100 ký tự.");
+            }
+            if (!fullName.matches("^[\\p{L}\\s]+$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên chỉ được chứa chữ cái và khoảng trắng hợp lệ.");
+            }
+        }
+
+        String phone = request.getPhone();
+        if (phone != null && !phone.isBlank()) {
+            phone = phone.trim();
+            if (!phone.matches("^(0|\\+84)(3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Số điện thoại không đúng định dạng di động Việt Nam (10 chữ số).");
+            }
         }
 
         String idNumber = request.getIdentityCardNumber() != null && !request.getIdentityCardNumber().isBlank()
                 ? request.getIdentityCardNumber().trim()
                 : null;
         String idType = request.getIdentityCardType() != null && !request.getIdentityCardType().isBlank()
-                ? request.getIdentityCardType().trim()
+                ? request.getIdentityCardType().trim().toUpperCase()
                 : "CCCD";
+
+        if (idNumber != null) {
+            if ("PASSPORT".equals(idType)) {
+                if (!idNumber.matches("^[A-Z][0-9]{7,8}$")) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Số Hộ chiếu không hợp lệ (1 chữ cái in hoa theo sau bởi 7–8 chữ số, VD: B1234567).");
+                }
+            } else {
+                if (!idNumber.matches("^[0-9]{12}$")) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Số CCCD phải bao gồm đúng 12 chữ số theo quy chuẩn Bộ Công An.");
+                }
+            }
+        }
+
+        String email = request.getEmail();
+        if (email != null && !email.isBlank()) {
+            email = email.trim();
+            if (!email.matches("^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\\.[A-Za-z]{2,})$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Địa chỉ email không đúng định dạng.");
+            }
+        }
+
+        String notes = request.getSpecialNotes();
+        if (notes != null) {
+            notes = notes.trim();
+            if (notes.length() > 500) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Ghi chú không được vượt quá 500 ký tự.");
+            }
+            notes = notes.replaceAll("<[^>]*>", "");
+        }
+
 
         Booking booking = Booking.builder()
                 .bookingCode(code)
                 .customer(customer)
                 .storageUnit(unit)
+                .facility(facility)
+                .unitType(unitType)
                 .startDate(startDate)
                 .endDate(endDate)
                 .rentalMonths(months)
                 .totalRentalFee(totalFee)
-                .depositPaid(BigDecimal.ZERO)
+                .depositPaid(request.getDepositPaid() != null ? request.getDepositPaid() : BigDecimal.ZERO)
                 .depositAmount(deposit)
+                .status(initialStatus)
+                .paymentStatus("UNPAID")
+                .signingMethod(resolvedSigningMethod)
+                .expectedArrivalAt(request.getExpectedArrivalAt())
+                .expectedCheckInAt(expectedCheckInAt)
                 .holdStartedAt(holdStartedAt)
                 .holdExpiresAt(holdExpiresAt)
-                .expectedCheckInAt(expectedCheckInAt)
-                .paymentStatus("UNPAID")
-                .paymentExpiresAt(holdExpiresAt)
-                .status(initialStatus)
-                .signingMethod(resolvedSigningMethod)
-                .identityCardNumber(idNumber)
-                .identityCardType(idType)
-                .accessPin(null) // Chưa cấp PIN trước khi bàn giao
-                .qrAccessToken(null) // Chưa cấp QR trước khi bàn giao
+                .paymentExpiresAt(unit != null ? now.plus(java.time.Duration.ofMinutes(paymentTimeoutMinutes)) : null)
+                .identityCardNumber(idNumber != null ? idNumber : request.getIdentityCardNumber())
+                .identityCardType(idType != null ? idType : (request.getIdentityCardType() != null ? request.getIdentityCardType() : "CCCD"))
+                .staffAssignmentNotes(notes)
+                .accessPin(null)
+                .qrAccessToken(null)
                 .build();
-
-        // 11. Chuyển ngăn kho sang RESERVED để giữ chỗ mềm
-        unit.setStatus(UnitStatus.RESERVED);
-        storageUnitRepository.save(unit);
 
         booking = bookingRepository.save(booking);
 
-        if (isDirect) {
+        if (unit != null) {
+            unit.setStatus(UnitStatus.RESERVED);
+            storageUnitRepository.save(unit);
+        }
+
+        com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider != null
+                ? contractSigningServiceProvider.getIfAvailable()
+                : null;
+        if (contractSigningService != null) {
             try {
-                var contractService = contractSigningServiceProvider.getIfAvailable();
-                if (contractService != null) {
-                    contractService.ensureContractForBooking(booking);
-                }
+                contractSigningService.ensureContractForBooking(booking);
             } catch (Exception ex) {
-                log.warn("Could not auto-ensure contract for direct booking {}: {}", booking.getBookingCode(), ex.getMessage());
+                log.warn("Notice auto-generating contracts: {}", ex.getMessage());
             }
-        } else if ("ONLINE".equalsIgnoreCase(resolvedSigningMethod)) {
-            // Online bookings must have a contract draft ready before the customer can proceed to signing.
-            // Do this in the booking transaction so a failed contract draft does not leave a reserved orphan booking.
-            var contractService = contractSigningServiceProvider.getIfAvailable();
-            if (contractService == null) {
-                throw new AppException(ErrorCode.CONTRACT_SIGNING_FAILED);
-            }
-            contractService.ensureContractForBooking(booking);
         }
 
-        // 12. Thực hiện Soft-lock trên Redis cho ngăn kho theo thời hạn giữ chỗ
-        long lockHours = Math.max(1, java.time.Duration.between(now, holdExpiresAt).toHours() + 1);
-        try {
-            storageUnitLockService.tryLockUnit(unit.getId(), booking.getId(), lockHours);
-        } catch (Exception e) {
-            log.warn("[REDIS_OPTIMIZATION_BYPASS] Redis lock acquisition error for unit {}: {}. Authoritative DB lock and RESERVED status are active.",
-                    unit.getId(), e.getMessage());
-        }
-
-        // 13. Ghi Activity Log
-        UUID facilityId = (unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        UUID facilityIdForLog = facility != null ? facility.getId() : (unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null);
         activityLogService.record(
-                facilityId,
+                facilityIdForLog,
                 ActivityAction.RESERVATION_CREATE,
-                "Booking",
+                "BOOKING",
                 booking.getId(),
-                String.format("Tạo yêu cầu thuê kho %s thành công (%s). Dự kiến nhận kho: %s. Hạn chót giữ chỗ: %s.",
-                        code, resolvedSigningMethod, expectedCheckInAt, holdExpiresAt),
+                "Tạo mới đặt chỗ " + booking.getBookingCode() + (unit != null ? " cho kho " + unit.getUnitCode() : ""),
                 null,
-                booking.getStatus()
+                booking.getStatus().name()
         );
 
         return mapToResponse(booking);
@@ -433,8 +605,8 @@ public class BookingServiceImpl implements BookingService {
     public BookingResponse reviewBookingRequest(UUID id, boolean approved, UUID assignedStaffId, String notes) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
-        if (booking.getStatus() != BookingStatus.PENDING_APPROVAL && booking.getStatus() != BookingStatus.CONFIRMED) {
-            throw new AppException(ErrorCode.BOOKING_REQUEST_NOT_PENDING_APPROVAL);
+        if (booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new AppException(ErrorCode.BOOKING_CANNOT_BE_CANCELLED, "Đơn đặt kho ở trạng thái " + booking.getStatus() + " không thể phê duyệt hoặc từ chối.");
         }
 
         StorageUnit unit = booking.getStorageUnit();
@@ -498,6 +670,9 @@ public class BookingServiceImpl implements BookingService {
         } else {
             booking.setStatus(BookingStatus.CANCELLED);
             booking.setPaymentExpiresAt(null);
+            if (notes != null && !notes.isBlank()) {
+                booking.setCancellationReason(notes.trim());
+            }
             if (unit != null) {
                 unit.setStatus(UnitStatus.AVAILABLE);
                 storageUnitRepository.save(unit);
@@ -519,6 +694,35 @@ public class BookingServiceImpl implements BookingService {
                 null,
                 booking.getStatus()
         );
+
+        if (!approved) {
+            try {
+                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null && !booking.getCustomer().getEmail().isBlank()) {
+                    String custEmail = booking.getCustomer().getEmail().trim();
+                    String custName = booking.getCustomer().getFullName() != null && !booking.getCustomer().getFullName().isBlank()
+                            ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    String facName = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getName()
+                            : (booking.getFacility() != null ? booking.getFacility().getName() : "Hệ thống Boxora");
+                    String uCode = booking.getStorageUnit() != null
+                            ? booking.getStorageUnit().getUnitCode()
+                            : (booking.getUnitType() != null ? booking.getUnitType().getTypeName() : "Kho tự quản");
+                    emailService.sendBookingCancellationEmail(
+                            custEmail,
+                            custName,
+                            booking.getBookingCode(),
+                            facName,
+                            uCode,
+                            notes != null && !notes.isBlank() ? notes.trim() : "Quản trị viên từ chối yêu cầu thuê kho",
+                            true,
+                            BigDecimal.ZERO
+                    );
+                }
+            } catch (Exception ex) {
+                log.error("[EMAIL_DISPATCH_FAILED] Không thể gửi email từ chối đơn {}: {}", booking.getBookingCode(), ex.getMessage(), ex);
+            }
+        }
+
         return mapToResponse(booking);
     }
 
@@ -619,13 +823,20 @@ public class BookingServiceImpl implements BookingService {
         try {
             source = targetFacilityId == null
                     ? bookingRepository.findAll()
-                    : bookingRepository.findByStorageUnit_Facility_Id(targetFacilityId);
-            if (source.isEmpty() && targetFacilityId != null) {
-                // In mock environments where only findAll() is stubbed, fallback to in-memory facility filter
-                source = bookingRepository.findAll().stream()
-                        .filter(b -> b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
-                                && targetFacilityId.equals(b.getStorageUnit().getFacility().getId()))
-                        .toList();
+                    : bookingRepository.findAllByFacilityIdIncludingNullUnit(targetFacilityId);
+            if (source == null || source.isEmpty()) {
+                if (targetFacilityId != null) {
+                    source = bookingRepository.findAll().stream()
+                            .filter(b -> {
+                                UUID facId = b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
+                                        ? b.getStorageUnit().getFacility().getId()
+                                        : (b.getFacility() != null ? b.getFacility().getId() : null);
+                                return targetFacilityId.equals(facId);
+                            })
+                            .toList();
+                } else {
+                    source = bookingRepository.findAll();
+                }
             }
         } catch (Exception e) {
             source = bookingRepository.findAll();
@@ -635,22 +846,21 @@ public class BookingServiceImpl implements BookingService {
 
         return source.stream()
                 .filter(b -> {
-                    if (timeframe == null && fromDate == null && toDate == null) {
-                        return (b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT
-                                || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.COMPLETED)
-                                && b.getExpectedCheckInAt() != null;
+                    if ("PAST".equalsIgnoreCase(timeframe)) {
+                        return b.getStatus() == BookingStatus.COMPLETED || b.getStatus() == BookingStatus.CANCELLED;
                     }
-                    if ("PAST".equalsIgnoreCase(timeframe) || "ALL".equalsIgnoreCase(timeframe)) {
-                        return b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT
-                                || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.COMPLETED
-                                || b.getStatus() == BookingStatus.CANCELLED;
+                    if ("ALL".equalsIgnoreCase(timeframe)) {
+                        return true;
                     }
-                    if ("TODAY".equalsIgnoreCase(timeframe) || "CURRENT".equalsIgnoreCase(timeframe)) {
-                        return b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT
-                                || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.COMPLETED;
-                    }
-                    return b.getStatus() == BookingStatus.CONFIRMED || b.getStatus() == BookingStatus.PENDING_PAYMENT
-                            || b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.COMPLETED;
+                    return b.getStatus() == BookingStatus.PAID_PENDING_ASSIGNMENT
+                            || b.getStatus() == BookingStatus.PAID_AND_SIGNED
+                            || b.getStatus() == BookingStatus.PENDING_CONTACT
+                            || b.getStatus() == BookingStatus.PENDING_SIGNATURE
+                            || b.getStatus() == BookingStatus.SIGNED_PENDING_PAYMENT
+                            || b.getStatus() == BookingStatus.CONFIRMED
+                            || b.getStatus() == BookingStatus.PENDING_PAYMENT
+                            || b.getStatus() == BookingStatus.ACTIVE
+                            || b.getStatus() == BookingStatus.COMPLETED;
                 })
                 .filter(b -> {
                     LocalDate checkInDate = b.getExpectedCheckInAt() != null
@@ -672,6 +882,22 @@ public class BookingServiceImpl implements BookingService {
                     return true;
                 })
                 .sorted((a, b) -> {
+                    String role = requestContext != null ? requestContext.currentUserRole() : null;
+                    boolean isManagement = "ADMIN".equalsIgnoreCase(role) || "BUSINESS_MANAGER".equalsIgnoreCase(role);
+                    if (isManagement) {
+                        LocalDateTime c1 = a.getCreatedAt();
+                        LocalDateTime c2 = b.getCreatedAt();
+                        if (c1 != null && c2 != null) {
+                            int cmp = c2.compareTo(c1);
+                            if (cmp != 0) return cmp;
+                        } else if (c2 != null) {
+                            return 1;
+                        } else if (c1 != null) {
+                            return -1;
+                        }
+                        return (b.getBookingCode() != null ? b.getBookingCode() : "")
+                                .compareTo(a.getBookingCode() != null ? a.getBookingCode() : "");
+                    }
                     LocalDateTime t1 = a.getExpectedCheckInAt() != null ? a.getExpectedCheckInAt() : a.getStartDate().atStartOfDay();
                     LocalDateTime t2 = b.getExpectedCheckInAt() != null ? b.getExpectedCheckInAt() : b.getStartDate().atStartOfDay();
                     if ("PAST".equalsIgnoreCase(timeframe)) {
@@ -718,8 +944,9 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Lượt check-in này đã được " + currentAssignee + " tiếp nhận.");
         }
 
-        // Phân quyền: chỉ khi staff hoặc facility manager có ca làm trong ngày có lịch checkin của khách và đã checkin vào ca rồi thì mới có thể tiếp nhận
-        if (!"ADMIN".equalsIgnoreCase(role) && !"SYSTEM_ADMIN".equalsIgnoreCase(role)) {
+        // Phân quyền: nhân viên/quản lý có ca trực đã điểm danh hôm nay hoặc vào ngày hẹn tại cơ sở (hỗ trợ tiếp nhận sớm và đúng hẹn)
+        if (!"ADMIN".equalsIgnoreCase(role) && !"SYSTEM_ADMIN".equalsIgnoreCase(role) && !"BUSINESS_MANAGER".equalsIgnoreCase(role)) {
+            LocalDate today = LocalDate.now(BUSINESS_ZONE);
             LocalDate checkInDate = booking.getExpectedCheckInAt() != null
                     ? booking.getExpectedCheckInAt().toLocalDate()
                     : booking.getStartDate();
@@ -728,16 +955,22 @@ public class BookingServiceImpl implements BookingService {
                     ? booking.getStorageUnit().getFacility().getId()
                     : null;
 
-            List<StaffAssignment> myAssignments = new ArrayList<>(
-                    staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, checkInDate));
-            List<StaffAssignment> prevDayAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(
-                    currentUserId, checkInDate.minusDays(1));
-            for (StaffAssignment prev : prevDayAssignments) {
-                boolean isOvernight = prev.getShift() == StaffShift.NIGHT
-                        || (prev.getStartTime() != null && prev.getEndTime() != null
-                            && !prev.getEndTime().isAfter(prev.getStartTime()));
-                if (isOvernight) {
-                    myAssignments.add(prev);
+            Set<LocalDate> targetDates = new LinkedHashSet<>();
+            if (today != null) targetDates.add(today);
+            if (checkInDate != null) targetDates.add(checkInDate);
+
+            List<StaffAssignment> myAssignments = new ArrayList<>();
+            for (LocalDate tDate : targetDates) {
+                myAssignments.addAll(staffAssignmentRepository.findByStaff_IdAndAssignedDate(currentUserId, tDate));
+                List<StaffAssignment> prevDayAssignments = staffAssignmentRepository.findByStaff_IdAndAssignedDate(
+                        currentUserId, tDate.minusDays(1));
+                for (StaffAssignment prev : prevDayAssignments) {
+                    boolean isOvernight = prev.getShift() == StaffShift.NIGHT
+                            || (prev.getStartTime() != null && prev.getEndTime() != null
+                                && !prev.getEndTime().isAfter(prev.getStartTime()));
+                    if (isOvernight) {
+                        myAssignments.add(prev);
+                    }
                 }
             }
 
@@ -750,8 +983,7 @@ public class BookingServiceImpl implements BookingService {
 
             if (!hasCheckedInShift) {
                 throw new AppException(ErrorCode.FORBIDDEN,
-                        "Bạn chỉ có thể tiếp nhận khách khi có ca làm việc vào ngày hẹn check-in ("
-                                + checkInDate + ") tại cơ sở và đã điểm danh vào ca trực.");
+                        "Bạn chỉ có thể tiếp nhận khách khi có ca làm việc và đã điểm danh vào ca trực tại cơ sở.");
             }
         }
 
@@ -819,10 +1051,19 @@ public class BookingServiceImpl implements BookingService {
             return bookings;
         }
         UUID assignedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        if (assignedFacilityId == null) {
+            return bookings;
+        }
         return bookings.stream()
-                .filter(booking -> booking.getStorageUnit() != null
-                        && booking.getStorageUnit().getFacility() != null
-                        && assignedFacilityId.equals(booking.getStorageUnit().getFacility().getId()))
+                .filter(booking -> {
+                    UUID facId = null;
+                    if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+                        facId = booking.getStorageUnit().getFacility().getId();
+                    } else if (booking.getFacility() != null) {
+                        facId = booking.getFacility().getId();
+                    }
+                    return assignedFacilityId.equals(facId);
+                })
                 .collect(Collectors.toList());
     }
 
@@ -860,10 +1101,9 @@ public class BookingServiceImpl implements BookingService {
         User currentUser = (requestContext != null && requestContext.currentUserId() != null)
                 ? userRepository.findById(requestContext.currentUserId()).orElse(null)
                 : null;
-        if (currentUser == null) {
-            throw new AppException(ErrorCode.UNAUTHORIZED);
+        if (currentUser != null) {
+            validateBookingAccess(booking, currentUser);
         }
-        validateBookingAccess(booking, currentUser);
 
         return mapToResponse(booking);
     }
@@ -1401,7 +1641,9 @@ public class BookingServiceImpl implements BookingService {
                 isCheckInExpired = holdDeadline.isBefore(now);
             } else if (booking.getExpectedCheckInAt() != null) {
                 int graceHours = 24;
-                if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
+                if ("IN_PERSON".equalsIgnoreCase(booking.getSigningMethod())) {
+                    graceHours = 48; // Đơn ký tại quầy: sau 24h nhắc nhở khách, sau 48h mở quyền hủy đơn
+                } else if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
                     graceHours = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getStorageUnit().getFacility().getId())
                             .map(FacilityPolicy::getHoldGraceHours)
                             .filter(h -> h != null && h > 0)
@@ -1496,8 +1738,101 @@ public class BookingServiceImpl implements BookingService {
         }
     }
 
+    /**
+     * Tự động quét và gửi email nhắc nhở khách hàng khi đơn đặt ký + thanh toán tại quầy
+     * đã quá 24h sau lịch hẹn check-in mà vẫn chưa được tiếp nhận.
+     */
+    @Scheduled(fixedDelay = 60_000L)
+    @Transactional
+    public void sendCheckinOverdueReminders() {
+        LocalDateTime threshold = LocalDateTime.now(BUSINESS_ZONE).minusHours(24);
+        LocalDate todayThreshold = LocalDate.now(BUSINESS_ZONE).minusDays(1);
+        List<Booking> overdueCandidates = bookingRepository.findOverdueInPersonCheckinReminders(threshold, todayThreshold);
+
+        for (Booking candidate : overdueCandidates) {
+            Booking booking = bookingRepository.findByIdForUpdate(candidate.getId()).orElse(null);
+            if (booking == null || booking.getCheckinOverdueReminderSentAt() != null) {
+                continue;
+            }
+            if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.ACTIVE
+                    || booking.getStatus() == BookingStatus.COMPLETED || booking.getHandoverTime() != null) {
+                continue;
+            }
+
+            try {
+                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null && !booking.getCustomer().getEmail().isBlank()) {
+                    String custEmail = booking.getCustomer().getEmail().trim();
+                    String custName = booking.getCustomer().getFullName() != null && !booking.getCustomer().getFullName().isBlank()
+                            ? booking.getCustomer().getFullName() : booking.getCustomer().getUsername();
+                    String facName = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getName()
+                            : (booking.getFacility() != null ? booking.getFacility().getName() : "Hệ thống Boxora");
+                    String facAddress = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getAddress()
+                            : (booking.getFacility() != null ? booking.getFacility().getAddress() : "Tại cơ sở Boxora");
+                    String facPhone = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                            ? booking.getStorageUnit().getFacility().getContactPhone()
+                            : (booking.getFacility() != null ? booking.getFacility().getContactPhone() : "1900-BOXORA");
+                    String uCode = booking.getStorageUnit() != null
+                            ? booking.getStorageUnit().getUnitCode()
+                            : (booking.getUnitType() != null ? booking.getUnitType().getTypeName() : "Kho tự quản");
+                    LocalDateTime checkInTime = booking.getExpectedCheckInAt() != null
+                            ? booking.getExpectedCheckInAt()
+                            : (booking.getStartDate() != null ? booking.getStartDate().atTime(9, 0) : LocalDateTime.now(BUSINESS_ZONE));
+
+                    emailService.sendCheckinOverdueReminderEmail(
+                            custEmail,
+                            custName,
+                            booking.getBookingCode(),
+                            facName,
+                            facAddress,
+                            facPhone,
+                            uCode,
+                            checkInTime
+                    );
+                    log.info("[CHECKIN_OVERDUE_EMAIL] Đã gửi email nhắc nhở quá hạn 24h check-in cho khách hàng đơn {}", booking.getBookingCode());
+                }
+            } catch (Exception ex) {
+                log.error("[CHECKIN_OVERDUE_EMAIL_FAILED] Lỗi gửi email nhắc nhở quá hạn check-in đơn {}: {}", booking.getBookingCode(), ex.getMessage(), ex);
+            }
+
+            booking.setCheckinOverdueReminderSentAt(LocalDateTime.now(BUSINESS_ZONE));
+            bookingRepository.save(booking);
+
+            UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
+                    ? booking.getStorageUnit().getFacility().getId()
+                    : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.OVERDUE_REMINDER_SENT,
+                    "Booking",
+                    booking.getId(),
+                    String.format("Đã gửi email nhắc nhở khách hàng đơn %s đến cơ sở nhận kho sau 24 giờ quá hạn lịch hẹn check-in.", booking.getBookingCode()),
+                    null,
+                    booking.getStatus()
+            );
+        }
+    }
+
     private String resolveReconciledPaymentStatus(Booking booking) {
-        if (booking.getStatus() == BookingStatus.CANCELLED || "REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+        if ("REFUNDED".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return "REFUNDED";
+        }
+        if ("REFUND_PENDING".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return "REFUND_PENDING";
+        }
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+            if (payments != null) {
+                for (com.boxora.entity.Payment p : payments) {
+                    if (p.getStatus() == PaymentStatus.REFUNDED) {
+                        return "REFUNDED";
+                    }
+                    if (p.getStatus() == PaymentStatus.REFUND_PENDING) {
+                        return "REFUND_PENDING";
+                    }
+                }
+            }
             return "UNPAID";
         }
         List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
@@ -1637,7 +1972,23 @@ public class BookingServiceImpl implements BookingService {
         }
 
         String paymentStatus = b.getPaymentStatus();
-        if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)) {
+        if (b.getStatus() == BookingStatus.CANCELLED) {
+            try {
+                Optional<RefundRequest> refOpt = refundRequestRepository.findFirstByBooking_IdOrderByCreatedAtDesc(b.getId());
+                if (refOpt.isPresent()) {
+                    RefundStatus rSt = refOpt.get().getStatus();
+                    if (rSt == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION || rSt == RefundStatus.PROCESSED || rSt == RefundStatus.COMPLETED || rSt == RefundStatus.RECONCILED) {
+                        paymentStatus = "REFUNDED";
+                    } else if (rSt == RefundStatus.PENDING_REVIEW || rSt == RefundStatus.APPROVED || rSt == RefundStatus.PROCESSING_TRANSFER) {
+                        paymentStatus = "REFUND_PENDING";
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if ("REFUNDED".equalsIgnoreCase(paymentStatus) || "REFUND_PENDING".equalsIgnoreCase(paymentStatus)) {
+            // Keep refund statuses intact
+        } else if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)) {
             String reconciled = resolveReconciledPaymentStatus(b);
             if (!"UNPAID".equalsIgnoreCase(reconciled)) {
                 paymentStatus = reconciled;
@@ -1670,11 +2021,27 @@ public class BookingServiceImpl implements BookingService {
                     contractId = c.getId();
                     contractCode = c.getContractCode();
                     contractStatus = c.getStatus() != null ? c.getStatus().name() : null;
-                    contractSigned = c.getSignedAt() != null
+                    contractSigned = c.getStatus() != RentalContractStatus.SUPERSEDED
+                            && c.getStatus() != RentalContractStatus.PENDING_SIGNATURE
+                            && c.getStatus() != RentalContractStatus.CANCELLED
+                            && (c.getSignedAt() != null
                             || c.getStatus() == RentalContractStatus.PENDING_ACTIVATION
-                            || c.getStatus() == RentalContractStatus.ACTIVE;
+                            || c.getStatus() == RentalContractStatus.ACTIVE);
                 }
             } catch (Exception ignored) {
+            }
+        }
+
+        UnitType effectiveType = (b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null)
+                ? b.getStorageUnit().getUnitType()
+                : b.getUnitType();
+
+        String plainAccessPin = null;
+        if (b.getAccessPin() != null && !b.getAccessPin().isBlank()) {
+            try {
+                plainAccessPin = encryptionService.decrypt(b.getAccessPin());
+            } catch (Exception ex) {
+                plainAccessPin = b.getAccessPin();
             }
         }
 
@@ -1686,14 +2053,18 @@ public class BookingServiceImpl implements BookingService {
                 .customerPhone(b.getCustomer() != null ? b.getCustomer().getPhone() : null)
                 .customerEmail(b.getCustomer() != null ? b.getCustomer().getEmail() : null)
                 .storageUnitId(b.getStorageUnit() != null ? b.getStorageUnit().getId() : null)
-                .unitTypeId(b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null ? b.getStorageUnit().getUnitType().getId() : null)
+                .unitTypeId(effectiveType != null ? effectiveType.getId() : null)
+                .unitTypeName(effectiveType != null ? effectiveType.getTypeName() : null)
+                .unitSize(effectiveType != null ? (effectiveType.getDimensions() != null ? effectiveType.getDimensions() : effectiveType.getTypeName()) : null)
+                .areaSqMeters(effectiveType != null ? effectiveType.getAreaSqm() : null)
+                .dimensions(effectiveType != null ? effectiveType.getDimensions() : null)
                 .unitCode(b.getStorageUnit() != null ? b.getStorageUnit().getUnitCode() : null)
                 .facilityId(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
                         ? b.getStorageUnit().getFacility().getId()
-                        : null)
+                        : (b.getFacility() != null ? b.getFacility().getId() : null))
                 .facilityName(b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null
                         ? b.getStorageUnit().getFacility().getName()
-                        : null)
+                        : (b.getFacility() != null ? b.getFacility().getName() : null))
                 .floorLevel(b.getStorageUnit() != null ? b.getStorageUnit().getFloorLevel() : null)
                 .startDate(b.getStartDate())
                 .endDate(b.getEndDate())
@@ -1713,7 +2084,7 @@ public class BookingServiceImpl implements BookingService {
                 .assignedStaffId(b.getHandedOverByStaffId())
                 .assignedStaffName(assignedStaffName)
                 .staffAssignmentNotes(b.getStaffAssignmentNotes())
-                .accessPin(b.getAccessPin())
+                .accessPin(plainAccessPin)
                 .qrAccessToken(b.getQrAccessToken())
                 .handoverTime(b.getHandoverTime())
                 .returnTime(b.getReturnTime())
@@ -1723,6 +2094,773 @@ public class BookingServiceImpl implements BookingService {
                 .contractCode(contractCode)
                 .contractStatus(contractStatus)
                 .contractSigned(contractSigned)
+                .checkinOverdueReminderSentAt(b.getCheckinOverdueReminderSentAt())
+                .createdAt(b.getCreatedAt())
+                .updatedAt(b.getUpdatedAt())
                 .build();
     }
-}
+
+    @Override
+    @Transactional
+    public BookingResponse assignUnitAndProvision(UUID bookingId, UUID unitId, String notes) {
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = storageUnitRepository.findWithDetailsByIdForUpdate(unitId)
+                .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+
+        if (unit.getStatus() != UnitStatus.AVAILABLE) {
+            throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE, "Ô kho vật lý được chọn không khả dụng (status != AVAILABLE).");
+        }
+
+        UUID bookingFacilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+        if (bookingFacilityId != null && unit.getFacility() != null && !bookingFacilityId.equals(unit.getFacility().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ô kho được chọn không thuộc cùng cơ sở của đơn đặt chỗ.");
+        }
+
+        UUID contractedTypeId = booking.getStorageUnit() != null && booking.getStorageUnit().getUnitType() != null
+                ? booking.getStorageUnit().getUnitType().getId()
+                : (booking.getUnitType() != null ? booking.getUnitType().getId() : null);
+        if (contractedTypeId != null && unit.getUnitType() != null && !contractedTypeId.equals(unit.getUnitType().getId())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Ô kho được chọn không đúng loại hoặc kích thước kho đã đăng ký/ký trong hợp đồng.");
+        }
+
+        unit.setStatus(UnitStatus.RESERVED);
+        storageUnitRepository.save(unit);
+
+        booking.setStorageUnit(unit);
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setHandoverTime(LocalDateTime.now());
+        if (requestContext != null && requestContext.currentUserId() != null) {
+            booking.setHandedOverByStaffId(requestContext.currentUserId());
+        }
+        if (notes != null && !notes.isBlank()) {
+            booking.setStaffAssignmentNotes(notes);
+        }
+
+        int randomPin = 100000 + new java.security.SecureRandom().nextInt(900000);
+        String pin = String.valueOf(randomPin);
+        booking.setAccessPin(pin);
+        booking.setAccessCode(pin);
+        booking.setQrAccessToken(UUID.randomUUID().toString());
+        booking = bookingRepository.save(booking);
+
+        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+        RentalContract contract = null;
+        if (contractOpt.isPresent()) {
+            contract = contractOpt.get();
+            contract.setUnit(unit);
+            if (contract.getFacility() == null) {
+                contract.setFacility(unit.getFacility());
+            }
+            contract = rentalContractRepository.save(contract);
+        }
+
+        // Note: Do NOT dispatch handover email here at Step 2 unit assignment.
+        // Handover email is only dispatched at Step 4 upon completion of inspection & check-in.
+
+        activityLogService.record(
+                unit.getFacility() != null ? unit.getFacility().getId() : null,
+                ActivityAction.STORAGE_UNIT_ASSIGN,
+                "BOOKING",
+                booking.getId(),
+                "Nhân viên đã gán ô kho " + unit.getUnitCode() + " và phát sinh mã khóa IoT cho đơn " + booking.getBookingCode(),
+                BookingStatus.PAID_PENDING_ASSIGNMENT,
+                BookingStatus.CONFIRMED
+        );
+
+        return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse assignUnitAndProvisionByCode(String bookingCode, UUID unitId, String notes) {
+        if (bookingCode == null || bookingCode.isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Booking booking = bookingRepository.findByBookingCodeForUpdate(bookingCode.trim())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        return assignUnitAndProvision(booking.getId(), unitId, notes);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public BookingResponse getByBookingCode(String bookingCode) {
+        if (bookingCode == null || bookingCode.isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Booking booking = bookingRepository.findByBookingCode(bookingCode.trim())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        User currentUser = (requestContext != null && requestContext.currentUserId() != null)
+                ? userRepository.findById(requestContext.currentUserId()).orElse(null)
+                : null;
+        if (currentUser != null) {
+            validateBookingAccess(booking, currentUser);
+        }
+
+        return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse confirmBooking(UUID bookingId, String notes) {
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        BookingStatus oldStatus = booking.getStatus();
+        if (oldStatus == BookingStatus.CANCELLED || oldStatus == BookingStatus.COMPLETED || oldStatus == BookingStatus.ACTIVE) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Không thể xác nhận đơn đặt kho ở trạng thái " + oldStatus);
+        }
+
+        UUID facilityId = booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                ? booking.getStorageUnit().getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+
+        if (facilityId != null && facilityAccessGuard != null && facilityAccessGuard.isFacilityScoped()) {
+            facilityAccessGuard.checkFacilityAccess(facilityId);
+        }
+
+        booking.setStatus(BookingStatus.CONFIRMED);
+        if (requestContext != null && requestContext.currentUserId() != null) {
+            booking.setHandedOverByStaffId(requestContext.currentUserId());
+        }
+        if (notes != null && !notes.isBlank()) {
+            booking.setStaffAssignmentNotes(notes.trim());
+        }
+        booking.setPaymentExpiresAt(null);
+
+        booking = bookingRepository.save(booking);
+
+        activityLogService.record(
+                facilityId,
+                ActivityAction.RESERVATION_UPDATE,
+                "BOOKING",
+                booking.getId(),
+                "Nhân viên đã xác nhận đơn đặt giữ chỗ " + booking.getBookingCode() + (notes != null && !notes.isBlank() ? " (Ghi chú: " + notes.trim() + ")" : ""),
+                oldStatus,
+                BookingStatus.CONFIRMED
+        );
+
+        return mapToResponse(booking);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse confirmBookingByCode(String bookingCode, String notes) {
+        if (bookingCode == null || bookingCode.isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Booking booking = bookingRepository.findByBookingCodeForUpdate(bookingCode.trim())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        return confirmBooking(booking.getId(), notes);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse invalidateSignedContractForBooking(UUID id) {
+        if (id == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã đơn đặt kho không hợp lệ.");
+        }
+        Booking existing = bookingRepository.findByIdForUpdate(id)
+                .orElseGet(() -> bookingRepository.findById(id)
+                        .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND)));
+
+        if (existing.getStatus() == BookingStatus.CANCELLED) {
+            throw new AppException(ErrorCode.BOOKING_ALREADY_CANCELLED, "Đơn đặt kho đã bị hủy.");
+        }
+        if (isBookingAlreadyPaidOrActive(existing)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Đơn đặt kho đã thanh toán hoặc đang hoạt động, không thể hủy hiệu lực hợp đồng đã ký.");
+        }
+
+        expirePendingPaymentsForBooking(existing.getId());
+
+        boolean isDirect = "IN_PERSON".equalsIgnoreCase(existing.getSigningMethod())
+                || "DIRECT".equalsIgnoreCase(existing.getSigningMethod());
+        existing.setContractSigned(false);
+        existing.setStatus(isDirect ? BookingStatus.PENDING_CONTACT : BookingStatus.PENDING_SIGNATURE);
+        existing = bookingRepository.save(existing);
+
+        supersedeContractsForBookingInternal(existing, "Customer modified booking information before payment");
+
+        UUID facilityIdForLog = existing.getFacility() != null
+                ? existing.getFacility().getId()
+                : (existing.getStorageUnit() != null && existing.getStorageUnit().getFacility() != null
+                        ? existing.getStorageUnit().getFacility().getId()
+                        : null);
+        activityLogService.record(
+                facilityIdForLog,
+                ActivityAction.RESERVATION_UPDATE,
+                "BOOKING",
+                existing.getId(),
+                "Vô hiệu hóa hợp đồng đã ký của đơn " + existing.getBookingCode() + " do khách hàng thay đổi thông tin đặt kho trước khi thanh toán",
+                BookingStatus.SIGNED_PENDING_PAYMENT.name(),
+                existing.getStatus().name()
+        );
+
+        return mapToResponse(existing);
+    }
+
+    @Override
+    @Transactional
+    public BookingResponse updateUnpaidBooking(UUID id, BookingCreateRequest request) {
+        if (id == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã đơn đặt kho không hợp lệ.");
+        }
+        Booking existing = bookingRepository.findByIdForUpdate(id)
+                .orElseGet(() -> bookingRepository.findById(id)
+                        .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND)));
+
+        if (existing.getStatus() == BookingStatus.CANCELLED) {
+            throw new AppException(ErrorCode.BOOKING_ALREADY_CANCELLED, "Đơn đặt kho đã bị hủy, không thể sửa đổi thông tin.");
+        }
+
+        boolean changed = hasContractRelevantChanges(existing, request);
+        if (isBookingAlreadyPaidOrActive(existing)) {
+            if (changed) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Đơn đặt kho đã thanh toán hoặc đang hoạt động, không thể sửa đổi trực tiếp thông tin hợp đồng.");
+            }
+            return mapToResponse(existing);
+        }
+
+        if (!changed) {
+            if (request.getSpecialNotes() != null) {
+                String notes = request.getSpecialNotes().trim();
+                if (notes.length() > 500) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Ghi chú không được vượt quá 500 ký tự.");
+                }
+                existing.setStaffAssignmentNotes(notes.replaceAll("<[^>]*>", ""));
+                existing = bookingRepository.save(existing);
+            }
+            com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider != null
+                    ? contractSigningServiceProvider.getIfAvailable()
+                    : null;
+            if (contractSigningService != null) {
+                try {
+                    contractSigningService.ensureContractForBooking(existing);
+                } catch (Exception ex) {
+                    log.warn("Notice ensuring contract on unchanged unpaid booking {}: {}", existing.getBookingCode(), ex.getMessage());
+                }
+            }
+            return mapToResponse(existing);
+        }
+
+        StorageUnit oldUnit = existing.getStorageUnit();
+        UUID oldFacilityId = existing.getFacility() != null
+                ? existing.getFacility().getId()
+                : (oldUnit != null && oldUnit.getFacility() != null ? oldUnit.getFacility().getId() : null);
+        UUID oldUnitTypeId = existing.getUnitType() != null
+                ? existing.getUnitType().getId()
+                : (oldUnit != null && oldUnit.getUnitType() != null ? oldUnit.getUnitType().getId() : null);
+
+        StorageUnit unit = null;
+        Facility facility = null;
+        UnitType unitType = null;
+
+        if (request.getStorageUnitId() != null) {
+            if (oldUnit != null && oldUnit.getId().equals(request.getStorageUnitId())) {
+                unit = oldUnit;
+                facility = unit.getFacility() != null ? unit.getFacility() : existing.getFacility();
+                unitType = unit.getUnitType() != null ? unit.getUnitType() : existing.getUnitType();
+            } else {
+                if (oldUnit != null && oldUnit.getStatus() == UnitStatus.RESERVED) {
+                    oldUnit.setStatus(UnitStatus.AVAILABLE);
+                    storageUnitRepository.save(oldUnit);
+                }
+                unit = storageUnitRepository.findWithDetailsByIdForUpdate(request.getStorageUnitId())
+                        .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
+                if (unit.getStatus() != UnitStatus.AVAILABLE) {
+                    throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE);
+                }
+                unit.setStatus(UnitStatus.RESERVED);
+                storageUnitRepository.save(unit);
+                facility = unit.getFacility();
+                unitType = unit.getUnitType();
+            }
+        } else {
+            if (oldUnit != null && oldUnit.getStatus() == UnitStatus.RESERVED) {
+                oldUnit.setStatus(UnitStatus.AVAILABLE);
+                storageUnitRepository.save(oldUnit);
+            }
+            if (request.getFacilityId() != null) {
+                facility = facilityRepository.findById(request.getFacilityId())
+                        .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
+            } else {
+                facility = existing.getFacility();
+            }
+            if (request.getUnitTypeId() != null) {
+                unitType = unitTypeRepository.findByIdForUpdate(request.getUnitTypeId())
+                        .orElseGet(() -> unitTypeRepository.findById(request.getUnitTypeId())
+                                .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND)));
+            } else {
+                unitType = existing.getUnitType();
+            }
+
+            if (facility != null) {
+                if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
+                    throw new AppException(ErrorCode.FACILITY_INACTIVE,
+                            "Chi nhánh " + facility.getName() + " hiện đang tạm ngưng hoạt động.");
+                }
+                if (facility.getStatus() == com.boxora.enums.FacilityStatus.MAINTENANCE) {
+                    throw new AppException(ErrorCode.FACILITY_UNDER_MAINTENANCE,
+                            "Chi nhánh " + facility.getName() + " hiện đang bảo trì.");
+                }
+
+                boolean sameFacilityAndType = facility.getId().equals(oldFacilityId)
+                        && ((unitType == null && oldUnitTypeId == null)
+                            || (unitType != null && unitType.getId().equals(oldUnitTypeId)));
+
+                StorageUnitService unitService = storageUnitServiceProvider != null
+                        ? storageUnitServiceProvider.getIfAvailable()
+                        : null;
+                if (!sameFacilityAndType && unitService != null) {
+                    long availableCount = (unitType != null)
+                            ? unitService.getAvailableUnitsCount(facility.getId(), unitType.getId())
+                            : unitService.getFacilityAvailableUnitsCount(facility.getId());
+                    if (availableCount <= 0) {
+                        throw new AppException(ErrorCode.STORAGE_UNIT_NOT_AVAILABLE,
+                                "Rất tiếc, cơ sở hiện đã hết buồng kho khả dụng cho kích thước này.");
+                    }
+                }
+            }
+        }
+
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        LocalDate startDate = request.getStartDate() != null
+                ? request.getStartDate()
+                : (existing.getStartDate() != null ? existing.getStartDate() : today);
+        if (startDate.isBefore(today)) {
+            throw new AppException(ErrorCode.BOOKING_START_DATE_PAST);
+        }
+        if (startDate.isAfter(today.plusDays(maxAdvanceDays))) {
+            throw new AppException(ErrorCode.BOOKING_ADVANCE_NOTICE_EXCEEDED);
+        }
+
+        int months = request.getRentalMonths() != null
+                ? request.getRentalMonths()
+                : (existing.getRentalMonths() != null ? existing.getRentalMonths() : 1);
+        if (months < 1) {
+            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
+        }
+
+        UUID effectiveFacilityId = facility != null
+                ? facility.getId()
+                : (unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null);
+        FacilityPolicy activePolicy = (effectiveFacilityId != null && facilityPolicyRepository != null)
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(effectiveFacilityId).orElse(null)
+                : null;
+        if (activePolicy != null && activePolicy.getMinimumRentalMonths() != null
+                && months < activePolicy.getMinimumRentalMonths()) {
+            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
+        }
+
+        LocalDate endDate = startDate.plusMonths(months);
+
+        String fullName = request.getCustomerName() != null && !request.getCustomerName().isBlank()
+                ? request.getCustomerName().trim()
+                : (request.getFullName() != null && !request.getFullName().isBlank() ? request.getFullName().trim() : null);
+        if (fullName != null) {
+            if (fullName.length() > 100) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt không được vượt quá 100 ký tự.");
+            }
+            if (!fullName.matches("^[\\p{L}\\s]+$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên chỉ được chứa chữ cái và khoảng trắng hợp lệ.");
+            }
+        }
+
+        String phone = request.getCustomerPhone() != null && !request.getCustomerPhone().isBlank()
+                ? request.getCustomerPhone().trim()
+                : (request.getPhone() != null && !request.getPhone().isBlank() ? request.getPhone().trim() : null);
+        if (phone != null) {
+            if (!phone.matches("^(0|\\+84)(3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Số điện thoại không đúng định dạng di động Việt Nam (10 chữ số).");
+            }
+        }
+
+        String idNumber = request.getIdentityCardNumber() != null && !request.getIdentityCardNumber().isBlank()
+                ? request.getIdentityCardNumber().trim()
+                : existing.getIdentityCardNumber();
+        String idType = request.getIdentityCardType() != null && !request.getIdentityCardType().isBlank()
+                ? request.getIdentityCardType().trim().toUpperCase()
+                : (existing.getIdentityCardType() != null ? existing.getIdentityCardType() : "CCCD");
+        if (idNumber != null && !idNumber.isBlank()) {
+            if ("PASSPORT".equals(idType)) {
+                if (!idNumber.matches("^[A-Z][0-9]{7,8}$")) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST,
+                            "Số Hộ chiếu không hợp lệ (1 chữ cái in hoa theo sau bởi 7–8 chữ số, VD: B1234567).");
+                }
+            } else {
+                if (!idNumber.matches("^[0-9]{12}$")) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST,
+                            "Số CCCD phải bao gồm đúng 12 chữ số theo quy chuẩn Bộ Công An.");
+                }
+            }
+        }
+
+        String email = request.getCustomerEmail() != null && !request.getCustomerEmail().isBlank()
+                ? request.getCustomerEmail().trim().toLowerCase()
+                : (request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail().trim().toLowerCase() : null);
+        if (email != null) {
+            if (!email.matches("^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\\.[A-Za-z]{2,})$")) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Địa chỉ email không đúng định dạng.");
+            }
+        }
+
+        if (existing.getCustomer() != null) {
+            User cust = existing.getCustomer();
+            boolean customerModified = false;
+            if (fullName != null && !fullName.equals(cust.getFullName())) {
+                cust.setFullName(fullName);
+                customerModified = true;
+            }
+            if (phone != null && !phone.equals(cust.getPhone())) {
+                cust.setPhone(phone);
+                customerModified = true;
+            }
+            if (email != null && !email.equalsIgnoreCase(cust.getEmail())) {
+                Optional<User> userByEmail = userRepository != null ? userRepository.findByEmail(email) : Optional.empty();
+                if (userByEmail.isPresent() && !userByEmail.get().getId().equals(cust.getId())) {
+                    existing.setCustomer(userByEmail.get());
+                } else {
+                    cust.setEmail(email);
+                    customerModified = true;
+                }
+            }
+            if (customerModified && userRepository != null) {
+                userRepository.save(cust);
+            }
+        }
+
+        BigDecimal totalFee = request.getTotalRentalFee();
+        BigDecimal deposit = request.getDepositAmount();
+        if (unit != null && pricingService != null) {
+            com.boxora.dto.request.PricingQuoteRequest quoteRequest = com.boxora.dto.request.PricingQuoteRequest.builder()
+                    .storageUnitId(unit.getId())
+                    .rentalMonths(months)
+                    .discountCode(request.getDiscountCode())
+                    .startDate(startDate)
+                    .build();
+            com.boxora.dto.response.PricingQuoteResponse quote = pricingService.calculateQuote(quoteRequest);
+            if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
+                totalFee = quote.getTotalRentalFee();
+            }
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                deposit = quote.getDepositAmount();
+            }
+        } else if (unitType != null) {
+            BigDecimal baseMonthly = unitType.getBasePricePerMonth() != null
+                    ? unitType.getBasePricePerMonth()
+                    : BigDecimal.valueOf(1500000);
+            if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
+                totalFee = baseMonthly.multiply(BigDecimal.valueOf(months));
+            }
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                deposit = unitType.getDepositAmount() != null && unitType.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
+                        ? unitType.getDepositAmount()
+                        : baseMonthly;
+            }
+        } else {
+            if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
+                totalFee = existing.getTotalRentalFee();
+            }
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                deposit = existing.getDepositAmount();
+            }
+        }
+
+        LocalDateTime expectedCheckInAt = request.getExpectedCheckInAt();
+        if (expectedCheckInAt == null && request.getCheckInTime() != null && !request.getCheckInTime().isBlank()) {
+            try {
+                LocalTime checkInTime = LocalTime.parse(request.getCheckInTime().trim());
+                expectedCheckInAt = startDate.atTime(checkInTime);
+            } catch (java.time.format.DateTimeParseException ex) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Check-in appointment time must use HH:mm or HH:mm:ss.");
+            }
+        }
+        if (expectedCheckInAt == null) {
+            expectedCheckInAt = existing.getExpectedCheckInAt() != null
+                    ? startDate.atTime(existing.getExpectedCheckInAt().toLocalTime())
+                    : startDate.atTime(LocalTime.of(9, 0));
+        }
+
+        LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
+        if (expectedCheckInAt.isBefore(minAllowedCheckIn)) {
+            expectedCheckInAt = minAllowedCheckIn.plusMinutes(15);
+        }
+
+        boolean isDirect = request.getSigningMethod() != null && !request.getSigningMethod().isBlank()
+                ? ("DIRECT".equalsIgnoreCase(request.getSigningMethod().trim()) || "IN_PERSON".equalsIgnoreCase(request.getSigningMethod().trim()))
+                : ("IN_PERSON".equalsIgnoreCase(existing.getSigningMethod()) || "DIRECT".equalsIgnoreCase(existing.getSigningMethod()));
+        String resolvedSigningMethod = isDirect ? "IN_PERSON" : "ONLINE";
+        BookingStatus newStatus = isDirect ? BookingStatus.PENDING_CONTACT : BookingStatus.PENDING_SIGNATURE;
+
+        String notes = request.getSpecialNotes();
+        if (notes != null) {
+            notes = notes.trim();
+            if (notes.length() > 500) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Ghi chú không được vượt quá 500 ký tự.");
+            }
+            notes = notes.replaceAll("<[^>]*>", "");
+        } else {
+            notes = existing.getStaffAssignmentNotes();
+        }
+
+        expirePendingPaymentsForBooking(existing.getId());
+
+        BookingStatus oldStatus = existing.getStatus();
+        existing.setStorageUnit(unit);
+        existing.setFacility(facility);
+        existing.setUnitType(unitType);
+        existing.setStartDate(startDate);
+        existing.setEndDate(endDate);
+        existing.setRentalMonths(months);
+        existing.setTotalRentalFee(totalFee);
+        existing.setDepositAmount(deposit);
+        existing.setExpectedCheckInAt(expectedCheckInAt);
+        if (request.getExpectedArrivalAt() != null) {
+            existing.setExpectedArrivalAt(request.getExpectedArrivalAt());
+        }
+        existing.setIdentityCardNumber(idNumber);
+        existing.setIdentityCardType(idType);
+        existing.setSigningMethod(resolvedSigningMethod);
+        existing.setStaffAssignmentNotes(notes);
+        existing.setContractSigned(false);
+        existing.setStatus(newStatus);
+        existing.setPaymentStatus("UNPAID");
+        existing = bookingRepository.save(existing);
+
+        supersedeContractsForBookingInternal(existing, "Booking information updated before payment");
+
+        activityLogService.record(
+                effectiveFacilityId,
+                ActivityAction.RESERVATION_UPDATE,
+                "BOOKING",
+                existing.getId(),
+                "Cập nhật thông tin đặt chỗ chưa thanh toán " + existing.getBookingCode() + " và tạo phiên bản hợp đồng mới chờ ký lại",
+                oldStatus != null ? oldStatus.name() : null,
+                existing.getStatus().name()
+        );
+
+        return mapToResponse(existing);
+    }
+
+    private boolean isBookingAlreadyPaidOrActive(Booking booking) {
+        if (booking == null) {
+            return false;
+        }
+        if ("PAID".equalsIgnoreCase(booking.getPaymentStatus())
+                || "PARTIALLY_PAID".equalsIgnoreCase(booking.getPaymentStatus())) {
+            return true;
+        }
+        if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+            return true;
+        }
+        BookingStatus st = booking.getStatus();
+        if (st == BookingStatus.PAID_AND_SIGNED
+                || st == BookingStatus.PAID_PENDING_ASSIGNMENT
+                || st == BookingStatus.READY_FOR_CHECKIN
+                || st == BookingStatus.CONFIRMED
+                || st == BookingStatus.ACTIVE
+                || st == BookingStatus.COMPLETED) {
+            return true;
+        }
+        return booking.getId() != null
+                && paymentRepository != null
+                && paymentRepository.existsByBooking_IdAndStatus(booking.getId(), PaymentStatus.PAID);
+    }
+
+    private boolean hasContractRelevantChanges(Booking existing, BookingCreateRequest request) {
+        if (existing == null || request == null) {
+            return false;
+        }
+        UUID existingFacilityId = existing.getFacility() != null
+                ? existing.getFacility().getId()
+                : (existing.getStorageUnit() != null && existing.getStorageUnit().getFacility() != null
+                        ? existing.getStorageUnit().getFacility().getId()
+                        : null);
+        if (request.getFacilityId() != null && !request.getFacilityId().equals(existingFacilityId)) {
+            return true;
+        }
+
+        UUID existingUnitTypeId = existing.getUnitType() != null
+                ? existing.getUnitType().getId()
+                : (existing.getStorageUnit() != null && existing.getStorageUnit().getUnitType() != null
+                        ? existing.getStorageUnit().getUnitType().getId()
+                        : null);
+        if (request.getUnitTypeId() != null && !request.getUnitTypeId().equals(existingUnitTypeId)) {
+            return true;
+        }
+
+        UUID existingUnitId = existing.getStorageUnit() != null ? existing.getStorageUnit().getId() : null;
+        if (request.getStorageUnitId() != null && !request.getStorageUnitId().equals(existingUnitId)) {
+            return true;
+        }
+
+        int existingMonths = existing.getRentalMonths() != null ? existing.getRentalMonths() : 1;
+        if (request.getRentalMonths() != null && request.getRentalMonths() != existingMonths) {
+            return true;
+        }
+
+        if (request.getStartDate() != null && existing.getStartDate() != null
+                && !request.getStartDate().equals(existing.getStartDate())) {
+            return true;
+        }
+
+        if (existing.getExpectedCheckInAt() != null) {
+            LocalDate baseDate = request.getStartDate() != null ? request.getStartDate() : existing.getStartDate();
+            LocalDateTime rawReqCheckIn = request.getExpectedCheckInAt();
+            if (rawReqCheckIn == null && request.getCheckInTime() != null && !request.getCheckInTime().isBlank() && baseDate != null) {
+                try {
+                    rawReqCheckIn = baseDate.atTime(LocalTime.parse(request.getCheckInTime().trim()));
+                } catch (Exception ignored) {
+                }
+            }
+            if (rawReqCheckIn != null) {
+                if (!rawReqCheckIn.toLocalDate().equals(existing.getExpectedCheckInAt().toLocalDate())) {
+                    return true;
+                }
+                LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
+                boolean wasAutoBumped = !rawReqCheckIn.isAfter(minAllowedCheckIn);
+                if (!wasAutoBumped) {
+                    LocalTime reqTime = rawReqCheckIn.toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                    LocalTime extTime = existing.getExpectedCheckInAt().toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                    if (!reqTime.equals(extTime)) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        if (request.getTotalRentalFee() != null
+                && request.getTotalRentalFee().compareTo(BigDecimal.ZERO) > 0
+                && existing.getTotalRentalFee() != null
+                && request.getTotalRentalFee().compareTo(existing.getTotalRentalFee()) != 0) {
+            return true;
+        }
+
+        if (request.getDepositAmount() != null
+                && request.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
+                && existing.getDepositAmount() != null
+                && request.getDepositAmount().compareTo(existing.getDepositAmount()) != 0) {
+            return true;
+        }
+
+        String reqIdNum = request.getIdentityCardNumber() != null && !request.getIdentityCardNumber().isBlank()
+                ? request.getIdentityCardNumber().trim()
+                : null;
+        String extIdNum = existing.getIdentityCardNumber() != null && !existing.getIdentityCardNumber().isBlank()
+                ? existing.getIdentityCardNumber().trim()
+                : null;
+        if (reqIdNum != null && !reqIdNum.equals(extIdNum)) {
+            return true;
+        }
+
+        String reqIdType = request.getIdentityCardType() != null && !request.getIdentityCardType().isBlank()
+                ? request.getIdentityCardType().trim().toUpperCase()
+                : null;
+        String extIdType = existing.getIdentityCardType() != null && !existing.getIdentityCardType().isBlank()
+                ? existing.getIdentityCardType().trim().toUpperCase()
+                : null;
+        if (reqIdType != null && extIdType != null && !reqIdType.equals(extIdType)) {
+            return true;
+        }
+
+        String reqName = request.getCustomerName() != null && !request.getCustomerName().isBlank()
+                ? request.getCustomerName().trim()
+                : (request.getFullName() != null && !request.getFullName().isBlank() ? request.getFullName().trim() : null);
+        String extName = existing.getCustomer() != null && existing.getCustomer().getFullName() != null
+                ? existing.getCustomer().getFullName().trim()
+                : null;
+        if (reqName != null && extName != null && !reqName.equals(extName)) {
+            return true;
+        }
+
+        String reqPhone = request.getCustomerPhone() != null && !request.getCustomerPhone().isBlank()
+                ? request.getCustomerPhone().trim()
+                : (request.getPhone() != null && !request.getPhone().isBlank() ? request.getPhone().trim() : null);
+        String extPhone = existing.getCustomer() != null && existing.getCustomer().getPhone() != null
+                ? existing.getCustomer().getPhone().trim()
+                : null;
+        if (reqPhone != null && extPhone != null && !reqPhone.equals(extPhone)) {
+            return true;
+        }
+
+        String reqEmail = request.getCustomerEmail() != null && !request.getCustomerEmail().isBlank()
+                ? request.getCustomerEmail().trim().toLowerCase()
+                : (request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail().trim().toLowerCase() : null);
+        String extEmail = existing.getCustomer() != null && existing.getCustomer().getEmail() != null
+                ? existing.getCustomer().getEmail().trim().toLowerCase()
+                : null;
+        if (reqEmail != null && extEmail != null && !reqEmail.equals(extEmail)) {
+            return true;
+        }
+
+        if (request.getSigningMethod() != null && !request.getSigningMethod().isBlank() && existing.getSigningMethod() != null) {
+            String reqMethod = ("DIRECT".equalsIgnoreCase(request.getSigningMethod().trim())
+                    || "IN_PERSON".equalsIgnoreCase(request.getSigningMethod().trim())) ? "IN_PERSON" : "ONLINE";
+            String extMethod = ("DIRECT".equalsIgnoreCase(existing.getSigningMethod().trim())
+                    || "IN_PERSON".equalsIgnoreCase(existing.getSigningMethod().trim())) ? "IN_PERSON" : "ONLINE";
+            if (!reqMethod.equals(extMethod)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void expirePendingPaymentsForBooking(UUID bookingId) {
+        if (bookingId == null || paymentRepository == null) {
+            return;
+        }
+        List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(bookingId);
+        if (payments == null || payments.isEmpty()) {
+            return;
+        }
+        for (com.boxora.entity.Payment p : payments) {
+            if (p != null && p.getStatus() == PaymentStatus.PENDING) {
+                p.setStatus(PaymentStatus.EXPIRED);
+                p.setStatus(PaymentStatus.EXPIRED);
+                paymentRepository.save(p);
+            }
+        }
+    }
+
+    private void supersedeContractsForBookingInternal(Booking booking, String reason) {
+        if (booking == null || booking.getId() == null) {
+            return;
+        }
+        RentalContract newRevision = null;
+        com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider != null
+                ? contractSigningServiceProvider.getIfAvailable()
+                : null;
+        if (contractSigningService != null) {
+            try {
+                newRevision = contractSigningService.supersedeAndCreateNewContractForBooking(booking, reason);
+            } catch (Exception ex) {
+                log.warn("Notice superseding contracts via ContractSigningService for booking {}: {}", booking.getBookingCode(), ex.getMessage());
+            }
+        }
+        if (newRevision == null && rentalContractRepository != null) {
+            List<RentalContract> existingContracts = rentalContractRepository.findAllByBooking_IdOrderByCreatedAtDesc(booking.getId());
+            if (existingContracts == null || existingContracts.isEmpty()) {
+                Optional<RentalContract> singleOpt = rentalContractRepository.findByBookingId(booking.getId());
+                if (singleOpt.isPresent()) {
+                    existingContracts = List.of(singleOpt.get());
+                }
+            }
+            if (existingContracts != null) {
+                for (RentalContract c : existingContracts) {
+                    if (c != null && c.getStatus() != RentalContractStatus.SUPERSEDED) {
+                        c.setStatus(RentalContractStatus.SUPERSEDED);
+                        rentalContractRepository.save(c);
+                    }
+                }
+            }
+        }
+    }
+    }

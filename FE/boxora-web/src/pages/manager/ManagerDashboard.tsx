@@ -5,6 +5,7 @@ import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { reportService } from '../../services/reportService'
 import { bookingService } from '../../services/bookingService'
+import { contractService } from '../../services/contractService'
 import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
@@ -18,8 +19,16 @@ import { AssetSealingModal } from './modals/AssetSealingModal'
 import { CreateStorageUnitModal } from './modals/CreateStorageUnitModal'
 import { FacilityPolicyViewModal } from './modals/FacilityPolicyViewModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType } from '../../components/modals/EarlyCheckInConfirmModal'
+import { CancelOverdueBookingModal } from '../../components/modals/CancelOverdueBookingModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
 import { HandoverCheckInWorkbench } from '../staff/components/HandoverCheckInWorkbench'
+import { HandoverReturnWorkbench } from '../staff/components/HandoverReturnWorkbench'
+import { PendingReservationsWorkbench } from '../staff/components/PendingReservationsWorkbench'
+import { reservationEmailService } from '../../services/reservationEmailService'
+import { toast } from '../../utils/toast'
+import { RefundManagementWorkbench } from './components/RefundManagementWorkbench'
+import { refundService } from '../../services/refundService'
 
 interface InspectedUnit {
   id: string
@@ -40,19 +49,80 @@ interface InspectedUnit {
   facilityId?: string
   facilityName?: string
   imageUrl?: string
+  maintenanceReason?: string
+  maintenanceBy?: string
+  maintenanceAt?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'renewals' | 'handovers-returns' | 'tickets' | 'performance' | 'policy'
+type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'refunds' | 'policy'
+
+const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[] => {
+  let list = [...apiArrivals]
+  try {
+    const rawLocal = localStorage.getItem('boxora_guest_reservations')
+    if (rawLocal) {
+      const parsed = JSON.parse(rawLocal)
+      if (Array.isArray(parsed)) {
+        const localArrivals: Booking[] = parsed
+          .filter((r: any) => !targetId || r.facility?.id === targetId || r.facilityId === targetId)
+          .map((r: any) => ({
+            id: r.id || `LOCAL-RES-${r.bookingCode}`,
+            bookingCode: r.bookingCode,
+            customerName: r.customer?.fullName || r.customerName || 'Khách đặt giữ chỗ',
+            customerPhone: r.customer?.phone || r.customerPhone || 'N/A',
+            identityCardNumber: r.customer?.idCard || r.customerIdCard || r.identityCardNumber,
+            customerEmail: r.customer?.email || r.customerEmail,
+            facilityId: r.facility?.id || r.facilityId || targetId || '',
+            facilityName: r.facility?.name || r.facilityName || 'Cơ sở Boxora',
+            unitTypeId: r.unitTypeId,
+            unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
+            unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
+            storageUnitId: r.storageUnitId || '',
+            startDate: r.startDate || new Date().toISOString().slice(0, 10),
+            endDate: r.rentalEndDate || '',
+            expectedCheckInAt: r.expectedCheckInAt || (r.checkInDate ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00` : undefined),
+            checkInTime: r.checkInTime,
+            status: (r.status || 'PENDING_CONTACT') as any,
+            customerId: r.customerId || 'guest',
+            accessCode: r.accessCode || r.bookingCode || '',
+            rentalMonths: r.rentalMonths || 1,
+            totalRentalFee: r.totalRentalFee || r.totalRent || 0,
+            depositAmount: r.depositAmount || 0,
+            depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
+            paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
+            signingMethod: r.signingMethod || (r.paymentMethod === 'AT_FACILITY' || r.paymentMethod === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE'),
+            assignedStaffName: r.assignedStaffName,
+            contractCode: r.contractCode,
+            contractSigned: r.contractSigned,
+            paperContractUrl: r.paperContractUrl,
+            paymentProofUrl: r.paymentProofUrl,
+            checkinOverdueReminderSentAt: r.checkinOverdueReminderSentAt,
+            createdAt: r.createdAt,
+          }))
+
+        const existingCodes = new Set(list.map(b => b.bookingCode))
+        const newLocal = localArrivals.filter(b => !existingCodes.has(b.bookingCode))
+        list = [...list, ...newLocal]
+      }
+    }
+  } catch (err) {
+    console.warn('Lỗi đọc đơn giữ chỗ từ localStorage:', err)
+  }
+  return list
+}
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
-  const { user, role } = useAuth()
+  const { user, role, hasPermission } = useAuth()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
     facilities?: Facility[]
   }>() || {}
 
+  const isAdmin = role === 'ADMIN'
+  const rawRole = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || role || '').toUpperCase()
+  const isManagementRole = rawRole === 'ADMIN' || rawRole === 'BUSINESS_MANAGER' || role === 'ADMIN' || role === 'BUSINESS_MANAGER'
   const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
   const assignedFacilityId = user?.facilityId
 
@@ -63,9 +133,9 @@ export const ManagerDashboard: React.FC = () => {
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
     if (!tab) return false
     if (role === 'STAFF') {
-      return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets'
+      return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets'
     }
-    return tab === 'overview' || tab === 'renewals' || tab === 'handovers-returns' || tab === 'tickets' || tab === 'performance' || tab === 'policy'
+    return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'refunds' || tab === 'policy'
   }
 
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
@@ -89,7 +159,7 @@ export const ManagerDashboard: React.FC = () => {
     const currentTab = searchParams.get('tab') as ManagerDashboardTab | null
     if (isTabAllowed(currentTab)) {
       setActiveTabState(currentTab as ManagerDashboardTab)
-    } else if (role === 'STAFF' && (currentTab === 'performance' || currentTab === 'policy')) {
+    } else if (role === 'STAFF' && currentTab === 'policy') {
       setActiveTabState('overview')
     }
   }, [searchParams, role])
@@ -106,9 +176,13 @@ export const ManagerDashboard: React.FC = () => {
   const [hasPolicyException, setHasPolicyException] = useState(false)
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  type UnitStatusFilter = 'all' | 'Rented' | 'Available' | 'Pending' | 'Maintenance' | 'Overdue'
+  const validStatuses: UnitStatusFilter[] = ['all', 'Rented', 'Available', 'Pending', 'Maintenance', 'Overdue']
+  const initialStatusParam = searchParams.get('status') as UnitStatusFilter | null
+  const initialStatus: UnitStatusFilter = (initialStatusParam && validStatuses.includes(initialStatusParam)) ? initialStatusParam : 'all'
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>(initialStatus)
   const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'Available' | 'Rented' | 'Pending' | 'Overdue' | 'Maintenance'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUnit, setSelectedUnit] = useState<InspectedUnit | null>(null)
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null)
@@ -118,6 +192,16 @@ export const ManagerDashboard: React.FC = () => {
   const [activeRentals, setActiveRentals] = useState<Booking[]>([])
   const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
+  const [renewalsCount, setRenewalsCount] = useState<number>(0)
+
+  // Đếm đơn đặt giữ chỗ chờ liên hệ / chờ xử lý
+  const pendingOrdersCount = useMemo(() => {
+    return upcomingHandovers.filter(b => {
+      const s = String(b.status || '').toUpperCase()
+      if (s === 'CANCELLED' || s === 'REJECTED' || s === 'ACTIVE' || s === 'COMPLETED' || s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED') return false
+      return s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || s === 'PENDING' || !s
+    }).length
+  }, [upcomingHandovers])
 
   // Check-in Filter & Claim States
   const [checkinTimeframe, setCheckinTimeframe] = useState<'current' | 'today' | 'past' | 'future' | 'all'>('all')
@@ -127,6 +211,11 @@ export const ManagerDashboard: React.FC = () => {
   const [activeBookingId, setActiveBookingId] = useState<string>(
     searchParams.get('bookingId') || searchParams.get('checkinBookingId') || ''
   )
+  const [earlyConfirmState, setEarlyConfirmState] = useState<{
+    booking: Booking
+    actionType: EarlyCheckInActionType
+    onConfirm: () => void
+  } | null>(null)
 
   useEffect(() => {
     const bId = searchParams.get('bookingId') || searchParams.get('checkinBookingId')
@@ -134,6 +223,14 @@ export const ManagerDashboard: React.FC = () => {
       setActiveBookingId(bId)
     }
   }, [searchParams])
+
+  // Handover / Reception pagination
+  const [handoverPage, setHandoverPage] = useState<number>(1)
+  const [handoverPageSize, setHandoverPageSize] = useState<number>(10)
+
+  // Expiring rentals / Return inspection pagination
+  const [rentalPage, setRentalPage] = useState<number>(1)
+  const [rentalPageSize] = useState<number>(5)
 
   // Tickets queue pagination
   const [ticketCurrentPage, setTicketCurrentPage] = useState<number>(1)
@@ -152,6 +249,11 @@ export const ManagerDashboard: React.FC = () => {
   // Modals state
   const [showIoTModal, setShowIoTModal] = useState(false)
   const [showCreateUnitModal, setShowCreateUnitModal] = useState(false)
+  const [maintenanceModalUnit, setMaintenanceModalUnit] = useState<InspectedUnit | null>(null)
+  const [maintenanceReasonInput, setMaintenanceReasonInput] = useState<string>('')
+  const [maintenanceByInput, setMaintenanceByInput] = useState<string>('')
+  const [maintenanceError, setMaintenanceError] = useState<string>('')
+  const [isSubmittingMaintenance, setIsSubmittingMaintenance] = useState<boolean>(false)
   const [showReadOnlyBookingModal, setShowReadOnlyBookingModal] = useState(false)
   const [receptionAlertData, setReceptionAlertData] = useState<{
     isOpen: boolean
@@ -159,6 +261,8 @@ export const ManagerDashboard: React.FC = () => {
     booking?: Booking | null
   } | null>(null)
   const [readOnlyTargetBookingId, setReadOnlyTargetBookingId] = useState<string | undefined>(undefined)
+  const [readOnlyTargetUnitCode, setReadOnlyTargetUnitCode] = useState<string | undefined>(undefined)
+  const [readOnlyTargetUnitBackendId, setReadOnlyTargetUnitBackendId] = useState<string | undefined>(undefined)
   const [showDoorAccessModal, setShowDoorAccessModal] = useState(false)
   const [noticeModalData, setNoticeModalData] = useState<{
     unitCode: string
@@ -178,6 +282,47 @@ export const ManagerDashboard: React.FC = () => {
     overdueDays: number
     totalDebt: string
   } | null>(null)
+
+  // Quét tự động gửi email nhắc nhở quá hạn 24h đối với đơn ký + thanh toán tại quầy
+  useEffect(() => {
+    try {
+      if (typeof (reservationEmailService as any)?.checkAndSendOverdueReminders === 'function') {
+        reservationEmailService.checkAndSendOverdueReminders()
+      } else if (typeof (reservationEmailService as any)?.['checkAndSendQuá hạnReminders'] === 'function') {
+        (reservationEmailService as any)['checkAndSendQuá hạnReminders']()
+      }
+    } catch (e) {
+      console.warn('Error running initial overdue reminder check:', e)
+    }
+
+    const interval = setInterval(() => {
+      try {
+        if (typeof (reservationEmailService as any)?.checkAndSendOverdueReminders === 'function') {
+          reservationEmailService.checkAndSendOverdueReminders()
+        } else if (typeof (reservationEmailService as any)?.['checkAndSendQuá hạnReminders'] === 'function') {
+          (reservationEmailService as any)['checkAndSendQuá hạnReminders']()
+        }
+      } catch (e) {
+        console.warn('Error running interval overdue reminder check:', e)
+      }
+    }, 60000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho
+  useEffect(() => {
+    const handleSync = () => {
+      const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
+      void fetchUpcomingHandovers(targetId)
+      void fetchUnits(targetId)
+    }
+    window.addEventListener('boxora:storage-units-refresh', handleSync)
+    window.addEventListener('boxora_reservation_updated', handleSync)
+    return () => {
+      window.removeEventListener('boxora:storage-units-refresh', handleSync)
+      window.removeEventListener('boxora_reservation_updated', handleSync)
+    }
+  }, [selectedFacilityId])
 
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
@@ -208,6 +353,9 @@ export const ManagerDashboard: React.FC = () => {
       }
     }
     if (targetFacility && targetFacility !== 'ALL') {
+      if (targetFacility !== selectedFacilityId) {
+        setStatusFilter('all')
+      }
       setSelectedFacilityId(targetFacility)
       void fetchUnits(targetFacility)
     }
@@ -220,7 +368,7 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes, renewalsRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
@@ -231,6 +379,7 @@ export const ManagerDashboard: React.FC = () => {
         }),
         bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
+        contractService.getRenewals({ facilityId: targetId, size: 100 }),
       ])
 
       // 1. Process Storage Units
@@ -269,9 +418,11 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin'),
-            contract: su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ'),
-            due: (su.startDate && su.dueDate)
+            tenant: isMaint ? (su.maintenanceBy || 'Kỹ thuật viên cơ sở') : (su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin')),
+            contract: isMaint ? (su.maintenanceReason || 'Bảo trì kỹ thuật định kỳ') : (su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ')),
+            due: isMaint
+              ? (su.maintenanceAt ? new Date(su.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Đang bảo trì')
+              : (su.startDate && su.dueDate)
               ? `${new Date(su.startDate).toLocaleDateString('vi-VN')} - ${new Date(su.dueDate).toLocaleDateString('vi-VN')}`
               : su.dueDate
               ? new Date(su.dueDate).toLocaleDateString('vi-VN')
@@ -283,7 +434,10 @@ export const ManagerDashboard: React.FC = () => {
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
             facilityName: su.facilityName,
-            imageUrl: su.imageUrl
+            imageUrl: su.imageUrl,
+            maintenanceReason: su.maintenanceReason,
+            maintenanceBy: su.maintenanceBy,
+            maintenanceAt: su.maintenanceAt
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
@@ -326,9 +480,13 @@ export const ManagerDashboard: React.FC = () => {
         if (targetId) {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
+        filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
         setUpcomingHandovers(filteredArrivals)
+        setHandoverPage(1)
       } else {
-        setUpcomingHandovers([])
+        const localArrivals = mergeGuestArrivals([], targetId)
+        setUpcomingHandovers(localArrivals)
+        setHandoverPage(1)
       }
 
       // 5. Active Rentals / Returns
@@ -338,6 +496,7 @@ export const ManagerDashboard: React.FC = () => {
           filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
         }
         setActiveRentals(filteredRentals)
+        setRentalPage(1)
       } else {
         setActiveRentals([])
       }
@@ -349,6 +508,14 @@ export const ManagerDashboard: React.FC = () => {
         setTickets([])
       }
 
+      // 7. Renewals Count
+      if (renewalsRes.status === 'fulfilled' && renewalsRes.value) {
+        const count = renewalsRes.value.totalElements ?? (renewalsRes.value.content ? renewalsRes.value.content.length : 0)
+        setRenewalsCount(count)
+      } else {
+        setRenewalsCount(0)
+      }
+
     } catch {
       setUnits([])
       setOverdueItems([])
@@ -358,6 +525,7 @@ export const ManagerDashboard: React.FC = () => {
       setUpcomingHandovers([])
       setActiveRentals([])
       setTickets([])
+      setRenewalsCount(0)
     } finally {
       setIsLoading(false)
     }
@@ -387,29 +555,37 @@ export const ManagerDashboard: React.FC = () => {
         if (targetId) {
           filteredArrivals = filteredArrivals.filter(b => b.facilityId === targetId)
         }
+        filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
         setUpcomingHandovers(filteredArrivals)
+        setHandoverPage(1)
       } else {
-        setUpcomingHandovers([])
+        const localArrivals = mergeGuestArrivals([], targetId)
+        setUpcomingHandovers(localArrivals)
+        setHandoverPage(1)
       }
     } catch {
       setUpcomingHandovers([])
+      setHandoverPage(1)
     }
   }
 
   const handleCheckinTimeframeChange = (tf: 'current' | 'today' | 'past' | 'future' | 'all') => {
     setCheckinTimeframe(tf)
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, tf, checkinFromDate, checkinToDate)
   }
 
   const handleCheckinDateFilterApply = (from: string, to: string) => {
     setCheckinFromDate(from)
     setCheckinToDate(to)
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, from, to)
   }
 
   const handleResetCheckinDateFilter = () => {
     setCheckinFromDate('')
     setCheckinToDate('')
+    setHandoverPage(1)
     fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, '', '')
   }
 
@@ -438,6 +614,94 @@ export const ManagerDashboard: React.FC = () => {
       })
     } finally {
       setClaimingBookingId(null)
+    }
+  }
+
+  const [cancellingOverdueBooking, setCancellingOverdueBooking] = useState<Booking | null>(null)
+  const [pendingRefundCount, setPendingRefundCount] = useState<number>(0)
+
+  useEffect(() => {
+    const fetchPendingRefundCount = async () => {
+      try {
+        const targetFacId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : user?.facilityId
+        const data = await refundService.getAll({
+          facilityId: targetFacId,
+          status: 'PENDING_REVIEW'
+        })
+        if (data && typeof data.totalElements === 'number') {
+          setPendingRefundCount(data.totalElements)
+        } else if (data && Array.isArray(data.content)) {
+          setPendingRefundCount(data.content.length)
+        } else if (Array.isArray(data)) {
+          setPendingRefundCount(data.length)
+        }
+      } catch {
+        // silent fail
+      }
+    }
+    fetchPendingRefundCount()
+  }, [selectedFacilityId, user?.facilityId])
+
+  const openManagerCancelOverdueModal = (booking: Booking) => {
+    setCancellingOverdueBooking(booking)
+  }
+
+  // Quản lý cơ sở hủy đơn quá hạn 48h cho đơn đặt ký + thanh toán tại quầy
+  const executeManagerCancelOverdueBooking = async (booking: Booking, customReason?: string) => {
+    const unitText = booking.unitCode ? `Kho #${booking.unitCode}` : (booking.unitTypeName || 'buồng kho')
+    const reason = customReason?.trim() || 'Quản lý cơ sở hủy đơn do quá hạn 48 giờ sau lịch hẹn check-in nhưng khách hàng chưa đến làm thủ tục tiếp nhận tại quầy'
+    try {
+      const isBackendId = Boolean(booking.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(booking.id.trim()))
+      const targetIdOrCode = isBackendId ? booking.id : booking.bookingCode
+      try {
+        await bookingService.cancelBooking(targetIdOrCode, reason)
+      } catch (err: any) {
+        console.warn('Backend cancel booking error (fallback to local):', err)
+      }
+
+      reservationEmailService.cancelOverdueReservation(booking.bookingCode, reason, {
+        id: user?.id,
+        fullName: user?.fullName || 'Quản lý cơ sở Boxora',
+      })
+
+      // Giải phóng ô kho local nếu có
+      if (booking.storageUnitId) {
+        try {
+          const rawUnits = localStorage.getItem('boxora_storage_units')
+          if (rawUnits) {
+            const parsedUnits = JSON.parse(rawUnits)
+            if (Array.isArray(parsedUnits)) {
+              const uIdx = parsedUnits.findIndex((u: any) => u.id === booking.storageUnitId)
+              if (uIdx !== -1) {
+                parsedUnits[uIdx].status = 'AVAILABLE'
+                localStorage.setItem('boxora_storage_units', JSON.stringify(parsedUnits))
+              }
+            }
+          }
+        } catch {}
+      }
+
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: booking.bookingCode, status: 'CANCELLED' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
+      setUpcomingHandovers(prev => prev.map(b =>
+        (b.id === booking.id || b.bookingCode === booking.bookingCode)
+          ? { ...b, status: 'CANCELLED' as any, cancellationReason: reason }
+          : b
+      ))
+
+      triggerAction(`Đã hủy đơn ${booking.bookingCode} quá hạn 48h thành công. Buồng ${unitText} đã được mở lại cho khách khác đặt chỗ!`)
+      toast.success(`Đã hủy đơn ${booking.bookingCode} và giải phóng buồng ${unitText} thành công!`)
+      setCancellingOverdueBooking(null)
+      if (selectedFacilityId) {
+        void fetchUnits(selectedFacilityId)
+      }
+    } catch (err: any) {
+      toast.error('Không thể hủy đơn: ' + (err.message || 'Lỗi không xác định'))
+      throw err
     }
   }
 
@@ -482,6 +746,18 @@ export const ManagerDashboard: React.FC = () => {
       return
     }
 
+    // Nếu kho đang Trống -> Mở modal yêu cầu nhập Lý do bảo trì & Người bảo trì
+    if (selectedUnit.status === 'Available') {
+      const roleLabel = role === 'STAFF' ? 'Nhân viên cơ sở' : role === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : 'Quản trị viên'
+      const defaultMaintainer = `${user?.fullName || user?.username || 'Nhân sự cơ sở'} (${roleLabel})`
+      setMaintenanceByInput(defaultMaintainer)
+      setMaintenanceReasonInput('')
+      setMaintenanceError('')
+      setMaintenanceModalUnit(selectedUnit)
+      return
+    }
+
+    // Nếu kho đang Bảo trì -> Hoàn tất bảo trì (Mở lại kho)
     try {
       if (selectedUnit.backendId) {
         const updated = await storageUnitService.toggleMaintenance(selectedUnit.backendId)
@@ -496,9 +772,12 @@ export const ManagerDashboard: React.FC = () => {
               status: nextStatus,
               rawStatus: updated.status,
               color: nextColor,
-              tenant: isNowMaint ? 'ĐANG BẢO TRÌ SỬA CHỮA' : 'Chưa có khách',
-              contract: isNowMaint ? 'TICKET-MAINTENANCE' : 'Trống',
-              due: isNowMaint ? 'Dự kiến hôm nay' : '--'
+              tenant: 'Kho trống',
+              contract: 'Chưa có hợp đồng',
+              due: '—',
+              maintenanceReason: undefined,
+              maintenanceBy: undefined,
+              maintenanceAt: undefined,
             }
           }
           return u
@@ -510,9 +789,12 @@ export const ManagerDashboard: React.FC = () => {
             status: nextStatus,
             rawStatus: updated.status,
             color: nextColor,
-            tenant: isNowMaint ? 'ĐANG BẢO TRÌ SỬA CHỮA' : 'Chưa có khách',
-            contract: isNowMaint ? 'TICKET-MAINTENANCE' : 'Trống',
-            due: isNowMaint ? 'Dự kiến hôm nay' : '--'
+            tenant: 'Kho trống',
+            contract: 'Chưa có hợp đồng',
+            due: '—',
+            maintenanceReason: undefined,
+            maintenanceBy: undefined,
+            maintenanceAt: undefined,
           }
         })
 
@@ -521,10 +803,91 @@ export const ManagerDashboard: React.FC = () => {
           void fetchUnits(targetFac)
         }
 
-        triggerAction(`Đã cập nhật trạng thái kho #${selectedUnit.id} thành ${isNowMaint ? 'Bảo trì kỹ thuật' : 'Sẵn sàng'}!`)
+        triggerAction(`Đã hoàn tất bảo trì và mở lại kho #${selectedUnit.id} về trạng thái Sẵn sàng!`)
       }
     } catch (err: any) {
       triggerAction(`Không thể đổi trạng thái: ${err?.response?.data?.message || 'Kho đang có người thuê hoặc lỗi hệ thống'}`)
+    }
+  }
+
+  const handleConfirmEnterMaintenance = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!maintenanceModalUnit || !maintenanceModalUnit.backendId) return
+
+    const trimmedBy = maintenanceByInput.trim()
+    const trimmedReason = maintenanceReasonInput.trim()
+
+    if (!trimmedBy) {
+      setMaintenanceError('Vui lòng nhập họ tên / vai trò người thực hiện hoặc phụ trách bảo trì.')
+      return
+    }
+    if (!trimmedReason) {
+      setMaintenanceError('Vui lòng ghi rõ lý do bảo trì kỹ thuật cho ngăn kho này.')
+      return
+    }
+
+    try {
+      setIsSubmittingMaintenance(true)
+      setMaintenanceError('')
+      const updated = await storageUnitService.toggleMaintenance(maintenanceModalUnit.backendId, {
+        reason: trimmedReason,
+        maintenanceBy: trimmedBy,
+      })
+      const maintReason = updated.maintenanceReason || trimmedReason
+      const maintBy = updated.maintenanceBy || trimmedBy
+      const maintAt = updated.maintenanceAt || new Date().toISOString()
+      const formattedMaintAt = new Date(maintAt).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+
+      setUnits(prev => prev.map(u => {
+        if (u.id === maintenanceModalUnit.id) {
+          return {
+            ...u,
+            status: 'Maintenance',
+            rawStatus: updated.status || 'UNDER_MAINTENANCE',
+            color: 'purple',
+            tenant: maintBy,
+            contract: maintReason,
+            due: formattedMaintAt,
+            maintenanceReason: maintReason,
+            maintenanceBy: maintBy,
+            maintenanceAt: maintAt,
+          }
+        }
+        return u
+      }))
+
+      setSelectedUnit(prev => {
+        if (!prev || prev.id !== maintenanceModalUnit.id) return prev
+        return {
+          ...prev,
+          status: 'Maintenance',
+          rawStatus: updated.status || 'UNDER_MAINTENANCE',
+          color: 'purple',
+          tenant: maintBy,
+          contract: maintReason,
+          due: formattedMaintAt,
+          maintenanceReason: maintReason,
+          maintenanceBy: maintBy,
+          maintenanceAt: maintAt,
+        }
+      })
+
+      setMaintenanceModalUnit(null)
+      const targetFac = selectedFacilityId || user?.facilityId
+      if (targetFac) {
+        void fetchUnits(targetFac)
+      }
+      triggerAction(`Đã chuyển kho #${maintenanceModalUnit.id} sang Bảo trì kỹ thuật (Phụ trách: ${maintBy})!`)
+    } catch (err: any) {
+      setMaintenanceError(err?.response?.data?.message || 'Không thể chuyển trạng thái bảo trì. Vui lòng thử lại.')
+    } finally {
+      setIsSubmittingMaintenance(false)
     }
   }
 
@@ -556,6 +919,10 @@ export const ManagerDashboard: React.FC = () => {
   const permanentFloor2 = permanentZoneC
 
   const isUnitMatchingFilter = (u: InspectedUnit) => {
+    if (statusFilter !== 'all' && u.status !== statusFilter) {
+      return false
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim()
       const matchesSearch = u.id.toLowerCase().includes(q) || 
@@ -573,16 +940,64 @@ export const ManagerDashboard: React.FC = () => {
       if (sizeFilter === 'l' && !(sizeNum > 12)) return false
     }
 
-    if (statusFilter !== 'all' && u.status !== statusFilter) {
-      return false
-    }
-
     return true
   }
 
   const floor1MatchingCount = permanentFloor1.filter(isUnitMatchingFilter).length
   const floor2MatchingCount = permanentFloor2.filter(isUnitMatchingFilter).length
   const isAnyFilterActive = statusFilter !== 'all' || sizeFilter !== 'all' || searchQuery.trim().length > 0
+
+  const handleStatusFilterClick = (targetStatus: UnitStatusFilter) => {
+    if (activeTab !== 'overview') {
+      setActiveTab('overview')
+    }
+
+    const nextStatus: UnitStatusFilter = 
+      targetStatus === 'all' 
+        ? 'all' 
+        : statusFilter === targetStatus 
+          ? 'all' 
+          : targetStatus
+
+    setStatusFilter(nextStatus)
+
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (nextStatus === 'all') {
+        next.delete('status')
+      } else {
+        next.set('status', nextStatus)
+      }
+      return next
+    }, { replace: true })
+
+    if (nextStatus !== 'all') {
+      const floor1Matches = permanentFloor1.some(u => u.status === nextStatus)
+      const floor2Matches = permanentFloor2.some(u => u.status === nextStatus)
+
+      let targetFloor: 'floor1' | 'floor2' = selectedFloor
+      if (selectedFloor === 'floor1' && !floor1Matches && floor2Matches) {
+        targetFloor = 'floor2'
+        setSelectedFloor('floor2')
+      } else if (selectedFloor === 'floor2' && !floor2Matches && floor1Matches) {
+        targetFloor = 'floor1'
+        setSelectedFloor('floor1')
+      }
+
+      const targetFloorUnits = (targetFloor === 'floor2' ? permanentFloor2 : permanentFloor1)
+      const firstMatch = targetFloorUnits.find(u => u.status === nextStatus) || units.find(u => u.status === nextStatus)
+      if (firstMatch) {
+        setSelectedUnit(firstMatch)
+      }
+    }
+
+    requestAnimationFrame(() => {
+      const el = document.getElementById('floor-matrix-section')
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+  }
 
   // Dynamic KPI counts
   const totalUnitsCount = units.length
@@ -600,6 +1015,50 @@ export const ManagerDashboard: React.FC = () => {
 
   const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
   const selectedUnitOverdue = overdueItems.find(item => item.unitCode === selectedUnit?.id)
+
+
+  const sortedUpcomingHandovers = useMemo(() => {
+    const list = [...upcomingHandovers]
+    if (isManagementRole) {
+      return list.sort((a, b) => {
+        // Sort by newest created booking first
+        const timeA = a.createdAt
+          ? new Date(a.createdAt).getTime()
+          : (a.startDate ? new Date(a.startDate).getTime() : 0)
+        const timeB = b.createdAt
+          ? new Date(b.createdAt).getTime()
+          : (b.startDate ? new Date(b.startDate).getTime() : 0)
+        if (timeB !== timeA) return timeB - timeA
+        return (b.bookingCode || '').localeCompare(a.bookingCode || '')
+      })
+    }
+    return list
+  }, [upcomingHandovers, isManagementRole])
+
+  // Handover & Return paginated datasets
+  const totalHandoverPages = Math.max(1, Math.ceil(sortedUpcomingHandovers.length / handoverPageSize))
+  const paginatedUpcomingHandovers = useMemo(() => {
+    const start = (handoverPage - 1) * handoverPageSize
+    return sortedUpcomingHandovers.slice(start, start + handoverPageSize)
+  }, [sortedUpcomingHandovers, handoverPage, handoverPageSize])
+
+  const totalRentalPages = Math.max(1, Math.ceil(activeRentals.length / rentalPageSize))
+  const paginatedRentals = useMemo(() => {
+    const start = (rentalPage - 1) * rentalPageSize
+    return activeRentals.slice(start, start + rentalPageSize)
+  }, [activeRentals, rentalPage, rentalPageSize])
+
+  useEffect(() => {
+    if (handoverPage > totalHandoverPages) {
+      setHandoverPage(totalHandoverPages)
+    }
+  }, [totalHandoverPages, handoverPage])
+
+  useEffect(() => {
+    if (rentalPage > totalRentalPages) {
+      setRentalPage(totalRentalPages)
+    }
+  }, [totalRentalPages, rentalPage])
 
   // Current shift identification
   const currentShiftText = useMemo(() => {
@@ -863,17 +1322,24 @@ export const ManagerDashboard: React.FC = () => {
       <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         
         {/* Total Units */}
-        <div 
-          onClick={() => { setStatusFilter('all'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'all' && activeTab === 'overview'
-              ? 'border-slate-800 ring-2 ring-slate-900/10 shadow-xs' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('all')}
+          title={`Xem tất cả ${totalUnitsCount} kho (Xóa lọc trạng thái)`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'all'
+              ? 'bg-slate-50/80 border-2 border-slate-900 ring-2 ring-slate-900/20 shadow-xs'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Tổng số kho</span>
-            <span className="material-symbols-outlined text-slate-400 text-[20px]">warehouse</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'all' && (
+                <span className="px-1.5 py-0.5 rounded bg-slate-900 text-white text-[9px] font-bold font-mono tracking-tight">Tất cả</span>
+              )}
+              <span className="material-symbols-outlined text-slate-400 text-[20px]">warehouse</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{totalUnitsCount}</span>
@@ -882,20 +1348,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-slate-900 h-full rounded-full" style={{ width: '100%' }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Rented */}
-        <div 
-          onClick={() => { setStatusFilter('Rented'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Rented' && activeTab === 'overview'
-              ? 'border-blue-600 ring-2 ring-blue-500/20 bg-blue-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Rented')}
+          title={`Lọc ${rentedUnitsCount} kho đang thuê (${rentedPercent}%) - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Rented'
+              ? 'bg-blue-50/60 border-2 border-blue-600 ring-2 ring-blue-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Đang thuê</span>
-            <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-bold">{rentedPercent}%</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Rented' && (
+                <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-bold">{rentedPercent}%</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{rentedUnitsCount}</span>
@@ -904,20 +1377,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-blue-600 h-full rounded-full" style={{ width: `${rentedPercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Available */}
-        <div 
-          onClick={() => { setStatusFilter('Available'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Available' && activeTab === 'overview'
-              ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Available')}
+          title={`Lọc ${availableUnitsCount} kho trống sẵn sàng - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Available'
+              ? 'bg-emerald-50/60 border-2 border-emerald-600 ring-2 ring-emerald-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Kho trống</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Available' && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-emerald-600 leading-none">{availableUnitsCount}</span>
@@ -926,20 +1406,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${availablePercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Pending */}
-        <div 
-          onClick={() => { setStatusFilter('Pending'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Pending' && activeTab === 'overview'
-              ? 'border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Pending')}
+          title={`Lọc ${pendingUnitsCount} kho chờ bàn giao - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Pending'
+              ? 'bg-amber-50/60 border-2 border-amber-600 ring-2 ring-amber-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Chờ bàn giao</span>
-            <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Pending' && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-amber-600 leading-none">
@@ -950,20 +1437,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-amber-500 h-full rounded-full" style={{ width: `${pendingPercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Maintenance */}
-        <div 
-          onClick={() => { setStatusFilter('Maintenance'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Maintenance' && activeTab === 'overview'
-              ? 'border-purple-500 ring-2 ring-purple-500/20 bg-purple-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Maintenance')}
+          title={`Lọc ${maintenanceUnitsCount} kho bảo trì kỹ thuật - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Maintenance'
+              ? 'bg-purple-50/60 border-2 border-purple-600 ring-2 ring-purple-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Bảo trì kỹ thuật</span>
-            <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Maintenance' && (
+                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-purple-600 leading-none">
@@ -974,20 +1468,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-purple-600 h-full rounded-full" style={{ width: `${maintenancePercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Overdue */}
-        <div 
-          onClick={() => { setStatusFilter('Overdue'); setActiveTab('overview'); }}
-          className={`p-4 bg-white rounded-2xl border flex flex-col justify-between hover:shadow-md transition cursor-pointer ${
-            statusFilter === 'Overdue' && activeTab === 'overview'
-              ? 'border-rose-500 ring-2 ring-rose-500/20 bg-rose-50/20' 
-              : 'border-slate-200 shadow-2xs hover:border-slate-300'
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Overdue')}
+          title={`Lọc ${overdueUnitsCount} kho nợ quá hạn - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Overdue'
+              ? 'bg-rose-50/60 border-2 border-rose-600 ring-2 ring-rose-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
           }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Nợ quá hạn</span>
-            <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Overdue' && (
+                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-rose-700 leading-none">
@@ -998,12 +1499,13 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-rose-600 h-full rounded-full" style={{ width: `${overduePercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
       </section>
 
       {/* 7 MANAGEMENT-LEVEL SUMMARIES: TABS NAVIGATION */}
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1">
+        {(hasPermission('STORAGE_UNIT_VIEW') || hasPermission('FACILITY_VIEW')) && (
         <button
           type="button"
           onClick={() => setActiveTab('overview')}
@@ -1014,35 +1516,139 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">grid_view</span>
-          <span>1. Sơ Đồ Kho &amp; Thiết Bị</span>
+          <span>Sơ Đồ Cơ Sở</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'overview'
+              ? 'bg-white text-slate-900'
+              : 'bg-slate-200 text-slate-800'
+          }`}>
+            {totalUnitsCount} kho
+          </span>
         </button>
+        )}
 
+        {hasPermission('BOOKING_VIEW') && (
+        <button
+          type="button"
+          onClick={() => setActiveTab('pending_orders')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'pending_orders'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+          title="Quản lý đơn đặt giữ chỗ chờ liên hệ / chờ xử lý"
+        >
+          <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+          <span>1. Đơn Chờ Xử Lý</span>
+          {pendingOrdersCount > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'pending_orders'
+                ? 'bg-white text-amber-700'
+                : 'bg-amber-100 text-amber-800 animate-pulse'
+            }`}>
+              {pendingOrdersCount} đơn
+            </span>
+          )}
+        </button>
+        )}
+
+        {(hasPermission('HANDOVER_VIEW') || hasPermission('HANDOVER_EXECUTE')) && (
+        <button
+          type="button"
+          onClick={() => setActiveTab('reception')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'reception' || activeTab === 'handovers-returns'
+              ? 'bg-cyan-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
+          <span>2. Bàn Tiếp Đón Nhận Kho</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'reception' || activeTab === 'handovers-returns'
+              ? 'bg-white text-cyan-800'
+              : 'bg-cyan-100 text-cyan-800'
+          }`}>
+            {upcomingHandovers.length} đơn
+          </span>
+        </button>
+        )}
+
+        {(hasPermission('CHECKOUT_REQUEST') || hasPermission('HANDOVER_VIEW')) && (
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('returns')
+            setTimeout(() => {
+              const el = document.getElementById('pending-return-kpi-card') || document.getElementById('return-kpi-metrics-bar')
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }, 60)
+          }}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'returns'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">assignment_return</span>
+          <span>3. Trả Kho</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'returns'
+              ? 'bg-white text-amber-800'
+              : 'bg-amber-100 text-amber-800'
+          }`}>
+            {activeRentals.length} hợp đồng
+          </span>
+        </button>
+        )}
+
+        {(hasPermission('RENEWAL_APPROVE') || hasPermission('CONTRACT_VIEW')) && (
         <button
           type="button"
           onClick={() => setActiveTab('renewals')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
             activeTab === 'renewals'
-              ? 'bg-slate-900 text-white shadow-xs'
+              ? 'bg-blue-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">autorenew</span>
-          <span>2. Xử Lý Gia Hạn Hợp Đồng</span>
+          <span>4. Hỗ Trợ Gia Hạn</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'renewals'
+              ? 'bg-white text-blue-900'
+              : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {renewalsCount} đơn
+          </span>
         </button>
+        )}
 
+        {(hasPermission('REFUND_APPROVE') || hasPermission('REFUND_REVIEW')) && (
         <button
           type="button"
-          onClick={() => setActiveTab('handovers-returns')}
+          onClick={() => setActiveTab('refunds')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-            activeTab === 'handovers-returns'
-              ? 'bg-slate-900 text-white shadow-xs'
+            activeTab === 'refunds'
+              ? 'bg-amber-600 text-white shadow-xs'
               : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
           }`}
         >
-          <span className="material-symbols-outlined text-[18px]">badge</span>
-          <span>3. Bàn Vận Hành Quầy &amp; Tiếp Đón ({upcomingHandovers.length})</span>
+          <span className="material-symbols-outlined text-[18px]">account_balance</span>
+          <span>5. Hoàn Tiền Hủy Đơn</span>
+          {pendingRefundCount > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'refunds'
+                ? 'bg-white text-amber-900'
+                : 'bg-amber-100 text-amber-800 animate-pulse'
+            }`}>
+              {pendingRefundCount} chờ chuyển
+            </span>
+          )}
         </button>
+        )}
 
+        {hasPermission('SUPPORT_TICKET_VIEW') && (
         <button
           type="button"
           onClick={() => setActiveTab('tickets')}
@@ -1053,37 +1659,30 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>4. Sự Cố &amp; SLA ({tickets.filter(t => t.status !== 'RESOLVED').length})</span>
+          <span>6. Sự Cố &amp; SLA</span>
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+            activeTab === 'tickets'
+              ? 'bg-white text-slate-900'
+              : 'bg-rose-100 text-rose-800'
+          }`}>
+            {tickets.filter(t => t.status !== 'RESOLVED').length} ca
+          </span>
         </button>
+        )}
 
         {role !== 'STAFF' && (
-          <>
-            <button
-              type="button"
-              onClick={() => setActiveTab('performance')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'performance'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">trending_up</span>
-              <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('policy')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'policy'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">policy</span>
-              <span>5. Chính Sách Vận Hành Cơ Sở</span>
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => setActiveTab('policy')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'policy'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">policy</span>
+            <span>7. Chính Sách Vận Hành Cơ Sở</span>
+          </button>
         )}
       </div>
 
@@ -1094,78 +1693,92 @@ export const ManagerDashboard: React.FC = () => {
         <section className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           
           {/* FLOOR MATRIX CANVAS (xl:col-span-8) */}
-          <div className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+          <div id="floor-matrix-section" className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 scroll-mt-6">
             {/* Controls Toolbar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
-              {/* Floor Selector Tabs */}
-              <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs">
-                <button 
-                  type="button" 
-                  onClick={() => setSelectedFloor('floor1')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer ${
-                    selectedFloor === 'floor1' 
-                      ? 'bg-slate-900 text-white shadow-xs' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>{facilityProfile.floor1Name}</span>
-                  <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                    selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
-                  </span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setSelectedFloor('floor2')}
-                  className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer ${
-                    selectedFloor === 'floor2' 
-                      ? 'bg-slate-900 text-white shadow-xs' 
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>{facilityProfile.floor2Name}</span>
-                  <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                    selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
-                  </span>
-                </button>
-              </div>
-
-              {/* Filter and Search Matrix */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <select 
-                  value={sizeFilter}
-                  onChange={(e) => setSizeFilter(e.target.value as any)}
-                  className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
-                >
-                  <option value="all">Tất cả kích thước</option>
-                  <option value="s">Kho nhỏ S (≤ 6.5m²)</option>
-                  <option value="m">Kho vừa M (8m² - 12m²)</option>
-                  <option value="l">Kho lớn L (15m² - 20m²)</option>
-                </select>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
-                  <input 
-                    type="text" 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Tìm mã kho (#A-101), khách..." 
-                    className="pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs w-44 sm:w-52 font-mono"
-                  />
-                </div>
-                {statusFilter !== 'all' && (
+            <div className="flex flex-col gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
+              {/* Floor Selector + Size Dropdown + Search Box + Reset Filter Button */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                {/* Floor Selector Tabs */}
+                <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs shrink-0 self-start">
                   <button 
                     type="button" 
-                    onClick={() => setStatusFilter('all')}
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-900 text-white text-xs font-semibold cursor-pointer"
-                    title="Xóa lọc"
+                    onClick={() => setSelectedFloor('floor1')}
+                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
+                      selectedFloor === 'floor1' 
+                        ? 'bg-slate-900 text-white shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
                   >
-                    <span>Lọc: {statusFilter}</span>
-                    <span className="material-symbols-outlined text-[13px]">close</span>
+                    <span className="whitespace-nowrap">{facilityProfile.floor1Name}</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                      selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
+                    </span>
                   </button>
-                )}
+                  <button 
+                    type="button" 
+                    onClick={() => setSelectedFloor('floor2')}
+                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
+                      selectedFloor === 'floor2' 
+                        ? 'bg-slate-900 text-white shadow-xs' 
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="whitespace-nowrap">{facilityProfile.floor2Name}</span>
+                    <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                      selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Size Filter Dropdown, Search Input & Clear Filters Button */}
+                <div className="flex items-center gap-2 flex-wrap flex-1 lg:justify-end">
+                  <select 
+                    value={sizeFilter}
+                    onChange={(e) => setSizeFilter(e.target.value as any)}
+                    className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
+                  >
+                    <option value="all">Tất cả kích thước</option>
+                    <option value="s">Kho nhỏ S (≤ 6.5m²)</option>
+                    <option value="m">Kho vừa M (8m² - 12m²)</option>
+                    <option value="l">Kho lớn L (15m² - 20m²)</option>
+                  </select>
+
+                  <div className="relative flex-1 sm:flex-initial min-w-[210px] sm:w-60">
+                    <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
+                    <input 
+                      type="text" 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Tìm mã kho (#A-101), khách..." 
+                      className="w-full pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs font-mono"
+                    />
+                  </div>
+
+                  {isAnyFilterActive && (
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setStatusFilter('all')
+                        setSizeFilter('all')
+                        setSearchQuery('')
+                        setSearchParams(prev => {
+                          const next = new URLSearchParams(prev)
+                          next.delete('status')
+                          return next
+                        }, { replace: true })
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap transition shadow-2xs"
+                      title="Đặt lại toàn bộ bộ lọc"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+                      <span>Xóa bộ lọc</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1273,19 +1886,69 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="text-slate-500">Diện tích:</span>
                   <span className="font-mono font-bold text-slate-900">{selectedUnit.size}</span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Khách thuê:</span>
-                  <span className="font-semibold text-slate-900">{selectedUnit.tenant}</span>
+                <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/50">
+                  <span className="text-slate-500 shrink-0">
+                    {selectedUnit.status === 'Maintenance' ? 'Người bảo trì:' : 'Khách thuê:'}
+                  </span>
+                  <span className={`font-semibold text-right ${selectedUnit.status === 'Maintenance' ? 'text-purple-700' : 'text-slate-900'}`}>
+                    {selectedUnit.status === 'Maintenance'
+                      ? (selectedUnit.maintenanceBy || selectedUnit.tenant || 'Kỹ thuật viên cơ sở')
+                      : selectedUnit.tenant}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Mã hợp đồng:</span>
-                  <span className="font-mono font-bold text-blue-600">{selectedUnit.contract}</span>
+                <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/50">
+                  <span className="text-slate-500 shrink-0">
+                    {selectedUnit.status === 'Maintenance' ? 'Lý do bảo trì:' : 'Mã hợp đồng:'}
+                  </span>
+                  <span className={`font-bold text-right ${selectedUnit.status === 'Maintenance' ? 'text-purple-900' : 'font-mono text-blue-600'}`}>
+                    {selectedUnit.status === 'Maintenance'
+                      ? (selectedUnit.maintenanceReason || selectedUnit.contract || 'Bảo trì kỹ thuật định kỳ')
+                      : selectedUnit.contract}
+                  </span>
                 </div>
-                <div className="flex items-center justify-between py-1">
-                  <span className="text-slate-500">Thời hạn:</span>
-                  <span className="font-mono text-slate-800">{selectedUnit.due}</span>
+                <div className="flex items-center justify-between gap-2 py-1">
+                  <span className="text-slate-500 shrink-0">
+                    {selectedUnit.status === 'Maintenance' ? 'Bắt đầu bảo trì:' : 'Thời hạn:'}
+                  </span>
+                  <span className="font-mono text-slate-800 text-right">
+                    {selectedUnit.status === 'Maintenance' && selectedUnit.maintenanceAt
+                      ? new Date(selectedUnit.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                      : selectedUnit.due}
+                  </span>
                 </div>
               </div>
+
+              {/* Dedicated Maintenance Info Card when Unit is in Maintenance */}
+              {selectedUnit.status === 'Maintenance' && (
+                <div className="p-3.5 bg-purple-50/90 rounded-xl border border-purple-200 flex flex-col gap-2 text-xs shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-purple-800 font-bold uppercase tracking-wide text-[11px] pb-1.5 border-b border-purple-200/70">
+                    <span className="material-symbols-outlined text-[16px] text-purple-600">engineering</span>
+                    <span>Hồ Sơ Bảo Trì Kỹ Thuật</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-purple-700/80 font-medium shrink-0">Người bảo trì:</span>
+                      <span className="font-bold text-purple-950 text-right">
+                        {selectedUnit.maintenanceBy || selectedUnit.tenant || 'Kỹ thuật viên cơ sở'}
+                      </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-purple-700/80 font-medium shrink-0">Lý do bảo trì:</span>
+                      <span className="font-semibold text-purple-900 text-right">
+                        {selectedUnit.maintenanceReason || selectedUnit.contract || 'Bảo trì kỹ thuật định kỳ'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-purple-200/50 text-[11px]">
+                      <span className="text-purple-700/80">Thời điểm chuyển:</span>
+                      <span className="font-mono font-semibold text-purple-900">
+                        {selectedUnit.maintenanceAt
+                          ? new Date(selectedUnit.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                          : selectedUnit.due}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* SmartLock Telemetry */}
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
@@ -1400,6 +2063,30 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
+      {/* TAB 1: ĐƠN CHỜ XỬ LÝ (PENDING RESERVATIONS & BOOKINGS) */}
+      {/* ============================================================== */}
+      {activeTab === 'pending_orders' && (
+        <PendingReservationsWorkbench
+          facilityId={selectedFacilityId || user?.facilityId}
+          arrivals={sortedUpcomingHandovers}
+          highlightedBookingCode={searchParams.get('bookingCode')}
+          onRefresh={() => {
+            fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+            const targetFac = selectedFacilityId || user?.facilityId
+            if (targetFac) void fetchUnits(targetFac)
+          }}
+          onProceedToReception={(bookingId) => {
+            setActiveBookingId(bookingId)
+            setActiveTab('reception')
+            setTimeout(() => {
+              const el = document.getElementById('handover-workbench-section')
+              if (el) el.scrollIntoView({ behavior: 'smooth' })
+            }, 60)
+          }}
+        />
+      )}
+
+      {/* ============================================================== */}
       {/* TAB: XỬ LÝ GIA HẠN HỢP ĐỒNG (THẨM ĐỊNH & THU CƯỚC) */}
       {/* ============================================================== */}
       {activeTab === 'renewals' && (
@@ -1411,7 +2098,7 @@ export const ManagerDashboard: React.FC = () => {
                 Quản Lý &amp; Thẩm Định Gia Hạn Hợp Đồng
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Xem xét, phê duyệt yêu cầu gia hạn kho và thu cước tại quầy cơ sở theo thẩm quyền
+                Xem xét, phê duyệt yêu cầu gia hạn kho, khách hàng ký hợp đồng và thanh toán trực tuyến.
               </p>
             </div>
           </div>
@@ -1426,9 +2113,9 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 3: BÀN VẬN HÀNH QUẦY & TIẾP ĐÓN BÀN GIAO */}
+      {/* TAB 2: BÀN TIẾP ĐÓN NHẬN KHO & BÀN GIAO */}
       {/* ============================================================== */}
-      {activeTab === 'handovers-returns' && (
+      {(activeTab === 'handovers-returns' || activeTab === 'reception') && (
         <section className="flex flex-col gap-6">
           
           {/* Header Bàn Vận Hành Quầy & Tiếp Đón */}
@@ -1445,11 +2132,11 @@ export const ManagerDashboard: React.FC = () => {
                   </span>
                 </h3>
                 <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
-                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng, đối soát CCCD / giấy tờ tùy thân, nghiệm thu hiện trường 5 hạng mục và cấp phát mã PIN bảo mật bàn giao kho.
+                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng theo quy trình 4 bước: (1) Xác thực CCCD, (2) Gán kho vật lý, (3) Hợp đồng &amp; Thanh toán, (4) Cấp mã PIN SmartLock bàn giao kho.
                 </p>
               </div>
             </div>
-            {activeBookingId && (
+            {activeBookingId && !isManagementRole && (
               <button
                 type="button"
                 onClick={() => setActiveBookingId('')}
@@ -1461,31 +2148,56 @@ export const ManagerDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO */}
-          <div id="handover-workbench-section" className="scroll-mt-6">
-            <HandoverCheckInWorkbench
-              facilityId={selectedFacilityId || user?.facilityId}
-              arrivals={upcomingHandovers}
-              activeBookingId={activeBookingId}
-              onSelectBooking={setActiveBookingId}
-              onHandoverComplete={(bookingId) => {
-                setActiveBookingId('')
-                fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
-                const targetFac = selectedFacilityId || user?.facilityId
-                if (targetFac) void fetchUnits(targetFac)
-                triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
-              }}
-            />
-          </div>
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO: Chỉ dành cho Quản lý cơ sở & Nhân viên quầy thực địa; Admin & Business Manager chỉ ở chế độ giám sát */}
+          {isManagementRole ? (
+            <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 flex items-start gap-3.5 shadow-xs">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">visibility</span>
+              </div>
+              <div className="text-xs leading-relaxed">
+                <div className="flex items-center gap-2 font-bold text-sm text-blue-950 mb-0.5">
+                  <span>Chế độ giám sát quy trình tiếp nhận &amp; bàn giao kho</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-200 text-blue-800">CHỈ ĐỌC</span>
+                </div>
+                <p className="text-blue-800">
+                  Tài khoản <strong>{role === 'ADMIN' ? 'Quản Trị Viên (Admin)' : 'Quản Lý Kinh Doanh (Business Manager)'}</strong> đang theo dõi danh sách lịch hẹn và đối soát điều kiện check-in ở chế độ giám sát chỉ đọc. Quy trình 4 bước tiếp nhận khách hàng (Xác thực CCCD, Gán kho vật lý, Hợp đồng &amp; Thanh toán, Cấp PIN SmartLock) được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> và <strong>Quản lý cơ sở (Facility Manager)</strong> tại quầy tiếp đón. Bấm <em>"Xem chi tiết"</em> tại từng đơn trong bảng bên dưới để đối soát 3 điều kiện bàn giao.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div id="handover-workbench-section" className="scroll-mt-6">
+              <HandoverCheckInWorkbench
+                facilityId={selectedFacilityId || user?.facilityId}
+                arrivals={sortedUpcomingHandovers}
+                activeBookingId={activeBookingId}
+                onSelectBooking={setActiveBookingId}
+                onHandoverComplete={(bookingId) => {
+                  fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
+                  const targetFac = selectedFacilityId || user?.facilityId
+                  if (targetFac) void fetchUnits(targetFac)
+                  triggerAction('Đã hoàn tất bàn giao kho và cấp phát mã PIN cho khách hàng thành công!')
+                }}
+              />
+            </div>
+          )}
 
           {/* Upcoming Handovers Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div
+            id="checkin-queue-table"
+            data-checkin-queue="true"
+            className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm scroll-mt-6 transition-all duration-300"
+          >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="material-symbols-outlined text-cyan-600 text-[20px]">how_to_reg</span>
                 <h3 className="font-headline text-sm font-bold text-slate-900">
-                  Lịch Hẹn Nhận Kho &amp; Chờ Bàn Giao ({upcomingHandovers.length} đơn)
+                  Lịch Hẹn Nhận Kho &amp; Chờ Bàn Giao ({sortedUpcomingHandovers.length} đơn)
                 </h3>
+                {isManagementRole && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                    Đơn tạo gần nhất
+                  </span>
+                )}
               </div>
               <span className="text-xs text-slate-500 font-mono">Nhân viên quầy &amp; Quản lý tiếp đón trực tiếp</span>
             </div>
@@ -1552,10 +2264,10 @@ export const ManagerDashboard: React.FC = () => {
               </div>
             </div>
 
-            {upcomingHandovers.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách lọc.</p>
+            {sortedUpcomingHandovers.length === 0 ? (
+              <p className="text-xs text-slate-400 py-12 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách lọc.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto min-h-[460px] flex flex-col justify-between">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
@@ -1565,17 +2277,37 @@ export const ManagerDashboard: React.FC = () => {
                       <th className="py-2.5 px-3">Ngày Check-in</th>
                       <th className="py-2.5 px-3">Trạng Thái Đơn</th>
                       <th className="py-2.5 px-3">Cọc Giữ Chỗ</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Chi Tiết / Tiếp Nhận</th>
+                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {upcomingHandovers.map(b => (
-                      <tr key={b.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-3">
+                    {paginatedUpcomingHandovers.map(b => {
+                      const isInPerson = b.signingMethod === 'IN_PERSON' || (b as any).paymentMethod === 'AT_FACILITY' || (b as any).paymentMethod === 'IN_PERSON'
+                      const checkInTimeMs = b.expectedCheckInAt
+                        ? new Date(b.expectedCheckInAt).getTime()
+                        : (b.startDate ? new Date(b.startDate + 'T09:00:00').getTime() : 0)
+                      const nowMs = Date.now()
+                      const hoursOverdue = checkInTimeMs > 0 && nowMs > checkInTimeMs
+                        ? (nowMs - checkInTimeMs) / (1000 * 60 * 60)
+                        : 0
+                      const isNotFinished = b.status !== 'ACTIVE' && b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && b.status !== 'REJECTED'
+                      const isOverdue48h = isInPerson && !b.assignedStaffName && isNotFinished && hoursOverdue >= 48
+                      const isOverdue24h = isInPerson && !b.assignedStaffName && isNotFinished && hoursOverdue >= 24
+
+                      return (
+                      <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-3">
                           <span className="font-bold text-slate-900 block">{b.customerName || 'N/A'}</span>
                           <span className="text-[11px] text-slate-500 font-mono">{b.customerPhone || 'N/A'}</span>
                         </td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-900">
+                          <div>{b.bookingCode}</div>
+                          {b.createdAt && (
+                            <div className="text-[10px] font-sans font-normal text-slate-500 mt-0.5" title="Thời gian tạo đơn">
+                              Tạo: {new Date(b.createdAt).toLocaleDateString('vi-VN')} {new Date(b.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{b.unitCode}</td>
                         <td className="py-3 px-3">
                           <div className="font-mono tabular-nums">
@@ -1592,166 +2324,243 @@ export const ManagerDashboard: React.FC = () => {
                           </div>
                         </td>
                         <td className="py-3 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            b.status === 'CONFIRMED'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
-                          }`}>
-                            {b.status === 'CONFIRMED' ? 'Đã xác nhận' : 'Chờ hoàn tất cọc'}
-                          </span>
+                          <div className="flex flex-col gap-1 items-start">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              b.status === 'CONFIRMED'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : b.status === 'CANCELLED'
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}>
+                              {b.status === 'CONFIRMED' ? 'Đã xác nhận' : b.status === 'CANCELLED' ? 'Đã hủy' : 'Chờ hoàn tất cọc'}
+                            </span>
+                            {isOverdue48h ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-0.5 animate-pulse">
+                                <span className="material-symbols-outlined text-[11px]">warning</span>
+                                Quá hạn &gt; 48h
+                              </span>
+                            ) : isOverdue24h ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-0.5">
+                                <span className="material-symbols-outlined text-[11px]">schedule</span>
+                                {b.checkinOverdueReminderSentAt ? 'Đã gửi mail nhắc 24h' : 'Quá hạn > 24h'}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="py-3 px-3 font-mono font-bold text-slate-900">
                           {(b.depositPaid || b.depositAmount || 0).toLocaleString('vi-VN')} đ
                         </td>
                         <td className="py-3 px-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
-                            {b.assignedStaffName ? (
+                            {b.status === 'CANCELLED' ? (
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[11px] font-semibold">
+                                Đơn đã hủy
+                              </span>
+                            ) : b.assignedStaffName ? (
+                              <div
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
+                                title={b.staffAssignmentNotes || undefined}
+                              >
+                                <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
+                                <span>{b.assignedStaffName}</span>
+                              </div>
+                            ) : (role === 'FACILITY_MANAGER' || role === 'STAFF') && !isManagementRole ? (
                               <div className="flex items-center gap-1.5">
-                                <div
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-semibold"
-                                  title={b.staffAssignmentNotes || undefined}
-                                >
-                                  <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
-                                  <span>{b.assignedStaffName}</span>
-                                </div>
                                 <button
                                   type="button"
+                                  disabled={claimingBookingId === b.id}
                                   onClick={() => {
-                                    setActiveBookingId(b.id)
-                                    const el = document.getElementById('handover-workbench-section')
-                                    if (el) el.scrollIntoView({ behavior: 'smooth' })
+                                    const { isPremature } = isBookingBeforeCheckInTime(b)
+                                    if (isPremature) {
+                                      setEarlyConfirmState({
+                                        booking: b,
+                                        actionType: 'CLAIM_RECEPTION',
+                                        onConfirm: () => handleManagerClaimReception(b),
+                                      })
+                                    } else {
+                                      handleManagerClaimReception(b)
+                                    }
                                   }}
-                                  className={`px-2.5 py-1.5 rounded-lg font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-xs ${
-                                    activeBookingId === b.id
-                                      ? 'bg-cyan-700 text-white ring-2 ring-cyan-300'
-                                      : 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                                  }`}
-                                  title="Mở bàn vận hành tiếp đón & bàn giao cho đơn này"
+                                  className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                                 >
-                                  <span className="material-symbols-outlined text-[14px]">desktop_windows</span>
-                                  <span>{activeBookingId === b.id ? 'Đang mở bàn' : 'Vận hành bàn giao'}</span>
+                                  <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
+                                  <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
                                 </button>
+                                {isOverdue48h && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openManagerCancelOverdueModal(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Đơn quá 48h sau lịch hẹn check-in chưa tiếp nhận: Hủy đơn và trả ô kho về trạng thái trống"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">event_busy</span>
+                                    <span>Hủy đơn</span>
+                                  </button>
+                                )}
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                disabled={claimingBookingId === b.id}
-                                onClick={() => handleManagerClaimReception(b)}
-                                className="px-2.5 py-1.5 rounded-lg font-bold text-[11px] bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">how_to_reg</span>
-                                <span>{claimingBookingId === b.id ? 'Đang nhận...' : 'Tiếp nhận & Mở bàn'}</span>
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-semibold">
+                                  <span className="material-symbols-outlined text-[14px] text-amber-600">hourglass_empty</span>
+                                  <span>Chờ tiếp nhận</span>
+                                </span>
+                                {isOverdue48h && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openManagerCancelOverdueModal(b)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
+                                    title="Đơn quá 48h sau lịch hẹn check-in chưa tiếp nhận: Hủy đơn và trả ô kho về trạng thái trống"
+                                  >
+                                    <span className="material-symbols-outlined text-[14px]">event_busy</span>
+                                    <span>Hủy đơn</span>
+                                  </button>
+                                )}
+                              </div>
                             )}
 
                             <button
                               type="button"
                               onClick={() => {
                                 setReadOnlyTargetBookingId(b.id)
-                                setShowReadOnlyBookingModal(true)
-                              }}
-                              className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition cursor-pointer"
-                            >
-                              Xem hồ sơ đối soát
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Overdue Returns Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-amber-600 text-[20px]">assignment_return</span>
-                <h3 className="font-headline text-sm font-bold text-slate-900">
-                  Hợp Đồng Đến Hạn &amp; Chờ Nghiệm Thu Trả Kho ({activeRentals.length} hợp đồng)
-                </h3>
-              </div>
-              <span className="text-xs text-slate-500 font-mono">Thẩm định hiện trường bởi nhân viên quầy</span>
-            </div>
-
-            {activeRentals.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">Không có hợp đồng nào đang chờ nghiệm thu trả kho.</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
-                      <th className="py-2.5 px-3 rounded-l-lg">Khách Hàng</th>
-                      <th className="py-2.5 px-3">Mã Hợp Đồng</th>
-                      <th className="py-2.5 px-3">Kho</th>
-                      <th className="py-2.5 px-3">Hạn Kết Thúc</th>
-                      <th className="py-2.5 px-3">Hết Hạn Sau</th>
-                      <th className="py-2.5 px-3">Tiền Cọc Bảo Lãnh</th>
-                      <th className="py-2.5 px-3 rounded-r-lg text-right">Hành Động Quản Lý</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {(showAllRentals ? activeRentals : activeRentals.slice(0, 10)).map(r => {
-                      const countdown = getExpirationCountdown(r.endDate)
-                      return (
-                        <tr key={r.id} className="hover:bg-slate-50/80">
-                          <td className="py-3 px-3">
-                            <span className="font-bold text-slate-900 block">{r.customerName || 'N/A'}</span>
-                            <span className="text-[11px] text-slate-500 font-mono">{r.customerPhone || 'N/A'}</span>
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-blue-600">{r.bookingCode}</td>
-                          <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{r.unitCode}</td>
-                          <td className="py-3 px-3 font-mono text-slate-700">{r.endDate || 'Hôm nay'}</td>
-                          <td className="py-3 px-3">
-                            <span
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] border shadow-2xs ${countdown.badgeClass}`}
-                              title={`Hạn hợp đồng: ${r.endDate || 'N/A'}`}
-                            >
-                              <span className={`w-1.5 h-1.5 rounded-full ${countdown.dotClass}`}></span>
-                              <span className="font-mono">{countdown.text}</span>
-                            </span>
-                          </td>
-                          <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                            {(r.depositPaid || r.depositAmount || 0).toLocaleString('vi-VN')} đ
-                          </td>
-                          <td className="py-3 px-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReadOnlyTargetBookingId(r.id)
+                                setReadOnlyTargetUnitCode(b.unitCode || undefined)
+                                setReadOnlyTargetUnitBackendId(b.storageUnitId || undefined)
                                 setShowReadOnlyBookingModal(true)
                               }}
                               className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
                             >
                               Xem chi tiết
                             </button>
-                          </td>
-                        </tr>
+                          </div>
+                        </td>
+                      </tr>
                       )
                     })}
                   </tbody>
                 </table>
 
-                {activeRentals.length > 10 && (
-                  <div className="pt-3.5 mt-2 flex items-center justify-between border-t border-slate-100 text-xs text-slate-500">
-                    <span>
-                      Hiển thị <strong>{showAllRentals ? activeRentals.length : 10}</strong> trên tổng số <strong>{activeRentals.length}</strong> hợp đồng
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowAllRentals(!showAllRentals)}
-                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs transition cursor-pointer shadow-2xs"
-                    >
-                      {showAllRentals ? 'Thu gọn (10 hợp đồng)' : `Xem tất cả ${activeRentals.length} hợp đồng`}
-                    </button>
+                {/* Table 1 Pagination - Centered & Expanded */}
+                {sortedUpcomingHandovers.length > 0 && (
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-3 pt-4 mt-3 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="text-center md:text-left text-xs">
+                      Hiển thị{' '}
+                      <span className="font-semibold text-slate-800 font-mono">
+                        {sortedUpcomingHandovers.length === 0 ? 0 : (handoverPage - 1) * handoverPageSize + 1}
+                      </span>
+                      -
+                      <span className="font-semibold text-slate-800 font-mono">
+                        {Math.min(handoverPage * handoverPageSize, sortedUpcomingHandovers.length)}
+                      </span>{' '}
+                      trên tổng số <span className="font-semibold text-slate-800 font-mono">{sortedUpcomingHandovers.length}</span> đơn hẹn
+                    </div>
+
+                    {/* Center: Pagination Controls */}
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setHandoverPage(p => Math.max(1, p - 1))}
+                        disabled={handoverPage === 1}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang trước"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">chevron_left</span>
+                        <span className="hidden sm:inline">Trước</span>
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalHandoverPages }, (_, i) => i + 1).map(pageNum => {
+                          if (
+                            totalHandoverPages > 6 &&
+                            pageNum !== 1 &&
+                            pageNum !== totalHandoverPages &&
+                            Math.abs(pageNum - handoverPage) > 1
+                          ) {
+                            if (pageNum === 2 || pageNum === totalHandoverPages - 1) {
+                              return (
+                                <span key={pageNum} className="px-1 text-slate-400 font-mono">
+                                  ...
+                                </span>
+                              )
+                            }
+                            return null
+                          }
+                          const isActive = handoverPage === pageNum
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setHandoverPage(pageNum)}
+                              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-lg text-xs font-bold transition flex items-center justify-center cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-900 text-white shadow-xs'
+                                  : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                              }`}
+                            >
+                              {pageNum}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setHandoverPage(p => Math.min(totalHandoverPages, p + 1))}
+                        disabled={handoverPage === totalHandoverPages}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
+                        title="Trang sau"
+                      >
+                        <span className="hidden sm:inline">Sau</span>
+                        <span className="material-symbols-outlined text-[16px]">chevron_right</span>
+                      </button>
+                    </div>
+
+                    {/* Right: Page Size Selector */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500 hidden sm:inline">Số đơn / trang:</span>
+                      <select
+                        value={handoverPageSize}
+                        onChange={(e) => {
+                          setHandoverPageSize(Number(e.target.value))
+                          setHandoverPage(1)
+                        }}
+                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                        title="Số lượng đơn hiển thị trên một trang"
+                      >
+                        <option value={5}>5 đơn / trang</option>
+                        <option value={10}>10 đơn / trang</option>
+                        <option value={15}>15 đơn / trang</option>
+                        <option value={20}>20 đơn / trang</option>
+                        <option value={50}>50 đơn / trang</option>
+                      </select>
+                    </div>
                   </div>
                 )}
               </div>
             )}
           </div>
 
+        </section>
+      )}
+
+      {/* ============================================================== */}
+      {/* TAB 3: TRẢ KHO & NGHIỆM THU HIỆN TRƯỜNG */}
+      {/* ============================================================== */}
+      {activeTab === 'returns' && (
+        <section className="flex flex-col gap-6 animate-in fade-in">
+          <HandoverReturnWorkbench
+            initialStatusTabFilter="PENDING"
+            currentFacilityId={selectedFacilityId || user?.facilityId}
+            facilityName={facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở Boxora'}
+            userRole={role || 'FACILITY_MANAGER'}
+            userName={user?.fullName || 'Quản lý cơ sở'}
+            activeRentals={activeRentals}
+            onReturnCompleted={() => {
+              const targetFac = selectedFacilityId || user?.facilityId
+              if (targetFac) {
+                void fetchUnits(targetFac)
+                void fetchUpcomingHandovers(targetFac, checkinTimeframe, checkinFromDate, checkinToDate)
+              }
+            }}
+          />
         </section>
       )}
 
@@ -1970,86 +2779,7 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 4: HIỆU SUẤT & NGOẠI LỆ QUẢN LÝ */}
-      {/* ============================================================== */}
-      {activeTab === 'performance' && (
-        <section className="flex flex-col gap-6">
-          
-          {/* Facility Performance Overview (Summary 6) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-              <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Tỷ Lệ Lấp Đầy Cơ Sở</span>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold font-mono text-blue-600 tabular-nums">{rentedPercent}%</span>
-                <span className="text-xs text-slate-500">mục tiêu 85%</span>
-              </div>
-              <div className="mt-3 w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div className="bg-blue-600 h-full rounded-full" style={{ width: `${rentedPercent}%` }}></div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => setShowIoTModal(true)}
-              className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs cursor-pointer hover:border-slate-300 transition"
-              title="Xem thông số hạ tầng vi khí hậu & telemetry IoT"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Hạ Tầng Mạng IoT LoRaWAN</span>
-                <span className="material-symbols-outlined text-slate-400 text-[18px]">sensors</span>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-lg font-bold text-slate-700">Not connected</span>
-                <span className="text-xs text-slate-500">hardware integration</span>
-              </div>
-              <span className="text-xs text-amber-700 font-semibold mt-2 block">No live device telemetry is available.</span>
-            </div>
-
-          </div>
-
-          {/* Exceptions Requiring Manager Review */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-purple-600 text-[22px]">gavel</span>
-                <h3 className="font-headline text-base font-bold text-slate-900">
-                  Trung Tâm Phê Duyệt &amp; Xử Lý Ngoại Lệ Nghiệp Vụ
-                </h3>
-              </div>
-              <span className="text-xs text-slate-500">Chỉ dành cho Quản lý cơ sở / BOM</span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              
-              {/* Exception 1: Asset Sealing & Delinquency */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-slate-900 text-xs">Niêm Phong Tài Sản Quá Hạn</span>
-                    <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-rose-100 text-rose-800">
-                      {overdueUnitsCount} kho nợ cước
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Theo dõi hợp đồng quá hạn, thu hồi PIN/QR trong Boxora khi cần và lập biên bản niêm phong. Trạng thái khóa vật lý chưa được xác minh ({overdueItems.length} hồ sơ cần theo dõi).
-                  </p>
-                </div>
-                <Link
-                  to="/portal/overdue"
-                  className="mt-4 w-full py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition text-center block"
-                >
-                  Quản Lý Cưỡng Chế Nợ &rarr;
-                </Link>
-              </div>
-
-            </div>
-          </div>
-
-        </section>
-      )}
-
-      {/* ============================================================== */}
-      {/* TAB 5: CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
+      {/* TAB 7: CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
       {/* ============================================================== */}
       {activeTab === 'policy' && (
         <section className="flex flex-col gap-6">
@@ -2124,12 +2854,12 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
                   <span className="text-3xl font-extrabold font-mono text-emerald-600 tabular-nums">
-                    {facilityPolicy?.cancellationFullRefundHours ?? 48}h
+                    {facilityPolicy?.cancellationFullRefundHours ?? 24}h
                   </span>
-                  <span className="text-xs text-slate-500">hoàn 100%</span>
+                  <span className="text-xs text-slate-500">hoàn 100% kể từ khi đặt</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Hoàn {facilityPolicy?.cancellationPartialRefundPercent ?? 50}% nếu hủy trước <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundHours ?? 24}h</strong>
+                  Hoàn {facilityPolicy?.cancellationPartialRefundPercent ?? 70}% nếu hủy từ {facilityPolicy?.cancellationFullRefundHours ?? 24}h - <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundHours ?? 48}h</strong> (Quá 48h hoàn 50%)
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
@@ -2185,6 +2915,16 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
+      {/* TAB: YÊU CẦU HOÀN TIỀN HỦY ĐƠN ĐẶT CHỖ */}
+      {/* ============================================================== */}
+      {activeTab === 'refunds' && (
+        <RefundManagementWorkbench
+          facilityId={selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : user?.facilityId}
+          facilityName={currentFacilityName}
+        />
+      )}
+
+      {/* ============================================================== */}
       {/* MODALS */}
       {/* ============================================================== */}
       
@@ -2205,13 +2945,18 @@ export const ManagerDashboard: React.FC = () => {
         onCreated={handleStorageUnitCreated}
       />
 
-      {/* 4. Read-Only Booking & Prerequisites Detail Modal (FOR FACILITY MANAGER) */}
+      {/* 4. Read-Only Booking & Prerequisites Detail Modal (FOR FACILITY MANAGER / ADMIN / BUSINESS MANAGER) */}
       <BookingDetailReadOnlyModal
         isOpen={showReadOnlyBookingModal}
-        onClose={() => setShowReadOnlyBookingModal(false)}
+        onClose={() => {
+          setShowReadOnlyBookingModal(false)
+          setReadOnlyTargetBookingId(undefined)
+          setReadOnlyTargetUnitCode(undefined)
+          setReadOnlyTargetUnitBackendId(undefined)
+        }}
         bookingId={readOnlyTargetBookingId}
-        unitCode={selectedUnit?.id}
-        unitBackendId={selectedUnit?.backendId}
+        unitCode={readOnlyTargetUnitCode || selectedUnit?.id}
+        unitBackendId={readOnlyTargetUnitBackendId || selectedUnit?.backendId}
       />
 
       {/* 5. Door Access History Modal */}
@@ -2278,6 +3023,165 @@ export const ManagerDashboard: React.FC = () => {
           role={role || 'FACILITY_MANAGER'}
         />
       )}
+
+      {/* 12. Early Check-In Confirmation Modal */}
+      <EarlyCheckInConfirmModal
+        isOpen={Boolean(earlyConfirmState)}
+        booking={earlyConfirmState?.booking || null}
+        actionType={earlyConfirmState?.actionType || 'CLAIM_RECEPTION'}
+        onConfirm={() => {
+          const action = earlyConfirmState?.onConfirm
+          setEarlyConfirmState(null)
+          if (action) action()
+        }}
+        onClose={() => setEarlyConfirmState(null)}
+      />
+
+      {/* 13. Technical Maintenance Reason & Maintainer Modal */}
+      {maintenanceModalUnit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-purple-100 bg-purple-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shadow-xs">
+                  <span className="material-symbols-outlined text-[22px]">build</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-purple-700 block">
+                    Lập phiếu bảo trì ngăn kho
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Chuyển Bảo Trì Kỹ Thuật — Kho #{maintenanceModalUnit.id}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMaintenanceModalUnit(null)}
+                className="w-8 h-8 rounded-lg hover:bg-purple-100 text-slate-500 flex items-center justify-center transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmEnterMaintenance} className="p-5 space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Mã ngăn kho</span>
+                  <span className="font-mono font-bold text-slate-900 text-sm">#{maintenanceModalUnit.id}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Vị trí</span>
+                  <span className="font-semibold text-slate-800">{maintenanceModalUnit.floorLevel} · Khu {getUnitZone(maintenanceModalUnit)}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-mono block">Diện tích</span>
+                  <span className="font-mono font-bold text-slate-800">{maintenanceModalUnit.size}</span>
+                </div>
+              </div>
+
+              {maintenanceError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 font-medium flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] shrink-0">error</span>
+                  <span>{maintenanceError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Người thực hiện / Phụ trách bảo trì <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">
+                    engineering
+                  </span>
+                  <input
+                    type="text"
+                    value={maintenanceByInput}
+                    onChange={(e) => setMaintenanceByInput(e.target.value)}
+                    placeholder="Nhập tên kỹ thuật viên hoặc nhân sự phụ trách..."
+                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border border-slate-300 focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 outline-none font-medium text-slate-900"
+                    required
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Mặc định ghi nhận tài khoản đang thao tác, có thể sửa thành tên kỹ thuật viên trực tiếp xử lý.
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-800 mb-1.5">
+                  Lý do bảo trì kỹ thuật <span className="text-rose-500">*</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {[
+                    'Thay pin / sửa chữa khóa điện tử SmartLock',
+                    'Vệ sinh khử khuẩn & bảo dưỡng định kỳ',
+                    'Sửa chữa bản lề / ray trượt cửa cuốn',
+                    'Kiểm tra cảm biến nhiệt ẩm / PCCC',
+                    'Sơn dặm & chống thấm vách ngăn kho',
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setMaintenanceReasonInput(preset)}
+                      className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition cursor-pointer ${
+                        maintenanceReasonInput === preset
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                          : 'bg-slate-50 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border-slate-200'
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  rows={3}
+                  value={maintenanceReasonInput}
+                  onChange={(e) => setMaintenanceReasonInput(e.target.value)}
+                  placeholder="Mô tả cụ thể tình trạng kỹ thuật hoặc hạng mục cần bảo trì, sửa chữa..."
+                  className="w-full p-3 rounded-xl border border-slate-300 focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 outline-none font-medium text-slate-900 resize-none"
+                  required
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-start gap-2">
+                <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0 mt-0.5">info</span>
+                <span>
+                  Khi chuyển sang trạng thái <strong>Đang bảo trì</strong>, ngăn kho này sẽ tạm khóa đặt chỗ mới cho đến khi hoàn tất bảo trì.
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setMaintenanceModalUnit(null)}
+                  disabled={isSubmittingMaintenance}
+                  className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold transition cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingMaintenance}
+                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">build_circle</span>
+                  <span>{isSubmittingMaintenance ? 'Đang lưu...' : 'Xác nhận chuyển bảo trì'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <CancelOverdueBookingModal
+        isOpen={Boolean(cancellingOverdueBooking)}
+        booking={cancellingOverdueBooking}
+        userRoleTitle={user?.fullName ? `${user.fullName} (Quản lý cơ sở)` : 'Quản lý cơ sở Boxora'}
+        onConfirm={(b, r) => executeManagerCancelOverdueBooking(b, r)}
+        onClose={() => setCancellingOverdueBooking(null)}
+      />
 
     </div>
   )

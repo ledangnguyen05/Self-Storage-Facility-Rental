@@ -24,33 +24,42 @@ public interface PaymentMapper {
     default void enrichDetails(Payment entity, @org.mapstruct.MappingTarget PaymentResponse response) {
         if (entity == null || response == null) return;
         if (entity.getBooking() != null) {
-            boolean unitWasHandedOver = entity.getBooking().getHandoverTime() != null;
-            if (unitWasHandedOver && entity.getBooking().getStorageUnit() != null) {
+            if (entity.getBooking().getStorageUnit() != null) {
                 response.setUnitCode(entity.getBooking().getStorageUnit().getUnitCode());
-            }
-            if (entity.getBooking().getStorageUnit() != null
-                    && entity.getBooking().getStorageUnit().getFacility() != null) {
-                response.setFacilityName(entity.getBooking().getStorageUnit().getFacility().getName());
+                if (entity.getBooking().getStorageUnit().getFacility() != null) {
+                    response.setFacilityName(entity.getBooking().getStorageUnit().getFacility().getName());
+                    response.setFacilityId(entity.getBooking().getStorageUnit().getFacility().getId());
+                }
             }
             if (entity.getBooking().getCustomer() != null) {
                 response.setCustomerName(entity.getBooking().getCustomer().getFullName());
             }
         }
         if (entity.getContract() != null) {
-            boolean bookingWasHandedOver = entity.getBooking() == null
-                    || entity.getBooking().getHandoverTime() != null;
-            boolean contractUnitWasHandedOver = bookingWasHandedOver
-                    && (entity.getContract().getBooking() == null
-                    || entity.getContract().getBooking().getHandoverTime() != null);
-            if (response.getUnitCode() == null && contractUnitWasHandedOver && entity.getContract().getUnit() != null) {
+            response.setContractCode(entity.getContract().getContractCode());
+            if (response.getUnitCode() == null && entity.getContract().getUnit() != null) {
                 response.setUnitCode(entity.getContract().getUnit().getUnitCode());
             }
             if (response.getFacilityName() == null && entity.getContract().getFacility() != null) {
                 response.setFacilityName(entity.getContract().getFacility().getName());
             }
+            if (response.getFacilityId() == null && entity.getContract().getFacility() != null) {
+                response.setFacilityId(entity.getContract().getFacility().getId());
+            }
             if (response.getCustomerName() == null && entity.getContract().getCustomer() != null) {
                 response.setCustomerName(entity.getContract().getCustomer().getFullName());
             }
+        }
+
+        // Determine reconciliation status
+        if (entity.getConfirmedAt() != null || entity.getConfirmedByStaff() != null) {
+            response.setReconciliationStatus("RECONCILED");
+        } else if (entity.getPaymentMethod() != null && "VNPAY".equalsIgnoreCase(entity.getPaymentMethod())) {
+            response.setReconciliationStatus("AUTO_RECONCILED");
+        } else if (entity.getStatus() == com.boxora.enums.PaymentStatus.PAID) {
+            response.setReconciliationStatus("PENDING_RECONCILIATION");
+        } else {
+            response.setReconciliationStatus("UNRECONCILED");
         }
     }
 }

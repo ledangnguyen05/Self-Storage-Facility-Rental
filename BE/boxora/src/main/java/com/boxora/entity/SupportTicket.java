@@ -78,4 +78,49 @@ public class SupportTicket extends BaseEntity {
 
     @Column(name = "closed_at")
     private java.time.LocalDateTime closedAt;
+
+    @Column(name = "bank_name", length = 100)
+    private String bankName;
+
+    @Column(name = "bank_account_number", length = 50)
+    private String bankAccountNumber;
+
+    @Column(name = "bank_account_name", length = 100)
+    private String bankAccountName;
+
+    @Column(name = "refund_amount", precision = 15, scale = 2)
+    private java.math.BigDecimal refundAmount;
+
+    @Column(name = "transfer_proof_url", columnDefinition = "TEXT")
+    private String transferProofUrl;
+
+    @Column(name = "transfer_transaction_ref", length = 100)
+    private String transferTransactionRef;
+
+    @Column(name = "transfer_confirmed_at")
+    private java.time.LocalDateTime transferConfirmedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "transfer_confirmed_by_id")
+    private User transferConfirmedBy;
+
+    @Column(name = "fm_approved_at")
+    private java.time.LocalDateTime fmApprovedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "fm_approved_by_id")
+    private User fmApprovedBy;
+
+    @Column(name = "fm_approval_note", columnDefinition = "TEXT")
+    private String fmApprovalNote;
+
+    @Column(name = "refund_status", length = 50)
+    @Builder.Default
+    private String refundStatus = "NONE";
+
+    @Column(name = "rating")
+    private Integer rating;
+
+    @Column(name = "customer_feedback", columnDefinition = "TEXT")
+    private String customerFeedback;
 }

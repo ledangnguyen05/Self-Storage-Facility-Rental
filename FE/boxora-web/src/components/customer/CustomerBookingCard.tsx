@@ -128,11 +128,17 @@ export function CustomerBookingCard({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-base font-extrabold text-slate-900">
-                  {unitCode ? `KHO #${unitCode}` : 'Vị trí kho xác nhận khi check-in'}
+                  {unitCode ? `KHO #${unitCode}` : 'KHO CHỜ GÁN KHI CHECK-IN'}
                 </span>
                 <span className={`stitch-badge ${
                   booking.status === 'ACTIVE'
                     ? 'stitch-badge-available'
+                    : booking.status === 'CANCELLED' && (booking.paymentStatus === 'REFUNDED' || (booking as any).refundStatus === 'PROCESSED' || (booking as any).refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' || (booking as any).refundStatus === 'COMPLETED')
+                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    : booking.status === 'CANCELLED' && (booking.paymentStatus === 'REFUND_PENDING' || Number(booking.depositPaid || 0) > 0)
+                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                    : booking.status === 'CANCELLED'
+                    ? 'bg-rose-100 text-rose-800 border border-rose-300'
                     : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
                     ? 'bg-amber-100 text-amber-800 border border-amber-300'
                     : 'bg-cyan-100 text-cyan-800 border border-cyan-300'
@@ -140,12 +146,24 @@ export function CustomerBookingCard({
                   <span className={`pulsing-dot ${
                     booking.status === 'ACTIVE'
                       ? 'bg-emerald-500'
+                      : booking.status === 'CANCELLED' && (booking.paymentStatus === 'REFUNDED' || (booking as any).refundStatus === 'PROCESSED' || (booking as any).refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' || (booking as any).refundStatus === 'COMPLETED')
+                      ? 'bg-emerald-500'
+                      : booking.status === 'CANCELLED' && (booking.paymentStatus === 'REFUND_PENDING' || Number(booking.depositPaid || 0) > 0)
+                      ? 'bg-amber-500 animate-pulse'
+                      : booking.status === 'CANCELLED'
+                      ? 'bg-rose-500'
                       : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
                       ? 'bg-amber-500'
                       : 'bg-cyan-500'
                   }`}></span>
                   {booking.status === 'ACTIVE'
                     ? 'Đang hoạt động'
+                    : booking.status === 'CANCELLED' && (booking.paymentStatus === 'REFUNDED' || (booking as any).refundStatus === 'PROCESSED' || (booking as any).refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' || (booking as any).refundStatus === 'COMPLETED')
+                    ? '✓ Đã hoàn tiền'
+                    : booking.status === 'CANCELLED' && (booking.paymentStatus === 'REFUND_PENDING' || Number(booking.depositPaid || 0) > 0)
+                    ? 'Hủy đơn hoàn tiền chờ xác nhận'
+                    : booking.status === 'CANCELLED'
+                    ? 'Đã hủy'
                     : (booking.status as string) === 'PENDING_CONTACT' || (booking.status as string) === 'PENDING_CONFIRMATION'
                     ? 'Chờ xác nhận'
                     : 'Chờ check in'}
@@ -165,7 +183,7 @@ export function CustomerBookingCard({
           </div>
         </div>
 
-        <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs font-mono text-slate-600">
+        <div className="flex items-center justify-between gap-2 flex-wrap rounded-lg border border-slate-200 bg-slate-50 p-2.5 text-xs font-mono text-slate-600">
           <span className="flex items-center gap-1.5">
             <span className="material-symbols-outlined text-[15px] text-cyan-600">security</span>
             PIN/QR trong Boxora
@@ -249,7 +267,7 @@ export function CustomerBookingCard({
           <span className="material-symbols-outlined text-[16px]">autorenew</span>
           Gia hạn • {new Intl.NumberFormat('vi-VN').format(monthlyFee)} đ/tháng
         </button>
-        <button type="button" onClick={() => onReportIssue(unitCode)} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-200">
+        <button type="button" onClick={() => onReportIssue(unitCode || "")} className="flex items-center gap-1.5 rounded-lg bg-slate-100 px-3.5 text-xs font-semibold text-slate-800 transition-colors hover:bg-slate-200">
           <span className="material-symbols-outlined text-[16px]">report</span>
           Báo sự cố
         </button>

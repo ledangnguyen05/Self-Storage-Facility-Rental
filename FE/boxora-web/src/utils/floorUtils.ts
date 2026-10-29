@@ -90,12 +90,12 @@ export function resolveBookingFloor(
 
 /**
  * Filters arrivals list based on:
- * - Search query (customerName, customerPhone, bookingCode, unitCode)
+ * - Search query (customerName, customerPhone, bookingCode, unitCode, identityCardNumber / CCCD)
  * - Selected floor ('all' or '1', '2', '3', etc.)
  * - Selected shift / timeframe ('current' | 'today' | 'past' | 'future' | 'all')
  * - Optional fromDateStr / toDateStr ('YYYY-MM-DD')
  */
-export type AppointmentStatusFilter = 'ALL' | 'PENDING' | 'PENDING_CONTACT' | 'CONFIRMED' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
+export type AppointmentStatusFilter = 'ALL' | 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
 
 export function filterArrivals(
   arrivals: Booking[],
@@ -119,7 +119,8 @@ export function filterArrivals(
       const matchPhone = (b.customerPhone || '').toLowerCase().includes(q)
       const matchBookingCode = (b.bookingCode || '').toLowerCase().includes(q)
       const matchUnitCode = (b.unitCode || '').toLowerCase().includes(q)
-      if (!matchName && !matchPhone && !matchBookingCode && !matchUnitCode) return false
+      const matchCccd = (b.identityCardNumber || (b as any).customer?.identityCardNumber || '').toLowerCase().includes(q)
+      if (!matchName && !matchPhone && !matchBookingCode && !matchUnitCode && !matchCccd) return false
     }
 
     // 2. Floor filter
@@ -138,15 +139,8 @@ export function filterArrivals(
 
     // 3. Appointment Status filter (Áp dụng trước để bảo toàn kết quả khi nhân viên chủ động lọc theo tab)
     if (statusFilter && statusFilter !== 'ALL') {
-      if (statusFilter === 'PENDING_CONTACT') {
-        const isPendingContact = (b.status as string) === 'PENDING_CONTACT' || (b.status as string) === 'PENDING_CONFIRMATION'
-        if (!isPendingContact) return false
-        return true // Khi xem Đơn chờ xác nhận, hiển thị ngay không bị chặn bởi timeframe ca
-      } else if (statusFilter === 'CONFIRMED') {
-        const isConfirmed = b.status === 'CONFIRMED' || (b.status as string) === 'AWAITING_CHECKIN'
-        if (!isConfirmed) return false
-      } else if (statusFilter === 'PENDING') {
-        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE' || (b.status as string) === 'PENDING_CONTACT'
+      if (statusFilter === 'PENDING') {
+        const isPending = b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT' || b.status === 'PENDING_APPROVAL' || b.status === 'PENDING_SIGNATURE'
         if (!isPending) return false
       } else if (statusFilter === 'ACTIVE') {
         if (b.status !== 'ACTIVE') return false

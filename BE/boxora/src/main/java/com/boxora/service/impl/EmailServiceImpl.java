@@ -432,7 +432,7 @@ public class EmailServiceImpl implements EmailService {
                 + "</table>";
 
         String note = renderSecurityNote(
-                "Biên lai điện tử này được lưu trữ tự động trong tài khoản của quý khách trên hệ thống Boxora. Cảm ơn quý khách đã tin tưởng sử dụng dịch vụ."
+                "Đơn đặt giữ chỗ của quý khách đang được chuyển đến nhân viên tại cơ sở để xếp buồng kho thực tế. Ngay sau khi gán kho, hệ thống sẽ gửi email chứa Hợp đồng hoàn chỉnh đã có mã ô kho cụ thể và mã khóa thông minh IoT 24/7 cho quý khách."
         );
 
         String html = buildMasterTemplate(
@@ -986,6 +986,407 @@ public class EmailServiceImpl implements EmailService {
         sendHtmlEmail(toEmail, subject, html, plainText);
     }
 
+    @Override
+    @Async
+    public void sendHandoverWithContractEmail(String toEmail, String fullName, String unitCode, String bookingCode, String accessPin, String facilityName, String contractCode, String startDate, String endDate, String rentalFee, String contractUrl) {
+        String safeName = escape(fullName != null ? fullName : "Quý khách");
+        String safeUnit = escape(unitCode != null ? unitCode : "N/A");
+        String safeBooking = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeFacility = escape(facilityName != null && !facilityName.isBlank() ? facilityName : "Boxora Facility");
+        String safePin = escape(accessPin != null ? accessPin : "");
+        String safeContract = escape(contractCode != null ? contractCode : "N/A");
+        String safeStart = escape(startDate != null ? startDate : "N/A");
+        String safeEnd = escape(endDate != null ? endDate : "N/A");
+        String safeFee = escape(rentalFee != null ? rentalFee : "0");
+        String resolvedUrl = resolveUrl(contractUrl != null && !contractUrl.isBlank() ? contractUrl : "/my-bookings");
+
+        String subject = String.format("[Boxora] Bàn giao ô kho #%s & Hợp đồng thuê hoàn chỉnh - Đơn %s", safeUnit, safeBooking);
+
+        String badge = renderBadge("BÀN GIAO THÀNH CÔNG • ĐÃ GÁN MÃ KHO", "#ecfdf5", "#047857");
+        String intro = String.format(
+                "Nhân viên Boxora tại cơ sở <strong>%s</strong> đã hoàn tất xếp buồng kho thực tế cho đơn đặt chỗ <strong>%s</strong> của quý khách. Dưới đây là mã định danh ô kho, mã khóa thông minh IoT 24/7 và văn bản Hợp đồng thuê hoàn chỉnh.",
+                safeFacility, safeBooking
+        );
+
+        String details = "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">"
+                + renderDetailRow("Mã đơn đặt", "<strong>" + safeBooking + "</strong>")
+                + renderDetailRow("Cơ sở lưu trữ", safeFacility)
+                + renderDetailRow("Buồng kho vật lý chính thức", "<span style=\"font-size: 16px; font-weight: 800; color: #0284c7;\">#" + safeUnit + "</span>")
+                + renderDetailRow("Mã hợp đồng thuê", "<strong>" + safeContract + "</strong>")
+                + renderDetailRow("Thời hạn thuê", safeStart + " đến " + safeEnd)
+                + renderDetailRow("Trạng thái", "<span style=\"color: #047857; font-weight: 700;\">ĐÃ GÁN KHO & ĐÃ KÝ HỢP ĐỒNG ĐIỆN TỬ</span>")
+                + "</table>";
+
+        String highlightBox = "";
+        if (!safePin.isBlank()) {
+            highlightBox = renderHighlightBox(
+                "MÃ KHÓA THÔNG MINH IOT (MÃ PIN TRUY CẬP 24/7)",
+                    safePin,
+                    "#f0fdf4",
+                    "#15803d",
+                    "#86efac"
+            );
+        }
+
+        String contractSummary = "<div style=\"background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;\">"
+                + "<h4 style=\"margin: 0 0 10px 0; color: #0f172a; font-size: 14px; font-weight: 700;\">Tóm Tắt Hợp Đồng Thuê Kho Tự Quản</h4>"
+                + "<p style=\"margin: 0 0 8px 0; color: #334155; font-size: 12px; line-height: 1.6;\">"
+                + "• <strong>Bên cho thuê:</strong> Hệ thống kho tự quản thông minh Boxora (" + safeFacility + ")<br/>"
+                + "• <strong>Bên thuê:</strong> " + safeName + " (" + escape(toEmail) + ")<br/>"
+                + "• <strong>Vị trí kho thuê:</strong> Buồng kho số <strong>#" + safeUnit + "</strong><br/>"
+                + "• <strong>Hiệu lực pháp lý:</strong> Đã ký kết trực tuyến qua hệ thống ký số điện tử DocuSeal, có giá trị pháp lý đầy đủ."
+                + "</p>"
+                + "</div>";
+
+        String button = renderButton("Xem & Tải Hợp Đồng Hoàn Chỉnh", resolvedUrl, "#0284c7");
+
+        String note = renderSecurityNote(
+                "Quý khách có thể sử dụng mã PIN trên hoặc mở khóa thông minh qua Portal khách hàng 24/7. Vui lòng bảo mật thông tin mã PIN để bảo vệ tài sản lưu trữ của quý khách."
+        );
+
+        String html = buildMasterTemplate(
+                "Bàn Giao Kho & Hợp Đồng Hoàn Chỉnh",
+                badge,
+                "Bàn Giao Buồng Kho & Hợp Đồng Hoàn Chỉnh",
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                details,
+                highlightBox + contractSummary,
+                button,
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - BÀN GIAO KHO & HỢP ĐỒNG HOÀN CHỈNH
+                ===========================================
+                Kính gửi %s,
+
+                Đơn đặt chỗ %s tại cơ sở %s đã được nhân viên hoàn tất xếp buồng kho thực tế.
+                - Mã buồng kho: #%s
+                - Mã hợp đồng: %s
+                - Mã khóa thông minh IoT: %s
+                - Thời hạn thuê: %s đến %s
+                - Xem hợp đồng hoàn chỉnh: %s
+
+                Trân trọng,
+                Đội ngũ Boxora Self-Storage
+                """, safeName, safeBooking, safeFacility, safeUnit, safeContract, safePin, safeStart, safeEnd, resolvedUrl);
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 14. Booking Cancellation / Rejection Email
+    // ─────────────────────────────────────────────────────────────────────────
+    @Override
+    @Async
+    public void sendBookingCancellationEmail(
+            String toEmail,
+            String fullName,
+            String bookingCode,
+            String facilityName,
+            String unitCode,
+            String reason,
+            boolean isRejectedByStaff,
+            BigDecimal refundAmount
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeCode = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Hệ thống Boxora");
+        String safeUnit = escape(unitCode != null ? unitCode : "Kho tự quản Boxora");
+        String safeReason = escape(reason != null && !reason.isBlank() ? reason : "Không có lý do chi tiết");
+
+        String subject = isRejectedByStaff
+                ? String.format("[Boxora] Thông báo từ chối đơn đặt giữ chỗ %s", safeCode)
+                : String.format("[Boxora] Xác nhận hủy đơn đặt kho %s", safeCode);
+
+        String badge = isRejectedByStaff
+                ? renderBadge("ĐƠN ĐÃ TỪ CHỐI", "#fef2f2", "#b91c1c")
+                : renderBadge("ĐÃ HỦY ĐƠN", "#f8fafc", "#475569");
+
+        String title = isRejectedByStaff
+                ? "Thông Báo Từ Chối Đơn Đặt Giữ Chỗ"
+                : "Xác Nhận Hủy Đơn Đặt Kho Theo Yêu Cầu";
+
+        String intro = isRejectedByStaff
+                ? String.format("Boxora rất tiếc phải thông báo: Đơn đặt giữ chỗ mã số <strong>%s</strong> tại cơ sở <strong>%s</strong> của Quý khách hiện chưa thể tiếp nhận.", safeCode, safeFacility)
+                : String.format("Hệ thống Boxora xác nhận đơn đặt kho mã số <strong>%s</strong> tại cơ sở <strong>%s</strong> đã được hủy thành công theo yêu cầu của Quý khách.", safeCode, safeFacility);
+
+        String statusDisplay = isRejectedByStaff
+                ? "<span style=\"color: #b91c1c; font-weight: 700;\">ĐÃ TỪ CHỐI (CANCELLED)</span>"
+                : "<span style=\"color: #475569; font-weight: 700;\">ĐÃ HỦY THEO YÊU CẦU</span>";
+
+        StringBuilder detailsBuilder = new StringBuilder("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">");
+        detailsBuilder.append(renderDetailRow("Mã đơn đặt kho", "<strong>" + safeCode + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Cơ sở tiếp đón", safeFacility));
+        detailsBuilder.append(renderDetailRow("Quy cách / Kho", safeUnit));
+        detailsBuilder.append(renderDetailRow("Trạng thái", statusDisplay));
+        detailsBuilder.append(renderDetailRow(isRejectedByStaff ? "Lý do từ chối" : "Lý do hủy đơn", "<span style=\"color: #b91c1c; font-weight: 600;\">" + safeReason + "</span>"));
+
+        if (refundAmount != null && refundAmount.compareTo(BigDecimal.ZERO) > 0) {
+            detailsBuilder.append(renderDetailRow("Số tiền hoàn cọc", "<strong style=\"color: #047857;\">" + formatVnd(refundAmount) + "</strong> (Đang xử lý hoàn cọc)"));
+        }
+        detailsBuilder.append("</table>");
+
+        String alertBox = renderAlertBox(
+                isRejectedByStaff ? "Hỗ trợ đặt lại buồng kho" : "Lưu ý sau khi hủy đơn",
+                isRejectedByStaff
+                        ? "Nếu Quý khách cần hỗ trợ thêm, muốn thay đổi lịch hẹn hoặc chọn quy cách kho khác, vui lòng liên hệ Hotline <strong>1900-BOXORA</strong> hoặc truy cập website Boxora để thực hiện đặt buồng kho mới."
+                        : "Toàn bộ mã PIN và quyền truy cập buồng kho (nếu có) đã được thu hồi an toàn. Quý khách có thể xem lại lịch sử đặt kho bất cứ lúc nào trên ứng dụng Boxora.",
+                isRejectedByStaff ? "#fffbeb" : "#f8fafc",
+                isRejectedByStaff ? "#b45309" : "#475569",
+                isRejectedByStaff ? "#f59e0b" : "#cbd5e1"
+        );
+
+        String button = renderButton("Xem Thêm Các Kho Khác", resolveUrl("/"), "#0284c7");
+        String note = renderSecurityNote("Bộ phận Quản lý Khách hàng Boxora • Thông báo tự động từ hệ thống quản lý đặt kho.");
+
+        String html = buildMasterTemplate(
+                title,
+                badge,
+                title,
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                detailsBuilder.toString(),
+                alertBox,
+                button,
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - HỆ THỐNG KHO TỰ QUẢN THÔNG MINH
+                ========================================
+                %s
+
+                Kính gửi %s,
+
+                %s
+                - Mã đơn: %s
+                - Cơ sở: %s
+                - Vị trí/Quy cách: %s
+                - Lý do: %s
+                %s
+
+                Mọi thắc mắc xin vui lòng liên hệ Hotline 1900-BOXORA hoặc truy cập %s.
+
+                Trân trọng,
+                Đội ngũ Quản lý Vận hành Boxora Smart Storage
+                """,
+                title.toUpperCase(),
+                fullName != null ? fullName : "Quý khách",
+                isRejectedByStaff ? "Đơn đặt kho của Quý khách chưa thể tiếp nhận:" : "Đơn đặt kho đã được hủy thành công:",
+                bookingCode != null ? bookingCode : "N/A",
+                facilityName != null ? facilityName : "Boxora",
+                unitCode != null ? unitCode : "Kho tự quản",
+                reason != null ? reason : "Không có lý do chi tiết",
+                (refundAmount != null && refundAmount.compareTo(BigDecimal.ZERO) > 0) ? "- Số tiền hoàn cọc: " + formatVnd(refundAmount) : "",
+                frontendUrl != null ? frontendUrl : "https://boxora.vn"
+        );
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 15. Check-in Overdue Reminder Email (sau 24h chưa tiếp nhận)
+    // ─────────────────────────────────────────────────────────────────────────
+    @Override
+    @Async
+    public void sendCheckinOverdueReminderEmail(
+            String toEmail,
+            String fullName,
+            String bookingCode,
+            String facilityName,
+            String facilityAddress,
+            String facilityPhone,
+            String unitCode,
+            LocalDateTime checkInDateTime
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeCode = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Cơ sở Boxora");
+        String safeAddress = escape(facilityAddress != null ? facilityAddress : "Theo thông tin cơ sở Boxora đã đăng ký");
+        String safePhone = escape(facilityPhone != null ? facilityPhone : "1900-BOXORA");
+        String safeUnit = escape(unitCode != null ? unitCode : "Kho tự quản");
+        String checkInStr = checkInDateTime != null
+                ? checkInDateTime.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm - dd/MM/yyyy"))
+                : "Giờ tiếp đón đã đăng ký";
+
+        String subject = String.format("[Boxora - KHẨN CẤP] Nhắc nhở: Quá hạn 24 giờ tiếp nhận buồng kho %s - Đơn %s", safeUnit, safeCode);
+
+        String badge = renderBadge("QUÁ HẠN 24H TIẾP NHẬN", "#fef3c7", "#d97706");
+        String title = "Thông Báo Cần Đến Tiếp Nhận Kho Ngay";
+        String intro = String.format(
+                "Đơn đặt giữ chỗ buồng kho mã số <strong>%s</strong> tại cơ sở <strong>%s</strong> của Quý khách theo hình thức <strong>Ký giấy &amp; thanh toán tại quầy</strong> đã <strong>quá 24 giờ</strong> kể từ thời gian hẹn check-in (<strong>%s</strong>) nhưng hiện tại vẫn chưa hoàn tất thủ tục tiếp nhận.",
+                safeCode, safeFacility, checkInStr
+        );
+
+        String details = "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">"
+                + renderDetailRow("Mã đơn đặt kho", "<strong>" + safeCode + "</strong>")
+                + renderDetailRow("Cơ sở tiếp đón", "<strong>" + safeFacility + "</strong>")
+                + renderDetailRow("Địa chỉ cơ sở", safeAddress)
+                + renderDetailRow("Buồng kho đăng ký", "<span style=\"color: #0284c7; font-weight: 700;\">" + safeUnit + "</span>")
+                + renderDetailRow("Lịch hẹn check-in ban đầu", "<span style=\"color: #d97706; font-weight: 700;\">" + checkInStr + "</span>")
+                + renderDetailRow("Trạng thái", "<span style=\"color: #b45309; font-weight: 700;\">CHƯA TIẾP NHẬN - QUÁ HẠN 24 GIỜ</span>")
+                + "</table>";
+
+        String alert = renderAlertBox(
+                "YÊU CẦU ĐẾN CƠ SỞ HOÀN TẤT THỦ TỤC &amp; CẢNH BÁO HỦY ĐƠN",
+                "Quý khách vui lòng nhanh chóng mang theo <strong>CCCD / Hộ chiếu bản gốc</strong> đến cơ sở <strong>" + safeFacility + "</strong> để nhân viên quầy hướng dẫn làm thủ tục ký hợp đồng và nhận kho.<br/><br/>"
+                + "<strong style=\"color: #b91c1c;\">LƯU Ý ĐẶC BIỆT:</strong> Sau thêm <strong>24 giờ tiếp theo</strong> (tổng cộng 48 giờ kể từ lịch hẹn check-in ban đầu), nếu Quý khách vẫn chưa đến cơ sở tiếp nhận, hệ thống sẽ mở quyền <strong>HỦY ĐƠN</strong> cho nhân viên và quản lý cơ sở, buồng kho sẽ được <strong>giải phóng lại trên hệ thống</strong> để phục vụ khách hàng khác có nhu cầu.",
+                "#fffbeb",
+                "#b45309",
+                "#f59e0b"
+        );
+
+        String note = renderSecurityNote(
+                "Mọi thắc mắc hoặc cần hỗ trợ dời lịch hẹn, Quý khách vui lòng liên hệ Hotline: " + safePhone + " • Đội ngũ CSKH Boxora."
+        );
+
+        String html = buildMasterTemplate(
+                "Cần Đến Nhận Kho Ngay",
+                badge,
+                title,
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                details,
+                alert,
+                renderButton("Xem Chi Tiết Đơn Đặt Kho", resolveUrl("/my-bookings"), "#0284c7"),
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - THÔNG BÁO CẦN ĐẾN TIẾP NHẬN KHO NGAY
+                =============================================
+                Kính gửi %s,
+
+                Đơn đặt giữ chỗ %s tại %s đã QUÁ 24 GIỜ kể từ lịch hẹn check-in (%s) nhưng chưa được tiếp nhận.
+                - Mã đơn: %s
+                - Cơ sở: %s (%s)
+                - Buồng kho: %s
+                - Hotline cơ sở: %s
+
+                Quý khách vui lòng mang theo CCCD bản gốc đến cơ sở để hoàn tất nhận buồng kho.
+                LƯU Ý: Sau thêm 24 giờ nữa (tổng 48 giờ), nếu Quý khách vẫn chưa đến nhận, đơn sẽ bị HỦY và buồng kho sẽ được giải phóng cho khách hàng khác.
+
+                Trân trọng,
+                Đội ngũ Boxora Self-Storage
+                """, safeName, safeCode, safeFacility, checkInStr, safeCode, safeFacility, safeAddress, safeUnit, safePhone);
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
+    @Override
+    @Async
+    public void sendBookingCancellationRefundSuccessEmail(
+            String toEmail,
+            String fullName,
+            String bookingCode,
+            String requestCode,
+            String facilityName,
+            BigDecimal refundAmount,
+            String bankName,
+            String bankAccount,
+            String bankAccountName,
+            String transactionReference,
+            String transferProofUrl,
+            String processNotes
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeBookingCode = escape(bookingCode != null ? bookingCode : "N/A");
+        String safeRequestCode = escape(requestCode != null ? requestCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Hệ thống Boxora");
+        String formattedAmount = formatVnd(refundAmount);
+        String safeBank = escape(bankName != null && !bankName.isBlank() ? bankName : "Ngân hàng thụ hưởng");
+        String safeAccount = escape(bankAccount != null && !bankAccount.isBlank() ? bankAccount : "N/A");
+        String safeAccountName = escape(bankAccountName != null && !bankAccountName.isBlank() ? bankAccountName : safeName);
+        String safeTxn = escape(transactionReference != null && !transactionReference.isBlank() ? transactionReference : "Đã chuyển khoản thành công");
+        String safeNotes = escape(processNotes != null && !processNotes.isBlank() ? processNotes : "Không có ghi chú thêm");
+
+        String subject = String.format("[Boxora] Xác nhận đã hoàn tiền hủy đơn đặt kho #%s - Thành công", safeBookingCode);
+
+        String badge = renderBadge("ĐÃ HOÀN TIỀN THÀNH CÔNG", "#ecfdf5", "#047857");
+        String intro = String.format(
+                "Quản lý cơ sở <strong>%s</strong> xác nhận đã hoàn tất chuyển khoản chi trả tiền hoàn cho đơn đặt giữ chỗ mã <strong>#%s</strong> của Quý khách.",
+                safeFacility, safeBookingCode
+        );
+
+        StringBuilder detailsBuilder = new StringBuilder("<table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0' style='margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;'>");
+        detailsBuilder.append(renderDetailRow("Mã đơn đặt chỗ", "<strong>#" + safeBookingCode + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Mã yêu cầu hoàn tiền", "<strong>#" + safeRequestCode + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Cơ sở xử lý", safeFacility));
+        detailsBuilder.append(renderDetailRow("Số tiền hoàn trả", "<span style='color: #047857; font-size: 16px; font-weight: 800;'>" + formattedAmount + "</span>"));
+        detailsBuilder.append(renderDetailRow("Ngân hàng thụ hưởng", safeBank));
+        detailsBuilder.append(renderDetailRow("Số tài khoản nhận", "<span style='font-family: monospace; font-weight: 700;'>" + safeAccount + "</span>"));
+        detailsBuilder.append(renderDetailRow("Tên chủ tài khoản", "<strong>" + safeAccountName + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Mã giao dịch / UNC", "<strong style='font-family: monospace; color: #1d4ed8;'>" + safeTxn + "</strong>"));
+        detailsBuilder.append(renderDetailRow("Trạng thái", "<span style='color: #047857; font-weight: 700;'>✓ ĐÃ CHUYỂN KHOẢN THÀNH CÔNG</span>"));
+
+        if (transferProofUrl != null && !transferProofUrl.isBlank()) {
+            String fullProofUrl = transferProofUrl;
+            if (transferProofUrl.startsWith("/uploads/")) {
+                String baseUrl = (frontendUrl != null && !frontendUrl.isBlank()) ? frontendUrl.trim().replaceAll("/+$", "") : "http://localhost:8080";
+                fullProofUrl = baseUrl + transferProofUrl;
+            }
+            detailsBuilder.append(renderDetailRow("Chứng từ chuyển tiền", "<a href='" + escape(fullProofUrl) + "' target='_blank' style='color: #1d4ed8; font-weight: 600; text-decoration: underline;'>Xem ảnh ủy nhiệm chi chuyển tiền</a>"));
+        }
+
+        if (processNotes != null && !processNotes.isBlank()) {
+            detailsBuilder.append(renderDetailRow("Ghi chú đối soát", safeNotes));
+        }
+
+        detailsBuilder.append("</table>");
+
+        String alertBox = renderAlertBox(
+                "Thông báo giải ngân hoàn tất",
+                "Khoản tiền hoàn đã được Quản lý cơ sở giải ngân chuyển khoản về tài khoản ngân hàng của Quý khách. Thời gian tài khoản nhận được tiền phụ thuộc vào hệ thống chuyển tiền liên ngân hàng (thông thường từ 1 - 5 phút với Napas247). Quý khách vui lòng kiểm tra biến động số dư tài khoản ngân hàng.",
+                "#ecfdf5",
+                "#047857",
+                "#10b981"
+        );
+
+        String note = renderSecurityNote(
+                "Ban Quản Lý Cơ Sở " + safeFacility + " • Nếu Quý khách cần hỗ trợ thêm, vui lòng liên hệ hotline cơ sở hoặc gửi ticket trên cổng hỗ trợ khách hàng Boxora."
+        );
+
+        String html = buildMasterTemplate(
+                "Xác Nhận Hoàn Tiền Hủy Đơn",
+                badge,
+                "Xác Nhận Đã Chuyển Tiền Hoàn Đơn Hủy Đặt Chỗ",
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                detailsBuilder.toString(),
+                alertBox,
+                "",
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - XÁC NHẬN ĐÃ HOÀN TIỀN HỦY ĐƠN ĐẶT KHO
+                ==============================================
+                Kính gửi %s,
+
+                Quản lý cơ sở %s xác nhận đã hoàn tất chuyển khoản chi trả tiền hoàn cho đơn đặt giữ chỗ mã #%s của Quý khách.
+
+                Chi tiết hoàn tiền:
+                - Mã đơn đặt chỗ: #%s
+                - Mã yêu cầu hoàn tiền: #%s
+                - Cơ sở xử lý: %s
+                - Số tiền hoàn lại: %s
+                - Ngân hàng thụ hưởng: %s
+                - Số tài khoản nhận: %s
+                - Tên chủ tài khoản: %s
+                - Mã giao dịch ngân hàng / UNC: %s
+                - Ghi chú: %s
+
+                Khoản tiền hoàn đã được giải ngân về tài khoản của Quý khách. Vui lòng kiểm tra biến động số dư tài khoản ngân hàng.
+
+                Trân trọng,
+                Ban Quản Lý Cơ Sở %s - Boxora
+                """, safeName, safeFacility, safeBookingCode, safeBookingCode, safeRequestCode, safeFacility, formattedAmount, safeBank, safeAccount, safeAccountName, safeTxn, safeNotes, safeFacility);
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Internal Helper Methods & Master Layout Generator
     // ─────────────────────────────────────────────────────────────────────────
@@ -1210,6 +1611,23 @@ public class EmailServiceImpl implements EmailService {
         } catch (MessagingException e) {
             log.error("Failed to send email to: {}", to, e);
             throw new RuntimeException("Failed to send email", e);
+        }
+    }
+
+    @Override
+    @Async
+    public void sendSimpleEmail(String toEmail, String subject, String body) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
+            helper.setFrom(fromEmail);
+            helper.setTo(toEmail);
+            helper.setSubject(subject);
+            helper.setText(body, false);
+            mailSender.send(message);
+            log.info("Simple email sent successfully to: {}", toEmail);
+        } catch (Exception ex) {
+            log.error("Failed to send simple email to {}: {}", toEmail, ex.getMessage());
         }
     }
 }

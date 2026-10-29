@@ -70,8 +70,7 @@ public class PaymentController {
     }
 
     @PostMapping("vnpay/create")
-    @PreAuthorize("hasAuthority('PAYMENT_CREATE') or hasRole('CUSTOMER') or isAuthenticated()")
-    @Operation(summary = "Khởi tạo thanh toán qua cổng VNPay Sandbox và lấy paymentUrl")
+        @Operation(summary = "Khởi tạo thanh toán qua cổng VNPay Sandbox và lấy paymentUrl")
     public ResponseEntity<ApiResponse<VNPayPaymentResponse>> createVNPayPayment(
             @Valid @RequestBody PaymentCreateRequest request,
             HttpServletRequest httpRequest
@@ -115,6 +114,10 @@ public class PaymentController {
                 if (payment.getId() != null) {
                     targetUrl.append("&paymentId=").append(payment.getId());
                 }
+                String respCode = allParams != null ? allParams.get("vnp_ResponseCode") : null;
+                if (respCode != null && !respCode.isBlank()) {
+                    targetUrl.append("&responseCode=").append(respCode);
+                }
                 return new RedirectView(targetUrl.toString());
             }
             return ResponseEntity.ok(ApiResponse.success("Thanh toán hoàn tất", payment));
@@ -124,6 +127,14 @@ public class PaymentController {
                 String baseFrontend = resolveClientFrontendBase(null, httpRequest);
                 String errorUrl = baseFrontend + "/payment-result?status=FAILED&error="
                         + java.net.URLEncoder.encode(e.getMessage(), java.nio.charset.StandardCharsets.UTF_8);
+                String txnRefParam = allParams != null ? allParams.get("vnp_TxnRef") : null;
+                if (txnRefParam != null && !txnRefParam.isBlank()) {
+                    errorUrl += "&txnRef=" + txnRefParam;
+                }
+                String respCodeParam = allParams != null ? allParams.get("vnp_ResponseCode") : null;
+                if (respCodeParam != null && !respCodeParam.isBlank()) {
+                    errorUrl += "&responseCode=" + respCodeParam;
+                }
                 return new RedirectView(errorUrl);
             }
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
@@ -147,6 +158,7 @@ public class PaymentController {
 
     @GetMapping("{id}")
     @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
+
     @Operation(summary = "Lấy chi tiết thanh toán theo Payment ID")
     public ResponseEntity<ApiResponse<PaymentResponse>> getById(@PathVariable UUID id) {
         PaymentResponse response = paymentService.getById(id);
@@ -154,7 +166,7 @@ public class PaymentController {
     }
 
     @GetMapping("transaction/{transactionId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
+
     @Operation(summary = "Lấy chi tiết thanh toán theo mã giao dịch VNPay (transactionId / txnRef)")
     public ResponseEntity<ApiResponse<PaymentResponse>> getByTransactionId(@PathVariable String transactionId) {
         PaymentResponse response = paymentService.getByTransactionId(transactionId);
@@ -162,7 +174,7 @@ public class PaymentController {
     }
 
     @GetMapping("booking/{bookingId}")
-    @PreAuthorize("hasAuthority('PAYMENT_VIEW') or hasRole('CUSTOMER') or isAuthenticated()")
+
     @Operation(summary = "Lấy lịch sử thanh toán của một Booking")
     public ResponseEntity<ApiResponse<List<PaymentResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         List<PaymentResponse> response = paymentService.getByBookingId(bookingId);

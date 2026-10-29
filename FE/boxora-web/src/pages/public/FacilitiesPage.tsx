@@ -71,7 +71,7 @@ export const FacilitiesPage: React.FC = () => {
           <BrandLogo subtitle="HỆ THỐNG CƠ SỞ" />
           <div className="flex items-center gap-3">
             <Link
-              to="/units"
+              to="/booking"
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all shadow-xs flex items-center gap-1.5"
             >
               <span>Tìm &amp; Thuê Kho</span>
@@ -222,7 +222,7 @@ export const FacilitiesPage: React.FC = () => {
                       variant="primary"
                       onClick={(e) => {
                         e.stopPropagation()
-                        navigate(`/units?unit=${encodeURIComponent(unit.unitCode)}`)
+                        navigate('/booking')
                       }}
                       className="bg-blue-600 hover:bg-blue-700 text-white text-[11px] py-1 px-2.5 shadow-2xs cursor-pointer"
                     >
@@ -265,7 +265,7 @@ export const FacilitiesPage: React.FC = () => {
         onClose={() => setIsDetailModalOpen(false)}
         onReserve={(unitData) => {
           setIsDetailModalOpen(false)
-          navigate(`/units?unit=${encodeURIComponent(unitData.unitCode)}`)
+          navigate('/booking')
         }}
       />
     </div>

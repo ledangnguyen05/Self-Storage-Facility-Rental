@@ -5,6 +5,12 @@ chcp 65001 >nul
 
 cd /d "%~dp0"
 
+:: Thiet lap uu tien JDK 21 de dam bao Spring Boot khoi dong dung
+if exist "C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot\bin\java.exe" (
+    set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    set "PATH=C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot\bin;!PATH!"
+)
+
 echo ==============================================================================
 echo       BOXORA - 1-CLICK DEPLOY CLOUDFLARE PAGES AND RUN BACKEND ONLINE
 echo ==============================================================================
@@ -21,7 +27,7 @@ echo.
 :: BUOC 1: KIEM TRA POSTGRESQL (PORT 5432)
 :: -----------------------------------------------------------------------------
 echo [1/5] Kiem tra Database PostgreSQL...
-powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 5432 -InformationLevel Quiet; if (-not $t) { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% neq 0 (
     echo [WARNING] PostgreSQL chua bat! Dang thu khoi dong Service PostgreSQL...
     powershell -NoProfile -Command "Get-Service *postgres* -ErrorAction SilentlyContinue | Start-Service"
@@ -35,21 +41,27 @@ if %errorlevel% neq 0 (
 :: -----------------------------------------------------------------------------
 echo.
 echo [2/5] Kiem tra va khoi dong Backend Spring Boot (Port 8080)...
-powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 goto BACKEND_RUNNING
 
+set "BACKEND_START_MODE=2"
+if not exist "%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar" (
+    echo   - Chua tim thay file JAR, he thong se dong goi Backend moi nhat...
+    set "BACKEND_START_MODE=1"
+)
+
 echo   - Dang khoi dong Backend Spring Boot trong cua so rieng...
-start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k setup_and_run_backend.bat 2
+start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k setup_and_run_backend.bat !BACKEND_START_MODE!
 echo   - Dang cho Backend khoi tao tren Port 8080...
 
 set /a RETRY_COUNT=0
 :CHECK_BACKEND_PORT
-ping 127.0.0.1 -n 4 >nul
+ping 127.0.0.1 -n 3 >nul
 set /a RETRY_COUNT+=1
-powershell -NoProfile -Command "$t = Test-NetConnection -ComputerName 127.0.0.1 -Port 8080 -InformationLevel Quiet; if ($t) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 goto BACKEND_RUNNING
-if !RETRY_COUNT! GEQ 35 goto BACKEND_TIMEOUT
-echo     ...dang cho Backend khoi dong - lan !RETRY_COUNT! tren 35
+if !RETRY_COUNT! GEQ 30 goto BACKEND_TIMEOUT
+echo     ...dang cho Backend khoi dong - lan !RETRY_COUNT! tren 30
 goto CHECK_BACKEND_PORT
 
 :BACKEND_TIMEOUT
@@ -76,8 +88,8 @@ set "LOGFILE=%TEMP%\boxora_backend_tunnel.log"
 taskkill /f /im cloudflared.exe >nul 2>&1
 if exist "!LOGFILE!" del /f /q "!LOGFILE!" >nul 2>&1
 
-echo   - Dang mo Cloudflare Quick Tunnel cho Backend qua giao thuc HTTP/2 on dinh...
-start "BOXORA - BACKEND TUNNEL" /min "!CLOUDFLARED!" --protocol http2 --logfile "!LOGFILE!" tunnel --url http://localhost:8080
+echo   - Dang mo Cloudflare Quick Tunnel cho Backend...
+start "BOXORA - BACKEND TUNNEL" /min cmd /c ""!CLOUDFLARED!" tunnel --url http://localhost:8080 >nul 2> "!LOGFILE!""
 
 echo   - Dang trich xuat public HTTPS tunnel URL...
 set "BACKEND_TUNNEL_URL="
@@ -93,7 +105,7 @@ if exist "!LOGFILE!" (
         )
     )
 )
-if !TUNNEL_TRY! LSS 30 goto CHECK_TUNNEL_LOG
+if !TUNNEL_TRY! LSS 25 goto CHECK_TUNNEL_LOG
 
 :TUNNEL_SUCCESS
 if "!BACKEND_TUNNEL_URL!"=="" (

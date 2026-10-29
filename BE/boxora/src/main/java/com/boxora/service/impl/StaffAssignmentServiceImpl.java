@@ -99,8 +99,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
                 throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
             }
-        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole) || "ADMIN".equalsIgnoreCase(callerRole) || "SYSTEM_ADMIN".equalsIgnoreCase(callerRole)) {
-            // Business Manager / Admin có thể phân công ca cho cả Quản lý cơ sở (FACILITY_MANAGER) và Nhân viên (STAFF)
+        } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
+            // Business Manager có thể phân công ca cho cả Quản lý cơ sở (FACILITY_MANAGER) và Nhân viên (STAFF)
             if (staff.getRole() == null || (!"FACILITY_MANAGER".equalsIgnoreCase(staff.getRole().getName()) && !"STAFF".equalsIgnoreCase(staff.getRole().getName()))) {
                 throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được phân công ca cho Quản lý cơ sở hoặc Nhân viên");
             }
@@ -108,6 +108,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (staff.getFacility() != null && !staff.getFacility().getId().equals(facility.getId())) {
                 throw new AppException(ErrorCode.STAFF_ASSIGNMENT_FACILITY_MISMATCH);
             }
+        } else if ("ADMIN".equalsIgnoreCase(callerRole) || "SYSTEM_ADMIN".equalsIgnoreCase(callerRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Admin chỉ có quyền xem, giám sát ca trực toàn hệ thống và không được tạo phân công ca trực.");
         } else {
             throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền tạo phân công ca trực");
         }
@@ -143,6 +145,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         }
         java.time.LocalTime startTime = standardStart;
         java.time.LocalTime endTime = standardEnd;
+        validateShiftNotInPast(request.getAssignedDate(), startTime, endTime, request.getShift());
         ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
 
         // 7. Tạo thực thể phân công ca
@@ -229,8 +232,11 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             throw new AppException(ErrorCode.INVALID_REQUEST,
                     String.format("Giờ kết thúc cho ca %s phải là %s", effectiveShift.getDisplayName(), standardEnd));
         }
+
+
         java.time.LocalTime effectiveStartTime = standardStart;
         java.time.LocalTime effectiveEndTime = standardEnd;
+        validateShiftNotInPast(assignment.getAssignedDate(), effectiveStartTime, effectiveEndTime, effectiveShift);
 
         ensureNoOverlappingAssignment(
                 assignment.getStaff().getId(), assignment.getAssignedDate(),
@@ -368,7 +374,23 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (assignment.getStatus() == StaffAssignmentStatus.COMPLETED) {
                 throw new AppException(ErrorCode.STAFF_ALREADY_CHECKED_OUT);
             }
+            if (assignment.getStatus() == StaffAssignmentStatus.ABSENT) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Ca trực này đã bị ghi nhận không đi làm (vắng mặt) do quá hạn ngày làm việc.");
+            }
             throw new AppException(ErrorCode.STAFF_NOT_CHECKED_IN);
+        }
+
+        LocalDate assignedDate = assignment.getAssignedDate();
+        LocalDate todayDate = LocalDate.now(BUSINESS_ZONE);
+        boolean isNight = assignment.getShift() == StaffShift.NIGHT;
+        LocalDate maxCheckoutDay = isNight ? assignedDate.plusDays(1) : assignedDate;
+        if (todayDate.isAfter(maxCheckoutDay)) {
+            assignment.setStatus(StaffAssignmentStatus.ABSENT);
+            assignment.setNotes((assignment.getNotes() != null ? assignment.getNotes() + "\n" : "") +
+                    "[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)");
+            staffAssignmentRepository.save(assignment);
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Ca trực này đã quá hạn trong ngày làm việc. Hệ thống đã tự động ghi nhận không đi làm do quên ra ca.");
         }
 
         assignment.setStatus(StaffAssignmentStatus.COMPLETED);
@@ -511,9 +533,10 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             int priorCount = staffAssignmentRepository.markPriorToYesterdayUncheckedInAsAbsent(yesterday);
             int yesterdayCount = staffAssignmentRepository.markYesterdayEndedUncheckedInAsAbsent(yesterday, nowTime);
             int todayCount = staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(today, nowTime);
-            if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0) {
-                log.info("Auto-marked unchecked-in shifts as ABSENT: {} prior, {} yesterday, {} today",
-                        priorCount, yesterdayCount, todayCount);
+            int overdueCheckedInCount = staffAssignmentRepository.markOverdueCheckedInAsAbsent(today, yesterday, nowTime);
+            if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0 || overdueCheckedInCount > 0) {
+                log.info("Auto-marked unchecked-in or overdue shifts as ABSENT: {} prior, {} yesterday, {} today, {} overdue checked-in",
+                        priorCount, yesterdayCount, todayCount, overdueCheckedInCount);
             }
         } catch (Exception e) {
             log.warn("Failed to auto-mark absent shifts: {}", e.getMessage());
@@ -667,6 +690,29 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (candidateStart.isBefore(existingEnd) && existingStart.isBefore(candidateEnd)) {
                 throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
             }
+        }
+    }
+
+    private void validateShiftNotInPast(
+            LocalDate assignedDate,
+            java.time.LocalTime startTime,
+            java.time.LocalTime endTime,
+            StaffShift shift
+    ) {
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        if (assignedDate == null || assignedDate.isBefore(today)) {
+            throw new AppException(ErrorCode.INVALID_ASSIGNMENT_DATE);
+        }
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(BUSINESS_ZONE);
+        java.time.LocalDateTime shiftEnd = assignedDate.atTime(endTime);
+        if (!endTime.isAfter(startTime)) {
+            shiftEnd = shiftEnd.plusDays(1);
+        }
+        if (!now.isBefore(shiftEnd)) {
+            String shiftName = shift != null ? shift.getDisplayName() : "Ca trực";
+            throw new AppException(ErrorCode.INVALID_ASSIGNMENT_DATE,
+                    String.format("Không thể phân công %s (%s - %s) ngày %s vì khung giờ ca trực này đã trôi qua. Chỉ được phân ca cho thời gian hiện tại đến tương lai.",
+                            shiftName, startTime, endTime, assignedDate));
         }
     }
 

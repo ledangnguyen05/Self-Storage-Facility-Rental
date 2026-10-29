@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { StorageUnit, Booking } from '../../../types'
 import { extractFloor } from '../../../utils/floorUtils'
 import { storageUnitService } from '../../../services/storageUnitService'
+import { useAuth } from '../../../context/AuthContext'
 
 export interface FacilityStaffStorageDiagramProps {
   units: StorageUnit[]
@@ -41,9 +42,13 @@ export const FacilityStaffStorageDiagram: React.FC<FacilityStaffStorageDiagramPr
   const [selectedSize, setSelectedSize] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState<string>('')
 
+  const { user } = useAuth()
   // Selected Unit Modal State
   const [selectedUnit, setSelectedUnit] = useState<StorageUnit | null>(null)
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false)
+  const [showMaintInputForm, setShowMaintInputForm] = useState(false)
+  const [maintReasonInput, setMaintReasonInput] = useState('')
+  const [maintByInput, setMaintByInput] = useState('')
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   // Determine zone from unitCode or unit metadata
@@ -216,17 +221,42 @@ export const FacilityStaffStorageDiagram: React.FC<FacilityStaffStorageDiagramPr
 
   // Toggle Maintenance handler (Staff and Manager permission)
   const handleToggleMaintenance = async (unit: StorageUnit) => {
+    const isCurrentlyMaint = unit.status === 'MAINTENANCE' || unit.status === 'UNDER_MAINTENANCE'
+    if (!isCurrentlyMaint && !showMaintInputForm) {
+      const roleLabel = userRole === 'STAFF' ? 'Nhân viên cơ sở' : 'Quản lý cơ sở'
+      setMaintByInput(`${user?.fullName || user?.username || 'Nhân sự cơ sở'} (${roleLabel})`)
+      setMaintReasonInput('')
+      setActionMessage(null)
+      setShowMaintInputForm(true)
+      return
+    }
+
+    if (!isCurrentlyMaint) {
+      if (!maintByInput.trim()) {
+        setActionMessage({ type: 'error', text: 'Vui lòng nhập tên người thực hiện / phụ trách bảo trì.' })
+        return
+      }
+      if (!maintReasonInput.trim()) {
+        setActionMessage({ type: 'error', text: 'Vui lòng nhập lý do bảo trì kỹ thuật.' })
+        return
+      }
+    }
+
     try {
       setIsTogglingMaintenance(true)
       setActionMessage(null)
-      const updated = await storageUnitService.toggleMaintenance(unit.id)
+      const updated = await storageUnitService.toggleMaintenance(
+        unit.id,
+        !isCurrentlyMaint ? { reason: maintReasonInput.trim(), maintenanceBy: maintByInput.trim() } : undefined
+      )
+      setShowMaintInputForm(false)
       if (onUnitMaintenanceToggled) {
         onUnitMaintenanceToggled(updated)
       }
       setSelectedUnit(updated)
       setActionMessage({
         type: 'success',
-        text: `Đã ${updated.status === 'MAINTENANCE' || updated.status === 'UNDER_MAINTENANCE' ? 'bật' : 'tắt'} chế độ bảo trì cho kho #${unit.unitCode}`,
+        text: `Đã ${updated.status === 'MAINTENANCE' || updated.status === 'UNDER_MAINTENANCE' ? 'chuyển sang' : 'hoàn tất'} chế độ bảo trì cho kho #${unit.unitCode}`,
       })
     } catch (err: any) {
       setActionMessage({
@@ -410,6 +440,25 @@ export const FacilityStaffStorageDiagram: React.FC<FacilityStaffStorageDiagramPr
                   {zn}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Trạng thái Filter */}
+          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg text-xs">
+            <span className="text-slate-500 font-medium">Trạng thái:</span>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer"
+            >
+              <option value="all">Tất cả trạng thái</option>
+              <option value="AVAILABLE">Kho trống ({metrics.available})</option>
+              <option value="OCCUPIED">Đang thuê ({metrics.occupied})</option>
+              <option value="RESERVED">Chờ bàn giao ({metrics.reserved})</option>
+              <option value="RETURN_PENDING">Chờ trả kho ({metrics.returnPending})</option>
+              <option value="OVERDUE_LOCKED">Quá hạn ({units.filter(u => u.status === 'OVERDUE_LOCKED').length})</option>
+              <option value="MAINTENANCE">Đang bảo trì ({metrics.maintenance})</option>
+              <option value="INCIDENT">Cảnh báo sự cố ({metrics.activeIncidents})</option>
             </select>
           </div>
 
@@ -699,6 +748,68 @@ export const FacilityStaffStorageDiagram: React.FC<FacilityStaffStorageDiagramPr
                           Sự Cố Kỹ Thuật Đang Xử Lý: {activeIncident.id}
                         </span>
                         <p className="text-xs font-medium mt-1">{activeIncident.title}</p>
+                      </div>
+                    )}
+
+                    {(selectedUnit.status === 'MAINTENANCE' || selectedUnit.status === 'UNDER_MAINTENANCE') && (
+                      <div className="p-3.5 rounded-xl bg-purple-50 border border-purple-200 text-purple-950 space-y-1.5">
+                        <span className="font-bold text-xs uppercase flex items-center gap-1.5 text-purple-800">
+                          <span className="material-symbols-outlined text-[16px]">engineering</span>
+                          Thông Tin Bảo Trì Kỹ Thuật
+                        </span>
+                        <p className="text-xs">
+                          Người bảo trì: <strong>{selectedUnit.maintenanceBy || 'Kỹ thuật viên cơ sở'}</strong>
+                        </p>
+                        <p className="text-xs">
+                          Lý do bảo trì: <strong>{selectedUnit.maintenanceReason || 'Bảo trì kỹ thuật định kỳ'}</strong>
+                        </p>
+                        {selectedUnit.maintenanceAt && (
+                          <p className="font-mono text-[11px] text-purple-700">
+                            Thời điểm bắt đầu: {new Date(selectedUnit.maintenanceAt).toLocaleString('vi-VN')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {showMaintInputForm && selectedUnit.status === 'AVAILABLE' && (
+                      <div className="p-3.5 rounded-xl bg-purple-50/80 border border-purple-200 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-xs uppercase text-purple-900 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px]">build_circle</span>
+                            Nhập Thông Tin Chuyển Bảo Trì Kỹ Thuật
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setShowMaintInputForm(false)}
+                            className="text-[11px] text-slate-500 hover:text-slate-800 font-semibold cursor-pointer"
+                          >
+                            Đóng
+                          </button>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Người bảo trì / Phụ trách <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={maintByInput}
+                            onChange={(e) => setMaintByInput(e.target.value)}
+                            placeholder="Nhập tên người bảo trì..."
+                            className="w-full px-3 py-2 rounded-lg border border-purple-300 bg-white text-xs text-slate-900 outline-none focus:border-purple-600"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Lý do bảo trì <span className="text-rose-500">*</span>
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={maintReasonInput}
+                            onChange={(e) => setMaintReasonInput(e.target.value)}
+                            placeholder="Ghi rõ lý do bảo trì hoặc sự cố kỹ thuật..."
+                            className="w-full p-2.5 rounded-lg border border-purple-300 bg-white text-xs text-slate-900 outline-none focus:border-purple-600 resize-none"
+                          />
+                        </div>
                       </div>
                     )}
 

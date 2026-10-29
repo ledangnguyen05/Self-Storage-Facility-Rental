@@ -6,14 +6,12 @@ import { OverdueDebtItem, Facility, OverdueDebtReport } from '../../types'
 import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
 import { AssetSealingModal } from './modals/AssetSealingModal'
 import { overdueService } from '../../services/overdueService'
+import { toast } from '../../utils/toast'
 
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
-  const userRole = (typeof user?.role === 'object' ? user?.role?.name : user?.role) || user?.roleName
-  const canFilterFacility = userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN'
-
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() => (!canFilterFacility && user?.facilityId) ? user.facilityId : '')
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [reportSummary, setReportSummary] = useState<OverdueDebtReport | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -62,9 +60,7 @@ export const OverdueManagementPage: React.FC = () => {
         const facs = res?.content || []
         setFacilities(facs)
         const userFacId = user?.facilityId
-        if (!canFilterFacility && userFacId) {
-          setSelectedFacilityId(userFacId)
-        } else if (userFacId && facs.some(f => f.id === userFacId)) {
+        if (userFacId && facs.some(f => f.id === userFacId)) {
           setSelectedFacilityId(userFacId)
         } else if (facs.length > 0) {
           setSelectedFacilityId(facs[0].id)
@@ -173,7 +169,7 @@ export const OverdueManagementPage: React.FC = () => {
 
   const handleExportCsv = () => {
     if (overdueItems.length === 0) {
-      alert('Không có dữ liệu nợ cước để xuất CSV.')
+      toast.warning('Không có dữ liệu nợ cước để xuất CSV.')
       return
     }
     const headers = ['Mã Kho', 'Khách Hàng', 'Mã HĐ', 'Số Ngày Quá Hạn', 'Cước Nợ (VNĐ)', 'Phí Phạt (VNĐ)', 'Tổng Nợ (VNĐ)', 'Giai Đoạn Xử Lý']
@@ -230,7 +226,7 @@ export const OverdueManagementPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {canFilterFacility && facilities.length > 1 && (
+          {facilities.length > 1 && (
             <select
               value={selectedFacilityId}
               onChange={e => setSelectedFacilityId(e.target.value)}

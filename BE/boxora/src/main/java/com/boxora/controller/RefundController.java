@@ -3,6 +3,7 @@ package com.boxora.controller;
 import com.boxora.common.response.ApiResponse;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.*;
+import com.boxora.dto.response.FileUploadResponse;
 import com.boxora.dto.response.RefundRequestResponse;
 import com.boxora.enums.RefundStatus;
 import com.boxora.service.RefundService;
@@ -12,9 +13,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -27,8 +30,17 @@ public class RefundController {
 
     private final RefundService refundService;
 
+    @PostMapping(value = "/upload-proof", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF')")
+    @Operation(summary = "Tải lên ảnh chứng từ / ủy nhiệm chi chuyển khoản hoàn tiền")
+    public ResponseEntity<ApiResponse<FileUploadResponse>> uploadProofImage(
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(ApiResponse.success("Tải lên chứng từ thành công",
+                refundService.uploadProofImage(file)));
+    }
+
     @PostMapping
-    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('REFUND_APPROVE')")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Khởi tạo yêu cầu hoàn tiền mới (PENDING_REVIEW)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> createRefund(
             @Valid @RequestBody RefundCreateRequest request) {
@@ -38,7 +50,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/review")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Phê duyệt hoặc từ chối yêu cầu hoàn tiền (PENDING_REVIEW -> APPROVED / REJECTED)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> reviewRefund(
             @PathVariable UUID id,
@@ -48,7 +60,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/start-transfer")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF')")
     @Operation(summary = "Bắt đầu chuyển khoản hoàn tiền (APPROVED -> PROCESSING_TRANSFER)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> startTransfer(
             @PathVariable UUID id,
@@ -58,7 +70,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/process")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF')")
     @Operation(summary = "Xác nhận chuyển tiền với mã đối soát (APPROVED/PROCESSING_TRANSFER -> AWAITING_CUSTOMER_CONFIRMATION)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> processRefund(
             @PathVariable UUID id,
@@ -68,7 +80,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/confirm-received")
-    @PreAuthorize("hasRole('CUSTOMER')")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Khách hàng xác nhận đã nhận được tiền hoàn (AWAITING_CUSTOMER_CONFIRMATION -> RECONCILED)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> confirmReceived(
             @PathVariable UUID id,
@@ -78,7 +90,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/reconcile")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Kế toán / Quản lý đối soát và hoàn tất hồ sơ (RECONCILED -> COMPLETED)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> reconcileRefund(
             @PathVariable UUID id,
@@ -88,7 +100,7 @@ public class RefundController {
     }
 
     @GetMapping("{id}")
-    @PreAuthorize("hasAuthority('REFUND_VIEW') or hasAnyRole('CUSTOMER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('REFUND_VIEW') or hasAnyRole('CUSTOMER', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN', 'STAFF')")
     @Operation(summary = "Lấy chi tiết yêu cầu hoàn tiền theo ID")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> getById(@PathVariable UUID id) {
         RefundRequestResponse response = refundService.getById(id);
@@ -96,7 +108,7 @@ public class RefundController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('REFUND_VIEW') or hasAnyRole('CUSTOMER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('REFUND_VIEW') or hasAnyRole('CUSTOMER', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN', 'STAFF')")
     @Operation(summary = "Lấy danh sách yêu cầu hoàn tiền phân trang theo bộ lọc")
     public ResponseEntity<ApiResponse<PageResponse<RefundRequestResponse>>> getAll(
             @RequestParam(required = false) UUID facilityId,

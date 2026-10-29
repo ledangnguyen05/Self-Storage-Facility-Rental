@@ -21,6 +21,16 @@ public class BookingCancellationPreviewResponse {
     private BigDecimal totalRentalFee;
 
     /**
+     * Thời điểm đặt kho làm căn cứ tính chính sách hủy (booking.createdAt).
+     */
+    private java.time.LocalDateTime bookingDateTime;
+
+    /**
+     * Số giờ đã trôi qua kể từ thời điểm đặt kho.
+     */
+    private long hoursSinceBooking;
+
+    /**
      * Thời điểm nhận kho làm căn cứ tính chính sách (từ expectedCheckInAt hoặc giờ mở cửa ngày bắt đầu thuê).
      */
     private java.time.LocalDateTime checkInDateTime;
@@ -32,15 +42,15 @@ public class BookingCancellationPreviewResponse {
     private long hoursUntilCheckin;
 
     /**
-     * Nhãn hiển thị thời gian còn lại nhẹ nhàng, trung tính cho giao diện người dùng.
+     * Nhãn hiển thị thời gian kể từ lúc đặt kho nhẹ nhàng, trung tính cho giao diện người dùng.
      */
     private String timeRemainingLabel;
 
     /**
      * Mốc hoàn tiền áp dụng:
-     * - STAGE_1_FULL_REFUND: >= 48h (Hoàn 100%)
-     * - STAGE_2_PARTIAL_REFUND: 24h - 48h (Hoàn 50%)
-     * - STAGE_3_NO_REFUND: < 24h (Hoàn 0%)
+     * - STAGE_1_FULL_REFUND: Trong vòng 24h kể từ khi đặt kho (Hoàn 100%)
+     * - STAGE_2_PARTIAL_REFUND: Trong khoảng 24h - 48h kể từ khi đặt kho (Hoàn 70%)
+     * - STAGE_3_OVER_48H_REFUND: Quá 48h kể từ khi đặt kho (Hoàn 50%)
      * - STAGE_PENDING_NO_PAYMENT: Chưa thanh toán cọc
      */
     private String milestoneStage;

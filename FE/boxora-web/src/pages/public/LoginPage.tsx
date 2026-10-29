@@ -35,7 +35,7 @@ export const LoginPage: React.FC = () => {
   const { login, loginWithGoogle, isLoading } = useAuth()
 
   // Form states
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(() => searchParams.get('email') || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberDevice, setRememberDevice] = useState(true)
@@ -103,7 +103,7 @@ export const LoginPage: React.FC = () => {
             return '/portal/staff'
           case 'CUSTOMER':
           default:
-            return customerPortalAccess ? '/portal/customer' : '/units'
+            return '/portal/customer'
         }
       }
 
@@ -111,8 +111,8 @@ export const LoginPage: React.FC = () => {
         const decoded = decodeURIComponent(redirect)
         const isAllowed =
           (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
+          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
+          (decoded.startsWith('/portal/facility-manager') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
@@ -121,6 +121,12 @@ export const LoginPage: React.FC = () => {
           navigate(decoded)
           return
         }
+      }
+
+      // Check if user has an active booking draft in progress
+      if ((sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')) && (userRole === 'CUSTOMER' || !userRole)) {
+        navigate('/booking')
+        return
       }
 
       navigate(getPortalForRole(userRole))
@@ -142,15 +148,20 @@ export const LoginPage: React.FC = () => {
           // ignore parsing error
         }
 
-        navigate('/register', {
-          state: {
-            fromGoogleLogin: true,
-            email: googleEmail,
-            fullName: googleName,
-            googleIdToken: idToken,
-            message: `Tài khoản Google (${googleEmail || 'này'}) chưa được đăng ký trong hệ thống Boxora. Vui lòng đăng ký tài khoản dưới đây để tiếp tục.`
+        navigate(
+          redirect
+            ? `/register?redirect=${encodeURIComponent(redirect)}`
+            : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? `/register?redirect=${encodeURIComponent('/booking')}` : '/register'),
+          {
+            state: {
+              fromGoogleLogin: true,
+              email: googleEmail,
+              fullName: googleName,
+              googleIdToken: idToken,
+              message: `Tài khoản Google (${googleEmail || 'này'}) chưa được đăng ký trong hệ thống Boxora. Vui lòng đăng ký tài khoản dưới đây để tiếp tục.`
+            }
           }
-        })
+        )
         return
       }
 
@@ -200,7 +211,7 @@ export const LoginPage: React.FC = () => {
             return '/portal/staff'
           case 'CUSTOMER':
           default:
-            return customerPortalAccess ? '/portal/customer' : '/units'
+            return '/portal/customer'
         }
       }
 
@@ -208,8 +219,8 @@ export const LoginPage: React.FC = () => {
         const decoded = decodeURIComponent(redirect)
         const isAllowed =
           (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/facility-manager') && (userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
+          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
+          (decoded.startsWith('/portal/facility-manager') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
           (!decoded.startsWith('/portal/'))
@@ -218,6 +229,12 @@ export const LoginPage: React.FC = () => {
           navigate(decoded)
           return
         }
+      }
+
+      // Check if user has an active booking draft in progress
+      if ((sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')) && (userRole === 'CUSTOMER' || !userRole)) {
+        navigate('/booking')
+        return
       }
 
       navigate(getPortalForRole(userRole))
@@ -597,20 +614,18 @@ export const LoginPage: React.FC = () => {
               <span className="text-slate-600">
                 Chưa có tài khoản?{' '}
                 <Link
-                  to="/register"
+                  to={
+                    redirect
+                      ? `/register?redirect=${encodeURIComponent(redirect)}`
+                      : (sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft') ? `/register?redirect=${encodeURIComponent('/booking')}` : '/register')
+                  }
                   className="font-bold text-teal-700 hover:text-teal-800 hover:underline inline-flex items-center gap-1"
                 >
                   <span>Đăng ký ngay</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </span>
-              <Link
-                to="/"
-                className="text-slate-500 hover:text-teal-700 hover:underline inline-flex items-center gap-1 font-medium"
-              >
-                <Home className="w-3.5 h-3.5 text-teal-600" />
-                <span>Về trang chủ</span>
-              </Link>
+
             </div>
 
           </div>

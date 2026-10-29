@@ -13,6 +13,7 @@ import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.mapper.UserMapper;
 import com.boxora.repository.FacilityRepository;
+import com.boxora.repository.RefreshTokenRepository;
 import com.boxora.repository.RoleRepository;
 import com.boxora.repository.UserRepository;
 import com.boxora.security.FacilityAccessGuard;
@@ -27,7 +28,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -42,6 +42,7 @@ public class UserServiceImpl implements UserService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final UserMapper userMapper;
     private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final com.boxora.service.ActivityLogService activityLogService;
 
 
@@ -51,13 +52,38 @@ public class UserServiceImpl implements UserService {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new AppException(ErrorCode.EMAIL_ALREADY_EXISTS);
         }
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new AppException(ErrorCode.USER_ALREADY_EXISTS);
+
+        String username = request.getUsername();
+        if (username == null || username.trim().isEmpty()) {
+            String base = request.getEmail().split("@")[0].replaceAll("[^a-zA-Z0-9_]", "");
+            if (base.length() < 3) {
+                base = "user_" + base;
+            }
+            if (base.length() > 25) {
+                base = base.substring(0, 25);
+            }
+            String candidate = base;
+            int counter = 1;
+            while (userRepository.existsByUsername(candidate)) {
+                candidate = base + (counter++);
+                if (candidate.length() > 30) {
+                    candidate = "u_" + UUID.randomUUID().toString().substring(0, 8);
+                }
+            }
+            username = candidate;
+        } else {
+            username = username.trim();
+            if (userRepository.existsByUsername(username)) {
+                throw new AppException(ErrorCode.USER_ALREADY_EXISTS);
+            }
         }
 
         Role role;
         if (request.getRoleId() != null) {
             role = roleRepository.findById(request.getRoleId())
+                    .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
+        } else if (request.getRoleName() != null && !request.getRoleName().isBlank()) {
+            role = roleRepository.findByName(request.getRoleName().trim().toUpperCase())
                     .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
         } else {
             role = roleRepository.findByName("CUSTOMER")
@@ -65,22 +91,20 @@ public class UserServiceImpl implements UserService {
         }
 
         Facility facility = null;
-        if (request.getFacilityId() != null) {
+        boolean isFacilityScopedRole = "STAFF".equalsIgnoreCase(role.getName())
+                || "FACILITY_MANAGER".equalsIgnoreCase(role.getName());
+
+        if (isFacilityScopedRole && request.getFacilityId() != null) {
             facility = facilityRepository.findById(request.getFacilityId())
                     .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
-
-            // System-wide roles (ADMIN, BUSINESS_MANAGER) do not belong to a specific facility
-            if ("ADMIN".equalsIgnoreCase(role.getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(role.getName())) {
-                facility = null;
-            }
         }
 
         User user = User.builder()
-                .username(request.getUsername())
-                .email(request.getEmail())
+                .username(username)
+                .email(request.getEmail().trim())
                 .password(passwordEncoder.encode(request.getPassword()))
-                .fullName(request.getFullName())
-                .phone(request.getPhone())
+                .fullName(request.getFullName().trim())
+                .phone(request.getPhone().trim())
                 .role(role)
                 .facility(facility)
                 .isActive(true)
@@ -93,14 +117,13 @@ public class UserServiceImpl implements UserService {
                 ActivityAction.USER_CREATE,
                 "User",
                 saved.getId(),
-                "Tao moi tai khoan user: " + saved.getUsername(),
+                "Tao moi tai khoan user: " + saved.getUsername() + " voi vai tro: " + role.getName(),
                 null,
                 saved.getUsername()
         );
 
         return userMapper.toResponse(saved);
     }
-
 
     @Override
     public UserResponse update(UUID id, UserUpdateRequest request) {
@@ -123,20 +146,23 @@ public class UserServiceImpl implements UserService {
             Role role = roleRepository.findById(request.getRoleId())
                     .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
             user.setRole(role);
-            if ("ADMIN".equalsIgnoreCase(role.getName()) || "BUSINESS_MANAGER".equalsIgnoreCase(role.getName())) {
-                user.setFacility(null);
-            }
+        } else if (request.getRoleName() != null && !request.getRoleName().isBlank()) {
+            Role role = roleRepository.findByName(request.getRoleName().trim().toUpperCase())
+                    .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
+            user.setRole(role);
         }
 
-        // Update facility if provided
-        if (request.getFacilityId() != null) {
+        String currentRoleName = user.getRole() != null ? user.getRole().getName() : "";
+        boolean isRoleScoped = "STAFF".equalsIgnoreCase(currentRoleName)
+                || "FACILITY_MANAGER".equalsIgnoreCase(currentRoleName);
+
+        if (!isRoleScoped) {
+            // Customer, Admin, Business Manager are not scoped to any facility
+            user.setFacility(null);
+        } else if (request.getFacilityId() != null) {
             Facility facility = facilityRepository.findById(request.getFacilityId())
                     .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
-
-            String currentRoleName = user.getRole() != null ? user.getRole().getName() : "";
-            if (!"ADMIN".equalsIgnoreCase(currentRoleName) && !"BUSINESS_MANAGER".equalsIgnoreCase(currentRoleName)) {
-                user.setFacility(facility);
-            }
+            user.setFacility(facility);
         }
 
         userMapper.updateEntityFromRequest(request, user);
@@ -177,7 +203,6 @@ public class UserServiceImpl implements UserService {
         return userMapper.toResponse(updated);
     }
 
-
     @Override
     public void delete(UUID id) {
 
@@ -198,15 +223,26 @@ public class UserServiceImpl implements UserService {
                 null
         );
 
-        userRepository.delete(user);
-        log.info("User deleted successfully with id: {}", id);
-    }
+        try {
+            refreshTokenRepository.revokeAllUserTokens(user);
+        } catch (Exception ex) {
+            log.warn("Could not revoke tokens for user {}: {}", user.getUsername(), ex.getMessage());
+        }
 
+        try {
+            userRepository.delete(user);
+            userRepository.flush();
+            log.info("User deleted successfully with id: {}", id);
+        } catch (Exception ex) {
+            log.warn("Hard delete failed for user {} (likely due to FK constraints), falling back to deactivate: {}", user.getUsername(), ex.getMessage());
+            user.setIsActive(false);
+            userRepository.save(user);
+        }
+    }
 
     @Override
     @Transactional(readOnly = true)
     public UserResponse getById(UUID id) {
-
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
@@ -220,7 +256,6 @@ public class UserServiceImpl implements UserService {
 
         return userMapper.toResponse(user);
     }
-
 
     @Override
     @Transactional(readOnly = true)

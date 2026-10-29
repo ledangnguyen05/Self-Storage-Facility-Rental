@@ -27,6 +27,7 @@ import com.boxora.repository.SupportTicketContactLogRepository;
 import com.boxora.repository.SupportTicketRepository;
 import com.boxora.repository.UserRepository;
 import com.boxora.service.impl.SupportTicketServiceImpl;
+import java.math.BigDecimal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -176,7 +177,7 @@ class SupportTicketServiceTest {
             when(requestContext.currentUserId()).thenReturn(managerId);
             when(requestContext.currentUserRole()).thenReturn("FACILITY_MANAGER");
             when(userRepository.findById(managerId)).thenReturn(Optional.of(manager));
-            lenient().when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
+            when(userRepository.findById(customerId)).thenReturn(Optional.of(testCustomer));
             when(bookingRepository.findById(otherBookingId)).thenReturn(Optional.of(otherBooking));
 
             AppException ex = assertThrows(AppException.class, () -> supportTicketService.createTicket(request));
@@ -928,4 +929,96 @@ class SupportTicketServiceTest {
             assertThat(stats.getAvgResolutionMinutes()).isEqualTo(60.0);
         }
     }
+
+    @Nested
+    @DisplayName("Task 5: Xác nhận giải ngân hoàn tiền (adminConfirmPayout)")
+    class AdminConfirmPayoutTests {
+
+        @Test
+        @DisplayName("System Admin không có quyền giải ngân tài chính -> Ném FORBIDDEN")
+        void adminConfirmPayout_SystemAdmin_ThrowsForbidden() {
+            UUID adminId = UUID.randomUUID();
+            when(requestContext.currentUserId()).thenReturn(adminId);
+            when(requestContext.currentUserRole()).thenReturn("ADMIN");
+
+            com.boxora.dto.request.TicketAdminPayoutRequest req = com.boxora.dto.request.TicketAdminPayoutRequest.builder()
+                    .transferTransactionRef("FT2610258888")
+                    .transferProofUrl("https://r2.boxora.com/proof.jpg")
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.adminConfirmPayout(UUID.randomUUID(), req));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.FORBIDDEN);
+            assertThat(ex.getMessage()).contains("System Admin không có thẩm quyền giải ngân tài chính");
+        }
+
+        @Test
+        @DisplayName("Yêu cầu đã ở trạng thái COMPLETED -> Ném PAYMENT_ALREADY_PROCESSED")
+        void adminConfirmPayout_AlreadyCompleted_ThrowsPaymentAlreadyProcessed() {
+            UUID bmId = UUID.randomUUID();
+            UUID ticketId = UUID.randomUUID();
+            SupportTicket ticket = SupportTicket.builder()
+                    .ticketCode("TK-REF-01")
+                    .refundStatus("COMPLETED")
+                    .refundAmount(new BigDecimal("1500000.00"))
+                    .facility(testFacility)
+                    .build();
+            ticket.setId(ticketId);
+
+            when(requestContext.currentUserId()).thenReturn(bmId);
+            when(requestContext.currentUserRole()).thenReturn("BUSINESS_MANAGER");
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+            com.boxora.dto.request.TicketAdminPayoutRequest req = com.boxora.dto.request.TicketAdminPayoutRequest.builder()
+                    .transferTransactionRef("FT2610258888")
+                    .transferProofUrl("https://r2.boxora.com/proof.jpg")
+                    .build();
+
+            AppException ex = assertThrows(AppException.class, () ->
+                    supportTicketService.adminConfirmPayout(ticketId, req));
+
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PAYMENT_ALREADY_PROCESSED);
+        }
+
+        @Test
+        @DisplayName("Business Manager xác nhận giải ngân thành công -> Trạng thái COMPLETED, ghi nhận Payment")
+        void adminConfirmPayout_BusinessManager_Success() {
+            UUID bmId = UUID.randomUUID();
+            User bm = User.builder().fullName("Business Manager A").build();
+            bm.setId(bmId);
+
+            UUID ticketId = UUID.randomUUID();
+            SupportTicket ticket = SupportTicket.builder()
+                    .ticketCode("TK-REF-02")
+                    .refundStatus("PENDING_ADMIN_PAYOUT")
+                    .refundAmount(new BigDecimal("2000000.00"))
+                    .customer(testCustomer)
+                    .facility(testFacility)
+                    .status(TicketStatus.IN_PROGRESS)
+                    .build();
+            ticket.setId(ticketId);
+
+            when(requestContext.currentUserId()).thenReturn(bmId);
+            when(requestContext.currentUserRole()).thenReturn("BUSINESS_MANAGER");
+            when(userRepository.findById(bmId)).thenReturn(Optional.of(bm));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.request.TicketAdminPayoutRequest req = com.boxora.dto.request.TicketAdminPayoutRequest.builder()
+                    .transferTransactionRef("TXN-PAYOUT-999")
+                    .transferProofUrl("https://r2.boxora.com/receipt.jpg")
+                    .adminNotes("Đã chuyển thành công qua VietinBank")
+                    .build();
+
+            SupportTicketResponse res = supportTicketService.adminConfirmPayout(ticketId, req);
+
+            assertThat(res).isNotNull();
+            assertThat(ticket.getRefundStatus()).isEqualTo("COMPLETED");
+            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.RESOLVED);
+            assertThat(ticket.getTransferTransactionRef()).isEqualTo("TXN-PAYOUT-999");
+            assertThat(ticket.getTransferProofUrl()).isEqualTo("https://r2.boxora.com/receipt.jpg");
+        }
+    }
+
 }

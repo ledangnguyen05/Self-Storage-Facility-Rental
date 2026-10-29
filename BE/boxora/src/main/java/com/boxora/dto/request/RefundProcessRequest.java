@@ -14,4 +14,8 @@ public class RefundProcessRequest {
     private String transactionReference;
 
     private String processNotes;
+
+    private String transferProofUrl;
+
+    private String recipientEmail;
 }

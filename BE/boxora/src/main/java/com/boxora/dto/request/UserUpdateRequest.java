@@ -20,7 +20,6 @@ public class UserUpdateRequest {
 
     private Boolean isActive;
 
-    @NotBlank(message = "Phone is required")
     @Pattern(
         regexp = "^(0|\\+84)(3|5|7|8|9)[0-9]{8}$",
         message = "Phone must be a valid Vietnamese phone number"
@@ -29,6 +28,7 @@ public class UserUpdateRequest {
     
     // Only admin can change role
     private UUID roleId;
+    private String roleName;
 
     // Assigned facility (applicable for STAFF / FACILITY_MANAGER)
     private UUID facilityId;

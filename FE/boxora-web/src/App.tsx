@@ -9,7 +9,6 @@ import { LoginPage } from './pages/public/LoginPage'
 import { RegisterPage } from './pages/public/RegisterPage'
 import { HomePage } from './pages/public/HomePage'
 import { BookingPage } from './pages/public/BookingPage'
-import { UnitsExplorerPage } from './pages/public/UnitsExplorerPage'
 import { TermsAndStandardsPage } from './pages/public/TermsAndStandardsPage'
 import { ResetPasswordPage } from './pages/public/ResetPasswordPage'
 import { PaymentResultPage } from './pages/public/PaymentResultPage'
@@ -29,9 +28,19 @@ import { IncidentTicketsPage } from './pages/staff/IncidentTicketsPage'
 import { OverdueManagementPage } from './pages/manager/OverdueManagementPage'
 import { ShiftRosterPage } from './pages/manager/ShiftRosterPage'
 import { BoxoraChatWidget } from './components/chat/BoxoraChatWidget'
-import { StaffMyShiftsPage } from './pages/staff/StaffMyShiftsPage'
-import { checkCustomerPortalAccess } from './utils/rentalAccess'
+import { StaffShiftRosterPage } from './pages/staff/StaffShiftRosterPage'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { ToastContainer } from './components/common/ToastContainer'
+
+// Dynamic shift roster routing based on role (Staff gets peer swap & personal roster, Manager gets full workforce control)
+const ShiftRosterRoute: React.FC = () => {
+  const { user } = useAuth()
+  const role = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || '').toUpperCase()
+  if (role === 'STAFF') {
+    return <StaffShiftRosterPage />
+  }
+  return <ShiftRosterPage />
+}
 
 // Root redirect handler based on user role
 function RootRedirect() {
@@ -60,8 +69,9 @@ function RootRedirect() {
     case 'STAFF':
       return <Navigate to="/portal/staff" replace />
     case 'CUSTOMER':
-    default:
+    default: {
       return <Navigate to="/portal/customer" replace />
+    }
   }
 }
 
@@ -80,8 +90,8 @@ function MainContent() {
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Dedicated Storage Units Explorer & Booking Dashboard */}
-          <Route path="/units" element={<UnitsExplorerPage />} />
-          <Route path="/explore-units" element={<UnitsExplorerPage />} />
+          <Route path="/units" element={<Navigate to="/booking" replace />} />
+          <Route path="/explore-units" element={<Navigate to="/booking" replace />} />
           <Route path="/facilities" element={<FacilitiesPage />} />
           <Route path="/branches" element={<FacilitiesPage />} />
           <Route path="/my-requests" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
@@ -103,7 +113,7 @@ function MainContent() {
             }
           />
 
-          {/* My Bookings route keeps the customer in the Portal with the left sidebar */}
+          {/* My Bookings route redirects to Customer Portal with full left sidebar */}
           <Route path="/my-bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
           <Route path="/customer/bookings" element={<Navigate to="/portal/customer?tab=bookings" replace />} />
 
@@ -132,11 +142,11 @@ function MainContent() {
               }
             />
 
-            {/* 2. Staff Portal: Staff, Facility Manager, Admin */}
+            {/* 2. Staff Portal: Staff, Facility Manager, Business Manager, Admin */}
             <Route
               path="staff"
               element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <StaffDashboard />
                 </ProtectedRoute>
               }
@@ -145,8 +155,8 @@ function MainContent() {
             <Route
               path="staff/shifts"
               element={
-                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER']}>
-                  <StaffMyShiftsPage />
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <StaffShiftRosterPage />
                 </ProtectedRoute>
               }
             />
@@ -155,7 +165,7 @@ function MainContent() {
             <Route
               path="facility-manager"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
                   <ManagerDashboard />
                 </ProtectedRoute>
               }
@@ -210,12 +220,12 @@ function MainContent() {
               }
             />
 
-            {/* 9. Shift Roster & Workforce: Facility Manager, Business Manager, Admin */}
+            {/* 9. Shift Roster & Workforce: Staff, Facility Manager, Business Manager, Admin */}
             <Route
               path="shifts"
               element={
-                <ProtectedRoute allowedRoles={['FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
-                  <ShiftRosterPage />
+                <ProtectedRoute allowedRoles={['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN']}>
+                  <ShiftRosterRoute />
                 </ProtectedRoute>
               }
             />
@@ -253,6 +263,7 @@ export function App() {
       <ErrorBoundary>
       <AuthProvider>
         <MainContent />
+        <ToastContainer />
       </AuthProvider>
       </ErrorBoundary>
     </BrowserRouter>

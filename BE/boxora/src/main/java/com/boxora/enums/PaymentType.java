@@ -5,5 +5,6 @@ public enum PaymentType {
     DEPOSIT,
     RENTAL_FEE,
     RENEWAL_FEE,
-    EXTRA_CHARGE
+    EXTRA_CHARGE,
+    RETURN_COMPENSATION
 }
