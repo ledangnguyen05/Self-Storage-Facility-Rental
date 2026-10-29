@@ -149,7 +149,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
         if (!roleRepository.existsById(roleId)) {
             throw new AppException(ErrorCode.ROLE_NOT_FOUND);
         }
-        return rolePermissionRepository.findAllByRole_Id(roleId)
+        return rolePermissionRepository.findAllByRole_IdAndIsActiveTrueAndPermission_IsActiveTrue(roleId)
                 .stream()
                 .map(rolePermissionMapper::toResponse)
                 .toList();
