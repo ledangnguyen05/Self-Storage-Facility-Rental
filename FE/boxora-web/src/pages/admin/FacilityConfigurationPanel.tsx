@@ -343,7 +343,12 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
       }
     } else if (step === 2) {
       if (!draft.address.trim()) {
-        setFormError(t('Vui lòng nhập địa chỉ đầy đủ của chi nhánh.', 'Full address is required.'))
+        setFormError(
+          t(
+            'Vui lòng nhập địa chỉ đầy đủ của chi nhánh (chọn một kết quả trong danh sách tìm kiếm, ghim trên bản đồ hoặc nhập vào ô "Địa chỉ cơ sở hiển thị").',
+            'Full address is required.'
+          )
+        )
         return false
       }
       const lat = draft.latitude.trim() === '' ? null : Number(draft.latitude)
@@ -749,7 +754,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           </h4>
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                             {t(
-                              'Hệ thống tự động tra cứu tọa độ qua dịch vụ bản đồ (OpenStreetMap Photon), hỗ trợ gợi ý và xử lý dự phòng số nhà.',
+                              'Gõ địa chỉ để nhận gợi ý từ dữ liệu bản đồ thật (OpenStreetMap), bấm lên bản đồ hoặc kéo ghim để chọn vị trí — địa chỉ sẽ tự điền theo ghim.',
                               'Automated geocoding with fallback to street level and autocomplete suggestions.'
                             )}
                           </p>

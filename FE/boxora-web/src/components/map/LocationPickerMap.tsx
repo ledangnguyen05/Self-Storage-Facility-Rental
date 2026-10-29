@@ -1,8 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import {
   searchAddressList,
+  reverseGeocode,
   getGeocodingErrorMessage,
+  isInVietnam,
   GeocodingResult,
 } from '../../services/nominatimGeocodingService'
 import { applyVietnamSovereignty, createVietnamTileLayer } from '../../utils/vietnamSovereignty'
@@ -15,6 +18,10 @@ interface LocationPickerMapProps {
   onAddressSelect?: (address: string) => void
   onClear?: () => void
 }
+
+const DEFAULT_CENTER: [number, number] = [10.7769, 106.7009] // TP.HCM
+const SUGGEST_DEBOUNCE_MS = 500
+const SUGGEST_MIN_CHARS = 3
 
 /**
  * High-visibility SVG pin with animated radar pulse
@@ -55,6 +62,12 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null)
   const markerRef = useRef<L.Marker | null>(null)
   const onChangeRef = useRef(onChange)
+  const onAddressSelectRef = useRef(onAddressSelect)
+  const searchSeqRef = useRef(0)
+  const reverseSeqRef = useRef(0)
+  const suppressSuggestRef = useRef(false)
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const searchQueryRef = useRef(address)
 
   const [searchQuery, setSearchQuery] = useState(address)
   const [isSearching, setIsSearching] = useState(false)
@@ -62,17 +75,36 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   const [searchResults, setSearchResults] = useState<GeocodingResult[]>([])
   const [isLocating, setIsLocating] = useState(false)
   const [locationError, setLocationError] = useState('')
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false)
 
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
 
   useEffect(() => {
-    setSearchQuery(address)
-  }, [address])
+    onAddressSelectRef.current = onAddressSelect
+  }, [onAddressSelect])
 
-  // Direct helper to ensure marker exists, is placed at coordinates, and map pans smoothly
-  const updateMarkerAndMap = (lat: number, lng: number) => {
+  useEffect(() => {
+    searchQueryRef.current = searchQuery
+  }, [searchQuery])
+
+  /** Đặt chữ trong ô tìm kiếm mà không kích hoạt gợi ý tự động */
+  const setQuerySilently = useCallback((value: string) => {
+    if (value !== searchQueryRef.current) {
+      suppressSuggestRef.current = true
+      searchQueryRef.current = value
+      setSearchQuery(value)
+    }
+  }, [])
+
+  useEffect(() => {
+    // Đồng bộ ô tìm kiếm khi địa chỉ thay đổi từ bên ngoài
+    setQuerySilently(address)
+  }, [address, setQuerySilently])
+
+  /** Đặt ghim + di chuyển bản đồ mượt mà */
+  const updateMarkerAndMap = useCallback((lat: number, lng: number, zoom?: number) => {
     const map = mapInstanceRef.current
     if (!map) return
 
@@ -89,6 +121,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
           const newLat = Number(pos.lat.toFixed(6))
           const newLng = Number(pos.lng.toFixed(6))
           onChangeRef.current(newLat, newLng)
+          void resolveAddressFromPin(newLat, newLng)
         }
       })
 
@@ -100,117 +133,216 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       }
     }
 
-    map.flyTo([lat, lng], Math.max(map.getZoom(), 16), { duration: 0.35 })
-  }
+    map.flyTo([lat, lng], zoom ?? Math.max(map.getZoom(), 16), { duration: 0.35 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  // Initialize Leaflet Map
+  /** Từ tọa độ ghim -> tự điền địa chỉ hiển thị (reverse geocoding) */
+  const resolveAddressFromPin = useCallback(async (lat: number, lng: number) => {
+    const seq = ++reverseSeqRef.current
+    setIsResolvingAddress(true)
+    try {
+      const resolved = await reverseGeocode(lat, lng)
+      if (seq !== reverseSeqRef.current) return
+      if (resolved) {
+        setQuerySilently(resolved)
+        onAddressSelectRef.current?.(resolved)
+      }
+    } catch {
+      // bỏ qua: người dùng vẫn có thể nhập địa chỉ thủ công
+    } finally {
+      if (seq === reverseSeqRef.current) setIsResolvingAddress(false)
+    }
+  }, [setQuerySilently])
+
+  // Khởi tạo bản đồ Leaflet
   useEffect(() => {
-    if (!mapContainerRef.current) return
+    const container = mapContainerRef.current
+    if (!container) return
 
-    const initialLat = latitude != null && Number.isFinite(latitude) ? latitude : 10.7769
-    const initialLng = longitude != null && Number.isFinite(longitude) ? longitude : 106.6953
-    const initialZoom = latitude != null && longitude != null ? 16 : 13
+    const hasInitial =
+      latitude != null && longitude != null && Number.isFinite(latitude) && Number.isFinite(longitude)
+    const initialCenter: [number, number] = hasInitial ? [latitude as number, longitude as number] : DEFAULT_CENTER
+    const initialZoom = hasInitial ? 16 : 13
 
-    const map = L.map(mapContainerRef.current, {
+    const map = L.map(container, {
       zoomControl: false,
       attributionControl: false,
-    }).setView([initialLat, initialLng], initialZoom)
+    }).setView(initialCenter, initialZoom)
 
-    createVietnamTileLayer().addTo(map)
+    // Tile Google tiếng Việt; tự chuyển sang OpenStreetMap nếu tile bị chặn / lỗi liên tục
+    const primaryTiles = createVietnamTileLayer().addTo(map)
+    let tileErrors = 0
+    let fallbackAdded = false
+    primaryTiles.on('tileerror', () => {
+      tileErrors += 1
+      if (tileErrors >= 4 && !fallbackAdded) {
+        fallbackAdded = true
+        map.removeLayer(primaryTiles)
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors',
+        }).addTo(map)
+      }
+    })
+
     L.control.zoom({ position: 'topright' }).addTo(map)
     L.control.attribution({ prefix: false, position: 'bottomright' }).addTo(map)
     applyVietnamSovereignty(map)
 
     mapInstanceRef.current = map
 
-    // If initial coordinates exist, place marker immediately
-    if (latitude != null && longitude != null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-      updateMarkerAndMap(latitude, longitude)
+    // Khắc phục lỗi bản đồ chỉ hiện một mảng nhỏ: container thay đổi kích thước khi modal/animation hiển thị
+    const refreshSize = () => {
+      if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize({ animate: false })
+    }
+    const timers = [50, 200, 500, 1000].map((ms) => window.setTimeout(refreshSize, ms))
+    let observer: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      observer = new ResizeObserver(refreshSize)
+      observer.observe(container)
+    }
+    window.addEventListener('resize', refreshSize)
+
+    if (hasInitial) {
+      updateMarkerAndMap(latitude as number, longitude as number)
     }
 
-    // Click anywhere on map to ping/place GPS pin
+    // Bấm lên bản đồ để đặt ghim
     map.on('click', (event: L.LeafletMouseEvent) => {
       const lat = Number(event.latlng.lat.toFixed(6))
       const lng = Number(event.latlng.lng.toFixed(6))
       updateMarkerAndMap(lat, lng)
       onChangeRef.current(lat, lng)
+      void resolveAddressFromPin(lat, lng)
       setSearchResults([])
       setSearchError('')
     })
 
     return () => {
+      timers.forEach((t) => window.clearTimeout(t))
+      observer?.disconnect()
+      window.removeEventListener('resize', refreshSize)
+      searchAbortRef.current?.abort()
       map.remove()
       mapInstanceRef.current = null
       markerRef.current = null
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Sync Marker & View when coordinates props change
+  // Đồng bộ ghim khi tọa độ props thay đổi (nhập tay vĩ độ / kinh độ)
   useEffect(() => {
     const map = mapInstanceRef.current
     if (!map) return
 
     if (latitude != null && longitude != null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
-      updateMarkerAndMap(latitude, longitude)
+      const current = markerRef.current?.getLatLng()
+      const moved = !current || Math.abs(current.lat - latitude) > 1e-6 || Math.abs(current.lng - longitude) > 1e-6
+      if (moved) updateMarkerAndMap(latitude, longitude)
     } else {
       markerRef.current?.remove()
       markerRef.current = null
     }
-  }, [latitude, longitude])
+  }, [latitude, longitude, updateMarkerAndMap])
 
-  // Search address handler: fetch list of candidate locations (exactly like in Gánh Mưu Sinh)
+  /** Thực hiện tìm kiếm (dùng cho cả nút Tìm / Enter / gợi ý tự động) */
+  const runSearch = useCallback(
+    async (query: string, autoPick: boolean) => {
+      const clean = query.trim()
+      if (clean.length < 2) {
+        setSearchError('Vui lòng nhập ít nhất 2 ký tự để tìm vị trí.')
+        setSearchResults([])
+        return
+      }
+
+      searchAbortRef.current?.abort()
+      const controller = new AbortController()
+      searchAbortRef.current = controller
+      const seq = ++searchSeqRef.current
+
+      setIsSearching(true)
+      setSearchError('')
+
+      try {
+        const found = await searchAddressList(clean, undefined, controller.signal)
+        if (seq !== searchSeqRef.current) return
+        setSearchResults(found)
+
+        if (found.length === 0) {
+          setSearchError('Không tìm thấy vị trí phù hợp. Hãy thử bỏ bớt số nhà/phường hoặc bấm trực tiếp lên bản đồ để đặt ghim.')
+        } else if (autoPick && found.length === 1) {
+          selectResult(found[0])
+        }
+      } catch (err) {
+        if (seq !== searchSeqRef.current) return
+        setSearchError(getGeocodingErrorMessage(err))
+      } finally {
+        if (seq === searchSeqRef.current) setIsSearching(false)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  )
+
+  // Gợi ý tự động khi gõ (debounce)
+  useEffect(() => {
+    if (suppressSuggestRef.current) {
+      suppressSuggestRef.current = false
+      return
+    }
+    const clean = searchQuery.trim()
+    if (clean.length < SUGGEST_MIN_CHARS) {
+      setSearchResults([])
+      return
+    }
+    const timer = window.setTimeout(() => {
+      void runSearch(clean, false)
+    }, SUGGEST_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [searchQuery, runSearch])
+
   const handleSearch = async (event?: React.SyntheticEvent) => {
     if (event) {
       event.preventDefault()
       event.stopPropagation()
     }
-    const cleanQuery = searchQuery.trim()
-    if (cleanQuery.length < 2) {
-      setSearchError('Vui lòng nhập ít nhất 2 ký tự để tìm vị trí.')
-      setSearchResults([])
-      return
+    // Giữ lại chữ người dùng đã nhập làm địa chỉ hiển thị nếu chưa có địa chỉ nào
+    if (searchQuery.trim() && !address.trim()) {
+      onAddressSelectRef.current?.(searchQuery.trim())
     }
-
-    setIsSearching(true)
-    setSearchError('')
-    setSearchResults([])
-
-    try {
-      const found = await searchAddressList(cleanQuery)
-      setSearchResults(found)
-
-      if (found.length === 0) {
-        setSearchError('Không tìm thấy vị trí phù hợp. Bạn có thể nhấp trực tiếp lên bản đồ bên dưới để đặt ghim.')
-      } else if (found.length === 1) {
-        selectResult(found[0])
-      }
-    } catch (err) {
-      setSearchError(getGeocodingErrorMessage(err))
-    } finally {
-      setIsSearching(false)
-    }
+    await runSearch(searchQuery, true)
   }
 
   const selectResult = (result: GeocodingResult) => {
     const lat = Number(result.lat.toFixed(6))
     const lng = Number(result.lng.toFixed(6))
 
-    // Place pin and fly map immediately
-    updateMarkerAndMap(lat, lng)
-    onChange(lat, lng)
+    // Hủy mọi reverse-geocode đang chạy để không ghi đè địa chỉ vừa chọn
+    reverseSeqRef.current += 1
+    setIsResolvingAddress(false)
 
-    if (onAddressSelect && result.displayName) {
-      onAddressSelect(result.displayName)
+    updateMarkerAndMap(lat, lng, result.source === 'EXACT' ? 18 : 17)
+    onChangeRef.current(lat, lng)
+
+    if (result.displayName) {
+      onAddressSelectRef.current?.(result.displayName)
     }
-    setSearchQuery(result.displayName)
+    setQuerySilently(result.displayName)
     setSearchResults([])
     setSearchError('')
   }
 
-  // Geolocation (GPS browser with IP fallback)
+  // Vị trí hiện tại: GPS thiết bị (độ chính xác cao), dự phòng theo IP (gần đúng cấp thành phố)
   const locateCurrent = async () => {
     setIsLocating(true)
     setLocationError('')
+
+    const applyPosition = (lat: number, lng: number, zoom: number) => {
+      updateMarkerAndMap(lat, lng, zoom)
+      onChangeRef.current(lat, lng)
+      void resolveAddressFromPin(lat, lng)
+    }
 
     const tryIpFallback = async (reason: string) => {
       try {
@@ -219,20 +351,23 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
         if (data && data.success && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
           const lat = Number(data.latitude.toFixed(6))
           const lng = Number(data.longitude.toFixed(6))
-          updateMarkerAndMap(lat, lng)
-          onChange(lat, lng)
-          setLocationError(`Đã lấy vị trí gần đúng theo mạng (${data.city || data.region || 'Việt Nam'}). Bạn có thể kéo ghim để tinh chỉnh.`)
-          return true
+          if (isInVietnam(lat, lng)) {
+            applyPosition(lat, lng, 14)
+            setLocationError(
+              `${reason} Đã lấy vị trí gần đúng theo mạng (${data.city || data.region || 'Việt Nam'}) — chỉ chính xác cấp thành phố, vui lòng kéo ghim hoặc nhập địa chỉ để chỉnh lại.`
+            )
+            return true
+          }
         }
       } catch {
-        // Fallback failed
+        // Dự phòng thất bại
       }
-      setLocationError(reason)
+      setLocationError(`${reason} Hãy nhập địa chỉ vào ô tìm kiếm hoặc bấm trực tiếp lên bản đồ.`)
       return false
     }
 
     if (!navigator.geolocation) {
-      await tryIpFallback('Trình duyệt không hỗ trợ GPS trực tiếp.')
+      await tryIpFallback('Trình duyệt không hỗ trợ GPS.')
       setIsLocating(false)
       return
     }
@@ -241,18 +376,33 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       (pos) => {
         const lat = Number(pos.coords.latitude.toFixed(6))
         const lng = Number(pos.coords.longitude.toFixed(6))
-        updateMarkerAndMap(lat, lng)
-        onChange(lat, lng)
+        const accuracy = Math.round(pos.coords.accuracy || 0)
+
+        if (!isInVietnam(lat, lng)) {
+          setLocationError('Vị trí thiết bị nằm ngoài Việt Nam, không thể dùng làm vị trí chi nhánh. Hãy nhập địa chỉ thủ công.')
+          setIsLocating(false)
+          return
+        }
+
+        applyPosition(lat, lng, accuracy > 0 && accuracy <= 100 ? 18 : accuracy <= 1000 ? 16 : 14)
+        if (accuracy > 500) {
+          setLocationError(
+            `Vị trí lấy từ thiết bị có sai số khoảng ${accuracy.toLocaleString('vi-VN')} m (máy tính thường không có GPS thật). Vui lòng kéo ghim hoặc nhập địa chỉ để chỉnh lại.`
+          )
+        }
         setIsLocating(false)
       },
       async (err) => {
-        const reason = err.code === err.PERMISSION_DENIED
-          ? 'Chưa được cấp quyền GPS trên trình duyệt.'
-          : 'Không thể xác định vị trí qua GPS vệ tinh.'
+        const reason =
+          err.code === err.PERMISSION_DENIED
+            ? 'Chưa được cấp quyền vị trí trên trình duyệt.'
+            : err.code === err.TIMEOUT
+            ? 'Hết thời gian chờ GPS.'
+            : 'Không thể xác định vị trí qua GPS.'
         await tryIpFallback(reason)
         setIsLocating(false)
       },
-      { timeout: 5000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 }
     )
   }
 
@@ -268,7 +418,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Search Input Bar (ganhmuusinh style) */}
+      {/* Search Input Bar */}
       <div className="space-y-2">
         <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
           Tìm vị trí trên bản đồ
@@ -308,7 +458,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
           </button>
         </div>
 
-        {/* Search Results List (ganhmuusinh style - hiện danh sách lựa chọn cho user bấm chọn) */}
+        {/* Danh sách kết quả: bấm để chọn ghim */}
         {searchResults.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-cyan-200 bg-white shadow-md dark:border-cyan-900/50 dark:bg-slate-800">
             <div className="bg-cyan-50/80 px-3 py-1.5 text-[11px] font-semibold text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-200 border-b border-cyan-100 dark:border-cyan-900/40 flex items-center justify-between">
@@ -323,7 +473,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
             </div>
             <ul className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/60">
               {searchResults.map((result, idx) => (
-                <li key={idx}>
+                <li key={`${result.lat}-${result.lng}-${idx}`}>
                   <button
                     type="button"
                     onClick={() => selectResult(result)}
@@ -333,11 +483,9 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
                       <span className="material-symbols-outlined text-[16px] text-cyan-600 shrink-0">location_on</span>
                       <span className="truncate">{result.displayName}</span>
                     </div>
-                    {result.type && (
-                      <span className="pl-5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                        {result.type} • Tọa độ: {result.lat.toFixed(6)}, {result.lng.toFixed(6)}
-                      </span>
-                    )}
+                    <span className="pl-5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                      {result.confidence || result.type} • {result.lat.toFixed(6)}, {result.lng.toFixed(6)}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -353,11 +501,14 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
         )}
       </div>
 
-      {/* Control Action Line: Instruction + Geolocation + Clear Pin */}
+      {/* Hướng dẫn + Vị trí hiện tại + Xóa ghim */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-400">
         <div className="flex items-center gap-1.5">
           <span className="material-symbols-outlined text-[16px] text-cyan-600">touch_app</span>
-          <span>Bấm trực tiếp lên bản đồ hoặc kéo ghim để điều chỉnh vị trí GPS.</span>
+          <span>
+            Bấm trực tiếp lên bản đồ hoặc kéo ghim để điều chỉnh vị trí GPS.
+            {isResolvingAddress && <span className="ml-1 text-cyan-700">Đang lấy địa chỉ từ ghim...</span>}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -365,7 +516,7 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
             type="button"
             onClick={locateCurrent}
             disabled={isLocating}
-            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer disabled:opacity-60"
           >
             <span className={`material-symbols-outlined text-[14px] text-cyan-600 ${isLocating ? 'animate-spin' : ''}`}>
               near_me
@@ -387,20 +538,19 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
       </div>
 
       {locationError && (
-        <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">warning</span>
-          {locationError}
+        <p className="text-xs text-amber-600 dark:text-amber-400 flex items-start gap-1">
+          <span className="material-symbols-outlined text-[14px] mt-0.5">warning</span>
+          <span>{locationError}</span>
         </p>
       )}
 
       {/* Leaflet Map Frame */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+      <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner bg-slate-100">
         <div ref={mapContainerRef} className="h-72 w-full z-0" />
 
-        {/* Selected Coordinates Badge (ganhmuusinh style bottom-left) */}
         {hasPin && (
-          <div className="absolute bottom-2 left-2 z-10 rounded-lg bg-white/95 px-2.5 py-1 text-[11px] font-mono font-bold text-slate-800 shadow-md backdrop-blur-xs border border-slate-200 dark:bg-slate-900/95 dark:text-slate-100 dark:border-slate-700">
-            Ghim đã chọn: {latitude.toFixed(6)}, {longitude.toFixed(6)}
+          <div className="absolute bottom-2 left-2 z-[400] rounded-lg bg-white/95 px-2.5 py-1 text-[11px] font-mono font-bold text-slate-800 shadow-md backdrop-blur-xs border border-slate-200 dark:bg-slate-900/95 dark:text-slate-100 dark:border-slate-700">
+            Ghim đã chọn: {(latitude as number).toFixed(6)}, {(longitude as number).toFixed(6)}
           </div>
         )}
       </div>
