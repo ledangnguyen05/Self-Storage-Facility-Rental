@@ -53,7 +53,7 @@ export const ROLE_PRESETS: RolePreset[] = [
   {
     role: 'CUSTOMER',
     label: 'Khách hàng Thuê kho',
-    sublabel: 'Tự quản lý kho, mở khóa từ xa IoT 24/7 & Hợp đồng',
+    sublabel: 'Tự quản lý kho, tra cứu mã PIN 24/7 & Hợp đồng',
     email: 'customer@gmail.com',
     password: '123456',
     color: 'border-emerald-500 text-emerald-600 bg-emerald-50',
