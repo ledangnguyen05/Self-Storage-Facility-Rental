@@ -2703,28 +2703,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               )
             })}
           </div>
-
-          {activeTab === 'my-units' && (
-            <button
-              type="button"
-              onClick={() => handleTabChange('history')}
-              className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[15px]">history</span>
-              <span>Xem lịch sử kho &amp; thông báo</span>
-            </button>
-          )}
-
-          {activeTab === 'history' && (
-            <button
-              type="button"
-              onClick={() => handleTabChange('my-units')}
-              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[15px]">inventory_2</span>
-              <span>Quay lại Kho của tôi</span>
-            </button>
-          )}
         </div>
       </div>
 
