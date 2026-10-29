@@ -442,6 +442,14 @@ Trân trọng,
     }
   },
 
+  // Alias tuong thich neu bundle hoac trinh duyet bi dich chu Quá hạn
+  'checkAndSendQuá hạnReminders'(): number {
+    return this.checkAndSendOverdueReminders();
+  },
+  checkAndSendQuaHanReminders(): number {
+    return this.checkAndSendOverdueReminders();
+  },
+
   // 5. Thao tác Hủy đơn quá hạn 48h của nhân viên hoặc quản lý: Giải phóng kho và gửi email thông báo hủy
   cancelOverdueReservation(
     bookingCode: string,

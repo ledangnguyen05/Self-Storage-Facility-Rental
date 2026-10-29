@@ -113,7 +113,7 @@ const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
-  const { user, role } = useAuth()
+  const { user, role, hasPermission } = useAuth()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
@@ -285,9 +285,26 @@ export const ManagerDashboard: React.FC = () => {
 
   // Quét tự động gửi email nhắc nhở quá hạn 24h đối với đơn ký + thanh toán tại quầy
   useEffect(() => {
-    reservationEmailService.checkAndSendOverdueReminders()
+    try {
+      if (typeof (reservationEmailService as any)?.checkAndSendOverdueReminders === 'function') {
+        reservationEmailService.checkAndSendOverdueReminders()
+      } else if (typeof (reservationEmailService as any)?.['checkAndSendQuá hạnReminders'] === 'function') {
+        (reservationEmailService as any)['checkAndSendQuá hạnReminders']()
+      }
+    } catch (e) {
+      console.warn('Error running initial overdue reminder check:', e)
+    }
+
     const interval = setInterval(() => {
-      reservationEmailService.checkAndSendOverdueReminders()
+      try {
+        if (typeof (reservationEmailService as any)?.checkAndSendOverdueReminders === 'function') {
+          reservationEmailService.checkAndSendOverdueReminders()
+        } else if (typeof (reservationEmailService as any)?.['checkAndSendQuá hạnReminders'] === 'function') {
+          (reservationEmailService as any)['checkAndSendQuá hạnReminders']()
+        }
+      } catch (e) {
+        console.warn('Error running interval overdue reminder check:', e)
+      }
     }, 60000)
     return () => clearInterval(interval)
   }, [])
@@ -1488,6 +1505,7 @@ export const ManagerDashboard: React.FC = () => {
 
       {/* 7 MANAGEMENT-LEVEL SUMMARIES: TABS NAVIGATION */}
       <div className="flex items-center gap-2 border-b border-slate-200 overflow-x-auto pb-1">
+        {(hasPermission('STORAGE_UNIT_VIEW') || hasPermission('FACILITY_VIEW')) && (
         <button
           type="button"
           onClick={() => setActiveTab('overview')}
@@ -1507,7 +1525,9 @@ export const ManagerDashboard: React.FC = () => {
             {totalUnitsCount} kho
           </span>
         </button>
+        )}
 
+        {hasPermission('BOOKING_VIEW') && (
         <button
           type="button"
           onClick={() => setActiveTab('pending_orders')}
@@ -1530,7 +1550,9 @@ export const ManagerDashboard: React.FC = () => {
             </span>
           )}
         </button>
+        )}
 
+        {(hasPermission('HANDOVER_VIEW') || hasPermission('HANDOVER_EXECUTE')) && (
         <button
           type="button"
           onClick={() => setActiveTab('reception')}
@@ -1550,7 +1572,9 @@ export const ManagerDashboard: React.FC = () => {
             {upcomingHandovers.length} đơn
           </span>
         </button>
+        )}
 
+        {(hasPermission('CHECKOUT_REQUEST') || hasPermission('HANDOVER_VIEW')) && (
         <button
           type="button"
           onClick={() => {
@@ -1576,7 +1600,9 @@ export const ManagerDashboard: React.FC = () => {
             {activeRentals.length} hợp đồng
           </span>
         </button>
+        )}
 
+        {(hasPermission('RENEWAL_APPROVE') || hasPermission('CONTRACT_VIEW')) && (
         <button
           type="button"
           onClick={() => setActiveTab('renewals')}
@@ -1596,7 +1622,9 @@ export const ManagerDashboard: React.FC = () => {
             {renewalsCount} đơn
           </span>
         </button>
+        )}
 
+        {(hasPermission('REFUND_APPROVE') || hasPermission('REFUND_REVIEW')) && (
         <button
           type="button"
           onClick={() => setActiveTab('refunds')}
@@ -1618,7 +1646,9 @@ export const ManagerDashboard: React.FC = () => {
             </span>
           )}
         </button>
+        )}
 
+        {hasPermission('SUPPORT_TICKET_VIEW') && (
         <button
           type="button"
           onClick={() => setActiveTab('tickets')}
@@ -1638,6 +1668,7 @@ export const ManagerDashboard: React.FC = () => {
             {tickets.filter(t => t.status !== 'RESOLVED').length} ca
           </span>
         </button>
+        )}
 
         {role !== 'STAFF' && (
           <button

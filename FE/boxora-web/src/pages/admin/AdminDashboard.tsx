@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
 import { roleService } from '../../services/roleService'
 import { permissionService } from '../../services/permissionService'
+import { getRoleMeta, formatPermission, ROLE_VIETNAMESE_MAP } from '../../utils/rbacTranslations'
 import { activityLogService } from '../../services/activityLogService'
 import { facilityService } from '../../services/facilityService'
 import { authService } from '../../services/authService'
@@ -24,13 +25,13 @@ const isDashboardTab = (tab: string | null): tab is AdminDashboardTab =>
   tab === 'users' || tab === 'roles' || tab === 'logs' || tab === 'facilities'
 
 export const AdminDashboard: React.FC = () => {
-  const { role } = useAuth()
+  const { role, user } = useAuth()
   const { t } = useLanguage()
   const outletContext = useOutletContext<DashboardOutletContextType | undefined>()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
   const [activeTab, setActiveTabState] = useState<AdminDashboardTab>(
-    role === 'BUSINESS_MANAGER' ? 'facilities' : (isDashboardTab(requestedTab) ? requestedTab : 'users')
+    (role === 'ADMIN' && requestedTab === 'facilities') ? 'users' : (role === 'BUSINESS_MANAGER' ? 'facilities' : (isDashboardTab(requestedTab) ? requestedTab : 'users'))
   )
   const setActiveTab = (tab: AdminDashboardTab) => {
     setActiveTabState(tab)
@@ -75,6 +76,10 @@ export const AdminDashboard: React.FC = () => {
   const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
 
   // Create User Modal
+  const [roleEditUser, setRoleEditUser] = useState<User | null>(null)
+  const [selectedNewRole, setSelectedNewRole] = useState<RoleType>('STAFF')
+  const [editFacilityId, setEditFacilityId] = useState<string>('')
+  const [isRoleEditing, setIsRoleEditing] = useState(false)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [newUser, setNewUser] = useState({
     username: '',
@@ -100,11 +105,11 @@ export const AdminDashboard: React.FC = () => {
 
   // Activity Log state
   const fallbackRoles: Role[] = [
-    { id: 'r-1', name: 'ADMIN', description: 'Quản lý tài khoản, vai trò và quyền truy cập; không quyết định chính sách kinh doanh' },
-    { id: 'r-2', name: 'BUSINESS_MANAGER', description: 'Tạo, sửa, kích hoạt hoặc ngừng áp dụng chính sách chung về cọc, giá, gia hạn, hủy, trả kho và quá hạn' },
-    { id: 'r-3', name: 'FACILITY_MANAGER', description: 'Xem chính sách cơ sở, thực thi nghiệp vụ; chỉ sửa ngoại lệ nếu được Business Manager cấp quyền' },
-    { id: 'r-4', name: 'STAFF', description: 'Chỉ xem các quy định cần thiết để làm việc; không được cấu hình chính sách' },
-    { id: 'r-5', name: 'CUSTOMER', description: 'Xem các chính sách liên quan đến thuê kho, thanh toán và hợp đồng' },
+    { id: 'r-1', name: 'ADMIN', description: 'Toàn quyền quản trị tài khoản, vai trò người dùng, ma trận phân quyền RBAC và cấu hình bảo mật hệ thống.' },
+    { id: 'r-2', name: 'BUSINESS_MANAGER', description: 'Quản lý danh mục cơ sở, thiết lập bảng giá, chính sách cho thuê, phê duyệt chiết khấu & khuyến mãi và báo cáo doanh thu toàn chuỗi.' },
+    { id: 'r-3', name: 'FACILITY_MANAGER', description: 'Điều hành vận hành buồng kho, giám sát ca trực nhân viên, duyệt ngoại lệ, kiểm tra đối soát hoàn tiền và xử lý giao nhận kho tại cơ sở.' },
+    { id: 'r-4', name: 'STAFF', description: 'Thực hiện thủ tục check-in tiếp nhận kho, nghiệm thu trả kho, thu ngân quầy cơ sở, hỗ trợ khách hàng và xử lý sự cố tại chỗ.' },
+    { id: 'r-5', name: 'CUSTOMER', description: 'Khách hàng sử dụng dịch vụ lưu trữ: đặt giữ chỗ kho, thanh toán trực tuyến, ký hợp đồng điện tử và quản lý buồng kho cá nhân.' },
   ]
 
   const fallbackPermissions: Permission[] = [
@@ -120,6 +125,7 @@ export const AdminDashboard: React.FC = () => {
 
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [logsError, setLogsError] = useState(false)
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
   const [logTypeFilter, setLogTypeFilter] = useState<string>('ALL')
   const [logSearch, setLogSearch] = useState('')
   const [isLoginHistoryMode, setIsLoginHistoryMode] = useState(false)
@@ -234,6 +240,15 @@ export const AdminDashboard: React.FC = () => {
       setRoleSaveSuccess(true)
       setRoleSaveError(null)
       setTimeout(() => setRoleSaveSuccess(false), 2500)
+
+      // Phát sự kiện toàn hệ thống để các Dashboard khác cập nhật ngay các quyền vừa phân
+      window.dispatchEvent(new CustomEvent('boxora_permissions_updated', {
+        detail: {
+          roleId: selectedRole.id,
+          roleName: selectedRole.name,
+          permissionIds: assignedPermIds
+        }
+      }))
     } catch {
       setRoleSaveError('Không lưu được phân quyền. Thay đổi chưa được áp dụng.')
     } finally {
@@ -243,6 +258,7 @@ export const AdminDashboard: React.FC = () => {
 
   const fetchLogs = async (loginHistoryMode = isLoginHistoryMode, page = logsPage) => {
     setLogsError(false)
+    setIsLoadingLogs(true)
     try {
       if (loginHistoryMode) {
         const res = await activityLogService.getLoginHistory({ page, size: 20 })
@@ -258,14 +274,85 @@ export const AdminDashboard: React.FC = () => {
     } catch {
       setLogs([])
       setLogsError(true)
+    } finally {
+      setIsLoadingLogs(false)
+    }
+  }
+
+  const handleRoleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!roleEditUser) return
+    setIsRoleEditing(true)
+    try {
+      const targetRole = roles.find(r => r.name.toUpperCase() === selectedNewRole.toUpperCase())
+      const roleId = targetRole?.id || null
+      const payload: any = {
+        roleId,
+        roleName: selectedNewRole
+      }
+      if (selectedNewRole === 'STAFF' || selectedNewRole === 'FACILITY_MANAGER') {
+        if (editFacilityId) {
+          payload.facilityId = editFacilityId
+        }
+      }
+      await userService.updateUser(roleEditUser.id, payload)
+      setUsers(current => current.map(u => u.id === roleEditUser.id ? ({
+        ...u,
+        roleName: selectedNewRole,
+        role: (targetRole || { id: roleId || '', name: selectedNewRole, description: '' }) as Role,
+        facilityId: (selectedNewRole === 'STAFF' || selectedNewRole === 'FACILITY_MANAGER') ? (editFacilityId || u.facilityId) : null,
+        facility: (selectedNewRole === 'STAFF' || selectedNewRole === 'FACILITY_MANAGER') 
+          ? (facilities.find(f => f.id === editFacilityId) || (u as any).facility) 
+          : undefined
+      } as unknown as User) : u))
+      setFeedbackMessage(`Đã cập nhật vai trò cho "${roleEditUser.fullName || roleEditUser.username}" thành ${getRoleMeta(selectedNewRole).title}.`)
+      setTimeout(() => setFeedbackMessage(null), 3500)
+      setRoleEditUser(null)
+    } catch (err: any) {
+      setFeedbackMessage(err?.response?.data?.message || 'Không thể cập nhật vai trò người dùng.')
+    } finally {
+      setIsRoleEditing(false)
+    }
+  }
+
+  const handleDeleteUser = async (targetUser: User) => {
+    if (user?.id === targetUser.id) {
+      setFeedbackMessage('Bạn không thể xóa tài khoản hiện đang đăng nhập của chính mình.')
+      return
+    }
+    const confirmDelete = window.confirm(
+      `Bạn có chắc chắn muốn xóa tài khoản "${targetUser.fullName || targetUser.username}" (${targetUser.email})?\nThao tác này sẽ xóa vĩnh viễn hoặc vô hiệu hóa tài khoản khỏi hệ thống.`
+    )
+    if (!confirmDelete) return
+
+    setUserActionLoadingId(targetUser.id)
+    try {
+      await userService.deleteUser(targetUser.id)
+      setUsers(prev => prev.filter(u => u.id !== targetUser.id))
+      setFeedbackMessage(`Đã xóa tài khoản "${targetUser.fullName || targetUser.username}" thành công.`)
+      setTimeout(() => setFeedbackMessage(null), 3000)
+    } catch (err: any) {
+      setFeedbackMessage(err?.response?.data?.message || 'Không thể xóa tài khoản. Vui lòng kiểm tra lại.')
+    } finally {
+      setUserActionLoadingId(null)
     }
   }
 
   const handleCreateUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
+      const emailBase = (newUser.email || '').split('@')[0].replace(/[^a-zA-Z0-9_]/g, '')
+      const generatedUsername = emailBase.length >= 3 ? emailBase : `user_${emailBase || Date.now().toString().slice(-4)}`
+      const targetRole = roles.find(r => r.name.toUpperCase() === newUser.roleName.toUpperCase())
+
       const payload = {
-        ...newUser,
+        username: generatedUsername,
+        email: newUser.email.trim(),
+        fullName: newUser.fullName.trim(),
+        phone: newUser.phone.trim(),
+        password: newUser.password,
+        roleId: targetRole?.id || null,
+        roleName: newUser.roleName,
         facilityId: (newUser.roleName === 'STAFF' || newUser.roleName === 'FACILITY_MANAGER')
           ? (newUser.facilityId || null)
           : null
@@ -275,10 +362,19 @@ export const AdminDashboard: React.FC = () => {
       setTimeout(() => {
         setCreateSuccess(false)
         setIsCreateModalOpen(false)
+        setNewUser({
+          username: '',
+          email: '',
+          fullName: '',
+          phone: '',
+          password: '',
+          roleName: 'STAFF' as RoleType,
+          facilityId: ''
+        })
         fetchUsers()
       }, 1200)
-    } catch {
-      setFeedbackMessage('Không tạo được tài khoản. Dữ liệu chưa được lưu; hãy kiểm tra kết nối và thử lại.')
+    } catch (err: any) {
+      setFeedbackMessage(err?.response?.data?.message || 'Không tạo được tài khoản. Dữ liệu chưa được lưu; hãy kiểm tra kết nối và thử lại.')
     }
   }
 
@@ -406,7 +502,7 @@ export const AdminDashboard: React.FC = () => {
           <button type="button" aria-label="Đóng thông báo" onClick={() => setFeedbackMessage(null)} className="ml-2 text-slate-400 hover:text-slate-700">×</button>
         </div>
       )}
-      {activeTab === 'facilities' ? (
+      {role !== 'ADMIN' && activeTab === 'facilities' ? (
         /* ========================================================
            PHẦN 1: CẤU HÌNH CHI NHÁNH (Hoàn toàn độc lập)
            URL: /portal/admin?tab=facilities
@@ -418,20 +514,13 @@ export const AdminDashboard: React.FC = () => {
               <div>
                
                 <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight font-headline">
-                  {role === 'ADMIN'
-                    ? t('Chi nhánh & cơ sở lưu trữ', 'Branches & Facilities')
-                    : t('Cấu hình chi nhánh & cơ sở', 'Branch & Facility Configuration')}
+                  {t('Cấu hình chi nhánh & cơ sở', 'Branch & Facility Configuration')}
                 </h1>
                 <p className="text-sm text-slate-600 mt-1 max-w-3xl">
-                  {role === 'ADMIN'
-                    ? t(
-                        'Tra cứu thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và sơ đồ mặt bằng các tầng kho bãi Boxora (Chế độ chỉ xem cho Quản trị viên). Thẩm quyền thêm mới và cấu hình chi nhánh thuộc về Business Operations Manager.',
-                        'View branch details, addresses, GPS coordinates, and floor layout configs (Admin view-only mode. Branch creation & management belong to Business Operations Manager).'
-                      )
-                    : t(
-                        'Thêm mới và quản lý thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và cấu hình sơ đồ mặt bằng các tầng kho bãi Boxora.',
-                        'Add and manage branch details, addresses, GPS map coordinates, and floor layout configs.'
-                      )}
+                  {t(
+                    'Thêm mới và quản lý thông tin chi nhánh, địa chỉ, vị trí GPS bản đồ và cấu hình sơ đồ mặt bằng các tầng kho bãi Boxora.',
+                    'Add and manage branch details, addresses, GPS map coordinates, and floor layout configs.'
+                  )}
                 </p>
               </div>
 
@@ -487,111 +576,129 @@ export const AdminDashboard: React.FC = () => {
            URL: /portal/admin
            ======================================================== */
         <div className="flex flex-col gap-6 w-full">
-          {/* Top Banner - Stitch Header Style for RBAC & Users */}
-          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-md border border-slate-200/90">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-2">
-                  <span>Hệ thống phân quyền &amp; quản trị vai trò</span>
+          {/* Top Banners tailored per Tab */}
+          {activeTab === 'users' && (
+            <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-md border border-slate-200/90">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-2">
+                    <span>Hệ thống phân quyền &amp; quản trị tài khoản</span>
+                  </div>
+                  <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+                    Danh sách người dùng
+                  </h1>
+                  <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+                    Quản lý toàn bộ vòng đời tài khoản (tạo mới, cấp quyền, đổi vai trò, khóa, xóa) và gán cơ sở trực thuộc cho từng cá nhân.
+                  </p>
                 </div>
-                <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
-                  Phân quyền RBAC &amp; quản lý người dùng
-                </h1>
-                <p className="text-sm text-slate-600 mt-1 max-w-3xl">
-                  Quản lý danh sách tài khoản người dùng, ma trận phân quyền vai trò (Role-Based Access Control) và tra cứu nhật ký kiểm toán hệ thống.
-                </p>
+
+                <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                  <button 
+                    type="button" 
+                    onClick={() => fetchUsers(facilityFilter)}
+                    disabled={isLoadingUsers}
+                    className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Tải lại dữ liệu từ cơ sở dữ liệu"
+                  >
+                    <span className={`material-symbols-outlined text-[16px] text-blue-600 ${isLoadingUsers ? 'animate-spin' : ''}`}>
+                      refresh
+                    </span>
+                    <span>{isLoadingUsers ? 'Đang tải...' : 'Làm mới'}</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="stitch-btn-primary text-xs"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">person_add</span>
+                    <span>Cấp tài khoản mới</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-                <button 
-                  type="button" 
-                  onClick={() => fetchUsers(facilityFilter)}
-                  disabled={isLoadingUsers}
-                  className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                  title="Tải lại dữ liệu từ cơ sở dữ liệu"
-                >
-                  <span className={`material-symbols-outlined text-[16px] text-blue-600 ${isLoadingUsers ? 'animate-spin' : ''}`}>
-                    refresh
-                  </span>
-                  <span>{isLoadingUsers ? 'Đang tải...' : 'Làm mới'}</span>
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="stitch-btn-primary text-xs"
-                >
-                  <span className="material-symbols-outlined text-[18px]">person_add</span>
-                  <span>Cấp tài khoản mới</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Tóm tắt tài khoản: số liệu lấy từ danh sách đang hiển thị */}
-            <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
-              {summaryCards.map((card) => (
-                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-all shadow-xs hover:shadow-sm hover:border-slate-300">
-                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
-                    <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
-                  </span>
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
-                    <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                      <span className="text-2xl font-bold text-slate-900">{card.value}</span>
-                      <span className="text-[11px] text-slate-500">{card.helper}</span>
+              {/* Tóm tắt tài khoản: số liệu lấy từ danh sách đang hiển thị */}
+              <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
+                {summaryCards.map((card) => (
+                  <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-all shadow-xs hover:shadow-sm hover:border-slate-300">
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
+                      <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-slate-500" title={card.label}>{card.label}</div>
+                      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                        <span className="text-2xl font-bold text-slate-900">{card.value}</span>
+                        <span className="text-[11px] text-slate-500">{card.helper}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+          )}
 
-            {/* Tab Controls - CHỈ gồm users, roles, logs - KHÔNG có facilities */}
-            <div className="mt-6 flex w-full flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab('users')}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'users'
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">group</span>
-                <span>Danh sách người dùng ({filteredUsers.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('roles')}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'roles'
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">security</span>
-                <span>Ma trận phân quyền (RBAC)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('logs')}
-                className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 cursor-pointer ${
-                  activeTab === 'logs'
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">history</span>
-                <span>Nhật ký kiểm toán (Audit logs)</span>
-              </button>
-              <Link
-                to="/tickets"
-                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 flex items-center gap-2 transition-all cursor-pointer"
-                title="Xem danh sách và chi tiết báo cáo sự cố toàn hệ thống"
-              >
-                <span className="material-symbols-outlined text-[16px] text-slate-600">support_agent</span>
-                <span>Báo cáo sự cố</span>
-              </Link>
+          {activeTab === 'roles' && (
+            <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-md border border-slate-200/90">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-semibold mb-2">
+                    <span className="material-symbols-outlined text-[14px]">security</span>
+                    <span>Bảo mật &amp; Quản trị vai trò (RBAC)</span>
+                  </div>
+                  <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+                    Ma trận phân quyền (RBAC)
+                  </h1>
+                  <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+                    Giao diện chuyên sâu để thiết lập và cấu hình quyền hạn truy cập dữ liệu, định nghĩa rõ vai trò nào được phép thực thi các chức năng nghiệp vụ trong hệ thống Boxora.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                  <button 
+                    type="button" 
+                    onClick={() => fetchRolesAndPermissions()}
+                    className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Tải lại ma trận quyền"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-indigo-600">refresh</span>
+                    <span>Làm mới ma trận</span>
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {activeTab === 'logs' && (
+            <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-md border border-slate-200/90">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-300 text-slate-700 text-xs font-semibold mb-2">
+                    <span className="material-symbols-outlined text-[14px]">receipt_long</span>
+                    <span>Truy vết an ninh &amp; kiểm toán</span>
+                  </div>
+                  <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+                    Nhật ký kiểm toán (Audit logs)
+                  </h1>
+                  <p className="text-sm text-slate-600 mt-1 max-w-3xl">
+                    Bảng theo dõi lịch sử đăng nhập và truy vết mọi thao tác thay đổi dữ liệu quan trọng trên hệ thống của tất cả người dùng, đảm bảo tính minh bạch và an toàn bảo mật.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
+                  <button 
+                    type="button" 
+                    onClick={() => fetchLogs()}
+                    disabled={isLoadingLogs}
+                    className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <span className={`material-symbols-outlined text-[16px] text-blue-600 ${isLoadingLogs ? 'animate-spin' : ''}`}>
+                      refresh
+                    </span>
+                    <span>{isLoadingLogs ? 'Đang tải...' : 'Làm mới'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
       {/* TAB 1: USERS */}
       {activeTab === 'users' && (
@@ -643,11 +750,11 @@ export const AdminDashboard: React.FC = () => {
                   className="px-3 py-2 text-xs rounded-lg border border-slate-200 bg-slate-50 font-medium focus:outline-none cursor-pointer"
                 >
                   <option value="ALL">Tất cả vai trò</option>
-                  <option value="ADMIN">ADMIN</option>
-                  <option value="BUSINESS_MANAGER">BUSINESS_MANAGER</option>
-                  <option value="FACILITY_MANAGER">FACILITY_MANAGER</option>
-                  <option value="STAFF">STAFF</option>
-                  <option value="CUSTOMER">CUSTOMER</option>
+                  <option value="ADMIN">Quản trị viên (ADMIN)</option>
+                  <option value="BUSINESS_MANAGER">Quản lý kinh doanh (BUSINESS_MANAGER)</option>
+                  <option value="FACILITY_MANAGER">Quản lý cơ sở (FACILITY_MANAGER)</option>
+                  <option value="STAFF">Nhân viên trực ca (STAFF)</option>
+                  <option value="CUSTOMER">Khách hàng (CUSTOMER)</option>
                 </select>
               </div>
             </div>
@@ -683,7 +790,7 @@ export const AdminDashboard: React.FC = () => {
                     <td className="py-3 px-4 text-slate-700 font-medium">{user.username}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-semibold border ${getRoleBadge(user.role?.name || (user.roleName as string))}`}>
-                        {user.role?.name || user.roleName || 'CUSTOMER'}
+                        {getRoleMeta(user.role?.name || (user.roleName as string)).title}
                       </span>
                     </td>
                     <td className="py-3 px-4">
@@ -753,6 +860,20 @@ export const AdminDashboard: React.FC = () => {
                             <span>Phân công</span>
                           </button>
                         )}
+                        
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRoleEditUser(user)
+                            setSelectedNewRole((user.role?.name || user.roleName || 'STAFF') as RoleType)
+                            setEditFacilityId(user.facilityId || '')
+                          }}
+                          title="Chỉnh sửa vai trò phân quyền cho tài khoản"
+                          className="text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 rounded hover:bg-indigo-50 transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">manage_accounts</span>
+                          <span>Đổi vai trò</span>
+                        </button>
                         <button
                           type="button"
                           disabled={userActionLoadingId === user.id}
@@ -885,28 +1006,34 @@ export const AdminDashboard: React.FC = () => {
           <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200/90 p-5 shadow-md">
             <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center justify-between">
               <span>Danh Sách Vai Trò</span>
-              <span className="text-xs text-slate-400 font-mono">{roles.length} roles</span>
+              <span className="text-xs text-slate-500 font-mono font-medium">{roles.length} vai trò</span>
             </h3>
-            <div className="space-y-2">
-              {roles.map((r) => (
-                <div
-                  key={r.id}
-                  onClick={() => selectRole(r)}
-                  className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                    selectedRole?.id === r.id
-                      ? 'border-orange-500 bg-orange-50/50 shadow-xs'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-xs text-slate-900">{r.name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-mono ${getRoleBadge(r.name as string)}`}>
-                      ACTIVE
-                    </span>
+            <div className="space-y-2.5">
+              {roles.map((r) => {
+                const roleMeta = getRoleMeta(r.name as string, r.description)
+                return (
+                  <div
+                    key={r.id}
+                    onClick={() => selectRole(r)}
+                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                      selectedRole?.id === r.id
+                        ? 'border-orange-500 bg-orange-50/60 shadow-xs ring-1 ring-orange-500/30'
+                        : 'border-slate-200 hover:border-slate-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-bold text-xs text-slate-900 truncate">{roleMeta.title}</span>
+                        <span className="font-mono text-[10px] text-slate-400 shrink-0">({r.name})</span>
+                      </div>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold ${getRoleBadge(r.name as string)}`}>
+                        HOẠT ĐỘNG
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">{roleMeta.description}</p>
                   </div>
-                  <p className="text-[11px] text-slate-500 mt-1">{r.description || 'Chưa có mô tả'}</p>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
@@ -916,13 +1043,17 @@ export const AdminDashboard: React.FC = () => {
               <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
-                    Phân Quyền Cho Vai Trò: <span className="font-mono text-orange-600">{selectedRole?.name}</span>
+                    Phân Quyền Cho Vai Trò:{' '}
+                    <span className="text-orange-600 font-bold">
+                      {selectedRole ? getRoleMeta(selectedRole.name, selectedRole.description).title : ''}
+                    </span>
+                    {selectedRole && <span className="text-xs text-slate-400 font-mono ml-1.5 font-normal">({selectedRole.name})</span>}
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Chọn các quyền hạn chức năng mà vai trò này được phép thực thi trong hệ thống.
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Chọn các quyền hạn chức năng mà vai trò này được phép thực thi trong toàn hệ thống.
                   </p>
                 </div>
-                <div className="text-xs font-mono font-bold text-slate-600">
+                <div className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                   {assignedPermIds.length} / {permissions.length} quyền
                 </div>
               </div>
@@ -940,28 +1071,33 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[480px] overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-2">
                 {permissions.map((p) => {
                   const isChecked = assignedPermIds.includes(p.id)
+                  const permMeta = formatPermission(p)
                   return (
                     <label
                       key={p.id}
-                      className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                         isChecked
-                          ? 'border-slate-900 bg-slate-50'
-                          : 'border-slate-200 hover:border-slate-300'
+                          ? 'border-slate-800 bg-slate-50/80 shadow-2xs'
+                          : 'border-slate-200 hover:border-slate-300 bg-white'
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => togglePermission(p.id)}
-                        className="mt-0.5 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+                        className="mt-1 rounded border-slate-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
                       />
-                      <div className="flex flex-col">
-                        <span className="font-semibold text-xs text-slate-900">{p.name}</span>
-                        <span className="text-[10px] font-mono text-slate-500">{p.code || p.name}</span>
-                        {p.description && <span className="text-[10px] text-slate-400 mt-0.5">{p.description}</span>}
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900">{permMeta.title}</span>
+                          <span className="text-[10px] font-mono font-medium text-slate-500 px-1.5 py-0.2 rounded bg-slate-100 border border-slate-200">
+                            {permMeta.code}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{permMeta.description}</p>
                       </div>
                     </label>
                   )
@@ -1076,8 +1212,8 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getRoleBadgeStyle(log.userRole)}`}>
-                          {log.userRole || 'SYSTEM'}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${getRoleBadgeStyle(log.userRole)}`}>
+                          {log.userRole ? (ROLE_VIETNAMESE_MAP[log.userRole]?.title || log.userRole) : 'HỆ THỐNG'}
                         </span>
                       </td>
                       <td className="py-3 px-4">
@@ -1091,7 +1227,7 @@ export const AdminDashboard: React.FC = () => {
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
                           log.status === 'SUCCESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
                         }`}>
-                          {log.status === 'SUCCESS' ? '✓ OK' : '✕ FAIL'}
+                          {log.status === 'SUCCESS' ? '✓ Thành công' : '✕ Thất bại'}
                         </span>
                       </td>
                     </tr>
@@ -1203,28 +1339,15 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Tên đăng nhập</label>
-                    <input
-                      type="text"
-                      value={newUser.username}
-                      onChange={(e) => setNewUser({...newUser, username: e.target.value})}
-                      placeholder="nguyenvanb"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:outline-none font-mono"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Số điện thoại</label>
-                    <input
-                      type="text"
-                      value={newUser.phone}
-                      onChange={(e) => setNewUser({...newUser, phone: e.target.value})}
-                      placeholder="0911223344"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:outline-none font-mono"
-                    />
-                  </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Số điện thoại</label>
+                  <input
+                    type="text"
+                    value={newUser.phone}
+                    onChange={(e) => setNewUser({...newUser, phone: e.target.value})}
+                    placeholder="0911223344"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 focus:outline-none font-mono"
+                  />
                 </div>
 
                 <div>
@@ -1258,11 +1381,11 @@ export const AdminDashboard: React.FC = () => {
                     onChange={(e: any) => setNewUser({...newUser, roleName: e.target.value})}
                     className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 font-medium focus:outline-none"
                   >
-                    <option value="CUSTOMER">CUSTOMER - Khách Hàng Thuê Kho</option>
-                    <option value="STAFF">STAFF - Nhân Viên Vận Hành Trạm</option>
-                    <option value="FACILITY_MANAGER">FACILITY_MANAGER - Quản Lý Cơ Sở</option>
-                    <option value="BUSINESS_MANAGER">BUSINESS_MANAGER - Giám Đốc Vận Hành</option>
-                    <option value="ADMIN">ADMIN - Quản Trị Viên Hệ Thống</option>
+                    <option value="CUSTOMER">Storage Customer (Khách hàng thuê kho)</option>
+                    <option value="STAFF">Facility Staff (Nhân viên vận hành quầy)</option>
+                    <option value="FACILITY_MANAGER">Facility Manager (Quản lý cơ sở)</option>
+                    <option value="BUSINESS_MANAGER">Business Operations Manager (Giám đốc kinh doanh)</option>
+                    <option value="ADMIN">System Administrator (Quản trị viên hệ thống IT)</option>
                   </select>
                 </div>
 
@@ -1304,6 +1427,117 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
       )}
+      
+      {/* Modal Đổi Vai Trò Phân Quyền */}
+      {roleEditUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700">
+                  <span className="material-symbols-outlined text-[20px]">manage_accounts</span>
+                </span>
+                <div>
+                  <h3 className="font-bold text-slate-800 text-base">Đổi vai trò người dùng</h3>
+                  <p className="text-xs text-slate-500">Cập nhật phân quyền theo chuẩn doanh nghiệp Boxora</p>
+                </div>
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setRoleEditUser(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleRoleEditSubmit} className="p-6 space-y-4">
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <div className="text-xs text-slate-500">Tài khoản được chọn</div>
+                <div className="font-semibold text-slate-800 text-sm mt-0.5">
+                  {roleEditUser.fullName || roleEditUser.username}
+                </div>
+                <div className="text-xs font-mono text-slate-500">{roleEditUser.email}</div>
+                <div className="mt-2 flex items-center gap-2 text-xs">
+                  <span className="text-slate-500">Vai trò hiện tại:</span>
+                  <span className="font-semibold text-slate-700">
+                    {getRoleMeta(roleEditUser.role?.name || roleEditUser.roleName).title}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                  Chọn vai trò mới:
+                </label>
+                <select
+                  value={selectedNewRole}
+                  onChange={(e) => setSelectedNewRole(e.target.value as RoleType)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm cursor-pointer"
+                >
+                  <option value="CUSTOMER">Storage Customer (Khách hàng thuê kho)</option>
+                  <option value="STAFF">Facility Staff (Nhân viên vận hành quầy)</option>
+                  <option value="FACILITY_MANAGER">Facility Manager (Quản lý cơ sở)</option>
+                  <option value="BUSINESS_MANAGER">Business Operations Manager (Giám đốc kinh doanh)</option>
+                  <option value="ADMIN">System Administrator (Quản trị viên hệ thống IT)</option>
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  {getRoleMeta(selectedNewRole).description}
+                </p>
+              </div>
+
+              {(selectedNewRole === 'STAFF' || selectedNewRole === 'FACILITY_MANAGER') && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">
+                    Gán chi nhánh / cơ sở:
+                  </label>
+                  <select
+                    value={editFacilityId}
+                    onChange={(e) => setEditFacilityId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm cursor-pointer"
+                  >
+                    <option value="">-- Chưa gán cơ sở nào --</option>
+                    {facilities.map(f => (
+                      <option key={f.id} value={f.id}>{f.name} ({f.code})</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Nhân viên & Quản lý cơ sở cần được liên kết với một cơ sở cụ thể để vận hành.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setRoleEditUser(null)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold text-xs hover:bg-slate-200 transition-colors cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRoleEditing}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700 disabled:opacity-50 transition-colors cursor-pointer shadow-sm flex items-center gap-1.5"
+                >
+                  {isRoleEditing ? (
+                    <>
+                      <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check</span>
+                      <span>Lưu thay đổi</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Facility Scoping Modal */}
       <FacilityScopingModal
         isOpen={isScopingModalOpen}
