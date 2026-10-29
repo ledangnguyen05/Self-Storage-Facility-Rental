@@ -88,6 +88,12 @@ class PaymentServiceTest {
     @Mock
     private com.boxora.config.DocuSealConfig docuSealConfig;
 
+    @Mock
+    private com.boxora.repository.HandoverRecordRepository handoverRecordRepository;
+
+    @Mock
+    private com.boxora.repository.NotificationLogRepository notificationLogRepository;
+
     @InjectMocks
     private PaymentServiceImpl paymentService;
 
@@ -226,6 +232,7 @@ class PaymentServiceTest {
                 .build();
         when(paymentMapper.toResponse(any(Payment.class))).thenReturn(mockResponse);
 
+        mockBooking.setStorageUnit(com.boxora.entity.StorageUnit.builder().unitCode("U-101").build());
         PaymentResponse result = paymentService.processVNPayReturn(params);
 
         assertThat(result.getStatus()).isEqualTo(PaymentStatus.PAID);
@@ -370,7 +377,7 @@ class PaymentServiceTest {
         mockBooking.setCustomer(customer);
 
         when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(mockBooking));
-        when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+        lenient().when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
         when(requestContext.currentUserId()).thenReturn(customer.getId());
         when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(java.util.List.of(mockPayment));
         when(paymentMapper.toResponse(mockPayment)).thenReturn(PaymentResponse.builder().id(paymentId).build());

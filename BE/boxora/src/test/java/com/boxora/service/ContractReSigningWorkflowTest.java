@@ -93,6 +93,8 @@ class ContractReSigningWorkflowTest {
     @Mock private ObjectProvider<StorageUnitService> storageUnitServiceProvider;
     @Mock private StorageUnitService storageUnitService;
     @Mock private com.boxora.client.DocuSealClient docuSealClient;
+    @Mock private com.boxora.repository.HandoverRecordRepository handoverRecordRepository;
+    @Mock private com.boxora.repository.NotificationLogRepository notificationLogRepository;
     @Mock private DocuSealConfig docuSealConfig;
     @Mock private RentalContractMapper rentalContractMapper;
     @Mock private ContractRenewalService contractRenewalService;
@@ -161,7 +163,9 @@ class ContractReSigningWorkflowTest {
                 refundRequestRepository,
                 storageUnitRepository,
                 docuSealConfig,
-                emailServiceProvider
+                emailServiceProvider,
+                handoverRecordRepository,
+                notificationLogRepository
         );
 
         bookingService = new BookingServiceImpl(

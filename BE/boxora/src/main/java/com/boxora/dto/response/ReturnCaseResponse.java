@@ -61,6 +61,19 @@ public class ReturnCaseResponse {
     private List<String> historyNotes;
     private String disputeReason;
 
+    // Task 16: Return Settlement, Dispute, and Customer Response
+    private Integer settlementVersion;
+    private Boolean settlementConfirmed;
+    private LocalDateTime settlementConfirmedAt;
+    private String settlementConfirmedByName;
+    private String customerDecision;
+    private LocalDateTime customerDecisionAt;
+    private String disputeEvidenceUrls;
+    private LocalDateTime disputeResolvedAt;
+    private String disputeResolvedByName;
+    private String disputeResolutionNote;
+    private UUID refundRequestId;
+
     // 7 Checklist Criteria
     private Boolean doorPassed;
     private String doorNotes;

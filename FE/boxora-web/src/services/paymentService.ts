@@ -1,6 +1,6 @@
 import { api } from '../lib/axios'
 
-export type PaymentType = 'BOOKING_PAYMENT' | 'DEPOSIT' | 'RENTAL_FEE' | 'RENEWAL_FEE' | 'EXTRA_CHARGE'
+export type PaymentType = 'BOOKING_PAYMENT' | 'DEPOSIT' | 'RENTAL_FEE' | 'RENEWAL_FEE' | 'EXTRA_CHARGE' | 'RETURN_COMPENSATION'
 
 export interface VNPayPayment {
   paymentUrl: string

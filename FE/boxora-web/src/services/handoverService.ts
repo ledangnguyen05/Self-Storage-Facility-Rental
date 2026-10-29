@@ -414,6 +414,51 @@ export const handoverService = {
     const response = await api.post(`/api/v1/handovers/returns/${bookingId}/complete`)
     return response.data?.data as ReturnSettlementDetail
   },
+
+  async confirmSettlement(bookingId: string, data?: { notes?: string }): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/confirm-settlement`, data || {})
+    return response.data?.data as ReturnSettlementDetail
+  },
+
+  async submitCustomerDecision(
+    bookingId: string,
+    data: {
+      decision: 'AGREED' | 'DISPUTED'
+      disputeReason?: string
+      disputeEvidenceUrls?: string[]
+      bankName?: string
+      bankAccountNumber?: string
+      bankAccountName?: string
+    }
+  ): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/customer-decision`, data)
+    return response.data?.data as ReturnSettlementDetail
+  },
+
+  async resolveDispute(
+    bookingId: string,
+    data: {
+      action: 'ADJUST_SETTLEMENT' | 'UPHOLD_SETTLEMENT'
+      resolutionNote: string
+      doorFee?: number
+      cleaningFee?: number
+      damageFee?: number
+      smartLockFee?: number
+      wallStructureFee?: number
+      lostCardFee?: number
+    }
+  ): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/resolve-dispute`, data)
+    return response.data?.data as ReturnSettlementDetail
+  },
+
+  async executePayout(
+    bookingId: string,
+    data: { transactionRef: string; proofDocumentUrl?: string; notes?: string }
+  ): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/payout`, data)
+    return response.data?.data as ReturnSettlementDetail
+  },
 }
 
 export interface ReturnCase {
@@ -452,6 +497,17 @@ export interface ReturnCase {
   additionalPaymentStatus?: string
   additionalPaymentTxnRef?: string
   refundStatus?: string
+  settlementVersion?: number
+  settlementConfirmed?: boolean
+  settlementConfirmedByName?: string
+  settlementConfirmedAt?: string
+  customerDecision?: string
+  customerDecisionAt?: string
+  disputeEvidenceUrls?: string[]
+  disputeResolvedByName?: string
+  disputeResolvedAt?: string
+  disputeResolutionNote?: string
+  refundRequestId?: string
   refundTxnRef?: string
   refundProcessedAt?: string
   inspectorName?: string
@@ -524,6 +580,20 @@ export interface ReturnSettlementDetail {
   refundStatus?: string
   refundTransactionId?: string
   depositRefundSlaDays: number
+  settlementVersion?: number
+  settlementConfirmed?: boolean
+  settlementConfirmedByName?: string
+  settlementConfirmedAt?: string
+  customerDecision?: string
+  customerDecisionAt?: string
+  disputeEvidenceUrls?: string[]
+  disputeResolvedByName?: string
+  disputeResolvedAt?: string
+  disputeResolutionNote?: string
+  refundRequestId?: string
+  bankName?: string
+  bankAccountNumber?: string
+  bankAccountName?: string
   checklistAllPassed: boolean
   checklistSummary?: string
   doorConditionPassed?: boolean

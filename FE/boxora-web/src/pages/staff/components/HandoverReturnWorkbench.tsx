@@ -130,6 +130,17 @@ export interface ReturnCaseItem {
   accessRevokedAt?: string
   isDisputed?: boolean
   disputeReason?: string
+  settlementVersion?: number
+  settlementConfirmed?: boolean
+  settlementConfirmedByName?: string
+  settlementConfirmedAt?: string
+  customerDecision?: string
+  customerDecisionAt?: string
+  disputeEvidenceUrls?: string[]
+  disputeResolvedByName?: string
+  disputeResolvedAt?: string
+  disputeResolutionNote?: string
+  refundRequestId?: string
 }
 
 interface HandoverReturnWorkbenchProps {
@@ -267,10 +278,29 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [refundTxnInput, setRefundTxnInput] = useState('')
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false)
 
-  // Dispute modal
-  const [showDisputeModal, setShowDisputeModal] = useState(false)
-  const [disputeReasonInput, setDisputeReasonInput] = useState('')
-  const [isSubmittingDispute, setIsSubmittingDispute] = useState(false)
+  // Task 16: Settlement Confirmation Modal
+  const [showConfirmSettlementModal, setShowConfirmSettlementModal] = useState(false)
+  const [isConfirmingSettlement, setIsConfirmingSettlement] = useState(false)
+  const [settlementNotesInput, setSettlementNotesInput] = useState('')
+
+  // Task 16: FM Dispute Resolution Modal
+  const [showDisputeResolveModal, setShowDisputeResolveModal] = useState(false)
+  const [disputeAction, setDisputeAction] = useState<'ADJUST_SETTLEMENT' | 'UPHOLD_SETTLEMENT'>('ADJUST_SETTLEMENT')
+  const [disputeResolutionNote, setDisputeResolutionNote] = useState('')
+  const [isResolvingDispute, setIsResolvingDispute] = useState(false)
+  const [adjDoorFee, setAdjDoorFee] = useState(0)
+  const [adjCleanFee, setAdjCleanFee] = useState(0)
+  const [adjDamageFee, setAdjDamageFee] = useState(0)
+  const [adjLockFee, setAdjLockFee] = useState(0)
+  const [adjWallFee, setAdjWallFee] = useState(0)
+  const [adjLostCardFee, setAdjLostCardFee] = useState(0)
+
+  // Task 16: Payout Execution Modal (Bank transfer to Customer)
+  const [showPayoutModal, setShowPayoutModal] = useState(false)
+  const [payoutTxnRef, setPayoutTxnRef] = useState('')
+  const [payoutProofUrl, setPayoutProofUrl] = useState('')
+  const [payoutNotes, setPayoutNotes] = useState('')
+  const [isExecutingPayout, setIsExecutingPayout] = useState(false)
 
   // Operational action states
   const [isFinishingHandover, setIsFinishingHandover] = useState(false)
@@ -361,7 +391,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           unitReturnedPhysically: item.unitReturnedPhysically ?? false,
           returnedAt: item.returnedAt,
           accessRevoked: item.accessRevoked ?? false,
-          accessRevokedAt: item.accessRevokedAt
+          accessRevokedAt: item.accessRevokedAt,
+          settlementVersion: item.settlementVersion,
+          settlementConfirmed: item.settlementConfirmed,
+          settlementConfirmedByName: item.settlementConfirmedByName,
+          settlementConfirmedAt: item.settlementConfirmedAt,
+          customerDecision: item.customerDecision,
+          customerDecisionAt: item.customerDecisionAt,
+          disputeEvidenceUrls: item.disputeEvidenceUrls || [],
+          disputeResolvedByName: item.disputeResolvedByName,
+          disputeResolvedAt: item.disputeResolvedAt,
+          disputeResolutionNote: item.disputeResolutionNote,
+          refundRequestId: item.refundRequestId
         }))
         setReturnCases(mapped)
         setSelectedCaseId((prev) => (prev && mapped.some((c) => c.id === prev) ? prev : mapped[0]?.id || ''))
@@ -1418,43 +1459,83 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     }
   }
 
-  // Step 6: Customer Dispute
-  const handleRecordDispute = async () => {
-    if (!currentCase || !disputeReasonInput.trim()) {
-      toast.warning('Vui lòng nhập lý do khách hàng khiếu nại.')
-      return
-    }
-    const reason = disputeReasonInput.trim()
-    setIsSubmittingDispute(true)
+  // Task 16.1: Confirm Settlement Calculation
+  const handleConfirmSettlement = async () => {
+    if (!currentCase) return
+    setIsConfirmingSettlement(true)
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
-        await handoverService.recordCustomerDispute(currentCase.bookingId, reason)
+        await handoverService.confirmSettlement(currentCase.bookingId, { notes: settlementNotesInput })
       }
-      toast.warning(`Đã ghi nhận khiếu nại cho hồ sơ #${currentCase.unitCode}!`)
-      setShowDisputeModal(false)
-      setDisputeReasonInput('')
-
-      const nowStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('vi-VN')
-      updateCurrentCase({
-        status: 'DISPUTED',
-        approvalStatus: 'DISPUTED',
-        isDisputed: true,
-        disputeReason: reason,
-        historyNotes: [
-          ...(currentCase.historyNotes || []),
-          `[${nowStr}] [KHIẾU NẠI] Ghi nhận khiếu nại tranh chấp từ khách hàng: ${reason}`
-        ]
-      })
-
-      // Tự động chuyển sang Tab 3 (Duyệt & Quyết Toán) để quản lý xử lý khiếu nại
-      setStatusTabFilter('REFUNDING')
-      setSelectedCaseId(currentCase.id)
-
+      toast.success('Đã chốt quyết toán và gửi thông báo xác nhận cho khách hàng!')
+      setShowConfirmSettlementModal(false)
+      setSettlementNotesInput('')
       await fetchReturnCases()
     } catch (err: any) {
-      toast.error(`Lỗi ghi nhận tranh chấp: ${err.response?.data?.message || err.message}`)
+      toast.error(`Lỗi xác nhận quyết toán: ${err.response?.data?.message || err.message}`)
     } finally {
-      setIsSubmittingDispute(false)
+      setIsConfirmingSettlement(false)
+    }
+  }
+
+  // Task 16.3: Resolve Dispute (Facility Manager only)
+  const handleResolveDispute = async () => {
+    if (!currentCase) return
+    if (!disputeResolutionNote.trim()) {
+      toast.warning('Vui lòng nhập ghi chú phân xử khiếu nại.')
+      return
+    }
+    setIsResolvingDispute(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.resolveDispute(currentCase.bookingId, {
+          action: disputeAction,
+          resolutionNote: disputeResolutionNote.trim(),
+          doorFee: adjDoorFee,
+          cleaningFee: adjCleanFee,
+          damageFee: adjDamageFee,
+          smartLockFee: adjLockFee,
+          wallStructureFee: adjWallFee,
+          lostCardFee: adjLostCardFee
+        })
+      }
+      toast.success('Đã xử lý khiếu nại quyết toán thành công!')
+      setShowDisputeResolveModal(false)
+      setDisputeResolutionNote('')
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi xử lý khiếu nại: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsResolvingDispute(false)
+    }
+  }
+
+  // Task 16.4: Execute Payout to Customer (Manual Bank Transfer recorded)
+  const handleExecutePayout = async () => {
+    if (!currentCase) return
+    if (!payoutTxnRef.trim()) {
+      toast.warning('Vui lòng nhập mã giao dịch ngân hàng.')
+      return
+    }
+    setIsExecutingPayout(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        await handoverService.executePayout(currentCase.bookingId, {
+          transactionRef: payoutTxnRef.trim(),
+          proofDocumentUrl: payoutProofUrl.trim(),
+          notes: payoutNotes.trim()
+        })
+      }
+      toast.success('Đã ghi nhận chuyển khoản hoàn tiền thành công!')
+      setShowPayoutModal(false)
+      setPayoutTxnRef('')
+      setPayoutProofUrl('')
+      setPayoutNotes('')
+      await fetchReturnCases()
+    } catch (err: any) {
+      toast.error(`Lỗi ghi nhận hoàn tiền: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsExecutingPayout(false)
     }
   }
 
@@ -1546,10 +1627,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       toast.warning('Cần nhấn "Xác Nhận Nhận Lại Kho Vật Lý" trước khi hoàn tất hồ sơ!')
       return
     }
-    if (!currentCase.accessRevoked) {
-      toast.warning('Cần nhấn "Thu Hồi Mã SmartLock" để đảm bảo an toàn buồng kho trước khi hoàn tất!')
-      return
-    }
+// Access revoked automatically on physical return confirmation
     if (isOverDeposit && currentCase.additionalPaymentStatus !== 'PAID') {
       toast.warning('Khoản bồi thường vượt cọc chưa được thanh toán! Vui lòng thu tiền tại quầy hoặc ghi nhận.')
       return
@@ -2845,6 +2923,127 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         )}
                       </div>
                     </div>
+
+                    {/* TASK 16.1: THANH XÁC NHẬN ĐỐI SOÁT & CHỐT PHÍ GỬI KHÁCH HÀNG */}
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2 text-xs">
+                      <div>
+                        {currentCase.settlementConfirmed ? (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2.5 py-1 rounded-lg font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5">
+                              <CheckCircle2 size={13} className="text-emerald-700" />
+                              <span>Đã chốt quyết toán (V{currentCase.settlementVersion || 1})</span>
+                            </span>
+                            {currentCase.settlementConfirmedByName && (
+                              <span className="text-slate-500 text-[11px]">
+                                bởi {currentCase.settlementConfirmedByName}
+                              </span>
+                            )}
+                            {currentCase.customerDecision === 'AGREED' && (
+                              <span className="px-2 py-0.5 rounded font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                ✓ Khách hàng đồng ý
+                              </span>
+                            )}
+                            {currentCase.customerDecision === 'DISPUTED' && (
+                              <span className="px-2 py-0.5 rounded font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                ⚠️ Khách hàng đang khiếu nại
+                              </span>
+                            )}
+                            {(!currentCase.customerDecision || currentCase.customerDecision === 'AWAITING_CUSTOMER_CONFIRMATION') && (
+                              <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                ⏳ Đang chờ khách xác nhận
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500 italic">
+                            Chưa chốt số liệu quyết toán. Vui lòng xác nhận sau khi kiểm tra xong 7 tiêu chí.
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Nút chốt quyết toán */}
+                        {(!currentCase.settlementConfirmed || currentCase.customerDecision === 'DISPUTED') && (
+                          <button
+                            type="button"
+                            onClick={() => setShowConfirmSettlementModal(true)}
+                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                          >
+                            <ShieldCheck size={14} />
+                            <span>Xác nhận đã kiểm tra &amp; tính phí</span>
+                          </button>
+                        )}
+
+                        {/* Nút hoàn tiền cho khách (Task 16.4) khi khách đồng ý và có tiền hoàn */}
+                        {netRefundAmount > 0 && currentCase.customerDecision === 'AGREED' && currentCase.refundStatus !== 'COMPLETED' && (
+                          <button
+                            type="button"
+                            onClick={() => setShowPayoutModal(true)}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                          >
+                            <Send size={14} />
+                            <span>Ghi Nhận Đã Chuyển Khoản Hoàn Tiền</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* TASK 16.3: BANNER KHIẾU NẠI NẾU CÓ */}
+                    {(currentCase.customerDecision === 'DISPUTED' || currentCase.approvalStatus === 'DISPUTED') && (
+                      <div className="p-4 rounded-xl bg-rose-50 border-2 border-rose-300 space-y-3 text-xs text-rose-950 mt-3 animate-in fade-in-50">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-rose-700 font-bold">
+                            <MessageSquareWarning size={16} />
+                            <span>KHIẾU NẠI TỪ KHÁCH HÀNG (CHỜ FACILITY MANAGER PHÂN XỬ)</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-200 text-rose-900">
+                            TRANH CHẤP
+                          </span>
+                        </div>
+                        <div className="bg-white/90 p-3 rounded-lg border border-rose-200 space-y-1">
+                          <div className="text-[11px] text-slate-500 font-semibold">Lý do khiếu nại của khách hàng:</div>
+                          <p className="text-slate-900 font-medium whitespace-pre-wrap">{currentCase.disputeReason || 'Khách hàng không đồng ý với biên bản tính phí khấu trừ hiện tại.'}</p>
+                        </div>
+                        {currentCase.disputeEvidenceUrls && currentCase.disputeEvidenceUrls.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="text-[11px] text-slate-500 font-semibold">Ảnh minh chứng đính kèm từ khách:</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {currentCase.disputeEvidenceUrls.map((url, idx) => (
+                                <a key={idx} href={url} target="_blank" rel="noreferrer" className="text-indigo-600 underline text-xs">
+                                  Minh chứng #{idx + 1}
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <div className="pt-1 flex items-center justify-between">
+                          {isFacilityManager ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAdjDoorFee(currentCase.doorFee || 0)
+                                setAdjCleanFee(currentCase.cleaningFee || 0)
+                                setAdjDamageFee(currentCase.damageFee || 0)
+                                setAdjLockFee(currentCase.smartLockFee || 0)
+                                setAdjWallFee(currentCase.wallStructureFee || 0)
+                                setAdjLostCardFee(currentCase.lostCardFee || 0)
+                                setDisputeAction('ADJUST_SETTLEMENT')
+                                setDisputeResolutionNote('')
+                                setShowDisputeResolveModal(true)
+                              }}
+                              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                            >
+                              <ShieldCheck size={14} />
+                              <span>Xử Lý Khiếu Nại (Chỉ Facility Manager)</span>
+                            </button>
+                          ) : (
+                            <span className="text-[11px] text-rose-700 italic">
+                              ℹ️ Hồ sơ đang tạm ngưng mọi giao dịch để chờ Quản lý cơ sở (Facility Manager) xem xét hòa giải.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* KHỐI BỔ SUNG: BÀN GIAO VẬT LÝ & THU HỒI SMARTLOCK (YÊU CẦU 9 & 10) */}
@@ -2863,78 +3062,39 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* 1. Nhận lại kho vật lý */}
-                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-2">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-2">
-                            <Warehouse size={16} className="text-indigo-600" />
-                            <div>
-                              <strong className="block text-slate-900">1. Nhận Lại Kho Vật Lý</strong>
-                              <span className="text-[11px] text-slate-500">
-                                Xác nhận kho đã lấy hết đồ đạc và nhân viên đã tiếp quản.
-                              </span>
-                            </div>
+                    <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-2 text-xs">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-2">
+                          <Warehouse size={16} className="text-indigo-600" />
+                          <div>
+                            <strong className="block text-slate-900">1. Nhận Lại Kho Vật Lý</strong>
+                            <span className="text-[11px] text-slate-500">
+                              Xác nhận khách đã lấy hết đồ đạc và nhân viên tiếp quản lại buồng kho (Hệ thống tự động vô hiệu mã PIN và thu hồi khóa IoT song song).
+                            </span>
                           </div>
-                          {currentCase.unitReturnedPhysically ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              ✓ Đã nhận kho
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                              Chưa xác nhận
-                            </span>
-                          )}
                         </div>
-
-                        {!currentCase.unitReturnedPhysically && (
-                          <button
-                            type="button"
-                            onClick={handleConfirmPhysicalReturn}
-                            disabled={isConfirmingPhysical || !assetsClearedPassed}
-                            className="mt-1 w-full py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
-                          >
-                            <Warehouse size={14} />
-                            <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
-                          </button>
+                        {currentCase.unitReturnedPhysically ? (
+                          <span className="px-2.5 py-1 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            ✓ Đã nhận kho &amp; vô hiệu PIN IoT
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                            Chưa nhận bàn giao
+                          </span>
                         )}
                       </div>
 
-                      {/* 2. Thu hồi mã PIN SmartLock IoT */}
-                      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between gap-2">
-                        <div className="flex items-start justify-between">
-                          <div className="flex items-center gap-2">
-                            <KeyRound size={16} className="text-amber-600" />
-                            <div>
-                              <strong className="block text-slate-900">2. Thu Hồi Mã SmartLock PIN</strong>
-                              <span className="text-[11px] text-slate-500">
-                                Vô hiệu hóa PIN và giải phóng khóa IoT buồng kho.
-                              </span>
-                            </div>
-                          </div>
-                          {currentCase.accessRevoked ? (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                              ✓ Đã thu hồi PIN
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                              Chưa thu hồi
-                            </span>
-                          )}
-                        </div>
-
-                        {!currentCase.accessRevoked && (
-                          <button
-                            type="button"
-                            onClick={handleRevokeSmartLock}
-                            disabled={isRevokingAccess}
-                            className="mt-1 w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
-                          >
-                            <KeyRound size={14} />
-                            <span>{isRevokingAccess ? 'Đang thu hồi...' : 'Thu Hồi Mã SmartLock Ngay'}</span>
-                          </button>
-                        )}
-                      </div>
+                      {!currentCase.unitReturnedPhysically && (
+                        <button
+                          type="button"
+                          onClick={handleConfirmPhysicalReturn}
+                          disabled={isConfirmingPhysical || !assetsClearedPassed}
+                          className="mt-1 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
+                        >
+                          <Warehouse size={14} />
+                          <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -2979,17 +3139,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                     {/* Action Buttons tailored by Role & Status */}
                     <div className="pt-2 flex items-center justify-between gap-3 flex-wrap border-t border-slate-100">
-                      {/* Nút Ghi Nhận Khiếu Nại (Luôn có sẵn khi chưa hoàn tất) */}
-                      {currentCase.status !== 'COMPLETED' && (
-                        <button
-                          type="button"
-                          onClick={() => setShowDisputeModal(true)}
-                          className="px-3 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs cursor-pointer flex items-center gap-1.5 transition"
-                        >
-                          <MessageSquareWarning size={14} />
-                          <span>Ghi Nhận Khiếu Nại</span>
-                        </button>
-                      )}
+{/* Ghi Nhận Khiếu Nại removed from Staff dashboard per Task 16.6 */}
 
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
                         {/* STAFF / FM action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
@@ -3199,18 +3349,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         </div>
       )}
 
-      {/* MODAL GHI NHẬN KHIẾU NẠI CỦA KHÁCH HÀNG */}
-      {showDisputeModal && currentCase && (
+      {/* TASK 16.1 & 16.2: MODAL XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ (CONFIRM SETTLEMENT DIALOG) */}
+      {showConfirmSettlementModal && currentCase && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 text-rose-600">
-                <MessageSquareWarning size={20} />
-                <h3 className="font-bold text-base text-slate-900">Ghi Nhận Khiếu Nại Của Khách Hàng</h3>
+              <div className="flex items-center gap-2 text-indigo-600">
+                <ShieldCheck size={20} />
+                <h3 className="font-bold text-base text-slate-900">Xác Nhận Đã Kiểm Tra &amp; Tính Phí Quyết Toán</h3>
               </div>
               <button
                 type="button"
-                onClick={() => setShowDisputeModal(false)}
+                onClick={() => setShowConfirmSettlementModal(false)}
                 className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer font-bold"
               >
                 ✕
@@ -3219,41 +3369,329 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
             <div className="space-y-3 text-xs">
               <p className="text-slate-600">
-                Ghi nhận nội dung khiếu nại của khách hàng <strong>{currentCase.customerName}</strong> đối với chi phí khấu trừ hoặc biên bản nghiệm thu buồng kho <strong>#{currentCase.unitCode}</strong>.
+                Chốt snapshot số liệu quyết toán trả kho cho đơn <strong>#{currentCase.bookingCode}</strong> (Buồng kho <strong>#{currentCase.unitCode}</strong>).
               </p>
 
+              {/* Bảng tổng hợp đối soát */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Tiền cọc ban đầu đã đóng:</span>
+                  <span className="font-mono font-bold text-slate-900">{(currentCase.depositAmount || deposit || 0).toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Tổng chi phí khấu trừ (7 tiêu chí):</span>
+                  <span className="font-mono font-bold text-rose-600">{totalDeduction.toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Công nợ quá hạn (nếu có):</span>
+                  <span className="font-mono font-bold text-slate-700">{(currentCase.outstandingDebt || 0).toLocaleString('vi-VN')}đ</span>
+                </div>
+
+                <div className="pt-2 border-t border-slate-200">
+                  {/* Task 16.2: Rõ ràng 2 trường hợp */}
+                  {isOverDeposit ? (
+                    <div className="p-3 rounded-lg bg-rose-50 border border-rose-300 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-rose-950">Khoản khách cần thanh toán bổ sung (Bồi thường):</span>
+                        <span className="font-mono font-extrabold text-rose-600 text-sm">+{customerPayableAmount.toLocaleString('vi-VN')}đ</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Khoản tiền hoàn trả khách:</span>
+                        <span className="font-mono font-bold text-slate-700">0đ</span>
+                      </div>
+                      <p className="text-[10px] text-rose-800 pt-1">
+                        Chi phí sửa chữa vượt quá tiền cọc. Khách hàng sẽ nhận thông báo để xem xét và thanh toán bồi thường trực tuyến qua VNPay.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-300 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-950">Số tiền hoàn trả khách hàng:</span>
+                        <span className="font-mono font-extrabold text-emerald-700 text-sm">{netRefundAmount.toLocaleString('vi-VN')}đ</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Khoản khách cần nộp thêm:</span>
+                        <span className="font-mono font-bold text-slate-700">0đ</span>
+                      </div>
+                      <p className="text-[10px] text-emerald-800 pt-1">
+                        Tiền cọc đủ bù đắp khấu trừ. Khách hàng sẽ nhận thông báo để xác nhận số tài khoản ngân hàng nhận tiền hoàn.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Lý do khiếu nại:</label>
+                <label className="block font-bold text-slate-700 mb-1">Ghi chú quyết toán (tùy chọn):</label>
                 <textarea
-                  rows={4}
-                  value={disputeReasonInput}
-                  onChange={(e) => setDisputeReasonInput(e.target.value)}
-                  placeholder="Khách hàng không đồng ý với chi phí sửa chữa cửa cuốn, đề nghị cung cấp hóa đơn bảo trì..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-red-400"
+                  rows={2}
+                  value={settlementNotesInput}
+                  onChange={(e) => setSettlementNotesInput(e.target.value)}
+                  placeholder="Ghi chú thêm về biên bản đối soát..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-indigo-400"
                 />
               </div>
 
-              <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-900 text-[11px]">
-                Hồ sơ sẽ chuyển sang trạng thái <strong>TRANH CHẤP (DISPUTED)</strong> và thông báo cho Quản lý cơ sở để tiến hành hòa giải.
+              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                Hệ thống sẽ lưu snapshot quyết toán (Phiên bản V{(currentCase.settlementVersion || 0) + 1}) và gửi thông báo in-app cho khách hàng xác nhận.
               </div>
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setShowDisputeModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer"
+                onClick={() => setShowConfirmSettlementModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
+              >
+                Quay lại kiểm tra
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSettlement}
+                disabled={isConfirmingSettlement}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+              >
+                <CheckCircle2 size={15} />
+                <span>{isConfirmingSettlement ? 'Đang chốt...' : 'Xác Nhận Quyết Toán'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TASK 16.3: MODAL GIẢI QUYẾT KHIẾU NẠI CHO FACILITY MANAGER */}
+      {showDisputeResolveModal && currentCase && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-rose-600">
+                <ShieldCheck size={20} />
+                <h3 className="font-bold text-base text-slate-900">Facility Manager Phân Xử Khiếu Nại Quyết Toán</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDisputeResolveModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                <span className="font-bold text-slate-700">Khách hàng khiếu nại:</span>
+                <p className="text-slate-900 italic">"{currentCase.disputeReason}"</p>
+              </div>
+
+              {/* Lựa chọn phương án */}
+              <div className="space-y-2">
+                <label className="block font-bold text-slate-700">Phương án giải quyết:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDisputeAction('ADJUST_SETTLEMENT')}
+                    className={'p-3 rounded-xl border text-left cursor-pointer transition ' + (
+                      disputeAction === 'ADJUST_SETTLEMENT'
+                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-bold'
+                        : 'border-slate-200 bg-white text-slate-700'
+                    )}
+                  >
+                    <div className="font-bold">Phương án A: Điều chỉnh</div>
+                    <div className="text-[11px] text-slate-500 font-normal">Sửa lại chi phí khấu trừ và tạo quyết toán V2</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDisputeAction('UPHOLD_SETTLEMENT')}
+                    className={'p-3 rounded-xl border text-left cursor-pointer transition ' + (
+                      disputeAction === 'UPHOLD_SETTLEMENT'
+                        ? 'border-rose-600 bg-rose-50/70 text-rose-950 font-bold'
+                        : 'border-slate-200 bg-white text-slate-700'
+                    )}
+                  >
+                    <div className="font-bold">Phương án B: Giữ nguyên</div>
+                    <div className="text-[11px] text-slate-500 font-normal">Bảo lưu quyết toán và giải trình cho khách</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Form điều chỉnh chi phí nếu chọn ADJUST_SETTLEMENT */}
+              {disputeAction === 'ADJUST_SETTLEMENT' && (
+                <div className="p-3 rounded-xl bg-indigo-50/50 border border-indigo-200 space-y-2">
+                  <div className="font-bold text-indigo-950">Điều chỉnh các khoản khấu trừ (VND):</div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <label className="block text-slate-600">Phí cửa cuốn:</label>
+                      <input
+                        type="number"
+                        value={adjDoorFee}
+                        onChange={(e) => setAdjDoorFee(Number(e.target.value))}
+                        className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600">Phí vệ sinh:</label>
+                      <input
+                        type="number"
+                        value={adjCleanFee}
+                        onChange={(e) => setAdjCleanFee(Number(e.target.value))}
+                        className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600">Phí kết cấu vách:</label>
+                      <input
+                        type="number"
+                        value={adjWallFee}
+                        onChange={(e) => setAdjWallFee(Number(e.target.value))}
+                        className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600">Phí khóa SmartLock:</label>
+                      <input
+                        type="number"
+                        value={adjLockFee}
+                        onChange={(e) => setAdjLockFee(Number(e.target.value))}
+                        className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600">Phí hư hại chung:</label>
+                      <input
+                        type="number"
+                        value={adjDamageFee}
+                        onChange={(e) => setAdjDamageFee(Number(e.target.value))}
+                        className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-600">Phí mất thẻ RFID:</label>
+                      <input
+                        type="number"
+                        value={adjLostCardFee}
+                        onChange={(e) => setAdjLostCardFee(Number(e.target.value))}
+                        className="w-full p-1.5 bg-white border border-slate-200 rounded-lg font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ghi chú / Căn cứ phân xử của Quản lý (bắt buộc):</label>
+                <textarea
+                  rows={3}
+                  value={disputeResolutionNote}
+                  onChange={(e) => setDisputeResolutionNote(e.target.value)}
+                  placeholder="Nêu rõ lý do chấp thuận điều chỉnh hoặc giữ nguyên quyết toán..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-indigo-400"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDisputeResolveModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
               >
                 Hủy
               </button>
               <button
                 type="button"
-                onClick={handleRecordDispute}
-                disabled={isSubmittingDispute}
-                className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                onClick={handleResolveDispute}
+                disabled={isResolvingDispute}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
               >
                 <CheckCircle2 size={15} />
-                <span>{isSubmittingDispute ? 'Đang lưu...' : 'Xác Nhận Khiếu Nại'}</span>
+                <span>{isResolvingDispute ? 'Đang lưu...' : 'Xác Nhận Quyết Định Phân Xử'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TASK 16.4: MODAL GHI NHẬN CHUYỂN KHOẢN HOÀN TIỀN CHO KHÁCH (PAYOUT EXECUTION) */}
+      {showPayoutModal && currentCase && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-emerald-600">
+                <Send size={20} />
+                <h3 className="font-bold text-base text-slate-900">Ghi Nhận Chuyển Khoản Hoàn Tiền</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPayoutModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-emerald-900 font-bold">Số tiền hoàn trả:</span>
+                  <span className="font-mono font-extrabold text-emerald-700 text-base">{netRefundAmount.toLocaleString('vi-VN')}đ</span>
+                </div>
+                <div className="text-[11px] text-slate-600 space-y-0.5 pt-1 border-t border-emerald-200">
+                  <div>Ngân hàng: <strong>{currentCase.bankName || 'Chưa cung cấp'}</strong></div>
+                  <div>Số tài khoản: <strong className="font-mono">{currentCase.bankAccountNumber || 'Chưa cung cấp'}</strong></div>
+                  <div>Chủ tài khoản: <strong>{currentCase.bankAccountName || currentCase.customerName}</strong></div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Mã giao dịch ngân hàng / Ref (bắt buộc):</label>
+                <input
+                  type="text"
+                  value={payoutTxnRef}
+                  onChange={(e) => setPayoutTxnRef(e.target.value)}
+                  placeholder="VD: FT26102900123456"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono text-xs focus:bg-white focus:border-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Link ảnh biên lai chuyển khoản (tùy chọn):</label>
+                <input
+                  type="text"
+                  value={payoutProofUrl}
+                  onChange={(e) => setPayoutProofUrl(e.target.value)}
+                  placeholder="https://... hoặc link upload UNC"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ghi chú:</label>
+                <textarea
+                  rows={2}
+                  value={payoutNotes}
+                  onChange={(e) => setPayoutNotes(e.target.value)}
+                  placeholder="Ghi chú chuyển khoản..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-emerald-400"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowPayoutModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleExecutePayout}
+                disabled={isExecutingPayout}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+              >
+                <CheckCircle2 size={15} />
+                <span>{isExecutingPayout ? 'Đang lưu...' : 'Xác Nhận Đã Chuyển Khoản'}</span>
               </button>
             </div>
           </div>

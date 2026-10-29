@@ -80,6 +80,8 @@ public class PaymentServiceImpl implements PaymentService {
     private final com.boxora.repository.StorageUnitRepository storageUnitRepository;
     private final com.boxora.config.DocuSealConfig docuSealConfig;
     private final org.springframework.beans.factory.ObjectProvider<com.boxora.service.EmailService> emailServiceProvider;
+    private final com.boxora.repository.HandoverRecordRepository handoverRecordRepository;
+    private final com.boxora.repository.NotificationLogRepository notificationLogRepository;
 
     private UUID extractFacilityId(Payment payment) {
         if (payment == null) return null;
@@ -88,6 +90,9 @@ public class PaymentServiceImpl implements PaymentService {
         }
         if (payment.getBooking() != null && payment.getBooking().getStorageUnit() != null && payment.getBooking().getStorageUnit().getFacility() != null) {
             return payment.getBooking().getStorageUnit().getFacility().getId();
+        }
+        if (payment.getBooking() != null && payment.getBooking().getFacility() != null) {
+            return payment.getBooking().getFacility().getId();
         }
         return null;
     }
@@ -539,6 +544,107 @@ public class PaymentServiceImpl implements PaymentService {
             }
         }
 
+        if (request.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
+            com.boxora.entity.HandoverRecord record = handoverRecordRepository != null
+                    ? handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(booking.getId(), "RETURN").orElse(null)
+                    : null;
+            if (record == null) {
+                throw new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Không tìm thấy hồ sơ trả kho cho đơn này.");
+            }
+            if (!Boolean.TRUE.equals(record.getSettlementConfirmed())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Quyết toán trả kho chưa được nhân viên xác nhận chốt số liệu.");
+            }
+            if (!"AGREED".equalsIgnoreCase(record.getCustomerDecision())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Khách hàng chưa xác nhận đồng ý với kết quả quyết toán trả kho.");
+            }
+            if (record.getDisputeReason() != null && record.getDisputeResolvedAt() == null) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ đang trong trạng thái khiếu nại chưa được Facility Manager giải quyết.");
+            }
+            if ("PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
+                throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Khoản bồi thường trả kho đã được thanh toán trước đó.");
+            }
+            BigDecimal authoritativeAmount = record.getAdditionalAmountDue();
+            if (authoritativeAmount == null || authoritativeAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ không có khoản tiền bồi thường cần thanh toán.");
+            }
+
+            String ipAddress = null;
+            if (httpRequest != null) {
+                ipAddress = httpRequest.getHeader("X-Forwarded-For");
+                if (ipAddress == null || ipAddress.isBlank()) {
+                    ipAddress = httpRequest.getRemoteAddr();
+                }
+            }
+            if (ipAddress == null || ipAddress.isBlank()) {
+                ipAddress = requestContext.currentIpAddress();
+            }
+            ipAddress = VNPayUtil.normalizeIp(ipAddress);
+
+            String orderInfo = request.getOrderInfo();
+            if (orderInfo == null || orderInfo.isBlank()) {
+                orderInfo = "Thanh toan boi thuong tra kho " + booking.getBookingCode();
+            }
+
+            LocalDateTime recentCutoff = LocalDateTime.now().minusMinutes(15);
+            List<Payment> existingPayments = paymentRepository.findAllByBooking_Id(booking.getId());
+            Payment reusablePending = null;
+            for (Payment p : existingPayments) {
+                if (p != null && p.getStatus() == PaymentStatus.PENDING && "VNPAY".equalsIgnoreCase(p.getPaymentMethod())) {
+                    if (reusablePending == null
+                            && p.getPaymentType() == PaymentType.RETURN_COMPENSATION
+                            && p.getAmount() != null
+                            && p.getAmount().compareTo(authoritativeAmount) == 0
+                            && p.getPaymentTime() != null
+                            && p.getPaymentTime().isAfter(recentCutoff)) {
+                        reusablePending = p;
+                    } else if (p.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
+                        p.setStatus(PaymentStatus.EXPIRED);
+                        paymentRepository.save(p);
+                    }
+                }
+            }
+
+            if (reusablePending != null) {
+                String existingUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
+                        ? vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl())
+                        : vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress);
+                return VNPayPaymentResponse.builder()
+                        .paymentUrl(existingUrl)
+                        .transactionId(reusablePending.getTransactionId())
+                        .paymentId(reusablePending.getId())
+                        .bookingId(booking.getId())
+                        .amount(authoritativeAmount)
+                        .orderInfo(orderInfo)
+                        .build();
+            }
+
+            String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
+            String paymentUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
+                    ? vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl())
+                    : vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress);
+
+            Payment payment = Payment.builder()
+                    .booking(booking)
+                    .paymentType(PaymentType.RETURN_COMPENSATION)
+                    .paymentMethod("VNPAY")
+                    .amount(authoritativeAmount)
+                    .status(PaymentStatus.PENDING)
+                    .transactionId(txnRef)
+                    .paymentTime(LocalDateTime.now())
+                    .build();
+
+            Payment saved = paymentRepository.save(payment);
+
+            return VNPayPaymentResponse.builder()
+                    .paymentUrl(paymentUrl)
+                    .transactionId(txnRef)
+                    .paymentId(saved.getId())
+                    .bookingId(booking.getId())
+                    .amount(authoritativeAmount)
+                    .orderInfo(orderInfo)
+                    .build();
+        }
+
         if (booking.getStatus() == BookingStatus.CANCELLED
                 || booking.getStatus() == BookingStatus.COMPLETED
                 || booking.getStatus() == BookingStatus.OVERDUE
@@ -826,6 +932,9 @@ public class PaymentServiceImpl implements PaymentService {
         // 2. Idempotency check: if already confirmed as PAID, return existing
         if (payment.getStatus() == PaymentStatus.PAID) {
             log.info("Payment with txnRef={} has already been marked as PAID.", txnRef);
+            if (payment.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
+                return paymentMapper.toResponse(payment);
+            }
             if (payment.getBooking() != null) {
                 Booking b = bookingRepository.findByIdForUpdate(payment.getBooking().getId()).orElse(payment.getBooking());
                 if (b.getStatus() == BookingStatus.PENDING_PAYMENT || "UNPAID".equalsIgnoreCase(b.getPaymentStatus())) {
@@ -862,6 +971,48 @@ public class PaymentServiceImpl implements PaymentService {
             }
 
             payment.setStatus(PaymentStatus.PAID);
+
+            if (payment.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
+                if (payment.getBooking() != null && handoverRecordRepository != null) {
+                    java.util.Optional<com.boxora.entity.HandoverRecord> recordOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(payment.getBooking().getId(), "RETURN");
+                    if (recordOpt.isPresent()) {
+                        com.boxora.entity.HandoverRecord record = recordOpt.get();
+                        record.setAdditionalPaymentStatus("PAID");
+                        record.setAdditionalPaymentTxnRef(txnRef);
+                        record.setAdditionalPaymentMethod("VNPAY");
+                        record.setAdditionalPaymentRecordedAt(LocalDateTime.now());
+                        handoverRecordRepository.save(record);
+                    }
+                }
+                if (payment.getBooking() != null && payment.getBooking().getCustomer() != null && notificationLogRepository != null) {
+                    com.boxora.entity.NotificationLog notif = com.boxora.entity.NotificationLog.builder()
+                            .recipient(payment.getBooking().getCustomer())
+                            .recipientEmail(payment.getBooking().getCustomer().getEmail())
+                            .recipientName(payment.getBooking().getCustomer().getFullName() != null ? payment.getBooking().getCustomer().getFullName() : payment.getBooking().getCustomer().getUsername())
+                            .facility(extractFacilityId(payment) != null && payment.getBooking().getFacility() != null ? payment.getBooking().getFacility() : null)
+                            .channel(com.boxora.enums.NotificationChannel.IN_APP)
+                            .notificationType(com.boxora.enums.NotificationType.PAYMENT_SUCCESS)
+                            .referenceType("BOOKING")
+                            .referenceId(payment.getBooking().getId())
+                            .title("Thanh toán bồi thường trả kho thành công qua VNPay")
+                            .content("Quý khách đã thanh toán thành công khoản bồi thường " + payment.getAmount() + " VND cho đơn " + payment.getBooking().getBookingCode() + " qua VNPay.")
+                            .status("SENT")
+                            .build();
+                    notificationLogRepository.save(notif);
+                }
+                UUID facilityId = extractFacilityId(payment);
+                activityLogService.record(
+                        facilityId,
+                        ActivityAction.PAYMENT_CONFIRMED,
+                        "PAYMENT",
+                        payment.getId(),
+                        "Thanh toan boi thuong tra kho thanh cong qua VNPAY cho booking " + (payment.getBooking() != null ? payment.getBooking().getBookingCode() : "N/A") + ", ma GD: " + txnRef,
+                        PaymentStatus.PENDING,
+                        PaymentStatus.PAID
+                );
+                paymentRepository.save(payment);
+                return paymentMapper.toResponse(payment);
+            }
 
             // Update Booking status & deposit amount if applicable
             Booking booking = payment.getBooking();
@@ -1041,6 +1192,48 @@ public class PaymentServiceImpl implements PaymentService {
             }
 
             payment.setStatus(PaymentStatus.PAID);
+
+            if (payment.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
+                if (payment.getBooking() != null && handoverRecordRepository != null) {
+                    java.util.Optional<com.boxora.entity.HandoverRecord> recordOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(payment.getBooking().getId(), "RETURN");
+                    if (recordOpt.isPresent()) {
+                        com.boxora.entity.HandoverRecord record = recordOpt.get();
+                        record.setAdditionalPaymentStatus("PAID");
+                        record.setAdditionalPaymentTxnRef(txnRef);
+                        record.setAdditionalPaymentMethod("VNPAY");
+                        record.setAdditionalPaymentRecordedAt(LocalDateTime.now());
+                        handoverRecordRepository.save(record);
+                    }
+                }
+                if (payment.getBooking() != null && payment.getBooking().getCustomer() != null && notificationLogRepository != null) {
+                    com.boxora.entity.NotificationLog notif = com.boxora.entity.NotificationLog.builder()
+                            .recipient(payment.getBooking().getCustomer())
+                            .recipientEmail(payment.getBooking().getCustomer().getEmail())
+                            .recipientName(payment.getBooking().getCustomer().getFullName() != null ? payment.getBooking().getCustomer().getFullName() : payment.getBooking().getCustomer().getUsername())
+                            .facility(extractFacilityId(payment) != null && payment.getBooking().getFacility() != null ? payment.getBooking().getFacility() : null)
+                            .channel(com.boxora.enums.NotificationChannel.IN_APP)
+                            .notificationType(com.boxora.enums.NotificationType.PAYMENT_SUCCESS)
+                            .referenceType("BOOKING")
+                            .referenceId(payment.getBooking().getId())
+                            .title("Thanh toán bồi thường trả kho thành công qua VNPay")
+                            .content("Quý khách đã thanh toán thành công khoản bồi thường " + payment.getAmount() + " VND cho đơn " + payment.getBooking().getBookingCode() + " qua VNPay.")
+                            .status("SENT")
+                            .build();
+                    notificationLogRepository.save(notif);
+                }
+                UUID facilityId = extractFacilityId(payment);
+                activityLogService.record(
+                        facilityId,
+                        ActivityAction.PAYMENT_CONFIRMED,
+                        "PAYMENT",
+                        payment.getId(),
+                        "Thanh toan boi thuong tra kho thanh cong qua VNPAY cho booking " + (payment.getBooking() != null ? payment.getBooking().getBookingCode() : "N/A") + ", ma GD: " + txnRef,
+                        PaymentStatus.PENDING,
+                        PaymentStatus.PAID
+                );
+                paymentRepository.save(payment);
+                return VNPayIpnResponse.success();
+            }
 
             Booking booking = payment.getBooking();
             if (booking != null) {

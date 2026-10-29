@@ -145,5 +145,16 @@ public interface HandoverService {
 
     /** Hoàn tất toàn bộ hồ sơ trả kho, thanh lý hợp đồng và chuyển trạng thái kho */
     ReturnSettlementResponse completeReturn(UUID bookingId);
-}
 
+    /** Task 16.1: Nhân viên xác nhận đã kiểm tra hiện trường & chốt tính phí quyết toán gửi khách hàng */
+    ReturnSettlementResponse confirmSettlementCalculation(UUID bookingId, com.boxora.dto.request.SettlementConfirmRequest request);
+
+    /** Task 16.3 & 16.4: Khách hàng đồng ý hoặc khiếu nại đối với kết quả quyết toán */
+    ReturnSettlementResponse handleCustomerDecision(UUID bookingId, com.boxora.dto.request.CustomerDecisionRequest request);
+
+    /** Task 16.3: Quản lý cơ sở (FACILITY_MANAGER) giải quyết khiếu nại từ khách hàng */
+    ReturnSettlementResponse resolveDispute(UUID bookingId, com.boxora.dto.request.DisputeResolveRequest request);
+
+    /** Task 16.4: Kế toán / Quản lý kinh doanh (BUSINESS_MANAGER/ADMIN) thực hiện giải ngân tiền hoàn */
+    ReturnSettlementResponse executePayout(UUID bookingId, com.boxora.dto.request.ReturnPayoutRequest request);
+}

@@ -100,6 +100,23 @@ public class ReturnSettlementResponse {
     private LocalDateTime accessRevokedAt;
     private String postReturnUnitStatus;
 
+    /** Task 16: Quyết toán, khiếu nại, giải quyết khiếu nại và thông tin ngân hàng */
+    private Integer settlementVersion;
+    private Boolean settlementConfirmed;
+    private LocalDateTime settlementConfirmedAt;
+    private String settlementConfirmedByName;
+    private String customerDecision;
+    private LocalDateTime customerDecisionAt;
+    private String disputeReason;
+    private String disputeEvidenceUrls;
+    private LocalDateTime disputeResolvedAt;
+    private String disputeResolvedByName;
+    private String disputeResolutionNote;
+    private String bankName;
+    private String bankAccountNumber;
+    private String bankAccountName;
+    private UUID refundRequestId;
+
     /** Số lượng ảnh bằng chứng hiện trường */
     private int evidencePhotoCount;
 

@@ -178,6 +178,57 @@ public class HandoverRecord extends BaseEntity {
     @Column(name = "post_return_unit_status", length = 30)
     private String postReturnUnitStatus;
 
+    @Column(name = "settlement_version")
+    @Builder.Default
+    private Integer settlementVersion = 1;
+
+    @Column(name = "settlement_confirmed")
+    @Builder.Default
+    private Boolean settlementConfirmed = false;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "settlement_confirmed_by_id")
+    private User settlementConfirmedBy;
+
+    @Column(name = "settlement_confirmed_at")
+    private LocalDateTime settlementConfirmedAt;
+
+    @Column(name = "customer_decision", length = 50)
+    @Builder.Default
+    private String customerDecision = "NONE";
+
+    @Column(name = "customer_decision_at")
+    private LocalDateTime customerDecisionAt;
+
+    @Column(name = "dispute_reason", columnDefinition = "TEXT")
+    private String disputeReason;
+
+    @Column(name = "dispute_evidence_urls", columnDefinition = "TEXT")
+    private String disputeEvidenceUrls;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "dispute_resolved_by_id")
+    private User disputeResolvedBy;
+
+    @Column(name = "dispute_resolved_at")
+    private LocalDateTime disputeResolvedAt;
+
+    @Column(name = "dispute_resolution_note", columnDefinition = "TEXT")
+    private String disputeResolutionNote;
+
+    @Column(name = "bank_name", length = 100)
+    private String bankName;
+
+    @Column(name = "bank_account_number", length = 100)
+    private String bankAccountNumber;
+
+    @Column(name = "bank_account_name", length = 100)
+    private String bankAccountName;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "refund_request_id")
+    private RefundRequest refundRequest;
+
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
@@ -209,13 +260,11 @@ public class HandoverRecord extends BaseEntity {
     }
 
     public boolean getChecklistAllPassed() {
-        return checklistSummary == null || (
-                !checklistSummary.contains("Không đạt")
+        return checklistSummary == null || (!checklistSummary.contains("Không đạt")
                 && !checklistSummary.contains("Bẩn")
                 && !checklistSummary.contains("Chưa dọn")
                 && !checklistSummary.contains("Lỗi")
                 && !checklistSummary.contains("Hư hại")
-                && !checklistSummary.contains("Còn đồ")
-        );
+                && !checklistSummary.contains("Còn đồ"));
     }
 }

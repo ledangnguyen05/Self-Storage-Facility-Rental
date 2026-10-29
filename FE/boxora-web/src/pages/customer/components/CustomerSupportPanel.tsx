@@ -6,6 +6,8 @@ import {
   SupportTicketCategory,
 } from '../../../services/supportTicketService'
 import { toast } from '../../../utils/toast'
+import { handoverService } from '../../../services/handoverService'
+import { paymentService } from '../../../services/paymentService'
 
 export interface CustomerSupportPanelProps {
   user: User | null
@@ -93,6 +95,14 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const [isSubmittingBank, setIsSubmittingBank] = useState<boolean>(false)
   const [bankSuccessMsg, setBankSuccessMsg] = useState<string | null>(null)
   const [bankErrorMsg, setBankErrorMsg] = useState<string | null>(null)
+
+  // Task 16: Customer Settlement Review & Decision
+  const [returnSettlementMap, setReturnSettlementMap] = useState<Record<string, any>>({})
+  const [showCustomerDisputeModal, setShowCustomerDisputeModal] = useState(false)
+  const [customerDisputeReason, setCustomerDisputeReason] = useState('')
+  const [customerDisputeEvidence, setCustomerDisputeEvidence] = useState('')
+  const [isSubmittingCustomerDecision, setIsSubmittingCustomerDecision] = useState(false)
+  const [isPayingCompensation, setIsPayingCompensation] = useState(false)
 
   // Initialize selected unit
   useEffect(() => {
@@ -293,6 +303,97 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
       toast.error(err?.response?.data?.message || 'Không thể mở lại yêu cầu.')
     } finally {
       setIsActingOnTicket(false)
+    }
+  }
+
+  // Task 16: Load settlement details for return tickets
+  useEffect(() => {
+    if (selectedTicket?.bookingId && (selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED')) {
+      const bId = selectedTicket.bookingId
+      handoverService.calculateSettlement(bId).then(res => {
+        if (res) {
+          setReturnSettlementMap(prev => ({ ...prev, [bId]: res }))
+        }
+      }).catch(err => {
+        console.warn('Could not load settlement for booking', bId, err)
+      })
+    }
+  }, [selectedTicket])
+
+  // Handler for customer decision: AGREE
+  const handleCustomerAgree = async (ticket: SupportTicketRecord, settlement: any) => {
+    if (!ticket.bookingId) return
+    setIsSubmittingCustomerDecision(true)
+    try {
+      await handoverService.submitCustomerDecision(ticket.bookingId, {
+        decision: 'AGREED'
+      })
+      toast.success('Quý khách đã đồng ý với quyết định quyết toán trả kho!')
+      const updated = await handoverService.calculateSettlement(ticket.bookingId)
+      if (updated) {
+        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+      }
+      if ((settlement?.netRefundAmount || 0) > 0) {
+        setBankInfoTicket(ticket)
+        setBankName(ticket.bankName || '')
+        setBankAccountNumber(ticket.bankAccountNumber || '')
+        setBankAccountName(ticket.bankAccountName || user?.fullName || '')
+      }
+    } catch (err: any) {
+      toast.error('Lỗi gửi xác nhận: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setIsSubmittingCustomerDecision(false)
+    }
+  }
+
+  // Handler for customer decision: DISPUTE
+  const handleCustomerDisputeSubmit = async (ticket: SupportTicketRecord) => {
+    if (!ticket.bookingId || !customerDisputeReason.trim()) {
+      toast.warning('Vui lòng nhập lý do khiếu nại.')
+      return
+    }
+    setIsSubmittingCustomerDecision(true)
+    try {
+      const evidenceList = customerDisputeEvidence.trim() ? [customerDisputeEvidence.trim()] : []
+      await handoverService.submitCustomerDecision(ticket.bookingId, {
+        decision: 'DISPUTED',
+        disputeReason: customerDisputeReason.trim(),
+        disputeEvidenceUrls: evidenceList
+      })
+      toast.success('Đã gửi khiếu nại thành công. Quản lý cơ sở sẽ xem xét giải quyết!')
+      setShowCustomerDisputeModal(false)
+      setCustomerDisputeReason('')
+      setCustomerDisputeEvidence('')
+      const updated = await handoverService.calculateSettlement(ticket.bookingId)
+      if (updated) {
+        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+      }
+    } catch (err: any) {
+      toast.error('Lỗi gửi khiếu nại: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setIsSubmittingCustomerDecision(false)
+    }
+  }
+
+  // Handler for customer payment of compensation via VNPay
+  const handlePayCompensationVNPay = async (ticket: SupportTicketRecord, additionalDue: number) => {
+    if (!ticket.bookingId) return
+    setIsPayingCompensation(true)
+    try {
+      const response = await paymentService.createVNPayPayment({
+        bookingId: ticket.bookingId,
+        amount: additionalDue,
+        paymentType: 'RETURN_COMPENSATION'
+      })
+      if (response?.paymentUrl) {
+        window.location.href = response.paymentUrl
+      } else {
+        toast.error('Không thể tạo liên kết thanh toán VNPay.')
+      }
+    } catch (err: any) {
+      toast.error('Lỗi thanh toán bồi thường: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setIsPayingCompensation(false)
     }
   }
 
@@ -1103,54 +1204,188 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 </div>
               )}
 
-              {/* Refund Info Section for RETURN_REFUND */}
-              {selectedTicket.category === 'RETURN_REFUND' && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 space-y-2 text-amber-950">
+              {/* Refund Info Section for RETURN_REFUND & RETURN_EXPIRED (Task 16 Settlement Flow) */}
+              {(selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED') && (() => {
+                const currentTkt = selectedTicket
+                if (!currentTkt) return null
+                const bId = currentTkt.bookingId
+                const settlement = bId ? returnSettlementMap[bId] : null
+                const netRefund = settlement?.netRefundAmount ?? (currentTkt.refundAmount || 0)
+                const additionalDue = settlement?.additionalAmountDue ?? 0
+                const isOverDeposit = additionalDue > 0
+                const depositPaid = settlement?.depositPaid ?? 0
+                const totalDeductions = settlement?.totalDeductions ?? settlement?.totalDeduction ?? 0
+                const isConfirmed = settlement ? Boolean(settlement.settlementConfirmed) : true
+                const decision = settlement?.customerDecision
+
+                return (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 space-y-3 text-amber-950">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-xs flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[16px] text-amber-700">currency_exchange</span>
-                      <span>Thông tin quyết toán &amp; hoàn tiền:</span>
+                      <span>Quyết toán trả kho &amp; Đối soát cọc (Phiên bản V{settlement?.settlementVersion || 1}):</span>
                     </span>
-                    {getRefundBadge(selectedTicket)}
+                    {getRefundBadge(currentTkt)}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                    <div>
-                      <span className="text-amber-800 text-[11px] block">Số tiền hoàn duyệt:</span>
-                      <strong className="text-sm font-mono text-emerald-700 block">
-                        {selectedTicket.refundAmount ? formatVND(selectedTicket.refundAmount) : 'Chờ đối soát thực địa'}
-                      </strong>
+                  {/* Chi tiết đối soát */}
+                  <div className="p-3 bg-white/80 rounded-xl border border-amber-200 text-xs space-y-1.5">
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span>Tiền cọc ban đầu đã đóng:</span>
+                      <strong className="font-mono text-slate-900">{formatVND(depositPaid)}</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span>Tổng chi phí khấu trừ (thiệt hại, vệ sinh, thiết bị):</span>
+                      <strong className="font-mono text-rose-600">-{formatVND(totalDeductions)}</strong>
                     </div>
 
-                    <div>
-                      <span className="text-amber-800 text-[11px] block">Tài khoản thụ hưởng:</span>
-                      {selectedTicket.bankAccountNumber ? (
-                        <span className="font-mono text-xs block">
-                          {selectedTicket.bankName} · ****{selectedTicket.bankAccountNumber.slice(-4)} ({selectedTicket.bankAccountName})
-                        </span>
+                    <div className="pt-2 border-t border-amber-200">
+                      {isOverDeposit ? (
+                        <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-300 text-rose-950 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold">Khoản bồi thường cần thanh toán:</span>
+                            <span className="font-mono font-extrabold text-rose-700 text-sm">+{formatVND(additionalDue)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500">
+                            <span>Tiền hoàn trả:</span>
+                            <span className="font-mono font-bold">0đ</span>
+                          </div>
+                        </div>
                       ) : (
-                        <span className="italic text-amber-700 text-xs block">Chưa cung cấp</span>
+                        <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-950 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold">Số tiền hoàn trả quý khách:</span>
+                            <span className="font-mono font-extrabold text-emerald-700 text-sm">{formatVND(netRefund)}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-500">
+                            <span>Khoản cần nộp thêm:</span>
+                            <span className="font-mono font-bold">0đ</span>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
 
-                  {selectedTicket.fmApprovalNote && (
-                    <div className="text-[11px] bg-white/70 p-2 rounded-lg border border-amber-200 mt-1">
-                      <strong>Ghi chú duyệt của quản lý:</strong> {selectedTicket.fmApprovalNote}
+                  {/* Task 16.3: QUYẾT ĐỊNH CỦA KHÁCH HÀNG (2 NÚT BẤM HOẶC TRẠNG THÁI) */}
+                  {isConfirmed && (
+                    <div className="pt-1">
+                      {(!decision || decision === 'AWAITING_CUSTOMER_CONFIRMATION') ? (
+                        <div className="space-y-2">
+                          <div className="text-[11px] text-amber-800 font-semibold">
+                            Nhân viên đã chốt biên bản kiểm tra &amp; tính phí. Vui lòng xem xét và phản hồi:
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleCustomerAgree(currentTkt, settlement)}
+                              disabled={isSubmittingCustomerDecision}
+                              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                              <span>Đồng ý với quyết định</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowCustomerDisputeModal(true)}
+                              disabled={isSubmittingCustomerDecision}
+                              className="py-2.5 px-3 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">report_problem</span>
+                              <span>Khiếu nại</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : decision === 'AGREED' ? (
+                        <div className="space-y-2">
+                          <div className="p-2.5 rounded-lg bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px] text-emerald-700">task_alt</span>
+                            <span>Quý khách đã đồng ý với quyết định quyết toán trả kho.</span>
+                          </div>
+
+                          {/* Trường hợp 1: Nhận hoàn tiền -> Cung cấp tài khoản */}
+                          {!isOverDeposit && netRefund > 0 && (
+                            <div className="p-3 bg-white rounded-xl border border-amber-200 text-xs space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Tài khoản nhận hoàn tiền:</span>
+                                {currentTkt.bankAccountNumber ? (
+                                  <span className="font-mono font-bold text-slate-800">
+                                    {currentTkt.bankName} · ****{currentTkt.bankAccountNumber.slice(-4)} ({currentTkt.bankAccountName})
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-700 font-bold">Chưa cung cấp</span>
+                                )}
+                              </div>
+                              {!currentTkt.bankAccountNumber && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBankInfoTicket(currentTkt)
+                                    setBankName(currentTkt.bankName || '')
+                                    setBankAccountNumber(currentTkt.bankAccountNumber || '')
+                                    setBankAccountName(currentTkt.bankAccountName || user?.fullName || '')
+                                  }}
+                                  className="w-full py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">account_balance</span>
+                                  <span>Cung cấp số tài khoản nhận tiền hoàn</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Trường hợp 2: Khách nợ thêm -> Thanh toán VNPay Sandbox */}
+                          {isOverDeposit && additionalDue > 0 && (
+                            <div className="p-3 bg-white rounded-xl border border-rose-200 text-xs space-y-2">
+                              {settlement?.additionalPaymentStatus === 'PAID' ? (
+                                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-900 font-bold flex items-center gap-1.5">
+                                  <span className="material-symbols-outlined text-[16px] text-emerald-700">verified</span>
+                                  <span>Đã thanh toán bồi thường {formatVND(additionalDue)} qua VNPay (Mã GD: {settlement.additionalPaymentTxnRef || 'Thành công'})</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <p className="text-slate-600 text-[11px]">
+                                    Quý khách có thể thanh toán trực tiếp khoản bồi thường qua cổng thanh toán VNPay Sandbox:
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePayCompensationVNPay(currentTkt, additionalDue)}
+                                    disabled={isPayingCompensation}
+                                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">credit_card</span>
+                                    <span>{isPayingCompensation ? 'Đang tạo liên kết...' : `Thanh toán bồi thường ${formatVND(additionalDue)} qua VNPay Sandbox`}</span>
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : decision === 'DISPUTED' ? (
+                        <div className="p-3 rounded-xl bg-rose-100/80 border border-rose-300 text-rose-900 text-xs space-y-1">
+                          <div className="font-bold flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px] text-rose-700">warning</span>
+                            <span>Quý khách đã gửi khiếu nại về quyết toán này.</span>
+                          </div>
+                          <p className="italic text-[11px]">Lý do: "{settlement?.disputeReason || 'Chưa đồng ý với chi phí khấu trừ'}"</p>
+                          <p className="text-[10px] text-slate-600 pt-1">
+                            Hồ sơ đang được chuyển lên Quản lý cơ sở (Facility Manager) xem xét hòa giải và điều chỉnh. Mọi khoản thanh toán / giải ngân được tạm ngưng.
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
-                  {selectedTicket.transferTransactionRef && (
+                  {currentTkt.transferTransactionRef && (
                     <div className="text-[11px] bg-emerald-50 text-emerald-950 p-2.5 rounded-lg border border-emerald-300 mt-1 space-y-1">
                       <div>
-                        <strong>Mã giao dịch giải ngân:</strong> <span className="font-mono font-bold">{selectedTicket.transferTransactionRef}</span>
+                        <strong>Mã giao dịch giải ngân:</strong> <span className="font-mono font-bold">{currentTkt.transferTransactionRef}</span>
                       </div>
-                      {selectedTicket.transferConfirmedAt && (
-                        <div>Thời gian chuyển khoản: {formatTimeStr(selectedTicket.transferConfirmedAt)}</div>
+                      {currentTkt.transferConfirmedAt && (
+                        <div>Thời gian chuyển khoản: {formatTimeStr(currentTkt.transferConfirmedAt)}</div>
                       )}
-                      {selectedTicket.transferProofUrl && (
+                      {currentTkt.transferProofUrl && (
                         <a
-                          href={selectedTicket.transferProofUrl}
+                          href={currentTkt.transferProofUrl}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center gap-1 font-bold text-blue-600 hover:underline pt-0.5"
@@ -1161,27 +1396,8 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       )}
                     </div>
                   )}
-
-                  {/* Button to open bank form if awaiting */}
-                  {selectedTicket.refundStatus === 'AWAITING_CUSTOMER_BANK_INFO' && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBankInfoTicket(selectedTicket)
-                          setBankName(selectedTicket.bankName || '')
-                          setBankAccountNumber(selectedTicket.bankAccountNumber || '')
-                          setBankAccountName(selectedTicket.bankAccountName || user?.fullName || '')
-                        }}
-                        className="w-full py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">account_balance</span>
-                        <span>Cung Cấp Thông Tin Ngân Hàng Nhận Tiền Hoàn</span>
-                      </button>
-                    </div>
-                  )}
                 </div>
-              )}
+              )})()}
 
               {/* Resolution Note if resolved/closed */}
               {selectedTicket.resolutionNote && (

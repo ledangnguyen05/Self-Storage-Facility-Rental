@@ -2687,6 +2687,20 @@ public class HandoverServiceImpl implements HandoverService {
                 .accessRevoked(inspectionRecord != null ? Boolean.TRUE.equals(inspectionRecord.getAccessRevoked()) : false)
                 .accessRevokedAt(inspectionRecord != null ? inspectionRecord.getAccessRevokedAt() : null)
                 .postReturnUnitStatus(unit != null ? unit.getStatus().name() : "N/A")
+                .settlementVersion(inspectionRecord != null && inspectionRecord.getSettlementVersion() != null ? inspectionRecord.getSettlementVersion() : 1)
+                .settlementConfirmed(inspectionRecord != null && Boolean.TRUE.equals(inspectionRecord.getSettlementConfirmed()))
+                .settlementConfirmedAt(inspectionRecord != null ? inspectionRecord.getSettlementConfirmedAt() : null)
+                .settlementConfirmedByName(inspectionRecord != null && inspectionRecord.getSettlementConfirmedBy() != null ? inspectionRecord.getSettlementConfirmedBy().getFullName() : null)
+                .customerDecision(inspectionRecord != null && inspectionRecord.getCustomerDecision() != null ? inspectionRecord.getCustomerDecision() : "NONE")
+                .customerDecisionAt(inspectionRecord != null ? inspectionRecord.getCustomerDecisionAt() : null)
+                .disputeEvidenceUrls(inspectionRecord != null ? inspectionRecord.getDisputeEvidenceUrls() : null)
+                .disputeResolvedAt(inspectionRecord != null ? inspectionRecord.getDisputeResolvedAt() : null)
+                .disputeResolvedByName(inspectionRecord != null && inspectionRecord.getDisputeResolvedBy() != null ? inspectionRecord.getDisputeResolvedBy().getFullName() : null)
+                .disputeResolutionNote(inspectionRecord != null ? inspectionRecord.getDisputeResolutionNote() : null)
+                .bankName(inspectionRecord != null ? inspectionRecord.getBankName() : null)
+                .bankAccountNumber(inspectionRecord != null ? inspectionRecord.getBankAccountNumber() : null)
+                .bankAccountName(inspectionRecord != null ? inspectionRecord.getBankAccountName() : null)
+                .refundRequestId(inspectionRecord != null && inspectionRecord.getRefundRequest() != null ? inspectionRecord.getRefundRequest().getId() : null)
                 .build();
     }
 
@@ -3040,6 +3054,21 @@ public class HandoverServiceImpl implements HandoverService {
                 .returnedAt(record != null ? record.getPhysicalHandoverAt() : null)
                 .accessRevoked(record != null ? Boolean.TRUE.equals(record.getAccessRevoked()) : false)
                 .accessRevokedAt(record != null ? record.getAccessRevokedAt() : null)
+                .settlementVersion(record != null && record.getSettlementVersion() != null ? record.getSettlementVersion() : 1)
+                .settlementConfirmed(record != null && Boolean.TRUE.equals(record.getSettlementConfirmed()))
+                .settlementConfirmedAt(record != null ? record.getSettlementConfirmedAt() : null)
+                .settlementConfirmedByName(record != null && record.getSettlementConfirmedBy() != null ? record.getSettlementConfirmedBy().getFullName() : null)
+                .customerDecision(record != null && record.getCustomerDecision() != null ? record.getCustomerDecision() : "NONE")
+                .customerDecisionAt(record != null ? record.getCustomerDecisionAt() : null)
+                .disputeReason(record != null ? record.getDisputeReason() : null)
+                .disputeEvidenceUrls(record != null ? record.getDisputeEvidenceUrls() : null)
+                .disputeResolvedAt(record != null ? record.getDisputeResolvedAt() : null)
+                .disputeResolvedByName(record != null && record.getDisputeResolvedBy() != null ? record.getDisputeResolvedBy().getFullName() : null)
+                .disputeResolutionNote(record != null ? record.getDisputeResolutionNote() : null)
+                .bankName(record != null ? record.getBankName() : null)
+                .bankAccountNumber(record != null ? record.getBankAccountNumber() : null)
+                .bankAccountName(record != null ? record.getBankAccountName() : null)
+                .refundRequestId(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getId() : null)
                 .build();
     }
 
@@ -3402,6 +3431,19 @@ public class HandoverServiceImpl implements HandoverService {
         record.setPhysicalHandoverConfirmed(true);
         record.setPhysicalHandoverAt(LocalDateTime.now());
         record.setPhysicalHandoverBy(staff);
+
+        // Task 16.6: Automatically revoke access PIN & release lock on physical return
+        if (unit != null) {
+            try {
+                storageUnitLockService.releaseLock(unit.getId());
+            } catch (Exception ex) {
+                log.warn("StorageUnitLock release lock failed for unit {}: {}", unit.getUnitCode(), ex.getMessage());
+            }
+        }
+        booking.setAccessPin(null);
+        booking.setQrAccessToken(null);
+        record.setAccessRevoked(true);
+        record.setAccessRevokedAt(LocalDateTime.now());
         record = handoverRecordRepository.save(record);
 
         // Chuyển trạng thái ngăn kho theo tình trạng kiểm tra (9.3)
@@ -3531,20 +3573,29 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         // 5. Kiểm tra trạng thái tranh chấp
-        if ("DISPUTED".equalsIgnoreCase(record.getApprovalStatus())) {
+        if ("DISPUTED".equalsIgnoreCase(record.getApprovalStatus()) || "DISPUTED".equalsIgnoreCase(record.getCustomerDecision())) {
             throw new AppException(ErrorCode.RETURN_DISPUTED, "Hồ sơ đang trong trạng thái khiếu nại tranh chấp. Không thể hoàn tất");
         }
 
-        // 6. Kiểm tra phê duyệt khấu trừ (nếu có chi phí)
+        // 6. Kiểm tra phê duyệt khấu trừ hoặc khách hàng đồng ý
         BigDecimal deductions = record.getDeductionAmount() != null ? record.getDeductionAmount() : BigDecimal.ZERO;
-        if (deductions.compareTo(BigDecimal.ZERO) > 0 && !"APPROVED".equalsIgnoreCase(record.getApprovalStatus())) {
-            throw new AppException(ErrorCode.RETURN_APPROVAL_REQUIRED, "Khoản khấu trừ chưa được quản lý phê duyệt");
+        boolean isCustomerAgreed = "AGREED".equalsIgnoreCase(record.getCustomerDecision())
+                || "CUSTOMER_AGREED".equalsIgnoreCase(record.getApprovalStatus())
+                || "APPROVED".equalsIgnoreCase(record.getApprovalStatus());
+        if (deductions.compareTo(BigDecimal.ZERO) > 0 && !isCustomerAgreed) {
+            throw new AppException(ErrorCode.RETURN_APPROVAL_REQUIRED, "Khoản khấu trừ chưa được khách hàng đồng ý hoặc quản lý phê duyệt");
         }
 
         // 7. Kiểm tra khoản thanh toán bổ sung (nếu có)
         BigDecimal additionalDue = record.getAdditionalAmountDue() != null ? record.getAdditionalAmountDue() : BigDecimal.ZERO;
         if (additionalDue.compareTo(BigDecimal.ZERO) > 0 && !"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
             throw new AppException(ErrorCode.RETURN_ADDITIONAL_PAYMENT_PENDING, "Khách hàng chưa thanh toán khoản bồi thường bổ sung còn thiếu (" + additionalDue + " VNĐ)");
+        }
+
+        // 8. Kiểm tra hoàn tiền (nếu có hoàn tiền)
+        BigDecimal refundAmount = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
+        if (refundAmount.compareTo(BigDecimal.ZERO) > 0 && !"REFUNDED".equalsIgnoreCase(record.getRefundStatus())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản tiền hoàn cọc (" + refundAmount + " VNĐ) chưa được giải ngân hoàn tất.");
         }
 
         // 8. Hoàn tất hợp đồng, booking và chuyển trạng thái kho theo thực tế (9.3 & 10)
@@ -3607,6 +3658,512 @@ public class HandoverServiceImpl implements HandoverService {
                 String.format("Hoàn tất hồ sơ trả kho và thanh lý hợp đồng đơn %s", booking.getBookingCode()),
                 BookingStatus.INSPECTED,
                 BookingStatus.COMPLETED
+        );
+
+        return calculateSettlement(bookingId, null);
+    }
+
+    @Override
+    @Transactional
+    public ReturnSettlementResponse confirmSettlementCalculation(UUID bookingId, com.boxora.dto.request.SettlementConfirmRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = unit != null ? unit.getFacility() : null;
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+
+        User staff = requireAuthorizedStaffOperator(null);
+
+        HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
+                .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
+
+        if ("DRAFT".equalsIgnoreCase(record.getInspectionStatus())) {
+            throw new AppException(ErrorCode.RETURN_NOT_INSPECTED, "BiĂªn báº£n nghiá»‡m thu hiá»‡n trÆ°á»ng Ä‘ang á»Ÿ tráº¡ng thĂ¡i báº£n nhĂ¡p. Cáº§n chá»‘t biĂªn báº£n trÆ°á»›c khi xĂ¡c nháº­n tĂ­nh phĂ­.");
+        }
+
+        // Validate no negative deductions
+        BigDecimal doorFee = record.getDoorFee() != null ? record.getDoorFee() : BigDecimal.ZERO;
+        BigDecimal cleanFee = record.getCleanlinessFee() != null ? record.getCleanlinessFee() : BigDecimal.ZERO;
+        BigDecimal wallFee = record.getWallStructureFee() != null ? record.getWallStructureFee() : BigDecimal.ZERO;
+        BigDecimal lockFee = record.getSmartLockFee() != null ? record.getSmartLockFee() : BigDecimal.ZERO;
+        BigDecimal lostCardFee = record.getLostCardFee() != null ? record.getLostCardFee() : BigDecimal.ZERO;
+
+        if (doorFee.compareTo(BigDecimal.ZERO) < 0 || cleanFee.compareTo(BigDecimal.ZERO) < 0
+                || wallFee.compareTo(BigDecimal.ZERO) < 0 || lockFee.compareTo(BigDecimal.ZERO) < 0
+                || lostCardFee.compareTo(BigDecimal.ZERO) < 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Khoáº£n kháº¥u trá»« chi phĂ­ khĂ´ng Ä‘Æ°á»£c Ă¢m!");
+        }
+
+        // Damage fee > 0 requires evidence / inspection notes
+        if (wallFee.compareTo(BigDecimal.ZERO) > 0 && (record.getWallStructureNotes() == null || record.getWallStructureNotes().isBlank())) {
+            if (record.getEvidencePhotos() == null || record.getEvidencePhotos().isBlank()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Khoáº£n kháº¥u trá»« hÆ° háº¡i vĂ¡ch/sĂ n/tráº§n báº¯t buá»™c pháº£i cĂ³ ghi chĂº hiá»‡n trÆ°á»ng hoáº·c áº£nh báº±ng chá»©ng Ä‘á»‘i soĂ¡t!");
+            }
+        }
+
+        BigDecimal depositPaid = calculateTotalDepositPaid(booking);
+        BigDecimal overdueDebt = calculateOverdueDebtForBooking(booking);
+        String lockIssueType = record.getSmartLockIssueType();
+        BigDecimal effectiveLockFee = "CUSTOMER_FAULT".equalsIgnoreCase(lockIssueType) ? lockFee : BigDecimal.ZERO;
+
+        BigDecimal totalProposedDeductions = doorFee.add(cleanFee).add(wallFee).add(effectiveLockFee).add(lostCardFee).add(overdueDebt);
+        BigDecimal netRefund = depositPaid.subtract(totalProposedDeductions).max(BigDecimal.ZERO);
+        BigDecimal additionalDue = totalProposedDeductions.subtract(depositPaid).max(BigDecimal.ZERO);
+
+        record.setDepositSettled(depositPaid);
+        record.setDeductionAmount(totalProposedDeductions);
+        record.setRefundAmount(netRefund);
+        record.setAdditionalAmountDue(additionalDue);
+        record.setSettlementConfirmed(true);
+        record.setSettlementConfirmedBy(staff);
+        record.setSettlementConfirmedAt(LocalDateTime.now());
+        record.setCustomerDecision("PENDING");
+        record.setApprovalStatus("PENDING_CUSTOMER_REVIEW");
+        if (record.getSettlementVersion() == null) {
+            record.setSettlementVersion(1);
+        }
+        if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[XĂC NHáº¬N TĂNH PHĂ] " + request.getNotes().trim());
+        }
+
+        record = handoverRecordRepository.save(record);
+
+        String resultMsg = netRefund.compareTo(BigDecimal.ZERO) > 0
+                ? String.format("HoĂ n tráº£ khĂ¡ch hĂ ng: %s VNÄ", netRefund)
+                : (additionalDue.compareTo(BigDecimal.ZERO) > 0
+                    ? String.format("KhĂ¡ch hĂ ng cáº§n thanh toĂ¡n thĂªm: %s VNÄ", additionalDue)
+                    : "Quyáº¿t toĂ¡n hĂ²a vá»‘n (KhĂ´ng hoĂ n, khĂ´ng thu thĂªm)");
+
+        String logMsg = String.format("[%s] NhĂ¢n viĂªn %s XĂC NHáº¬N ÄĂƒ KIá»‚M TRA & TĂNH PHĂ quyáº¿t toĂ¡n tráº£ kho (PhiĂªn báº£n V%d): Cá»c: %s VNÄ, Kháº¥u trá»«: %s VNÄ, CĂ´ng ná»£: %s VNÄ -> %s\n",
+                LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName(), record.getSettlementVersion(), depositPaid, totalProposedDeductions.subtract(overdueDebt), overdueDebt, resultMsg);
+        booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+        bookingRepository.save(booking);
+
+        // Send in-app notification to Customer
+        if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+            String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+            NotificationLog notif = NotificationLog.builder()
+                    .recipient(booking.getCustomer())
+                    .recipientEmail(booking.getCustomer().getEmail())
+                    .recipientName(booking.getCustomer().getFullName())
+                    .facility(facility)
+                    .channel(NotificationChannel.IN_APP)
+                    .notificationType(NotificationType.REFUND_STATUS)
+                    .referenceType("BOOKING")
+                    .referenceId(booking.getId())
+                    .title(String.format("Káº¿t quáº£ quyáº¿t toĂ¡n tráº£ kho [%s] - Chá» báº¡n xĂ¡c nháº­n", unitCode))
+                    .content(String.format("NhĂ¢n viĂªn Boxora Ä‘Ă£ kiá»ƒm tra vĂ  gá»­i káº¿t quáº£ Ä‘á»‘i soĂ¡t quyáº¿t toĂ¡n cho Ä‘Æ¡n %s (Kho %s): Tiá»n cá»c: %sÄ‘, Kháº¥u trá»«: %sÄ‘ -> %s. Vui lĂ²ng vĂ o Customer Dashboard Ä‘á»ƒ xĂ¡c nháº­n hoáº·c khiáº¿u náº¡i.",
+                            booking.getBookingCode(), unitCode, depositPaid, totalProposedDeductions, resultMsg))
+                    .status("SENT")
+                    .build();
+            notificationLogRepository.save(notif);
+        }
+
+        activityLogService.record(
+                facility != null ? facility.getId() : null,
+                ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                "HandoverRecord",
+                record.getId(),
+                String.format("XĂ¡c nháº­n tĂ­nh phĂ­ quyáº¿t toĂ¡n V%d Ä‘Æ¡n %s: %s", record.getSettlementVersion(), booking.getBookingCode(), resultMsg),
+                booking.getStatus(),
+                booking.getStatus()
+        );
+
+        return calculateSettlement(bookingId, null);
+    }
+
+    @Override
+    @Transactional
+    public ReturnSettlementResponse handleCustomerDecision(UUID bookingId, com.boxora.dto.request.CustomerDecisionRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        // Customer ownership guard
+        UUID currentUserId = requestContext.currentUserId();
+        if (currentUserId != null && booking.getCustomer() != null && booking.getCustomer().getId() != null) {
+            if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole()) && !currentUserId.equals(booking.getCustomer().getId())) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Báº¡n chá»‰ cĂ³ quyá»n Ä‘Æ°a ra quyáº¿t Ä‘á»‹nh Ä‘á»‘i vá»›i Ä‘Æ¡n Ä‘áº·t kho cá»§a chĂ­nh mĂ¬nh!");
+            }
+        }
+
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = unit != null ? unit.getFacility() : null;
+
+        HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
+                .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
+
+        if (!Boolean.TRUE.equals(record.getSettlementConfirmed())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ quyáº¿t toĂ¡n chÆ°a Ä‘Æ°á»£c nhĂ¢n viĂªn xĂ¡c nháº­n vĂ  chá»‘t tĂ­nh phĂ­.");
+        }
+
+        String decision = request.getDecision() != null ? request.getDecision().trim().toUpperCase() : "";
+
+        if ("DISPUTED".equals(decision)) {
+            if (request.getDisputeReason() == null || request.getDisputeReason().isBlank()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lĂ²ng nháº­p lĂ½ do khiáº¿u náº¡i chi tiáº¿t.");
+            }
+            record.setCustomerDecision("DISPUTED");
+            record.setCustomerDecisionAt(LocalDateTime.now());
+            record.setApprovalStatus("DISPUTED");
+            record.setDisputeReason(request.getDisputeReason().trim());
+            if (request.getDisputeEvidenceUrls() != null && !request.getDisputeEvidenceUrls().isBlank()) {
+                record.setDisputeEvidenceUrls(request.getDisputeEvidenceUrls().trim());
+            }
+
+            String logMsg = String.format("[%s] KHĂCH HĂ€NG KHIáº¾U Náº I káº¿t quáº£ quyáº¿t toĂ¡n (V%d). LĂ½ do: %s\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, request.getDisputeReason().trim());
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHĂCH HĂ€NG KHIáº¾U Náº I] " + request.getDisputeReason().trim());
+            record = handoverRecordRepository.save(record);
+            bookingRepository.save(booking);
+
+            activityLogService.record(
+                    facility != null ? facility.getId() : null,
+                    ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                    "HandoverRecord",
+                    record.getId(),
+                    String.format("KhĂ¡ch hĂ ng khiáº¿u náº¡i quyáº¿t toĂ¡n Ä‘Æ¡n %s: %s", booking.getBookingCode(), request.getDisputeReason().trim()),
+                    booking.getStatus(),
+                    booking.getStatus()
+            );
+
+            return calculateSettlement(bookingId, null);
+
+        } else if ("AGREED".equals(decision)) {
+            if ("DISPUTED".equalsIgnoreCase(record.getApprovalStatus()) && record.getDisputeResolvedAt() == null) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ Ä‘ang trong quĂ¡ trĂ¬nh khiáº¿u náº¡i chÆ°a giáº£i quyáº¿t xong.");
+            }
+
+            record.setCustomerDecision("AGREED");
+            record.setCustomerDecisionAt(LocalDateTime.now());
+            record.setApprovalStatus("CUSTOMER_AGREED");
+
+            BigDecimal netRefund = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
+            BigDecimal additionalDue = record.getAdditionalAmountDue() != null ? record.getAdditionalAmountDue() : BigDecimal.ZERO;
+
+            if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
+                // Must provide bank info
+                if (request.getBankName() == null || request.getBankName().isBlank()
+                        || request.getBankAccountNumber() == null || request.getBankAccountNumber().isBlank()
+                        || request.getBankAccountName() == null || request.getBankAccountName().isBlank()) {
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Khoáº£n hoĂ n tiá»n cá»c > 0. QuĂ½ khĂ¡ch vui lĂ²ng cung cáº¥p Ä‘áº§y Ä‘á»§ thĂ´ng tin ngĂ¢n hĂ ng Ä‘á»ƒ nháº­n tiá»n hoĂ n.");
+                }
+
+                String bName = request.getBankName().trim();
+                String bAccNum = request.getBankAccountNumber().trim().replaceAll("[^0-9a-zA-Z]", "");
+                String bAccName = request.getBankAccountName().trim().toUpperCase();
+
+                record.setBankName(bName);
+                record.setBankAccountNumber(bAccNum);
+                record.setBankAccountName(bAccName);
+                record.setRefundStatus("PENDING_PAYOUT");
+
+                // Create or link RefundRequest for Business Manager to process
+                String reqCode = "REF-" + booking.getBookingCode() + "-V" + (record.getSettlementVersion() != null ? record.getSettlementVersion() : 1);
+                RefundRequest refundReq = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                if (refundReq == null) {
+                    refundReq = RefundRequest.builder()
+                            .requestCode(reqCode)
+                            .customer(booking.getCustomer())
+                            .facility(facility)
+                            .booking(booking)
+                            .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
+                            .requestedAmount(record.getDepositSettled() != null ? record.getDepositSettled() : netRefund)
+                            .deductionAmount(record.getDeductionAmount() != null ? record.getDeductionAmount() : BigDecimal.ZERO)
+                            .finalRefundAmount(netRefund)
+                            .bankName(bName)
+                            .bankAccountNumber(bAccNum)
+                            .bankAccountName(bAccName)
+                            .reason(String.format("Quyáº¿t toĂ¡n tráº£ kho V%d Ä‘Æ¡n %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()))
+                            .status(RefundStatus.PENDING_REVIEW)
+                            .requestedBy(booking.getCustomer())
+                            .build();
+                    refundReq = refundRequestRepository.save(refundReq);
+                } else {
+                    refundReq.setFinalRefundAmount(netRefund);
+                    refundReq.setBankName(bName);
+                    refundReq.setBankAccountNumber(bAccNum);
+                    refundReq.setBankAccountName(bAccName);
+                    refundReq = refundRequestRepository.save(refundReq);
+                }
+                record.setRefundRequest(refundReq);
+
+            } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
+                if (!"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
+                    record.setAdditionalPaymentStatus("PENDING");
+                }
+            }
+
+            String logMsg = String.format("[%s] KHĂCH HĂ€NG ÄĂƒ Äá»’NG Ă káº¿t quáº£ quyáº¿t toĂ¡n (V%d). Tiá»n hoĂ n: %sÄ‘, Tiá»n ná»£ thĂªm: %sÄ‘\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, netRefund, additionalDue);
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHĂCH HĂ€NG Äá»’NG Ă] " + logMsg.trim());
+            record = handoverRecordRepository.save(record);
+            bookingRepository.save(booking);
+
+            activityLogService.record(
+                    facility != null ? facility.getId() : null,
+                    ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                    "HandoverRecord",
+                    record.getId(),
+                    String.format("KhĂ¡ch hĂ ng Ä‘á»“ng Ă½ quyáº¿t toĂ¡n V%d Ä‘Æ¡n %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()),
+                    booking.getStatus(),
+                    booking.getStatus()
+            );
+
+            return calculateSettlement(bookingId, null);
+
+        } else {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Quyáº¿t Ä‘á»‹nh khĂ´ng há»£p lá»‡. Vui lĂ²ng chá»n AGREED hoáº·c DISPUTED.");
+        }
+    }
+
+    @Override
+    @Transactional
+    public ReturnSettlementResponse resolveDispute(UUID bookingId, com.boxora.dto.request.DisputeResolveRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = unit != null ? unit.getFacility() : null;
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+
+        User operator = resolveStaff(null);
+        if (operator == null) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        String roleName = operator.getRole() != null ? operator.getRole().getName() : "";
+
+        // STRICT RBAC: ONLY FACILITY_MANAGER can resolve dispute!
+        // STAFF, BUSINESS_MANAGER, ADMIN are NOT allowed to resolve disputes!
+        if (!"FACILITY_MANAGER".equalsIgnoreCase(roleName)) {
+            throw new AppException(ErrorCode.RETURN_UNAUTHORIZED_APPROVAL,
+                    "Chá»‰ Quáº£n lĂ½ cÆ¡ sá»Ÿ (FACILITY_MANAGER) má»›i cĂ³ tháº©m quyá»n tiáº¿p nháº­n vĂ  giáº£i quyáº¿t khiáº¿u náº¡i nĂ y!");
+        }
+
+        HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
+                .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
+
+        if (!"DISPUTED".equalsIgnoreCase(record.getCustomerDecision()) && !"DISPUTED".equalsIgnoreCase(record.getApprovalStatus())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ khĂ´ng á»Ÿ tráº¡ng thĂ¡i khiáº¿u náº¡i tranh cháº¥p!");
+        }
+
+        String action = request.getAction() != null ? request.getAction().trim().toUpperCase() : "";
+        if ("ADJUST_SETTLEMENT".equals(action)) {
+            int nextVersion = (record.getSettlementVersion() != null ? record.getSettlementVersion() : 1) + 1;
+
+            if (request.getAdjustedDoorFee() != null && request.getAdjustedDoorFee().compareTo(BigDecimal.ZERO) >= 0) {
+                record.setDoorFee(request.getAdjustedDoorFee());
+            }
+            if (request.getAdjustedCleaningFee() != null && request.getAdjustedCleaningFee().compareTo(BigDecimal.ZERO) >= 0) {
+                record.setCleanlinessFee(request.getAdjustedCleaningFee());
+            }
+            if (request.getAdjustedWallStructureFee() != null && request.getAdjustedWallStructureFee().compareTo(BigDecimal.ZERO) >= 0) {
+                record.setWallStructureFee(request.getAdjustedWallStructureFee());
+            }
+            if (request.getAdjustedSmartLockFee() != null && request.getAdjustedSmartLockFee().compareTo(BigDecimal.ZERO) >= 0) {
+                record.setSmartLockFee(request.getAdjustedSmartLockFee());
+            }
+            if (request.getAdjustedSmartLockIssueType() != null) {
+                record.setSmartLockIssueType(request.getAdjustedSmartLockIssueType());
+            }
+            if (request.getAdjustedLostCardFee() != null && request.getAdjustedLostCardFee().compareTo(BigDecimal.ZERO) >= 0) {
+                record.setLostCardFee(request.getAdjustedLostCardFee());
+            }
+
+            BigDecimal depositPaid = calculateTotalDepositPaid(booking);
+            BigDecimal overdueDebt = calculateOverdueDebtForBooking(booking);
+            BigDecimal effectiveLockFee = "CUSTOMER_FAULT".equalsIgnoreCase(record.getSmartLockIssueType())
+                    ? (record.getSmartLockFee() != null ? record.getSmartLockFee() : BigDecimal.ZERO) : BigDecimal.ZERO;
+
+            BigDecimal totalProposed = record.getDoorFee().add(record.getCleanlinessFee()).add(record.getWallStructureFee())
+                    .add(effectiveLockFee).add(record.getLostCardFee()).add(overdueDebt);
+            BigDecimal netRefund = depositPaid.subtract(totalProposed).max(BigDecimal.ZERO);
+            BigDecimal additionalDue = totalProposed.subtract(depositPaid).max(BigDecimal.ZERO);
+
+            record.setSettlementVersion(nextVersion);
+            record.setDeductionAmount(totalProposed);
+            record.setRefundAmount(netRefund);
+            record.setAdditionalAmountDue(additionalDue);
+            record.setCustomerDecision("PENDING"); // Requires Customer to review the new adjusted version!
+            record.setApprovalStatus("SETTLEMENT_ADJUSTED");
+            record.setDisputeResolvedBy(operator);
+            record.setDisputeResolvedAt(LocalDateTime.now());
+            record.setDisputeResolutionNote(request.getResolutionNote());
+
+            String logMsg = String.format("[%s] Quáº£n lĂ½ cÆ¡ sá»Ÿ %s ÄĂƒ ÄIá»€U CHá»ˆNH QUYáº¾T TOĂN sang phiĂªn báº£n V%d. Kháº¥u trá»« má»›i: %s VNÄ, HoĂ n: %s VNÄ, Ná»£ thĂªm: %s VNÄ. Ghi chĂº: %s\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), nextVersion, totalProposed, netRefund, additionalDue, request.getResolutionNote());
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[ÄIá»€U CHá»ˆNH QUYáº¾T TOĂN V" + nextVersion + "] " + request.getResolutionNote());
+            record = handoverRecordRepository.save(record);
+            bookingRepository.save(booking);
+
+            // Notify Customer of adjusted version
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                NotificationLog notif = NotificationLog.builder()
+                        .recipient(booking.getCustomer())
+                        .recipientEmail(booking.getCustomer().getEmail())
+                        .recipientName(booking.getCustomer().getFullName())
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Boxora Ä‘Ă£ Ä‘iá»u chá»‰nh quyáº¿t toĂ¡n tráº£ kho V%d [%s]", nextVersion, unit != null ? unit.getUnitCode() : ""))
+                        .content(String.format("Quáº£n lĂ½ cÆ¡ sá»Ÿ Ä‘Ă£ xem xĂ©t khiáº¿u náº¡i vĂ  Ä‘iá»u chá»‰nh quyáº¿t toĂ¡n (V%d). Sá»‘ tiá»n kháº¥u trá»«: %sÄ‘ -> %s. Vui lĂ²ng xem láº¡i vĂ  xĂ¡c nháº­n táº¡i Customer Dashboard.",
+                                nextVersion, totalProposed, (netRefund.compareTo(BigDecimal.ZERO) > 0 ? "HoĂ n: " + netRefund + "Ä‘" : "Ná»™p thĂªm: " + additionalDue + "Ä‘")))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(notif);
+            }
+
+            return calculateSettlement(bookingId, null);
+
+        } else if ("UPHOLD_SETTLEMENT".equals(action)) {
+            record.setDisputeResolvedBy(operator);
+            record.setDisputeResolvedAt(LocalDateTime.now());
+            record.setDisputeResolutionNote(request.getResolutionNote());
+            record.setCustomerDecision("PENDING"); // Customer reviews manager's explanation and responds
+            record.setApprovalStatus("DISPUTE_UPHELD");
+
+            String logMsg = String.format("[%s] Quáº£n lĂ½ cÆ¡ sá»Ÿ %s Báº¢O LÆ¯U Káº¾T QUáº¢ QUYáº¾T TOĂN V%d. LĂ½ do: %s\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, request.getResolutionNote());
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[Báº¢O LÆ¯U QUYáº¾T TOĂN] " + request.getResolutionNote());
+            record = handoverRecordRepository.save(record);
+            bookingRepository.save(booking);
+
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                NotificationLog notif = NotificationLog.builder()
+                        .recipient(booking.getCustomer())
+                        .recipientEmail(booking.getCustomer().getEmail())
+                        .recipientName(booking.getCustomer().getFullName())
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Káº¿t quáº£ giáº£i quyáº¿t khiáº¿u náº¡i tráº£ kho [%s]", unit != null ? unit.getUnitCode() : ""))
+                        .content(String.format("Quáº£n lĂ½ cÆ¡ sá»Ÿ Ä‘Ă£ pháº£n há»“i khiáº¿u náº¡i quyáº¿t toĂ¡n Ä‘Æ¡n %s: %s. Vui lĂ²ng xem chi tiáº¿t táº¡i Customer Dashboard.",
+                                booking.getBookingCode(), request.getResolutionNote()))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(notif);
+            }
+
+            return calculateSettlement(bookingId, null);
+
+        } else {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "HĂ nh Ä‘á»™ng giáº£i quyáº¿t khiáº¿u náº¡i khĂ´ng há»£p lá»‡ (ADJUST_SETTLEMENT hoáº·c UPHOLD_SETTLEMENT).");
+        }
+    }
+
+    @Override
+    @Transactional
+    public ReturnSettlementResponse executePayout(UUID bookingId, com.boxora.dto.request.ReturnPayoutRequest request) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = unit != null ? unit.getFacility() : null;
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+
+        User operator = resolveStaff(null);
+        if (operator == null) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+        String roleName = operator.getRole() != null ? operator.getRole().getName() : "";
+
+        // STRICT RBAC: Only BUSINESS_MANAGER or ADMIN can execute payout!
+        if (!"BUSINESS_MANAGER".equalsIgnoreCase(roleName) && !"ADMIN".equalsIgnoreCase(roleName)) {
+            throw new AppException(ErrorCode.RETURN_UNAUTHORIZED_APPROVAL,
+                    "Chá»‰ Quáº£n lĂ½ váº­n hĂ nh kinh doanh (BUSINESS_MANAGER) hoáº·c Quáº£n trá»‹ viĂªn (ADMIN) má»›i cĂ³ tháº©m quyá»n giáº£i ngĂ¢n hoĂ n tiá»n!");
+        }
+
+        HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
+                .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
+
+        if (!"AGREED".equalsIgnoreCase(record.getCustomerDecision())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "KhĂ¡ch hĂ ng chÆ°a Ä‘á»“ng Ă½ vá»›i káº¿t quáº£ quyáº¿t toĂ¡n. KhĂ´ng thá»ƒ giáº£i ngĂ¢n.");
+        }
+
+        if ("REFUNDED".equalsIgnoreCase(record.getRefundStatus())) {
+            throw new AppException(ErrorCode.RETURN_ALREADY_REFUNDED, "Khoáº£n tiá»n nĂ y Ä‘Ă£ Ä‘Æ°á»£c giáº£i ngĂ¢n hoĂ n táº¥t trÆ°á»›c Ä‘Ă³.");
+        }
+
+        BigDecimal refundAmount = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
+        if (refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Sá»‘ tiá»n hoĂ n báº±ng 0 VNÄ. KhĂ´ng thá»ƒ thá»±c hiá»‡n giáº£i ngĂ¢n.");
+        }
+
+        if (record.getBankAccountNumber() == null || record.getBankAccountNumber().isBlank()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ chÆ°a cĂ³ thĂ´ng tin tĂ i khoáº£n ngĂ¢n hĂ ng cá»§a khĂ¡ch hĂ ng.");
+        }
+
+        String txnRef = request.getTransactionReference().trim();
+
+        // Update RefundRequest to COMPLETED
+        if (record.getRefundRequest() != null) {
+            RefundRequest r = record.getRefundRequest();
+            r.setStatus(RefundStatus.COMPLETED);
+            r.setProcessedBy(operator);
+            r.setProcessedAt(LocalDateTime.now());
+            r.setTransactionReference(txnRef);
+            if (request.getTransferProofUrl() != null && !request.getTransferProofUrl().isBlank()) {
+                r.setTransferProofUrl(request.getTransferProofUrl().trim());
+            }
+            if (request.getProcessNotes() != null) {
+                r.setProcessNotes(request.getProcessNotes().trim());
+            }
+            refundRequestRepository.save(r);
+        }
+
+        record.setRefundStatus("REFUNDED");
+        record.setRefundTxnRef(txnRef);
+        record.setRefundProcessedAt(LocalDateTime.now());
+        record.setRefundMethod("BANK_TRANSFER");
+        record = handoverRecordRepository.save(record);
+
+        String logMsg = String.format("[%s] Quáº£n lĂ½ %s (%s) ÄĂƒ XĂC NHáº¬N GIáº¢I NGĂ‚N hoĂ n cá»c %s VNÄ vĂ o TK %s - %s (MĂ£ GD: %s)\n",
+                LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), roleName, refundAmount,
+                record.getBankName(), record.getBankAccountNumber(), txnRef);
+        booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+        bookingRepository.save(booking);
+
+        // Notify Customer with proof and amount
+        if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+            NotificationLog notif = NotificationLog.builder()
+                    .recipient(booking.getCustomer())
+                    .recipientEmail(booking.getCustomer().getEmail())
+                    .recipientName(booking.getCustomer().getFullName())
+                    .facility(facility)
+                    .channel(NotificationChannel.IN_APP)
+                    .notificationType(NotificationType.REFUND_PAYOUT_COMPLETED)
+                    .referenceType("BOOKING")
+                    .referenceId(booking.getId())
+                    .title(String.format("Giáº£i ngĂ¢n hoĂ n tiá»n cá»c thĂ nh cĂ´ng [%s]", unit != null ? unit.getUnitCode() : ""))
+                    .content(String.format("Boxora Ä‘Ă£ hoĂ n táº¥t chuyá»ƒn khoáº£n sá»‘ tiá»n %s VNÄ vĂ o tĂ i khoáº£n ngĂ¢n hĂ ng %s (%s) cá»§a báº¡n. MĂ£ giao dá»‹ch ngĂ¢n hĂ ng: %s.",
+                            refundAmount, record.getBankName(), record.getBankAccountNumber(), txnRef))
+                    .status("SENT")
+                    .build();
+            notificationLogRepository.save(notif);
+        }
+
+        activityLogService.record(
+                facility != null ? facility.getId() : null,
+                ActivityAction.REFUND_REQUEST_CREATE,
+                "HandoverRecord",
+                record.getId(),
+                String.format("Giáº£i ngĂ¢n hoĂ n tiá»n cá»c %s VNÄ cho Ä‘Æ¡n %s (MĂ£ GD: %s)", refundAmount, booking.getBookingCode(), txnRef),
+                null,
+                null
         );
 
         return calculateSettlement(bookingId, null);
