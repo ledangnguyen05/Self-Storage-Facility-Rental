@@ -130,6 +130,8 @@ class ReportServiceTest {
         RevenueReportResponse report = reportService.getRevenueReport(fromDate, toDate, selectedFacilityId);
 
         assertThat(report.getSystemSummary().getPaymentCount()).isEqualTo(3L);
+        assertThat(report.getSystemSummary().getNetRevenue()).isEqualByComparingTo("250");
+        assertThat(report.getSystemSummary().getTotalCashIn()).isEqualByComparingTo("350");
         assertThat(report.getMonthlyRevenue()).hasSize(1);
         assertThat(report.getMonthlyRevenue().get(0).getMonth()).isEqualTo("2026-03");
         assertThat(report.getMonthlyRevenue().get(0).getTotalRevenue()).isEqualByComparingTo("350");
