@@ -16,4 +16,6 @@ public class RevenueReportResponse {
     private List<FacilityRevenueResponse> byFacility;
     private List<RevenueMonthSummaryResponse> monthlyRevenue;
     private List<PaymentMethodSummaryResponse> paymentsByMethod;
+    private DebtBreakdownResponse debtBreakdown;
+    private RefundBreakdownResponse refundBreakdown;
 }

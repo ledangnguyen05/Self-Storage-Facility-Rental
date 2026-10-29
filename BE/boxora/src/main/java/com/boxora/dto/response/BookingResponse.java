@@ -63,4 +63,6 @@ public class BookingResponse {
     private String contractStatus;
     private Boolean contractSigned;
     private LocalDateTime checkinOverdueReminderSentAt;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 }

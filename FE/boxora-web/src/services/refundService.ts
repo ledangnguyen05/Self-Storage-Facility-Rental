@@ -12,7 +12,9 @@ export interface RefundCreatePayload {
 }
 
 export interface RefundReviewPayload {
-  approved: boolean
+  action?: 'APPROVE' | 'REJECT'
+  approved?: boolean
+  reviewNote?: string
   reviewNotes?: string
   rejectionReason?: string
 }
@@ -121,7 +123,12 @@ export const refundService = {
   },
 
   async reviewRefund(id: string, data: RefundReviewPayload): Promise<RefundRequestItem> {
-    const response = await api.put(`/api/v1/refunds/${id}/review`, data)
+    const payload = {
+      action: data.action || (data.approved ? 'APPROVE' : 'REJECT'),
+      reviewNote: data.reviewNote || data.reviewNotes || '',
+      rejectionReason: data.rejectionReason || data.reviewNotes || ''
+    }
+    const response = await api.put(`/api/v1/refunds/${id}/review`, payload)
     return response.data?.data as RefundRequestItem
   },
 

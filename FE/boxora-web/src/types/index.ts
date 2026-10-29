@@ -570,6 +570,32 @@ export interface MonthlyRevenueBreakdown {
   total: number
 }
 
+export interface DebtBreakdown {
+  gracePeriodAmount: number
+  gracePeriodCount: number
+  warningAmount: number
+  warningCount: number
+  accessBlockedAmount: number
+  accessBlockedCount: number
+  eligibleForSealingAmount: number
+  eligibleForSealingCount: number
+  totalDebt: number
+  totalCount: number
+}
+
+export interface RefundBreakdown {
+  completedRefundAmount: number
+  completedRefundCount: number
+  pendingReviewAmount: number
+  pendingReviewCount: number
+  processingTransferAmount: number
+  processingTransferCount: number
+  rejectedRefundAmount: number
+  rejectedRefundCount: number
+  totalRequestedAmount: number
+  totalRefundRequests: number
+}
+
 export interface RevenueReport {
   fromDate?: string
   toDate?: string
@@ -585,7 +611,14 @@ export interface RevenueReport {
     bookingPaymentRevenue?: number
     paymentCount: number
     netRevenue?: number
+    totalCashIn?: number
     totalCollected?: number
+    rentalRevenue?: number
+    totalOverdueDebt?: number
+    depositsHeld?: number
+    refundedAmount?: number
+    pendingRefundAmount?: number
+    pendingReconciliationCount?: number
   }
   byFacility?: Array<{
     facilityId: string
@@ -598,22 +631,32 @@ export interface RevenueReport {
     bookingPaymentRevenue?: number
     paymentCount?: number
     netRevenue?: number
+    totalCashIn?: number
     totalCollected?: number
+    rentalRevenue?: number
+    totalOverdueDebt?: number
+    depositsHeld?: number
+    refundedAmount?: number
+    pendingRefundAmount?: number
   }>
-    monthlyRevenue?: Array<{
-      month: string | null
-      totalRevenue: number
-      rentalFeeRevenue: number
-      depositRevenue: number
-      renewalFeeRevenue: number
-      extraChargeRevenue: number
-      bookingPaymentRevenue: number
-      paymentCount: number
-    }>
-    paymentsByMethod?: Array<{
-      paymentMethod: string | null
-      paymentCount: number
-    }>
+  monthlyRevenue?: Array<{
+    month: string | null
+    totalRevenue: number
+    rentalFeeRevenue: number
+    depositRevenue: number
+    renewalFeeRevenue: number
+    extraChargeRevenue: number
+    bookingPaymentRevenue: number
+    paymentCount: number
+  }>
+  paymentsByMethod?: Array<{
+    paymentMethod: string | null
+    paymentCount: number
+    totalAmount?: number
+    reconciledAmount?: number
+  }>
+  debtBreakdown?: DebtBreakdown
+  refundBreakdown?: RefundBreakdown
 }
 
 export interface OverdueDebtReport {

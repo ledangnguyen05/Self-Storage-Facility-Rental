@@ -882,6 +882,22 @@ public class BookingServiceImpl implements BookingService {
                     return true;
                 })
                 .sorted((a, b) -> {
+                    String role = requestContext != null ? requestContext.currentUserRole() : null;
+                    boolean isManagement = "ADMIN".equalsIgnoreCase(role) || "BUSINESS_MANAGER".equalsIgnoreCase(role);
+                    if (isManagement) {
+                        LocalDateTime c1 = a.getCreatedAt();
+                        LocalDateTime c2 = b.getCreatedAt();
+                        if (c1 != null && c2 != null) {
+                            int cmp = c2.compareTo(c1);
+                            if (cmp != 0) return cmp;
+                        } else if (c2 != null) {
+                            return 1;
+                        } else if (c1 != null) {
+                            return -1;
+                        }
+                        return (b.getBookingCode() != null ? b.getBookingCode() : "")
+                                .compareTo(a.getBookingCode() != null ? a.getBookingCode() : "");
+                    }
                     LocalDateTime t1 = a.getExpectedCheckInAt() != null ? a.getExpectedCheckInAt() : a.getStartDate().atStartOfDay();
                     LocalDateTime t2 = b.getExpectedCheckInAt() != null ? b.getExpectedCheckInAt() : b.getStartDate().atStartOfDay();
                     if ("PAST".equalsIgnoreCase(timeframe)) {
@@ -2076,6 +2092,8 @@ public class BookingServiceImpl implements BookingService {
                 .contractStatus(contractStatus)
                 .contractSigned(contractSigned)
                 .checkinOverdueReminderSentAt(b.getCheckinOverdueReminderSentAt())
+                .createdAt(b.getCreatedAt())
+                .updatedAt(b.getUpdatedAt())
                 .build();
     }
 

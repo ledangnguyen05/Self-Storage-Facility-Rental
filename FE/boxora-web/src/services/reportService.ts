@@ -30,4 +30,16 @@ export const reportService = {
     })
     return response.data?.data as OverdueDebtReport
   },
+
+  async exportRevenueCsv(fromDate?: string, toDate?: string, facilityId?: string) {
+    const response = await api.get('/api/v1/reports/revenue/export', {
+      params: {
+        fromDate: fromDate || undefined,
+        toDate: toDate || undefined,
+        facilityId: facilityId && facilityId !== 'all' ? facilityId : undefined,
+      },
+      responseType: 'blob',
+    })
+    return response.data as Blob
+  },
 }

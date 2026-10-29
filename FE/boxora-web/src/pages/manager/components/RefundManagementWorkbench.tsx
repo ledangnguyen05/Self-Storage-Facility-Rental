@@ -159,7 +159,43 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
         recipientEmail: recipientEmail.trim()
       })
 
-      toast.success(`Đã xác nhận chuyển tiền ${formatVND(selectedRefund.finalRefundAmount)} cho khách hàng!`)
+      // Đồng bộ localStorage và giải phóng trạng thái giữ buồng kho
+      try {
+        const rawRes = localStorage.getItem('boxora_guest_reservations')
+        if (rawRes) {
+          const list = JSON.parse(rawRes)
+          if (Array.isArray(list)) {
+            const updated = list.map((item: any) => {
+              const match =
+                (selectedRefund.bookingCode && item.bookingCode === selectedRefund.bookingCode) ||
+                (selectedRefund.bookingId && (item.id === selectedRefund.bookingId || item.backendBookingId === selectedRefund.bookingId))
+              if (match) {
+                return {
+                  ...item,
+                  status: 'CANCELLED',
+                  paymentStatus: 'REFUNDED',
+                  refundStatus: 'AWAITING_CUSTOMER_CONFIRMATION'
+                }
+              }
+              return item
+            })
+            localStorage.setItem('boxora_guest_reservations', JSON.stringify(updated))
+          }
+        }
+      } catch (storageErr) {
+        console.warn('Sync boxora_guest_reservations error:', storageErr)
+      }
+
+      // Phát các sự kiện toàn hệ thống để cập nhật lại số lượng buồng kho còn trống
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: selectedRefund.bookingCode, status: 'CANCELLED' }
+      }))
+      window.dispatchEvent(new CustomEvent('boxora_rental_updated'))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
+      toast.success(`Đã xác nhận chuyển tiền ${formatVND(selectedRefund.finalRefundAmount)} cho khách hàng! Số lượng buồng kho đã được giải phóng.`)
       setIsProcessModalOpen(false)
       setSelectedRefund(null)
       fetchRefunds()
@@ -184,10 +220,17 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
     try {
       setIsSubmitting(true)
       await refundService.reviewRefund(selectedRefund.id, {
+        action: 'REJECT',
         approved: false,
         rejectionReason: rejectionReason.trim(),
+        reviewNote: rejectionReason.trim(),
         reviewNotes: rejectionReason.trim()
       })
+
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: selectedRefund.bookingCode, status: 'REJECTED' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
 
       toast.info(`Đã từ chối yêu cầu hoàn tiền #${selectedRefund.requestCode}`)
       setIsRejectModalOpen(false)

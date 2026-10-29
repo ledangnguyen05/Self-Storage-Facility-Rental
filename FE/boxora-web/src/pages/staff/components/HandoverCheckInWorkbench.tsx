@@ -1050,6 +1050,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     }
   }
 
+  const scrollToCheckInQueue = () => {
+    const el = document.getElementById('checkin-queue-table') ||
+      document.getElementById('checkin-queue-container') ||
+      document.querySelector('[data-checkin-queue]')
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      el.classList.add('ring-2', 'ring-cyan-500/50')
+      setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-cyan-500/50')
+      }, 1500)
+    }
+  }
+
   const handleFinishAndNavigateToQueue = () => {
     setHandoverSuccessModalData(null)
     setSelectedBookingId('')
@@ -1057,10 +1070,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       onSelectBooking('')
     }
     setTimeout(() => {
-      const queueEl = document.getElementById('checkin-queue-table') || document.getElementById('checkin-queue-container')
-      if (queueEl) {
-        queueEl.scrollIntoView({ behavior: 'smooth' })
-      }
+      scrollToCheckInQueue()
     }, 100)
   }
 
@@ -1104,10 +1114,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             )}
             <button
               type="button"
-              onClick={() => {
-                const el = document.getElementById('checkin-queue-table') || document.getElementById('checkin-queue-container')
-                if (el) el.scrollIntoView({ behavior: 'smooth' })
-              }}
+              onClick={scrollToCheckInQueue}
               className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm shadow-blue-600/30 transition cursor-pointer"
             >
               <span>Xem danh sách chờ check-in</span>

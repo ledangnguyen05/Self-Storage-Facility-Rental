@@ -48,6 +48,8 @@ public class RefundServiceImpl implements RefundService {
     private final RefundRequestRepository refundRequestRepository;
     private final BookingRepository bookingRepository;
     private final RentalContractRepository rentalContractRepository;
+    private final StorageUnitRepository storageUnitRepository;
+    private final com.boxora.service.StorageUnitLockService storageUnitLockService;
     private final UserRepository userRepository;
     private final NotificationLogRepository notificationLogRepository;
     private final PaymentRepository paymentRepository;
@@ -367,8 +369,15 @@ public class RefundServiceImpl implements RefundService {
             linkedBooking.setStepTransitionHistory((linkedBooking.getStepTransitionHistory() != null ? linkedBooking.getStepTransitionHistory() : "") + logMsg);
             linkedBooking.setPaymentStatus("REFUNDED");
             linkedBooking.setStatus(BookingStatus.CANCELLED);
+            linkedBooking.setHoldExpiresAt(null);
+            linkedBooking.setPaymentExpiresAt(null);
+            linkedBooking.setAccessPin(null);
+            linkedBooking.setQrAccessToken("REVOKED_REFUNDED");
             bookingRepository.save(linkedBooking);
         }
+
+        // Giải phóng ô kho vật lý và chấm dứt hợp đồng liên kết nếu có
+        releaseUnitAndContractIfAny(refund, linkedBooking);
 
         User customer = refund.getCustomer();
         if (customer == null && refund.getBooking() != null) {
@@ -511,6 +520,8 @@ public class RefundServiceImpl implements RefundService {
 
         refund = refundRequestRepository.save(refund);
 
+        releaseUnitAndContractIfAny(refund, refund.getBooking());
+
         activityLogService.record(
                 refund.getFacility() != null ? refund.getFacility().getId() : null,
                 ActivityAction.REFUND_CONFIRM,
@@ -558,6 +569,8 @@ public class RefundServiceImpl implements RefundService {
         }
 
         refund = refundRequestRepository.save(refund);
+
+        releaseUnitAndContractIfAny(refund, refund.getBooking());
 
         activityLogService.record(
                 refund.getFacility() != null ? refund.getFacility().getId() : null,
@@ -677,6 +690,63 @@ public class RefundServiceImpl implements RefundService {
                 .reconciledAt(r.getReconciledAt())
                 .reconciliationNotes(r.getReconciliationNotes())
                 .build();
+    }
+
+    private void releaseUnitAndContractIfAny(RefundRequest refund, Booking linkedBooking) {
+        if (refund == null) return;
+
+        // 1. Tìm StorageUnit vật lý từ Booking hoặc Hợp đồng
+        StorageUnit unitToRelease = null;
+        if (linkedBooking != null && linkedBooking.getStorageUnit() != null) {
+            unitToRelease = linkedBooking.getStorageUnit();
+        } else if (refund.getContract() != null && refund.getContract().getUnit() != null) {
+            unitToRelease = refund.getContract().getUnit();
+        } else if (linkedBooking != null) {
+            RentalContract contract = rentalContractRepository.findByBookingId(linkedBooking.getId()).orElse(null);
+            if (contract != null && contract.getUnit() != null) {
+                unitToRelease = contract.getUnit();
+            }
+        }
+
+        // 2. Nếu tìm thấy StorageUnit, chuyển trạng thái về AVAILABLE và giải phóng khóa Redis/Memory
+        if (unitToRelease != null) {
+            UnitStatus oldUnitStatus = unitToRelease.getStatus();
+            unitToRelease.setStatus(UnitStatus.AVAILABLE);
+            storageUnitRepository.save(unitToRelease);
+            try {
+                storageUnitLockService.releaseLock(unitToRelease.getId());
+            } catch (Exception ex) {
+                log.warn("Notice: releaseLock error for unit {}: {}", unitToRelease.getId(), ex.getMessage());
+            }
+
+            UUID facId = unitToRelease.getFacility() != null ? unitToRelease.getFacility().getId()
+                    : (refund.getFacility() != null ? refund.getFacility().getId() : null);
+
+            activityLogService.record(
+                    facId,
+                    ActivityAction.STORAGE_UNIT_RELEASE,
+                    "StorageUnit",
+                    unitToRelease.getId(),
+                    String.format("Giải phóng ngăn kho %s về trạng thái AVAILABLE sau khi chi trả hoàn tiền thành công cho đơn %s (Mã hoàn: %s)",
+                            unitToRelease.getUnitCode(),
+                            linkedBooking != null ? linkedBooking.getBookingCode() : "N/A",
+                            refund.getRequestCode()),
+                    oldUnitStatus != null ? oldUnitStatus.name() : null,
+                    UnitStatus.AVAILABLE.name()
+            );
+        }
+
+        // 3. Chấm dứt hợp đồng liên kết nếu chưa kết thúc
+        RentalContract contractToTerminate = refund.getContract();
+        if (contractToTerminate == null && linkedBooking != null) {
+            contractToTerminate = rentalContractRepository.findByBookingId(linkedBooking.getId()).orElse(null);
+        }
+        if (contractToTerminate != null
+                && contractToTerminate.getStatus() != RentalContractStatus.TERMINATED
+                && contractToTerminate.getStatus() != RentalContractStatus.CANCELLED) {
+            contractToTerminate.setStatus(RentalContractStatus.TERMINATED);
+            rentalContractRepository.save(contractToTerminate);
+        }
     }
 
     private String maskAccountNumber(String accountNumber) {

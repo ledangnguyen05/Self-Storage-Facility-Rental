@@ -154,7 +154,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/claim-reception")
-    @PreAuthorize("hasAnyAuthority('BOOKING_UPDATE', 'HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAnyAuthority('BOOKING_UPDATE', 'HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'FACILITY_STAFF')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Tiếp nhận lượt khách check-in tại quầy cơ sở")
     public ResponseEntity<ApiResponse<BookingResponse>> claimReception(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(

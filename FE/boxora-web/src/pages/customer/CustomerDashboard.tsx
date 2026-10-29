@@ -529,6 +529,48 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   const activeContracts = contracts.filter(c => c.status === 'ACTIVE' || c.status === 'OVERDUE')
   const activatedContracts = contracts.filter(c => c.status === 'ACTIVE')
+
+  // Merge active bookings that have unit assigned into effectiveActiveContracts to guarantee
+  // the customer always sees their handed-over locker in "Kho của tôi & Mã PIN" even before contract list refetches
+  const effectiveActiveContracts = useMemo(() => {
+    const list = [...activeContracts]
+    const existingUnitCodes = new Set(list.map(c => (c.unitCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '')))
+    const existingBookingIds = new Set(list.map(c => c.bookingId).filter(Boolean))
+
+    customerBookings.forEach(b => {
+      if ((b.status === 'ACTIVE' || b.status === 'COMPLETED') && b.unitCode) {
+        const cleanU = b.unitCode.toUpperCase().replace(/[^A-Z0-9]/g, '')
+        if (!existingUnitCodes.has(cleanU) && !existingBookingIds.has(b.id)) {
+          list.push({
+            id: `contract-${b.id}`,
+            contractCode: (b as any).contractCode || `CTR-${b.bookingCode}`,
+            bookingId: b.id,
+            customerId: b.customerId,
+            customerName: b.customerName,
+            customerPhone: b.customerPhone,
+            customerEmail: b.customerEmail,
+            unitCode: b.unitCode,
+            unitTypeId: b.unitTypeId,
+            unitTypeName: b.unitTypeName,
+            facilityId: b.facilityId,
+            facilityName: b.facilityName,
+            startDate: b.startDate,
+            endDate: b.endDate,
+            monthlyFee: b.totalRentalFee || 0,
+            rentalPricePerMonth: b.totalRentalFee || 0,
+            status: 'ACTIVE',
+            createdAt: b.createdAt,
+          } as any)
+          existingUnitCodes.add(cleanU)
+        }
+      }
+    })
+    return list
+  }, [activeContracts, customerBookings])
+
+  const effectiveActivatedContracts = useMemo(() => {
+    return effectiveActiveContracts.filter(c => c.status === 'ACTIVE')
+  }, [effectiveActiveContracts])
   const nextPaymentDeadline = activatedContracts
     .map(contract => nextMonthlyPaymentDate(contract.startDate))
     .filter((date): date is Date => date !== null)
@@ -596,10 +638,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Automatically default to 'bookings' when customer has no active contracts
   useEffect(() => {
-    if (!tabParam && !loadingContracts && activeContracts.length === 0) {
+    if (!tabParam && !loadingContracts && effectiveActiveContracts.length === 0) {
       setActiveTab('bookings')
     }
-  }, [tabParam, loadingContracts, activeContracts.length])
+  }, [tabParam, loadingContracts, effectiveActiveContracts.length])
 
   const handleTabChange = (tab: CustomerPortalTab) => {
     setActiveTab(tab)
@@ -608,20 +650,70 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   const handleGoToMyUnit = (unitCode?: string) => {
     setActiveTab('my-units')
+    setMyUnitsSearchTerm('')
+    setMyUnitsFacility('all')
+    setMyUnitsFloor('all')
+    setMyUnitsSize('all')
     if (unitCode) {
       setSearchParams({ tab: 'my-units', unit: unitCode })
       setHighlightedUnitCode(unitCode)
-      setTimeout(() => {
+      const tryScroll = () => {
         const clean = unitCode.toLowerCase().replace(/[^a-z0-9]/g, '')
-        const el = document.getElementById(`unit-card-${clean}`)
+        const el = document.getElementById(`unit-card-${clean}`) || document.getElementById(`unit-card-${unitCode}`)
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          return true
         }
-      }, 150)
+        return false
+      }
+      setTimeout(tryScroll, 120)
+      setTimeout(tryScroll, 350)
+      setTimeout(tryScroll, 700)
     } else {
       setSearchParams({ tab: 'my-units' })
     }
   }
+
+  // Listen for navigation event from embedded or external components
+  useEffect(() => {
+    const handleCustomerTabNav = (e: any) => {
+      const detail = e.detail
+      if (detail?.tab && validCustomerTabs.includes(detail.tab)) {
+        setActiveTab(detail.tab)
+        if (detail.unitCode) {
+          handleGoToMyUnit(detail.unitCode)
+        } else {
+          setSearchParams({ tab: detail.tab })
+        }
+      }
+    }
+    window.addEventListener('boxora:navigate-customer-tab', handleCustomerTabNav)
+    return () => window.removeEventListener('boxora:navigate-customer-tab', handleCustomerTabNav)
+  }, [])
+
+  const unitParam = searchParams.get('unit') || searchParams.get('unitCode')
+  useEffect(() => {
+    if (unitParam) {
+      setHighlightedUnitCode(unitParam)
+      const clean = unitParam.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const tryScroll = () => {
+        const el = document.getElementById(`unit-card-${clean}`) || document.getElementById(`unit-card-${unitParam}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          return true
+        }
+        return false
+      }
+      const t1 = setTimeout(tryScroll, 150)
+      const t2 = setTimeout(tryScroll, 450)
+      const t3 = setTimeout(tryScroll, 800)
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+        clearTimeout(t3)
+      }
+    }
+  }, [unitParam, activeTab, loadingContracts, effectiveActiveContracts.length])
 
   const getBookingNoticeInfo = useCallback((b: Booking) => {
     const matchingContract =
@@ -2488,18 +2580,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleTabChange('history')}
-              className={`px-3.5 py-2.5 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs ${
-                activeTab === 'history'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">history</span>
-              <span>Xem lịch sử ({unitHistoryCounts.all})</span>
-            </button>
 
             <button
               onClick={() => handleTabChange('support')}
@@ -2522,9 +2602,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Kho đang thuê</span>
-              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{activatedContracts.length} Kho Hoạt Động</span>
+              <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{effectiveActivatedContracts.length} Kho Hoạt Động</span>
               <span className="text-xs text-slate-500 truncate">
-                {activatedContracts.length > 0 ? activatedContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
+                {effectiveActivatedContracts.length > 0 ? effectiveActivatedContracts.map(c => `#${c.unitCode}`).join(' & ') : 'Chưa có kho hoạt động'}
               </span>
             </div>
           </div>
@@ -2589,7 +2669,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-2xs">
           <div className="flex flex-wrap items-center gap-1.5">
             {[
-              { id: 'my-units', label: 'Kho của tôi & Mã PIN', icon: 'inventory_2', badge: activatedContracts.length },
+              { id: 'my-units', label: 'Kho của tôi & Mã PIN', icon: 'inventory_2', badge: effectiveActivatedContracts.length },
               { id: 'history', label: 'Lịch sử thao tác & Thông báo', icon: 'history', badge: unitHistoryCounts.all },
               { id: 'bookings', label: 'Đơn đặt giữ chỗ', icon: 'pending_actions', badge: customerBookings.length },
               { id: 'contracts', label: 'Hợp đồng & Hóa đơn', icon: 'receipt_long', badge: visibleContracts.length },
@@ -2649,7 +2729,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         <div className="flex flex-col gap-6">
           {activeTab === 'my-units' && (loadingContracts ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
-          ) : activeContracts.length === 0 ? (
+          ) : effectiveActiveContracts.length === 0 ? (
             <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-5 max-w-2xl mx-auto my-6 border-dashed border-2 border-slate-200">
               <div className="w-20 h-20 rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-inner">
                 <span className="material-symbols-outlined text-[42px]">lock_clock</span>
@@ -2688,7 +2768,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {activeContracts.map((c) => {
+              {effectiveActiveContracts.map((c) => {
                 const targetId = c.bookingId || c.id
                 const pin = loadedPins[c.unitCode] || (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
                 const isRevealed = revealedPins[c.unitCode]
@@ -2704,8 +2784,26 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     r.status === 'PENDING_PAYMENT'
                 )
                 const completedUnitRenewals = unitRenewals.filter(r => r.status === 'COMPLETED')
+                const cleanUnit = (c.unitCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                const isHighlighted = Boolean(
+                  highlightedUnitCode &&
+                  c.unitCode &&
+                  (
+                    c.unitCode.toUpperCase() === highlightedUnitCode.toUpperCase() ||
+                    cleanUnit === highlightedUnitCode.toLowerCase().replace(/[^a-z0-9]/g, '')
+                  )
+                )
+
                 return (
-                  <div key={c.id} className="stitch-card p-6 flex flex-col justify-between">
+                  <div
+                    key={c.id}
+                    id={`unit-card-${cleanUnit}`}
+                    className={`stitch-card p-6 flex flex-col justify-between transition-all duration-500 relative ${
+                      isHighlighted
+                        ? 'ring-4 ring-emerald-500 border-emerald-500 shadow-2xl shadow-emerald-500/35 bg-emerald-50/15 dark:bg-emerald-950/20 scale-[1.01] z-10'
+                        : 'hover:border-slate-300 hover:shadow-md'
+                    }`}
+                  >
                     <div className="flex flex-col gap-4">
                       <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
@@ -2719,8 +2817,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </span>
                           </div>
                           <div className="flex flex-col">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-mono text-base font-extrabold text-slate-900">KHO #{c.unitCode}</span>
+                              {isHighlighted && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-600 text-white shadow-md shadow-emerald-600/30 animate-pulse">
+                                  <span className="material-symbols-outlined text-[13px]">verified</span>
+                                  <span>Kho đang chọn</span>
+                                </span>
+                              )}
                               {c.status === 'OVERDUE' ? (
                                 <span className="stitch-badge bg-rose-50 text-rose-700 border border-rose-200">
                                   <span className="pulsing-dot bg-rose-500"></span>
@@ -3576,7 +3680,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       {/* 4. TAB: LỊCH SỬ ĐẶT GIỮ CHỖ (BOOKING RESERVATIONS HISTORY) */}
       {activeTab === 'bookings' && (
-        <MyBookingsPage embedded={true} />
+        <MyBookingsPage
+          embedded={true}
+          onGoToMyUnit={handleGoToMyUnit}
+        />
       )}
 
       {false && activeTab === 'bookings' && (
@@ -4092,7 +4199,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </span>
                             <button
                               type="button"
-                              onClick={() => handleTabChange('my-units')}
+                              onClick={() => handleGoToMyUnit(b.unitCode || undefined)}
                               className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline cursor-pointer"
                             >
                               Xem mã PIN cửa kho
@@ -4115,7 +4222,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         {b.status === 'ACTIVE' ? (
                           <button
                             type="button"
-                            onClick={() => handleTabChange('my-units')}
+                            onClick={() => handleGoToMyUnit(b.unitCode || undefined)}
                             className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
                           >
                             <span>Vào kho</span>

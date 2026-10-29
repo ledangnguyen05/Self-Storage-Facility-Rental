@@ -201,19 +201,6 @@ export const DashboardLayout: React.FC = () => {
 
           {/* Right Tools: Notifications, User Profile */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            {role === 'CUSTOMER' && (
-              <Link
-                to="/portal/customer?tab=history"
-                className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                  isCurrentPath('/portal/customer') && new URLSearchParams(location.search).get('tab') === 'history'
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                    : 'bg-blue-50/80 hover:bg-blue-100 text-blue-700 border-blue-200'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[16px]">history</span>
-                <span>Xem lịch sử</span>
-              </Link>
-            )}
             <QuickThemeLanguageToggle />
             <NotificationCenter userId={user?.id} />
 

@@ -124,7 +124,9 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     // Keep unrecognized and null channels as their own groups so the dashboard can show them
     // as unknown instead of silently assigning them to a known payment method.
     @Query("""
-            SELECT p.paymentMethod, COUNT(p)
+            SELECT p.paymentMethod, COUNT(p),
+                COALESCE(SUM(p.amount), 0),
+                COALESCE(SUM(CASE WHEN p.confirmedAt IS NOT NULL OR UPPER(p.paymentMethod) = 'VNPAY' THEN p.amount ELSE 0 END), 0)
             FROM Payment p
             LEFT JOIN p.booking b
             LEFT JOIN b.storageUnit bSu

@@ -17,17 +17,25 @@ export interface PaymentItem {
   bookingId?: string
   bookingCode?: string
   contractId?: string
+  contractCode?: string
   unitCode?: string
+  facilityId?: string
   facilityName?: string
   customerName?: string
   amount: number
   paymentType: PaymentType | string
   status: 'PENDING' | 'PAID' | 'FAILED' | 'EXPIRED' | 'REFUND_PENDING' | 'REFUNDED' | string
-  paymentMethod?: 'VNPAY' | 'BANK_TRANSFER' | string
+  reconciliationStatus?: 'RECONCILED' | 'AUTO_RECONCILED' | 'PENDING_RECONCILIATION' | 'UNRECONCILED' | string
+  paymentMethod?: 'VNPAY' | 'BANK_TRANSFER' | 'CASH' | string
   paymentTime?: string
   createdAt?: string
   proofDocumentUrl?: string | null
   receiptVoucherCode?: string | null
+  referenceCode?: string | null
+  collectedByName?: string | null
+  confirmedByName?: string | null
+  confirmedAt?: string | null
+  paymentNotes?: string | null
 }
 
 export interface PaymentPage {
@@ -69,7 +77,7 @@ export const paymentService = {
 
   async getPaymentsPage(params?: {
     status?: string
-    paymentType?: PaymentType
+    paymentType?: PaymentType | string
     fromDate?: string
     toDate?: string
     size?: number

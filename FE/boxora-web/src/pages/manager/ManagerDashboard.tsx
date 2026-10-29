@@ -121,6 +121,8 @@ export const ManagerDashboard: React.FC = () => {
   }>() || {}
 
   const isAdmin = role === 'ADMIN'
+  const rawRole = (typeof user?.role === 'string' ? user?.role : user?.role?.name || user?.roleName || role || '').toUpperCase()
+  const isManagementRole = rawRole === 'ADMIN' || rawRole === 'BUSINESS_MANAGER' || role === 'ADMIN' || role === 'BUSINESS_MANAGER'
   const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
   const assignedFacilityId = user?.facilityId
 
@@ -174,6 +176,11 @@ export const ManagerDashboard: React.FC = () => {
   const [hasPolicyException, setHasPolicyException] = useState(false)
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  type UnitStatusFilter = 'all' | 'Rented' | 'Available' | 'Pending' | 'Maintenance' | 'Overdue'
+  const validStatuses: UnitStatusFilter[] = ['all', 'Rented', 'Available', 'Pending', 'Maintenance', 'Overdue']
+  const initialStatusParam = searchParams.get('status') as UnitStatusFilter | null
+  const initialStatus: UnitStatusFilter = (initialStatusParam && validStatuses.includes(initialStatusParam)) ? initialStatusParam : 'all'
+  const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>(initialStatus)
   const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -219,7 +226,7 @@ export const ManagerDashboard: React.FC = () => {
 
   // Handover / Reception pagination
   const [handoverPage, setHandoverPage] = useState<number>(1)
-  const [handoverPageSize] = useState<number>(5)
+  const [handoverPageSize, setHandoverPageSize] = useState<number>(10)
 
   // Expiring rentals / Return inspection pagination
   const [rentalPage, setRentalPage] = useState<number>(1)
@@ -254,6 +261,8 @@ export const ManagerDashboard: React.FC = () => {
     booking?: Booking | null
   } | null>(null)
   const [readOnlyTargetBookingId, setReadOnlyTargetBookingId] = useState<string | undefined>(undefined)
+  const [readOnlyTargetUnitCode, setReadOnlyTargetUnitCode] = useState<string | undefined>(undefined)
+  const [readOnlyTargetUnitBackendId, setReadOnlyTargetUnitBackendId] = useState<string | undefined>(undefined)
   const [showDoorAccessModal, setShowDoorAccessModal] = useState(false)
   const [noticeModalData, setNoticeModalData] = useState<{
     unitCode: string
@@ -327,6 +336,9 @@ export const ManagerDashboard: React.FC = () => {
       }
     }
     if (targetFacility && targetFacility !== 'ALL') {
+      if (targetFacility !== selectedFacilityId) {
+        setStatusFilter('all')
+      }
       setSelectedFacilityId(targetFacility)
       void fetchUnits(targetFacility)
     }
@@ -890,6 +902,10 @@ export const ManagerDashboard: React.FC = () => {
   const permanentFloor2 = permanentZoneC
 
   const isUnitMatchingFilter = (u: InspectedUnit) => {
+    if (statusFilter !== 'all' && u.status !== statusFilter) {
+      return false
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim()
       const matchesSearch = u.id.toLowerCase().includes(q) || 
@@ -912,7 +928,59 @@ export const ManagerDashboard: React.FC = () => {
 
   const floor1MatchingCount = permanentFloor1.filter(isUnitMatchingFilter).length
   const floor2MatchingCount = permanentFloor2.filter(isUnitMatchingFilter).length
-  const isAnyFilterActive = sizeFilter !== 'all' || searchQuery.trim().length > 0
+  const isAnyFilterActive = statusFilter !== 'all' || sizeFilter !== 'all' || searchQuery.trim().length > 0
+
+  const handleStatusFilterClick = (targetStatus: UnitStatusFilter) => {
+    if (activeTab !== 'overview') {
+      setActiveTab('overview')
+    }
+
+    const nextStatus: UnitStatusFilter = 
+      targetStatus === 'all' 
+        ? 'all' 
+        : statusFilter === targetStatus 
+          ? 'all' 
+          : targetStatus
+
+    setStatusFilter(nextStatus)
+
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (nextStatus === 'all') {
+        next.delete('status')
+      } else {
+        next.set('status', nextStatus)
+      }
+      return next
+    }, { replace: true })
+
+    if (nextStatus !== 'all') {
+      const floor1Matches = permanentFloor1.some(u => u.status === nextStatus)
+      const floor2Matches = permanentFloor2.some(u => u.status === nextStatus)
+
+      let targetFloor: 'floor1' | 'floor2' = selectedFloor
+      if (selectedFloor === 'floor1' && !floor1Matches && floor2Matches) {
+        targetFloor = 'floor2'
+        setSelectedFloor('floor2')
+      } else if (selectedFloor === 'floor2' && !floor2Matches && floor1Matches) {
+        targetFloor = 'floor1'
+        setSelectedFloor('floor1')
+      }
+
+      const targetFloorUnits = (targetFloor === 'floor2' ? permanentFloor2 : permanentFloor1)
+      const firstMatch = targetFloorUnits.find(u => u.status === nextStatus) || units.find(u => u.status === nextStatus)
+      if (firstMatch) {
+        setSelectedUnit(firstMatch)
+      }
+    }
+
+    requestAnimationFrame(() => {
+      const el = document.getElementById('floor-matrix-section')
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    })
+  }
 
   // Dynamic KPI counts
   const totalUnitsCount = units.length
@@ -931,12 +999,31 @@ export const ManagerDashboard: React.FC = () => {
   const facilityProfile = useMemo(() => parseFacilityLayoutConfig(currentFacility?.layoutConfig), [currentFacility])
   const selectedUnitOverdue = overdueItems.find(item => item.unitCode === selectedUnit?.id)
 
+
+  const sortedUpcomingHandovers = useMemo(() => {
+    const list = [...upcomingHandovers]
+    if (isManagementRole) {
+      return list.sort((a, b) => {
+        // Sort by newest created booking first
+        const timeA = a.createdAt
+          ? new Date(a.createdAt).getTime()
+          : (a.startDate ? new Date(a.startDate).getTime() : 0)
+        const timeB = b.createdAt
+          ? new Date(b.createdAt).getTime()
+          : (b.startDate ? new Date(b.startDate).getTime() : 0)
+        if (timeB !== timeA) return timeB - timeA
+        return (b.bookingCode || '').localeCompare(a.bookingCode || '')
+      })
+    }
+    return list
+  }, [upcomingHandovers, isManagementRole])
+
   // Handover & Return paginated datasets
-  const totalHandoverPages = Math.max(1, Math.ceil(upcomingHandovers.length / handoverPageSize))
+  const totalHandoverPages = Math.max(1, Math.ceil(sortedUpcomingHandovers.length / handoverPageSize))
   const paginatedUpcomingHandovers = useMemo(() => {
     const start = (handoverPage - 1) * handoverPageSize
-    return upcomingHandovers.slice(start, start + handoverPageSize)
-  }, [upcomingHandovers, handoverPage, handoverPageSize])
+    return sortedUpcomingHandovers.slice(start, start + handoverPageSize)
+  }, [sortedUpcomingHandovers, handoverPage, handoverPageSize])
 
   const totalRentalPages = Math.max(1, Math.ceil(activeRentals.length / rentalPageSize))
   const paginatedRentals = useMemo(() => {
@@ -1218,13 +1305,24 @@ export const ManagerDashboard: React.FC = () => {
       <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
         
         {/* Total Units */}
-        <div 
-          onClick={() => setActiveTab('overview')}
-          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('all')}
+          title={`Xem tất cả ${totalUnitsCount} kho (Xóa lọc trạng thái)`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'all'
+              ? 'bg-slate-50/80 border-2 border-slate-900 ring-2 ring-slate-900/20 shadow-xs'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Tổng số kho</span>
-            <span className="material-symbols-outlined text-slate-400 text-[20px]">warehouse</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'all' && (
+                <span className="px-1.5 py-0.5 rounded bg-slate-900 text-white text-[9px] font-bold font-mono tracking-tight">Tất cả</span>
+              )}
+              <span className="material-symbols-outlined text-slate-400 text-[20px]">warehouse</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{totalUnitsCount}</span>
@@ -1233,16 +1331,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-slate-900 h-full rounded-full" style={{ width: '100%' }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Rented */}
-        <div 
-          onClick={() => setActiveTab('overview')}
-          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Rented')}
+          title={`Lọc ${rentedUnitsCount} kho đang thuê (${rentedPercent}%) - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Rented'
+              ? 'bg-blue-50/60 border-2 border-blue-600 ring-2 ring-blue-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Đang thuê</span>
-            <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-bold">{rentedPercent}%</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Rented' && (
+                <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-bold">{rentedPercent}%</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{rentedUnitsCount}</span>
@@ -1251,16 +1360,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-blue-600 h-full rounded-full" style={{ width: `${rentedPercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Available */}
-        <div 
-          onClick={() => setActiveTab('overview')}
-          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Available')}
+          title={`Lọc ${availableUnitsCount} kho trống sẵn sàng - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Available'
+              ? 'bg-emerald-50/60 border-2 border-emerald-600 ring-2 ring-emerald-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Kho trống</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Available' && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-emerald-600 leading-none">{availableUnitsCount}</span>
@@ -1269,16 +1389,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${availablePercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Pending */}
-        <div 
-          onClick={() => setActiveTab('overview')}
-          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Pending')}
+          title={`Lọc ${pendingUnitsCount} kho chờ bàn giao - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Pending'
+              ? 'bg-amber-50/60 border-2 border-amber-600 ring-2 ring-amber-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Chờ bàn giao</span>
-            <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Pending' && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-amber-600 leading-none">
@@ -1289,16 +1420,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-amber-500 h-full rounded-full" style={{ width: `${pendingPercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Maintenance */}
-        <div 
-          onClick={() => setActiveTab('overview')}
-          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Maintenance')}
+          title={`Lọc ${maintenanceUnitsCount} kho bảo trì kỹ thuật - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Maintenance'
+              ? 'bg-purple-50/60 border-2 border-purple-600 ring-2 ring-purple-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Bảo trì kỹ thuật</span>
-            <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Maintenance' && (
+                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-purple-600 leading-none">
@@ -1309,16 +1451,27 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-purple-600 h-full rounded-full" style={{ width: `${maintenancePercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
         {/* Overdue */}
-        <div 
-          onClick={() => setActiveTab('overview')}
-          className="p-4 bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 flex flex-col justify-between hover:shadow-md transition cursor-pointer"
+        <button 
+          type="button"
+          onClick={() => handleStatusFilterClick('Overdue')}
+          title={`Lọc ${overdueUnitsCount} kho nợ quá hạn - Click lại để bỏ lọc`}
+          className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
+            statusFilter === 'Overdue'
+              ? 'bg-rose-50/60 border-2 border-rose-600 ring-2 ring-rose-500/25 shadow-md'
+              : 'bg-white border-slate-200 shadow-2xs hover:border-slate-300 hover:shadow-md'
+          }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Nợ quá hạn</span>
-            <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
+            <div className="flex items-center gap-1.5">
+              {statusFilter === 'Overdue' && (
+                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+              )}
+              <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
+            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-rose-700 leading-none">
@@ -1329,7 +1482,7 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-rose-600 h-full rounded-full" style={{ width: `${overduePercent}%` }}></div>
           </div>
-        </div>
+        </button>
 
       </section>
 
@@ -1524,7 +1677,7 @@ export const ManagerDashboard: React.FC = () => {
         <section className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           
           {/* FLOOR MATRIX CANVAS (xl:col-span-8) */}
-          <div className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+          <div id="floor-matrix-section" className="xl:col-span-8 flex flex-col gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200 scroll-mt-6">
             {/* Controls Toolbar */}
             <div className="flex flex-col gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200">
               {/* Floor Selector + Size Dropdown + Search Box + Reset Filter Button */}
@@ -1593,8 +1746,14 @@ export const ManagerDashboard: React.FC = () => {
                     <button 
                       type="button" 
                       onClick={() => {
+                        setStatusFilter('all')
                         setSizeFilter('all')
                         setSearchQuery('')
+                        setSearchParams(prev => {
+                          const next = new URLSearchParams(prev)
+                          next.delete('status')
+                          return next
+                        }, { replace: true })
                       }}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold cursor-pointer whitespace-nowrap transition shadow-2xs"
                       title="Đặt lại toàn bộ bộ lọc"
@@ -1893,7 +2052,7 @@ export const ManagerDashboard: React.FC = () => {
       {activeTab === 'pending_orders' && (
         <PendingReservationsWorkbench
           facilityId={selectedFacilityId || user?.facilityId}
-          arrivals={upcomingHandovers}
+          arrivals={sortedUpcomingHandovers}
           highlightedBookingCode={searchParams.get('bookingCode')}
           onRefresh={() => {
             fetchUpcomingHandovers(selectedFacilityId, checkinTimeframe, checkinFromDate, checkinToDate)
@@ -1957,11 +2116,11 @@ export const ManagerDashboard: React.FC = () => {
                   </span>
                 </h3>
                 <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
-                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng, đối soát CCCD / giấy tờ tùy thân, nghiệm thu hiện trường 5 hạng mục và cấp phát mã PIN bảo mật bàn giao kho.
+                  Quản lý cơ sở trực tiếp tiếp nhận khách hàng theo quy trình 4 bước: (1) Xác thực CCCD, (2) Gán kho vật lý, (3) Hợp đồng &amp; Thanh toán, (4) Cấp mã PIN SmartLock bàn giao kho.
                 </p>
               </div>
             </div>
-            {activeBookingId && !isAdmin && (
+            {activeBookingId && !isManagementRole && (
               <button
                 type="button"
                 onClick={() => setActiveBookingId('')}
@@ -1973,12 +2132,27 @@ export const ManagerDashboard: React.FC = () => {
             )}
           </div>
 
-          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO (Chỉ dành cho Quản lý cơ sở & Nhân viên quầy thực địa, Admin chỉ giám sát) */}
-          {!isAdmin && (
+          {/* BÀN THAO TÁC CHECK-IN & BÀN GIAO KHO: Chỉ dành cho Quản lý cơ sở & Nhân viên quầy thực địa; Admin & Business Manager chỉ ở chế độ giám sát */}
+          {isManagementRole ? (
+            <div className="p-4 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 flex items-start gap-3.5 shadow-xs">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">visibility</span>
+              </div>
+              <div className="text-xs leading-relaxed">
+                <div className="flex items-center gap-2 font-bold text-sm text-blue-950 mb-0.5">
+                  <span>Chế độ giám sát quy trình tiếp nhận &amp; bàn giao kho</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-200 text-blue-800">CHỈ ĐỌC</span>
+                </div>
+                <p className="text-blue-800">
+                  Tài khoản <strong>{role === 'ADMIN' ? 'Quản Trị Viên (Admin)' : 'Quản Lý Kinh Doanh (Business Manager)'}</strong> đang theo dõi danh sách lịch hẹn và đối soát điều kiện check-in ở chế độ giám sát chỉ đọc. Quy trình 4 bước tiếp nhận khách hàng (Xác thực CCCD, Gán kho vật lý, Hợp đồng &amp; Thanh toán, Cấp PIN SmartLock) được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> và <strong>Quản lý cơ sở (Facility Manager)</strong> tại quầy tiếp đón. Bấm <em>"Xem chi tiết"</em> tại từng đơn trong bảng bên dưới để đối soát 3 điều kiện bàn giao.
+                </p>
+              </div>
+            </div>
+          ) : (
             <div id="handover-workbench-section" className="scroll-mt-6">
               <HandoverCheckInWorkbench
                 facilityId={selectedFacilityId || user?.facilityId}
-                arrivals={upcomingHandovers}
+                arrivals={sortedUpcomingHandovers}
                 activeBookingId={activeBookingId}
                 onSelectBooking={setActiveBookingId}
                 onHandoverComplete={(bookingId) => {
@@ -1992,13 +2166,22 @@ export const ManagerDashboard: React.FC = () => {
           )}
 
           {/* Upcoming Handovers Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div
+            id="checkin-queue-table"
+            data-checkin-queue="true"
+            className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm scroll-mt-6 transition-all duration-300"
+          >
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="material-symbols-outlined text-cyan-600 text-[20px]">how_to_reg</span>
                 <h3 className="font-headline text-sm font-bold text-slate-900">
-                  Lịch Hẹn Nhận Kho &amp; Chờ Bàn Giao ({upcomingHandovers.length} đơn)
+                  Lịch Hẹn Nhận Kho &amp; Chờ Bàn Giao ({sortedUpcomingHandovers.length} đơn)
                 </h3>
+                {isManagementRole && (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                    Đơn tạo gần nhất
+                  </span>
+                )}
               </div>
               <span className="text-xs text-slate-500 font-mono">Nhân viên quầy &amp; Quản lý tiếp đón trực tiếp</span>
             </div>
@@ -2065,10 +2248,10 @@ export const ManagerDashboard: React.FC = () => {
               </div>
             </div>
 
-            {upcomingHandovers.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách lọc.</p>
+            {sortedUpcomingHandovers.length === 0 ? (
+              <p className="text-xs text-slate-400 py-12 text-center">Hiện không có lịch hẹn bàn giao kho nào trong danh sách lọc.</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto min-h-[460px] flex flex-col justify-between">
                 <table className="w-full text-left text-xs">
                   <thead>
                     <tr className="bg-slate-50 text-slate-500 font-mono uppercase text-[11px]">
@@ -2096,12 +2279,19 @@ export const ManagerDashboard: React.FC = () => {
                       const isOverdue24h = isInPerson && !b.assignedStaffName && isNotFinished && hoursOverdue >= 24
 
                       return (
-                      <tr key={b.id} className="hover:bg-slate-50/80">
-                        <td className="py-3 px-3">
+                      <tr key={b.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-3">
                           <span className="font-bold text-slate-900 block">{b.customerName || 'N/A'}</span>
                           <span className="text-[11px] text-slate-500 font-mono">{b.customerPhone || 'N/A'}</span>
                         </td>
-                        <td className="py-3 px-3 font-mono font-bold text-slate-900">{b.bookingCode}</td>
+                        <td className="py-3 px-3 font-mono font-bold text-slate-900">
+                          <div>{b.bookingCode}</div>
+                          {b.createdAt && (
+                            <div className="text-[10px] font-sans font-normal text-slate-500 mt-0.5" title="Thời gian tạo đơn">
+                              Tạo: {new Date(b.createdAt).toLocaleDateString('vi-VN')} {new Date(b.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-3 font-mono font-bold text-cyan-800">#{b.unitCode}</td>
                         <td className="py-3 px-3">
                           <div className="font-mono tabular-nums">
@@ -2158,7 +2348,7 @@ export const ManagerDashboard: React.FC = () => {
                                 <span className="material-symbols-outlined text-[14px] text-emerald-600">person_check</span>
                                 <span>{b.assignedStaffName}</span>
                               </div>
-                            ) : (role === 'FACILITY_MANAGER' || role === 'STAFF') && !isAdmin ? (
+                            ) : (role === 'FACILITY_MANAGER' || role === 'STAFF') && !isManagementRole ? (
                               <div className="flex items-center gap-1.5">
                                 <button
                                   type="button"
@@ -2216,6 +2406,8 @@ export const ManagerDashboard: React.FC = () => {
                               type="button"
                               onClick={() => {
                                 setReadOnlyTargetBookingId(b.id)
+                                setReadOnlyTargetUnitCode(b.unitCode || undefined)
+                                setReadOnlyTargetUnitBackendId(b.storageUnitId || undefined)
                                 setShowReadOnlyBookingModal(true)
                               }}
                               className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold text-[11px] transition cursor-pointer"
@@ -2230,16 +2422,23 @@ export const ManagerDashboard: React.FC = () => {
                   </tbody>
                 </table>
 
-                {/* Table 1 Pagination - Centered */}
-                {upcomingHandovers.length > 0 && (
-                  <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-3.5 mt-2 border-t border-slate-100 text-xs text-slate-500">
-                    <div className="text-center md:text-left">
-                      Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedUpcomingHandovers.length}</span> trên tổng số{' '}
-                      <span className="font-semibold text-slate-800 font-mono">{upcomingHandovers.length}</span> đơn hẹn
+                {/* Table 1 Pagination - Centered & Expanded */}
+                {sortedUpcomingHandovers.length > 0 && (
+                  <div className="flex flex-col md:flex-row items-center justify-between gap-3 pt-4 mt-3 border-t border-slate-100 text-xs text-slate-500">
+                    <div className="text-center md:text-left text-xs">
+                      Hiển thị{' '}
+                      <span className="font-semibold text-slate-800 font-mono">
+                        {sortedUpcomingHandovers.length === 0 ? 0 : (handoverPage - 1) * handoverPageSize + 1}
+                      </span>
+                      -
+                      <span className="font-semibold text-slate-800 font-mono">
+                        {Math.min(handoverPage * handoverPageSize, sortedUpcomingHandovers.length)}
+                      </span>{' '}
+                      trên tổng số <span className="font-semibold text-slate-800 font-mono">{sortedUpcomingHandovers.length}</span> đơn hẹn
                     </div>
 
                     {/* Center: Pagination Controls */}
-                    <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
+                    <div className="flex items-center justify-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => setHandoverPage(p => Math.max(1, p - 1))}
@@ -2248,7 +2447,7 @@ export const ManagerDashboard: React.FC = () => {
                         title="Trang trước"
                       >
                         <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                        <span className="hidden md:inline">Trước</span>
+                        <span className="hidden sm:inline">Trước</span>
                       </button>
 
                       <div className="flex items-center gap-1">
@@ -2293,12 +2492,30 @@ export const ManagerDashboard: React.FC = () => {
                         className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-xs font-semibold text-slate-700 transition flex items-center gap-1 shadow-2xs"
                         title="Trang sau"
                       >
-                        <span className="hidden md:inline">Sau</span>
+                        <span className="hidden sm:inline">Sau</span>
                         <span className="material-symbols-outlined text-[16px]">chevron_right</span>
                       </button>
                     </div>
 
-                    <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
+                    {/* Right: Page Size Selector */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-500 hidden sm:inline">Số đơn / trang:</span>
+                      <select
+                        value={handoverPageSize}
+                        onChange={(e) => {
+                          setHandoverPageSize(Number(e.target.value))
+                          setHandoverPage(1)
+                        }}
+                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+                        title="Số lượng đơn hiển thị trên một trang"
+                      >
+                        <option value={5}>5 đơn / trang</option>
+                        <option value={10}>10 đơn / trang</option>
+                        <option value={15}>15 đơn / trang</option>
+                        <option value={20}>20 đơn / trang</option>
+                        <option value={50}>50 đơn / trang</option>
+                      </select>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2791,13 +3008,18 @@ export const ManagerDashboard: React.FC = () => {
         onCreated={handleStorageUnitCreated}
       />
 
-      {/* 4. Read-Only Booking & Prerequisites Detail Modal (FOR FACILITY MANAGER) */}
+      {/* 4. Read-Only Booking & Prerequisites Detail Modal (FOR FACILITY MANAGER / ADMIN / BUSINESS MANAGER) */}
       <BookingDetailReadOnlyModal
         isOpen={showReadOnlyBookingModal}
-        onClose={() => setShowReadOnlyBookingModal(false)}
+        onClose={() => {
+          setShowReadOnlyBookingModal(false)
+          setReadOnlyTargetBookingId(undefined)
+          setReadOnlyTargetUnitCode(undefined)
+          setReadOnlyTargetUnitBackendId(undefined)
+        }}
         bookingId={readOnlyTargetBookingId}
-        unitCode={selectedUnit?.id}
-        unitBackendId={selectedUnit?.backendId}
+        unitCode={readOnlyTargetUnitCode || selectedUnit?.id}
+        unitBackendId={readOnlyTargetUnitBackendId || selectedUnit?.backendId}
       />
 
       {/* 5. Door Access History Modal */}

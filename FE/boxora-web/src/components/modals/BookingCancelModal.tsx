@@ -226,6 +226,33 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
           }
 
       const res = await bookingService.cancelBooking(booking.id, payload)
+
+      // Đồng bộ localStorage và phát sự kiện giải phóng buồng kho
+      try {
+        const raw = localStorage.getItem('boxora_guest_reservations')
+        if (raw) {
+          const list = JSON.parse(raw)
+          if (Array.isArray(list)) {
+            const updated = list.map((item: any) => {
+              if (item.bookingCode === booking.bookingCode || item.id === booking.id || item.backendBookingId === booking.id) {
+                return { ...item, status: 'CANCELLED', cancellationReason: finalReason }
+              }
+              return item
+            })
+            localStorage.setItem('boxora_guest_reservations', JSON.stringify(updated))
+          }
+        }
+      } catch (e) {
+        console.warn('Error updating local reservation status:', e)
+      }
+
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: booking.bookingCode, status: 'CANCELLED' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
       setSuccessResult(res)
       onSuccess(res)
     } catch (err: any) {

@@ -28,6 +28,7 @@ public interface PaymentMapper {
                 response.setUnitCode(entity.getBooking().getStorageUnit().getUnitCode());
                 if (entity.getBooking().getStorageUnit().getFacility() != null) {
                     response.setFacilityName(entity.getBooking().getStorageUnit().getFacility().getName());
+                    response.setFacilityId(entity.getBooking().getStorageUnit().getFacility().getId());
                 }
             }
             if (entity.getBooking().getCustomer() != null) {
@@ -35,15 +36,30 @@ public interface PaymentMapper {
             }
         }
         if (entity.getContract() != null) {
+            response.setContractCode(entity.getContract().getContractCode());
             if (response.getUnitCode() == null && entity.getContract().getUnit() != null) {
                 response.setUnitCode(entity.getContract().getUnit().getUnitCode());
             }
             if (response.getFacilityName() == null && entity.getContract().getFacility() != null) {
                 response.setFacilityName(entity.getContract().getFacility().getName());
             }
+            if (response.getFacilityId() == null && entity.getContract().getFacility() != null) {
+                response.setFacilityId(entity.getContract().getFacility().getId());
+            }
             if (response.getCustomerName() == null && entity.getContract().getCustomer() != null) {
                 response.setCustomerName(entity.getContract().getCustomer().getFullName());
             }
+        }
+
+        // Determine reconciliation status
+        if (entity.getConfirmedAt() != null || entity.getConfirmedByStaff() != null) {
+            response.setReconciliationStatus("RECONCILED");
+        } else if (entity.getPaymentMethod() != null && "VNPAY".equalsIgnoreCase(entity.getPaymentMethod())) {
+            response.setReconciliationStatus("AUTO_RECONCILED");
+        } else if (entity.getStatus() == com.boxora.enums.PaymentStatus.PAID) {
+            response.setReconciliationStatus("PENDING_RECONCILIATION");
+        } else {
+            response.setReconciliationStatus("UNRECONCILED");
         }
     }
 }

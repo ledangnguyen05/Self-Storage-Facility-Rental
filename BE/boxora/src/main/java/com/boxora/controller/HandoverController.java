@@ -33,14 +33,14 @@ public class HandoverController {
     private final HandoverService handoverService;
 
     @GetMapping("/booking/{bookingId}/prerequisites")
-    @PreAuthorize("hasAuthority('HANDOVER_VIEW')")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Get persisted check-in prerequisites")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> getCheckInPrerequisites(@PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(handoverService.getCheckInPrerequisites(bookingId)));
     }
 
     @PostMapping("/check-in")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'FACILITY_STAFF')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Thực hiện check-in bàn giao kho vật lý và cấp mã PIN SmartLock")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -48,7 +48,7 @@ public class HandoverController {
     }
 
     @GetMapping("/booking/{bookingId}/return-preview")
-    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'CUSTOMER')")
     @Operation(summary = "Xem trước quyết toán tiền cọc, hạn thuê và 5 tiêu chí thẩm định trả kho (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<ReturnSettlementPreviewResponse>> getReturnSettlementPreview(@PathVariable UUID bookingId) {
         ReturnSettlementPreviewResponse response = handoverService.getReturnSettlementPreview(bookingId);
@@ -88,14 +88,14 @@ public class HandoverController {
     }
 
     @GetMapping("/booking/{bookingId}")
-    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER')")
+    @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'CUSTOMER')")
     @Operation(summary = "Lấy lịch sử các biên bản bàn giao của đơn đặt kho")
     public ResponseEntity<ApiResponse<List<HandoverResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(handoverService.getByBookingId(bookingId)));
     }
 
     @PostMapping("/booking/{bookingId}/send-pin-email")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Gửi mã PIN và thông tin bàn giao đến email khách hàng")
     public ResponseEntity<ApiResponse<Void>> sendPinEmail(
             @PathVariable UUID bookingId,
@@ -105,7 +105,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/send-web-notification")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Bắn thông báo web đến tài khoản khách hàng")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.NotificationLogResponse>> sendWebNotification(
             @PathVariable UUID bookingId) {
@@ -118,7 +118,7 @@ public class HandoverController {
     // =========================================================================
 
     @PostMapping(value = "/booking/{bookingId}/upload-document", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Tải lên tệp hợp đồng giấy scan hoặc chứng từ chuyển khoản (PDF, JPG, JPEG, PNG, WEBP, tối đa 10MB)")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.FileUploadResponse>> uploadHandoverDocument(
             @PathVariable UUID bookingId,
@@ -163,7 +163,7 @@ public class HandoverController {
     }
 
     @PostMapping("/contracts/paper")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAuthority('CONTRACT_CREATE')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAuthority('CONTRACT_CREATE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Điều kiện 1: Khởi tạo hoặc tải lên hồ sơ scan hợp đồng giấy tại kho")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> createOrUploadPaperContract(
             @Valid @RequestBody com.boxora.dto.request.PaperContractCreateRequest request) {
@@ -173,7 +173,7 @@ public class HandoverController {
     }
 
     @PostMapping("/contracts/paper/verify")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAuthority('CONTRACT_CREATE')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAuthority('CONTRACT_CREATE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Điều kiện 1: Nhân viên đối chiếu chữ ký và xác nhận hợp đồng giấy")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> verifyPaperContract(
             @RequestParam UUID bookingId,
@@ -183,7 +183,7 @@ public class HandoverController {
     }
 
     @PostMapping("/payments/manual")
-    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
+    @PreAuthorize("hasAuthority('PAYMENT_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Điều kiện 2 & 3: Ghi nhận thu tiền mặt (phiếu thu) hoặc thông tin chuyển khoản ngân hàng")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> recordManualPayment(
             @Valid @RequestBody com.boxora.dto.request.ManualPaymentRecordRequest request) {
@@ -193,7 +193,7 @@ public class HandoverController {
     }
 
     @PostMapping("/payments/{paymentId}/confirm-bank-transfer")
-    @PreAuthorize("hasAuthority('PAYMENT_CREATE')")
+    @PreAuthorize("hasAuthority('PAYMENT_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Điều kiện 2 & 3: Nhân viên có thẩm quyền xác nhận tiền chuyển khoản đã vào tài khoản")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> confirmBankTransferPayment(
             @PathVariable UUID paymentId,
@@ -203,7 +203,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/verify-identity")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Điều kiện 4: Nhân viên tại quầy xác nhận đã đối chiếu giấy tờ tùy thân CCCD/Passport gốc")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> verifyIdentity(
             @PathVariable UUID bookingId,
@@ -214,7 +214,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/assign-unit")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Bước 2: Chọn và gán vị trí ô kho vật lý cho đơn đặt kho")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> assignUnit(
             @PathVariable UUID bookingId,
@@ -224,7 +224,7 @@ public class HandoverController {
     }
 
     @PostMapping("/booking/{bookingId}/complete-step-1")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Hoàn tất Bước 1: Kiểm tra đủ 4 điều kiện đối soát và chuyển sang Bước 2 Nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<Void>> completeCheckInStep1(@PathVariable UUID bookingId) {
         handoverService.completeCheckInStep1(bookingId);
@@ -232,7 +232,7 @@ public class HandoverController {
     }
 
     @PostMapping("/check-in-inspection")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasRole('ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định")
     public ResponseEntity<ApiResponse<HandoverResponse>> recordCheckInInspection(
             @Valid @RequestBody com.boxora.dto.request.CheckInInspectionRequest request) {

@@ -268,13 +268,28 @@ export function getBookingStage(b: Booking): BookingStageInfo {
 
 export interface MyBookingsPageProps {
   embedded?: boolean
+  onGoToMyUnit?: (unitCode?: string) => void
 }
 
-export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false }) => {
+export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false, onGoToMyUnit }) => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const targetBookingCodeParam = searchParams.get('bookingCode') || searchParams.get('code')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
+
+  const handleNavigateToUnitPortal = (unitCode?: string | null) => {
+    if (onGoToMyUnit) {
+      onGoToMyUnit(unitCode || undefined)
+      return
+    }
+    // Dispatch custom event for dashboard if embedded
+    window.dispatchEvent(
+      new CustomEvent('boxora:navigate-customer-tab', {
+        detail: { tab: 'my-units', unitCode: unitCode || '' },
+      })
+    )
+    navigate(`/portal/customer?tab=my-units${unitCode ? `&unit=${encodeURIComponent(unitCode)}` : ''}`)
+  }
   const { user, isAuthenticated, logout } = useAuth()
   const { t } = useLanguage()
 
@@ -1053,8 +1068,12 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                       <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800/70">
                         <div className="flex items-center justify-between gap-1">
                           {stepsList.map((step) => {
-                            const isPassed = step.num < stageInfo.step
-                            const isCurrent = step.num === stageInfo.step
+                            const isHandedOver =
+                              stageInfo.stage === 'ACTIVE' ||
+                              (b.status || '').toUpperCase() === 'ACTIVE' ||
+                              (b.status || '').toUpperCase() === 'COMPLETED'
+                            const isPassed = isHandedOver ? true : step.num < stageInfo.step
+                            const isCurrent = isHandedOver ? false : step.num === stageInfo.step
                             return (
                               <div key={step.num} className="flex-1 flex flex-col items-center gap-1">
                                 <div
@@ -1201,7 +1220,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                     {stageInfo.stage === 'ACTIVE' ? (
                       <button
                         type="button"
-                        onClick={() => navigate('/portal/customer')}
+                        onClick={() => handleNavigateToUnitPortal(b.unitCode)}
                         className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                       >
                         <span className="material-symbols-outlined text-[17px]">dashboard</span>
@@ -1376,12 +1395,14 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 <button
                   type="button"
                   onClick={() => {
+                    const uCode = selectedBookingForDetail.unitCode
                     setSelectedBookingForDetail(null)
-                    navigate('/portal/customer')
+                    handleNavigateToUnitPortal(uCode)
                   }}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer flex items-center gap-1.5"
                 >
-                  Vào Portal Quản Lý Kho
+                  <span className="material-symbols-outlined text-[16px]">dashboard</span>
+                  <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
                 </button>
               )}
             </div>

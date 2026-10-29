@@ -22,6 +22,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
 }) => {
   const { role } = useAuth()
   const isAdmin = role === 'ADMIN'
+  const isManagementReadOnly = role === 'ADMIN' || role === 'BUSINESS_MANAGER'
   const [loading, setLoading] = useState<boolean>(true)
   const [prereq, setPrereq] = useState<HandoverPrerequisites | null>(null)
   const [booking, setBooking] = useState<Booking | null>(null)
@@ -62,9 +63,9 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
         } else if (targetBookingId) {
           try {
             const b = await bookingService.getById(targetBookingId)
-            setBooking(b)
+            if (b) setBooking(b)
           } catch {
-            // fallback
+            // fallback if direct getById has error
           }
         }
 
@@ -86,6 +87,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
   }, [isOpen, bookingId, unitBackendId, unitCode])
 
   const activeBookingId = bookingId || booking?.id || prereq?.bookingId
+  const displayUnitCode = booking?.unitCode || prereq?.unitCode || unitCode || 'N/A'
 
   const handleUploadProof = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -161,7 +163,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kho giám sát: <strong className="font-mono text-slate-900">#{unitCode || prereq?.unitCode || 'N/A'}</strong> • Mã đơn: <span className="font-mono">{booking?.bookingCode || prereq?.bookingCode || bookingId || 'N/A'}</span>
+                Kho giám sát: <strong className="font-mono text-slate-900">#{displayUnitCode}</strong> • Mã đơn: <span className="font-mono">{booking?.bookingCode || prereq?.bookingCode || bookingId || 'N/A'}</span>
               </p>
             </div>
           </div>
@@ -201,7 +203,7 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 font-mono block">Cơ sở &amp; Kho</span>
                 <span className="font-bold text-slate-900 mt-0.5 block">{prereq.facilityName || 'N/A'}</span>
-                <span className="font-mono text-cyan-800 font-bold">Mã kho #{prereq.unitCode}</span>
+                <span className="font-mono text-cyan-800 font-bold">Mã kho #{displayUnitCode}</span>
               </div>
             </div>
 
@@ -371,8 +373,8 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
                   )}
                 </div>
 
-                {/* Upload Button: Chế độ giám sát của Admin không được thực hiện thao tác upload */}
-                {!isAdmin && (
+                {/* Upload Button: Chế độ giám sát của Admin và Business Manager không được thực hiện thao tác upload */}
+                {!isManagementReadOnly && (
                   <div className="mt-2.5 pt-2 border-t border-slate-100">
                     <input
                       ref={fileInputRef}
@@ -451,10 +453,12 @@ export const BookingDetailReadOnlyModal: React.FC<BookingDetailReadOnlyModalProp
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 leading-relaxed flex items-start gap-2">
               <span className="material-symbols-outlined text-[16px] text-blue-600 shrink-0 mt-0.5">policy</span>
               <div>
-                <strong>Quy định phân quyền:</strong> {isAdmin ? (
+                <strong>Quy định phân quyền:</strong> {role === 'ADMIN' ? (
                   <span>Tài khoản <strong>Quản Trị Viên (Admin)</strong> đang theo dõi ở chế độ chỉ đọc giám sát toàn hệ thống. Mọi thao tác thu tiền, bổ sung chứng từ, kiểm tra CCCD và bàn giao kho thuộc thẩm quyền của Nhân viên quầy và Quản lý cơ sở.</span>
+                ) : role === 'BUSINESS_MANAGER' ? (
+                  <span>Tài khoản <strong>Quản Lý Kinh Doanh (Business Manager)</strong> đang theo dõi ở chế độ chỉ đọc giám sát kinh doanh. Mọi thao tác thu tiền, bổ sung chứng từ, kiểm tra CCCD và bàn giao kho thuộc thẩm quyền của Nhân viên quầy và Quản lý cơ sở.</span>
                 ) : (
-                  <span>Đây là chế độ xem hồ sơ giám sát của <strong>Quản lý cơ sở</strong>. Các thao tác tiếp đón khách, đối soát CCCD, nghiệm thu 5 hạng mục hiện trường và phát hành mã PIN bàn giao được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> tại Bàn Vận Hành Quầy &amp; Tiếp Đón.</span>
+                  <span>Đây là chế độ xem hồ sơ giám sát. Các thao tác tiếp đón khách theo 4 bước check-in (Xác thực CCCD, Gán kho vật lý, Hợp đồng &amp; Thanh toán, Cấp mã PIN bàn giao) được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> và Quản lý cơ sở tại Bàn Vận Hành Quầy &amp; Tiếp Đón.</span>
                 )}
               </div>
             </div>
