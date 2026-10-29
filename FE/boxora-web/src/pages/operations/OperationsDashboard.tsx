@@ -610,7 +610,7 @@ export const OperationsDashboard: React.FC = () => {
         )}
 
         {/* 1. HEADER & FILTER BAR */}
-        <div className="relative w-full rounded-2xl bg-white p-6 shadow-sm border border-slate-200 z-20">
+        <div className="relative w-full rounded-2xl bg-white p-6 shadow-md border border-slate-200/90 z-20">
           <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden">
             <div className="flex flex-col gap-1.5 text-left">
               <div className="flex flex-wrap items-center gap-2.5">
@@ -810,7 +810,7 @@ export const OperationsDashboard: React.FC = () => {
         {/* 2. THE 6 EXECUTIVE FINANCIAL KPI CARDS */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           {/* KPI 1: Tổng doanh thu thuần */}
-          <div className="relative rounded-2xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-all">
+          <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('1. Doanh thu thuần', '1. Net Revenue')}</span>
               <div className="h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100" title={tr('Doanh thu tiền thuê + gia hạn + phụ phí đã trừ hoàn tiền hợp lệ trong kỳ. Không bao gồm tiền cọc & giữ chỗ.', 'Net recognized revenue: Rental + Renewal + Extra minus completed refunds. Excludes deposits & holds.')}>
@@ -834,7 +834,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* KPI 2: Tổng tiền thực thu */}
-          <div className="relative rounded-2xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-all">
+          <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('2. Tiền thực thu', '2. Total Cash-In')}</span>
               <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100" title={tr('Tổng tiền thực nhận từ các giao dịch PAID đã xác minh trong kỳ.', 'Total cash received across verified PAID payments.')}>
@@ -858,7 +858,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* KPI 3: Doanh thu tiền thuê kho */}
-          <div className="relative rounded-2xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-all">
+          <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('3. Tiền thuê kho', '3. Rental Revenue')}</span>
               <div className="h-8 w-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100" title={tr('Doanh thu từ hoạt động cốt lõi: tiền thuê kho và phí gia hạn trong kỳ.', 'Core revenue from unit rentals and contract renewals.')}>
@@ -882,7 +882,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* KPI 4: Công nợ phải thu */}
-          <div className="relative rounded-2xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-all">
+          <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('4. Công nợ phải thu', '4. Overdue Debt')}</span>
               <div className="h-8 w-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100" title={tr('Khoản tiền thuê quá hạn khách còn phải thanh toán, chia theo 4 cấp độ.', 'Customer overdue debts tracked across 4 stages.')}>
@@ -906,7 +906,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* KPI 5: Tiền cọc đang giữ */}
-          <div className="relative rounded-2xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-all">
+          <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('5. Tiền cọc đang giữ', '5. Deposits Held')}</span>
               <div className="h-8 w-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center border border-cyan-100" title={tr('Số dư tiền cọc quản lý an toàn theo hợp đồng đang thuê, chờ quyết toán khi trả kho.', 'Active deposit balance held safely for ongoing contracts.')}>
@@ -930,7 +930,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* KPI 6: Hoàn tiền và giao dịch chờ xử lý */}
-          <div className="relative rounded-2xl bg-white p-5 shadow-sm border border-slate-200 flex flex-col justify-between hover:border-slate-300 transition-all">
+          <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('6. Hoàn tiền & Chờ XL', '6. Refunds & Pending')}</span>
               <div className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100" title={tr('Số tiền đã hoàn thành công vs tiền hoàn đang chờ xử lý & giao dịch chờ đối soát.', 'Separation of completed refunds from pending review & unreconciled items.')}>
@@ -957,7 +957,7 @@ export const OperationsDashboard: React.FC = () => {
         {/* 3. CHARTS ROW 1: XU HƯỚNG DOANH THU & CƠ CẤU TIỀN THỰC THU */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Biểu đồ 1: Xu hướng doanh thu theo kỳ (8 cols) */}
-          <div className="lg:col-span-8 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+          <div className="lg:col-span-8 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -1024,7 +1024,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* Biểu đồ 2: Cơ cấu tiền thực thu (Donut) (4 cols) */}
-          <div className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+          <div className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between">
                 <div>
@@ -1094,7 +1094,7 @@ export const OperationsDashboard: React.FC = () => {
         {/* 4. CHARTS ROW 2: HOÀN TIỀN & CÔNG NỢ THEO TRẠNG THÁI */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Biểu đồ 3: Hoàn tiền và quyết toán trả kho (6 cols) */}
-          <div className="lg:col-span-6 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+          <div className="lg:col-span-6 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -1180,7 +1180,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* Biểu đồ 4: Công nợ theo trạng thái (6 cols) */}
-          <div className="lg:col-span-6 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+          <div className="lg:col-span-6 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -1263,7 +1263,7 @@ export const OperationsDashboard: React.FC = () => {
         {/* 5. CHARTS ROW 3: DOANH THU THEO CƠ SỞ & KÊNH THANH TOÁN */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Biểu đồ 5: Doanh thu theo cơ sở (8 cols) */}
-          <div className="lg:col-span-8 bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+          <div className="lg:col-span-8 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -1317,51 +1317,81 @@ export const OperationsDashboard: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {facilityRows.length > 0 ? (
-                    facilityRows.map((f) => (
-                      <tr key={f.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3.5 px-4">
-                          <div className="flex flex-col">
-                            <span className="font-bold text-slate-900">{f.name}</span>
-                            <span className="text-[11px] text-slate-500 font-mono">{f.code} · {f.occupiedUnits}/{f.totalUnits} {tr('kho đang thuê', 'occupied')}</span>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900">
-                          {formatVnd(f.netRevenue)}
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-mono font-bold text-blue-700">
-                          {formatVnd(f.totalCashIn)}
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-mono font-bold text-cyan-700">
-                          {formatVnd(f.depositsHeld)}
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-mono font-bold text-rose-600">
-                          {formatVnd(f.totalOverdueDebt)}
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex flex-col items-center gap-1">
-                            <span className="font-mono font-bold text-slate-900">{f.occupancyRate.toFixed(1)}%</span>
-                            <div className="w-20 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${f.occupancyRate >= 70 ? 'bg-emerald-600' : f.occupancyRate >= 30 ? 'bg-blue-600' : 'bg-amber-500'}`}
-                                style={{ width: `${Math.min(100, f.occupancyRate)}%` }}
-                              ></div>
+                    facilityRows.map((f) => {
+                      const isFiltering = selectedFacilityId === f.id
+                      return (
+                        <tr
+                          key={f.id}
+                          className={`transition-all ${
+                            isFiltering
+                              ? 'bg-cyan-50/80 border-l-4 border-l-cyan-600 font-semibold shadow-xs'
+                              : 'hover:bg-slate-50/70'
+                          }`}
+                        >
+                          <td className="py-3.5 px-4">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-900">{f.name}</span>
+                              <span className="text-[11px] text-slate-500 font-mono">
+                                {f.code} · {f.occupiedUnits}/{f.totalUnits} {tr('kho đang thuê', 'occupied')}
+                              </span>
                             </div>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedFacilityId(f.id)
-                              if (setSelectedFacility) setSelectedFacility(f.id)
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            {tr('Lọc cơ sở', 'Filter')}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900">
+                            {formatVnd(f.netRevenue)}
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-mono font-bold text-blue-700">
+                            {formatVnd(f.totalCashIn)}
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-mono font-bold text-cyan-700">
+                            {formatVnd(f.depositsHeld)}
+                          </td>
+                          <td className="py-3.5 px-3 text-right font-mono font-bold text-rose-600">
+                            {formatVnd(f.totalOverdueDebt)}
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <div className="flex flex-col items-center gap-1">
+                              <span className="font-mono font-bold text-slate-900">{f.occupancyRate.toFixed(1)}%</span>
+                              <div className="w-20 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${f.occupancyRate >= 70 ? 'bg-emerald-600' : f.occupancyRate >= 30 ? 'bg-blue-600' : 'bg-amber-500'}`}
+                                  style={{ width: `${Math.min(100, f.occupancyRate)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 text-center">
+                            {isFiltering ? (
+                              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-100/90 border border-cyan-300 text-cyan-800 font-bold text-[11px] shadow-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-600 animate-pulse"></span>
+                                <span>{tr('Đang lọc', 'Active')}</span>
+                                <button
+                                  type="button"
+                                  title={tr('Bỏ lọc cơ sở này', 'Clear filter')}
+                                  onClick={() => {
+                                    setSelectedFacilityId('all')
+                                    if (setSelectedFacility) setSelectedFacility('all')
+                                  }}
+                                  className="ml-1 text-cyan-700 hover:text-cyan-950 font-extrabold cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedFacilityId(f.id)
+                                  if (setSelectedFacility) setSelectedFacility(f.id)
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer shadow-xs"
+                              >
+                                {tr('Lọc cơ sở', 'Filter')}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })
                   ) : (
                     <tr>
                       <td colSpan={7} className="py-6 text-center text-slate-400">
@@ -1375,7 +1405,7 @@ export const OperationsDashboard: React.FC = () => {
           </div>
 
           {/* Biểu đồ 6: Kênh thanh toán (4 cols) */}
-          <div className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col justify-between">
+          <div className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div>
@@ -1508,7 +1538,7 @@ export const OperationsDashboard: React.FC = () => {
         </div>
 
         {/* 6. FINANCIAL TRANSACTIONS DETAILS TABLE (13 COLUMNS) */}
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+        <div className="bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 space-y-4">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div>
               <div className="flex items-center gap-2">
@@ -1787,7 +1817,7 @@ export const OperationsDashboard: React.FC = () => {
         </div>
 
         {/* 7. CHAIN-WIDE RENEWAL OVERSIGHT PANEL */}
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <div className="bg-white rounded-2xl p-6 border border-slate-200/90 shadow-md space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center">

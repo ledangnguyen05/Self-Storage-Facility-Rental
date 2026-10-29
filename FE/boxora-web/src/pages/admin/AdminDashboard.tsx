@@ -413,7 +413,7 @@ export const AdminDashboard: React.FC = () => {
            ======================================================== */
         <div className="flex flex-col gap-6 w-full">
           {/* Top Banner - Chi Nhánh */}
-          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
+          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-md border border-slate-200/90">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                
@@ -462,7 +462,7 @@ export const AdminDashboard: React.FC = () => {
             {/* KPI Cards Chi Nhánh */}
             <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
               {facilitySummaryCards.map((card) => (
-                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-300">
+                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-all shadow-xs hover:shadow-sm hover:border-slate-300">
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
                     <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
                   </span>
@@ -488,7 +488,7 @@ export const AdminDashboard: React.FC = () => {
            ======================================================== */
         <div className="flex flex-col gap-6 w-full">
           {/* Top Banner - Stitch Header Style for RBAC & Users */}
-          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-sm border border-slate-200">
+          <div className="relative w-full overflow-hidden rounded-2xl bg-white p-5 sm:p-6 shadow-md border border-slate-200/90">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold mb-2">
@@ -529,7 +529,7 @@ export const AdminDashboard: React.FC = () => {
             {/* Tóm tắt tài khoản: số liệu lấy từ danh sách đang hiển thị */}
             <div className="mt-6 grid grid-cols-1 gap-3 border-t border-slate-100 pt-5 sm:grid-cols-2 xl:grid-cols-4">
               {summaryCards.map((card) => (
-                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-colors hover:border-slate-300">
+                <div key={card.label} className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 transition-all shadow-xs hover:shadow-sm hover:border-slate-300">
                   <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${summaryToneClasses[card.tone]}`}>
                     <span className="material-symbols-outlined text-[21px]">{card.icon}</span>
                   </span>
@@ -595,7 +595,7 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB 1: USERS */}
       {activeTab === 'users' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="bg-white rounded-xl border border-slate-200/90 p-6 shadow-md">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-4">
             <div className="flex items-center gap-3 flex-1 max-w-md">
               <div className="relative w-full">
@@ -882,7 +882,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
           )}
           {/* Roles list (4 cols) */}
-          <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+          <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200/90 p-5 shadow-md">
             <h3 className="text-sm font-bold text-slate-900 mb-3 flex items-center justify-between">
               <span>Danh Sách Vai Trò</span>
               <span className="text-xs text-slate-400 font-mono">{roles.length} roles</span>
@@ -911,7 +911,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
 
           {/* Permission Matrix for selected role (8 cols) */}
-          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
+          <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200/90 p-5 shadow-md flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
                 <div>
@@ -990,7 +990,7 @@ export const AdminDashboard: React.FC = () => {
 
       {/* TAB 3: ACTIVITY & AUDIT LOGS */}
       {activeTab === 'logs' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+        <div className="bg-white rounded-xl border border-slate-200/90 p-6 shadow-md">
           {logsError && <p role="alert" className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">Không tải được nhật ký hệ thống. Danh sách hiện không có dữ liệu mới.</p>}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-4">
             <div className="flex items-center gap-3 flex-1 max-w-md">

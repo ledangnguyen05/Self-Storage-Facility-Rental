@@ -1799,7 +1799,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
       {/* SUB-TAB 5: ATTENDANCE & REPORTING (Chấm công & In phiếu) */}
       {activeSubTab === 'ATTENDANCE' && (
         <AttendanceReportTab
-          facilityId={targetFacilityId}
+          facilityId={currentFacilityId}
           facilityName={currentFacilityName}
           staffList={staffList}
           currentUserName={user?.fullName || user?.username}

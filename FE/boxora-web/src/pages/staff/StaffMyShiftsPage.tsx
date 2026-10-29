@@ -1748,7 +1748,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                         {item.checkedOutAt ? (
                           formatDateTime(item.checkedOutAt)
                         ) : isShiftForgottenCheckout(item) ? (
-                          <span className="text-rose-600 font-bold font-mono">Quên ra ca (>23:59:59)</span>
+                          <span className="text-rose-600 font-bold font-mono">Quên ra ca (&gt;23:59:59)</span>
                         ) : (
                           'Chưa ra ca'
                         )}
