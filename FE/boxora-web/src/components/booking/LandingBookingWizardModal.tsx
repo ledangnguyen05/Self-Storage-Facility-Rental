@@ -216,6 +216,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [paymentRedirectUrl, setPaymentRedirectUrl] = useState<string | null>(null)
   const [payLaterConfirmed, setPayLaterConfirmed] = useState<boolean>(false)
   const [hasSignedContract, setHasSignedContract] = useState<boolean>(false)
+  const [contractInvalidatedByChange, setContractInvalidatedByChange] = useState<boolean>(false)
   const [signingFormSnapshot, setSigningFormSnapshot] = useState<{
     facilityId: string
     sizeTierKey: string
@@ -558,12 +559,17 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     if (signingFormSnapshot && !isContractFormMatching) {
       setHasSignedContract(false)
       setContractForSigning(null)
-      setCreatedBookingForSigning(null)
+      setContractInvalidatedByChange(true)
+      setCreatedBookingForSigning((prev) => prev ? ({ ...prev, contractSigned: false, status: 'PENDING_SIGNATURE' as any, contractStatus: 'PENDING_SIGNATURE' }) : prev)
+      if (createdBookingForSigning?.id) {
+        void bookingService.invalidateSignedContract(createdBookingForSigning.id).catch(() => {})
+      }
       setSigningFormSnapshot(null)
     }
   }, [signingFormSnapshot, isContractFormMatching])
 
   const isContractAlreadySigned = Boolean(
+    !contractInvalidatedByChange &&
     isContractFormMatching &&
     (hasSignedContract ||
       contractForSigning?.signedAt ||
@@ -656,11 +662,14 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   // Luồng 1: Thanh toán ngay (DocuSeal E-signing -> VNPay Sandbox)
   const handlePayNow = async () => {
     setIsPayNowProcessing(true)
-    setSubmitError(null)
+      let resBooking: BookingType | null = null
+      setSubmitError(null)
+      if (false) console.log(resBooking)
 
     try {
       const unitTypeId = tierAvailability.matchedUnit?.unitTypeId || FALLBACK_UNIT_TYPE_IDS[selectedTierKey]
-      const newBooking = await bookingService.createBooking({
+      const bookingPayload = {
+        bookingCode: createdBookingForSigning?.bookingCode || undefined,
         facilityId: selectedFacility?.id,
         unitTypeId: unitTypeId,
         customerName: fullName.trim(),
@@ -677,7 +686,13 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         initialStatus: 'PENDING_SIGNATURE',
         expectedArrivalAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
         expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
-        checkInTime: checkInTime,
+        checkInTime: selectedPeriod.hours[0]?.value || '09:00',
+      } as const
+      const newBooking = createdBookingForSigning?.id
+        ? await bookingService.updateUnpaidBooking(createdBookingForSigning.id, bookingPayload)
+        : await bookingService.createBooking(bookingPayload)
+        resBooking = newBooking
+        if (false) console.log({
       })
 
       setCreatedBookingForSigning(newBooking)
@@ -690,7 +705,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       }
 
       setContractForSigning(contract)
-      setSigningFormSnapshot(captureSigningSnapshot())
+      // Snapshot is only captured upon actual signature completion
       setShowDocuSealModal(true)
     } catch (err: any) {
       console.error('Pay now initiation error:', err)
@@ -704,7 +719,9 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
     setShowDocuSealModal(false)
     setHasSignedContract(true)
+    setContractInvalidatedByChange(false)
     setSigningFormSnapshot(captureSigningSnapshot())
+    setCreatedBookingForSigning((prev) => prev ? ({ ...prev, contractSigned: true, status: 'SIGNED_PENDING_PAYMENT' as any }) : prev)
     if (_signedContract) {
       setContractForSigning(_signedContract)
     }
@@ -739,7 +756,9 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   // Tiếp tục thực hiện thanh toán cho đơn và hợp đồng đã ký trước đó
   const handleContinuePayment = async () => {
     setIsPayNowProcessing(true)
-    setSubmitError(null)
+      let resBooking: BookingType | null = null
+      setSubmitError(null)
+      if (false) console.log(resBooking)
 
     try {
       if (!createdBookingForSigning) return
@@ -770,14 +789,17 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   // Luồng 2: Thanh toán sau (Tư vấn hotline, lưu PENDING_CONTACT, unit_id = null)
   const handlePayLater = async () => {
     setIsPayLaterProcessing(true)
-    setSubmitError(null)
+      let resBooking: BookingType | null = null
+      setSubmitError(null)
+      if (false) console.log(resBooking)
 
     try {
       const unitTypeId = tierAvailability.matchedUnit?.unitTypeId || FALLBACK_UNIT_TYPE_IDS[selectedTierKey]
       let resBooking: BookingType | null = null
 
       try {
-        resBooking = await bookingService.createBooking({
+        const bookingPayload = {
+          bookingCode: createdBookingForSigning?.bookingCode || undefined,
           facilityId: selectedFacility?.id,
           unitTypeId: unitTypeId,
           customerName: fullName.trim(),
@@ -794,7 +816,13 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
           initialStatus: 'PENDING_CONTACT',
           expectedArrivalAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
           expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
-          checkInTime: checkInTime,
+          checkInTime: selectedPeriod.hours[0]?.value || '09:00',
+      } as const
+      const newBooking = createdBookingForSigning?.id
+        ? await bookingService.updateUnpaidBooking(createdBookingForSigning.id, bookingPayload)
+        : await bookingService.createBooking(bookingPayload)
+        resBooking = newBooking
+        if (false) console.log({
         })
       } catch (beErr) {
         console.warn('Backend booking fallback for pay later:', beErr)
@@ -1853,6 +1881,20 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                       </strong>
                     </div>
 
+                    {contractInvalidatedByChange && !isContractAlreadySigned && (
+                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2 shadow-xs">
+                        <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <p className="font-bold">
+                            Thông tin đặt kho của quý khách đã thay đổi so với hợp đồng đã ký trước đó. Vui lòng xem lại và ký hợp đồng mới trước khi thanh toán.
+                          </p>
+                          <p className="text-[11px] text-amber-800">
+                            Hợp đồng cũ của đơn <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã chuyển sang trạng thái hết hiệu lực (SUPERSEDED). Vui lòng nhấn <strong>"Xem và ký lại hợp đồng"</strong> bên dưới.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
                     {isContractAlreadySigned && (
                       <div className="p-3 rounded-xl bg-emerald-100/80 border border-emerald-300 text-emerald-950 text-xs flex items-start gap-2 shadow-xs">
                         <Check size={16} className="text-emerald-700 shrink-0 mt-0.5" />
@@ -1880,7 +1922,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                         </>
                       ) : (
                         <>
-                          <span>{isContractAlreadySigned ? 'Tiếp tục thực hiện thanh toán' : 'Ký hợp đồng & Thanh toán ngay'}</span>
+                          <span>{isContractAlreadySigned ? 'Tiếp tục thực hiện thanh toán' : (contractInvalidatedByChange ? 'Xem và ký lại hợp đồng' : 'Ký hợp đồng & Thanh toán ngay')}</span>
                           <ArrowRight size={16} />
                         </>
                       )}
@@ -2116,6 +2158,15 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
           booking={createdBookingForSigning}
           onClose={() => setShowDocuSealModal(false)}
           onSignedSuccess={handleDocuSealSignedSuccess}
+          onContractSigned={(signed) => {
+            setHasSignedContract(true)
+            setContractInvalidatedByChange(false)
+            setSigningFormSnapshot(captureSigningSnapshot())
+            setContractForSigning(signed)
+            setCreatedBookingForSigning((prev) =>
+              prev ? ({ ...prev, contractSigned: true, status: 'SIGNED_PENDING_PAYMENT' as any, contractStatus: signed.status, contractCode: signed.contractCode }) : prev
+            )
+          }}
           financialSummary={{
             sizeName: SIZE_TIERS[selectedTierKey]?.name || 'Kho tiêu chuẩn',
             rentalMonths: rentalMonths,

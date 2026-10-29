@@ -2575,7 +2575,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               Xin chào, {user?.fullName || user?.username || 'Quý khách'} 👋
             </h1>
             <p className="text-xs md:text-sm text-slate-600 mt-1">
-              Quản lý kho đang thuê, mở khóa Smart Lock từ xa và theo dõi trạng thái bảo mật thời gian thực.
+              Quản lý kho đang thuê, tra cứu mã PIN bảo mật và theo dõi trạng thái hợp đồng thời gian thực.
             </p>
           </div>
 
@@ -3110,34 +3110,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                      {c.status === 'ACTIVE' && (
-                        <button
-                          type="button"
-                          onClick={() => c.bookingId && handleToggleRemoteLock(c.unitCode, c.bookingId)}
-                          disabled={unlockingUnit === c.unitCode || !c.bookingId}
-                          className={`h-10 px-4 rounded-lg text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:opacity-60 ${
-                            isUnlocked
-                              ? 'bg-amber-600 hover:bg-amber-700 active:scale-98'
-                              : 'bg-emerald-700 hover:bg-emerald-800 active:scale-98'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">
-                            {unlockingUnit === c.unitCode
-                              ? 'sensors'
-                              : isUnlocked
-                              ? 'lock'
-                              : 'lock_open'}
-                          </span>
-                          <span>
-                            {unlockingUnit === c.unitCode
-                              ? (isUnlocked ? 'Đang gửi lệnh khóa...' : 'Đang gửi lệnh mở...')
-                              : isUnlocked
-                              ? 'Khóa cửa kho'
-                              : 'Mở khóa từ xa'}
-                          </span>
-                        </button>
-                      )}
-
                       <button
                         onClick={() => openRenewModal(c)}
                         className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
@@ -3196,32 +3168,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </button>
                       )}
                     </div>
-
-                    {/* Remote lock/unlock feedback status on card */}
-                    {unlockingUnit === c.unitCode && (
-                      <p className="mt-2 text-[11px] text-blue-600 font-medium animate-pulse flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">sensors</span>
-                        <span>
-                          {isUnlocked
-                            ? `Đang gửi tín hiệu đóng & khóa IoT tới kho #${c.unitCode}...`
-                            : `Đang gửi tín hiệu mở khóa IoT tới kho #${c.unitCode}...`}
-                        </span>
-                      </p>
-                    )}
-                    {isUnlocked && unlockingUnit !== c.unitCode && (
-                      <div className="mt-2.5 p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center justify-between">
-                        <span className="flex items-center gap-1.5 font-semibold">
-                          <span className="material-symbols-outlined text-[15px] text-emerald-600">lock_open</span>
-                          Cửa kho đang mở khóa. Nhấn &quot;Khóa cửa kho&quot; khi hoàn tất sử dụng.
-                        </span>
-                      </div>
-                    )}
-                    {unlockError && unlockingUnit === c.unitCode && (
-                      <p role="alert" className="mt-2 text-[11px] text-rose-700 font-medium flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">error</span>
-                        <span>{unlockError}</span>
-                      </p>
-                    )}
                   </div>
                 )
               })}
@@ -3434,7 +3380,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   Chưa có bản ghi lịch sử nào khớp với bộ lọc hiện tại
                 </p>
                 <p className="text-xs text-slate-500 max-w-md">
-                  Khi quý khách bấm &quot;Mở khóa từ xa&quot;, &quot;Khóa cửa kho&quot;, &quot;Xem mã PIN&quot;, &quot;Đổi mã PIN&quot; hoặc &quot;Yêu cầu gia hạn&quot;, mọi hoạt động sẽ tự động hiển thị tại đây.
+                  Khi quý khách bấm &quot;Xem mã PIN&quot;, &quot;Đổi mã PIN&quot; hoặc &quot;Yêu cầu gia hạn&quot;, mọi hoạt động sẽ tự động hiển thị tại đây.
                 </p>
                 {(unitHistoryCategory !== 'ALL' || unitHistoryUnitFilter !== 'ALL' || unitHistorySearch) && (
                   <button

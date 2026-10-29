@@ -140,6 +140,7 @@ export type BookingStatusType =
   | 'COMPLETED'
   | 'CANCELLED'
   | 'OVERDUE'
+  | 'SUPERSEDED'
   | string
 
 export interface Booking {
@@ -308,6 +309,7 @@ export type RentalContractStatus =
   | 'TERMINATED'
   | 'CANCELLED'
   | 'OVERDUE'
+  | 'SUPERSEDED'
 
 export interface RentalContract {
   id: string

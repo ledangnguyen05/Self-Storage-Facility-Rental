@@ -486,6 +486,7 @@ export const BookingPage: React.FC = () => {
   const [contractForSigning, setContractForSigning] = useState<RentalContract | null>(null)
   const [createdBookingForSigning, setCreatedBookingForSigning] = useState<any>(null)
   const [hasSignedContract, setHasSignedContract] = useState<boolean>(false)
+  const [contractInvalidatedByChange, setContractInvalidatedByChange] = useState<boolean>(false)
   const [signingFormSnapshot, setSigningFormSnapshot] = useState<{
     facilityId: string
     sizeId: string
@@ -952,12 +953,17 @@ export const BookingPage: React.FC = () => {
     if (signingFormSnapshot && !isContractFormMatching) {
       setHasSignedContract(false)
       setContractForSigning(null)
-      setCreatedBookingForSigning(null)
+      setContractInvalidatedByChange(true)
+      setCreatedBookingForSigning((prev: any) => prev ? { ...prev, contractSigned: false, status: 'PENDING_SIGNATURE', contractStatus: 'PENDING_SIGNATURE' } : prev)
+      if (createdBookingForSigning?.id) {
+        void bookingService.invalidateSignedContract(createdBookingForSigning.id).catch(() => {})
+      }
       setSigningFormSnapshot(null)
     }
   }, [signingFormSnapshot, isContractFormMatching])
 
   const isContractAlreadySigned = Boolean(
+    !contractInvalidatedByChange &&
     isContractFormMatching &&
     (hasSignedContract ||
       contractForSigning?.signedAt ||
@@ -1188,7 +1194,8 @@ export const BookingPage: React.FC = () => {
 
         const resolvedUnitTypeId = resolveUnitTypeIdForSelectedSize(currentSelectedSize)
 
-        const res = await bookingService.createBooking({
+        const bookingPayload = {
+          bookingCode: createdBookingForSigning?.bookingCode || undefined,
           facilityId: selectedFacility?.id,
           unitTypeId: resolvedUnitTypeId,
           fullName: customerName.trim(),
@@ -1209,6 +1216,11 @@ export const BookingPage: React.FC = () => {
           identityCardNumber: customerIdCard.trim(),
           identityCardType: idCardType,
           specialNotes: specialNotes.trim() || undefined,
+        } as const
+        const res = createdBookingForSigning?.id
+          ? await bookingService.updateUnpaidBooking(createdBookingForSigning.id, bookingPayload)
+          : await bookingService.createBooking(bookingPayload)
+        if (false) console.log({
         })
 
         if (res?.bookingCode || res?.id) {
@@ -1256,7 +1268,7 @@ export const BookingPage: React.FC = () => {
         }
 
         setContractForSigning(contract)
-        setSigningFormSnapshot(captureSigningSnapshot())
+        // Snapshot is only captured upon actual signature completion
         setShowDocuSealModal(true)
         setIsSubmitting(false)
         return
@@ -1293,7 +1305,9 @@ export const BookingPage: React.FC = () => {
   const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
     setShowDocuSealModal(false)
     setHasSignedContract(true)
+    setContractInvalidatedByChange(false)
     setSigningFormSnapshot(captureSigningSnapshot())
+    setCreatedBookingForSigning((prev: any) => prev ? { ...prev, contractSigned: true, status: 'SIGNED_PENDING_PAYMENT' } : prev)
     if (_signedContract) {
       setContractForSigning(_signedContract)
     }
@@ -2869,6 +2883,20 @@ export const BookingPage: React.FC = () => {
               </div>
             )}
 
+            {contractInvalidatedByChange && !isContractAlreadySigned && paymentMethod === 'ONLINE' && (
+              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs sm:text-sm flex items-start gap-3 shadow-xs">
+                <AlertCircle size={20} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-950 dark:text-amber-100">
+                    Thông tin đặt kho của quý khách đã thay đổi so với hợp đồng đã ký trước đó. Vui lòng xem lại và ký hợp đồng mới trước khi thanh toán.
+                  </p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    Hợp đồng cũ của đơn <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã được chuyển sang trạng thái hết hiệu lực (SUPERSEDED). Quý khách vui lòng nhấn nút <strong>"Xem và ký lại hợp đồng"</strong> bên dưới để kiểm tra và ký lại hợp đồng mới theo thông tin vừa cập nhật.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {isContractAlreadySigned && paymentMethod === 'ONLINE' && (
               <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 text-xs sm:text-sm flex items-start gap-3 shadow-xs">
                 <CheckCircle2 size={20} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
@@ -3287,7 +3315,9 @@ export const BookingPage: React.FC = () => {
                       {paymentMethod === 'ONLINE'
                         ? (isContractAlreadySigned
                             ? 'Tiếp tục thực hiện thanh toán'
-                            : 'Tiến hành Ký HĐ & Thanh toán trực tuyến')
+                            : (contractInvalidatedByChange
+                                ? 'Xem và ký lại hợp đồng'
+                                : 'Tiến hành Ký HĐ & Thanh toán trực tuyến'))
                         : 'Xác nhận (Ký HĐ & Thanh toán tại cơ sở)'}
                     </span>
                   )}
@@ -3497,6 +3527,15 @@ export const BookingPage: React.FC = () => {
           }}
           onClose={() => setShowDocuSealModal(false)}
           onSignedSuccess={handleDocuSealSignedSuccess}
+          onContractSigned={(signed) => {
+            setHasSignedContract(true)
+            setContractInvalidatedByChange(false)
+            setSigningFormSnapshot(captureSigningSnapshot())
+            setContractForSigning(signed)
+            setCreatedBookingForSigning((prev: any) =>
+              prev ? { ...prev, contractSigned: true, status: 'SIGNED_PENDING_PAYMENT', contractStatus: signed.status, contractCode: signed.contractCode } : prev
+            )
+          }}
         />
       )}
 

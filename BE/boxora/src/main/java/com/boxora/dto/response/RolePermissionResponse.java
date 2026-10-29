@@ -19,6 +19,7 @@ public class RolePermissionResponse {
     private String permissionName;
     private String permissionGroup;
 
+    @com.fasterxml.jackson.annotation.JsonProperty("isActive")
     private boolean isActive;
     private String description;
 

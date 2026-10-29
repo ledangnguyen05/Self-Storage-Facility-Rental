@@ -119,7 +119,7 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
             SET a.status = com.boxora.enums.StaffAssignmentStatus.ABSENT,
                 a.notes = CASE
                     WHEN a.notes IS NULL OR a.notes = '' THEN '[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)'
-                    ELSE CONCAT(a.notes, E'\n[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)')
+                    ELSE CONCAT(a.notes, CONCAT(FUNCTION('chr', 10), '[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)'))
                 END
             WHERE a.status = com.boxora.enums.StaffAssignmentStatus.CHECKED_IN
               AND a.checkedOutAt IS NULL

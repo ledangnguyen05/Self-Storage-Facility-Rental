@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, useSearchParams, Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext'
+import { useAuth, DEFAULT_PERMISSIONS_BY_ROLE } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
 import { roleService } from '../../services/roleService'
 import { permissionService } from '../../services/permissionService'
@@ -66,6 +66,8 @@ export const AdminDashboard: React.FC = () => {
   const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false)
   const [isSampleUserData, setIsSampleUserData] = useState(false)
   const [isSampleRoleData, setIsSampleRoleData] = useState(false)
+  const [permSearch, setPermSearch] = useState('')
+  const [permFilterMode, setPermFilterMode] = useState<'all' | 'assigned'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<string>('ALL')
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -214,17 +216,55 @@ export const AdminDashboard: React.FC = () => {
     setRoleSaveError(null)
     setRoleSaveSuccess(false)
     setSelectedRole(role)
+
+    const roleKey = (role.name || '').toUpperCase() as RoleType
+    const standardCodes = DEFAULT_PERMISSIONS_BY_ROLE[roleKey] || []
+
     try {
       const rolePerms = await roleService.getPermissionsByRoleId(role.id)
-      if (rolePerms && Array.isArray(rolePerms)) {
-        setAssignedPermIds(rolePerms.map(rp => rp.permissionId))
-      } else {
-        setAssignedPermIds([])
+      if (rolePerms && Array.isArray(rolePerms) && rolePerms.length > 0) {
+        // Chỉ lấy các quyền thực sự active từ cơ sở dữ liệu
+        const activePerms = rolePerms.filter((rp: any) => {
+          if (typeof rp.isActive === 'boolean') return rp.isActive
+          if (typeof rp.active === 'boolean') return rp.active
+          return false
+        })
+        if (activePerms.length > 0) {
+          setAssignedPermIds(activePerms.map((rp: any) => rp.permissionId))
+          return
+        }
       }
     } catch {
-      setAssignedPermIds([])
+      // Fallback bên dưới
     }
+
+    // Tự động gán quyền chuẩn hóa theo vai trò nếu API chưa trả về
+    const standardIds = availablePermissions
+      .filter((p: Permission) => {
+        const code = (p.code || p.name || '').toUpperCase()
+        return standardCodes.includes(code)
+      })
+      .map((p: Permission) => p.id)
+
+    setAssignedPermIds(standardIds)
   }
+
+  const filteredPermissions = useMemo(() => {
+    return permissions.filter((p: Permission) => {
+      const isAssigned = assignedPermIds.includes(p.id)
+      if (permFilterMode === 'assigned' && !isAssigned) return false
+
+      if (!permSearch.trim()) return true
+      const meta = formatPermission(p)
+      const q = permSearch.toLowerCase()
+      return (
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.code && p.code.toLowerCase().includes(q)) ||
+        (meta.title && meta.title.toLowerCase().includes(q)) ||
+        (meta.description && meta.description.toLowerCase().includes(q))
+      )
+    })
+  }, [permissions, assignedPermIds, permFilterMode, permSearch])
 
   const togglePermission = (permId: string) => {
     setAssignedPermIds(prev => 
@@ -1040,7 +1080,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Permission Matrix for selected role (8 cols) */}
           <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200/90 p-5 shadow-md flex flex-col justify-between">
             <div>
-              <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-100 mb-4 gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">
                     Phân Quyền Cho Vai Trò:{' '}
@@ -1050,11 +1090,51 @@ export const AdminDashboard: React.FC = () => {
                     {selectedRole && <span className="text-xs text-slate-400 font-mono ml-1.5 font-normal">({selectedRole.name})</span>}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Chọn các quyền hạn chức năng mà vai trò này được phép thực thi trong toàn hệ thống.
+                    Các quyền hạn chức năng mà vai trò này được phép thực thi trong toàn hệ thống.
                   </p>
                 </div>
-                <div className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                  {assignedPermIds.length} / {permissions.length} quyền
+                <div className="flex items-center gap-2">
+                  <div className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                    {assignedPermIds.length} / {permissions.length} quyền
+                  </div>
+                </div>
+              </div>
+
+              {/* Search & Filter Toolbar */}
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="relative flex-1 max-w-sm">
+                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px]">search</span>
+                  <input
+                    type="text"
+                    placeholder="Tìm kiếm quyền theo mã hoặc tên..."
+                    value={permSearch}
+                    onChange={(e) => setPermSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-slate-900"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPermFilterMode('all')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      permFilterMode === 'all'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    Tất cả ({permissions.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPermFilterMode('assigned')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      permFilterMode === 'assigned'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200'
+                    }`}
+                  >
+                    Đã tick ({assignedPermIds.length})
+                  </button>
                 </div>
               </div>
 
@@ -1072,7 +1152,7 @@ export const AdminDashboard: React.FC = () => {
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[520px] overflow-y-auto pr-2">
-                {permissions.map((p) => {
+                {filteredPermissions.map((p) => {
                   const isChecked = assignedPermIds.includes(p.id)
                   const permMeta = formatPermission(p)
                   return (

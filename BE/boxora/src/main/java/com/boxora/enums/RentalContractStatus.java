@@ -10,7 +10,6 @@ public enum RentalContractStatus {
     OVERDUE_LOCKED,
     EXPIRED,
     TERMINATED,
-    CANCELLED
+    CANCELLED,
+    SUPERSEDED
 }
-
-
