@@ -208,7 +208,7 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-300 dark:bg-cyan-950/80 dark:text-cyan-300 dark:border-cyan-800',
       dotClass: 'bg-cyan-500 animate-pulse',
       description: `Nhân viên đã xếp buồng kho #${b.unitCode} tại ${b.facilityName}. Quý khách vui lòng đến theo lịch hẹn mang CCCD để hoàn tất nhận kho.`,
-      step: 3,
+      step: 4,
       stepLabel: 'Đã xếp buồng kho',
       priorityTag: '✓ Sẵn sàng đón tiếp',
       priorityTagClass: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800',
@@ -230,8 +230,8 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       badgeClass: 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950/80 dark:text-indigo-300 dark:border-indigo-800',
       dotClass: 'bg-indigo-500 animate-pulse',
       description: 'Hợp đồng điện tử DocuSeal đã ký & thanh toán thành công. Vào ngày check-in, nhân viên sẽ hỗ trợ quý khách chọn buồng kho mong muốn tại quầy.',
-      step: 2,
-      stepLabel: 'Đã ký & thanh toán',
+      step: 3,
+      stepLabel: 'Chờ xếp buồng kho',
       priorityTag: '⚡ Chờ xếp kho tại quầy',
       priorityTagClass: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800',
     }
@@ -245,9 +245,24 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
       dotClass: 'bg-amber-500 animate-pulse',
       description: 'Đơn đặt giữ chỗ thành công theo loại kho. Quý khách vui lòng đến cơ sở theo lịch hẹn để chọn vị trí buồng kho mong muốn, ký hợp đồng và thanh toán tại quầy.',
-      step: 1,
+      step: 2,
       stepLabel: 'Đã đặt chỗ thành công',
       priorityTag: '🏢 Ký & TT tại kho',
+      priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
+    }
+  }
+
+  // Contract signed online but pending deposit payment
+  if (status === 'SIGNED_PENDING_PAYMENT' || b.contractSigned) {
+    return {
+      stage: 'PENDING_CONTACT',
+      label: 'Chờ thanh toán',
+      badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
+      dotClass: 'bg-amber-500 animate-pulse',
+      description: 'Hợp đồng điện tử đã ký thành công. Quý khách vui lòng hoàn tất thanh toán trực tuyến để xác nhận giữ buồng kho.',
+      step: 2,
+      stepLabel: 'Chờ thanh toán',
+      priorityTag: '💳 Chờ thanh toán online',
       priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
     }
   }
@@ -259,7 +274,7 @@ export function getBookingStage(b: Booking): BookingStageInfo {
     badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
     dotClass: 'bg-amber-500 animate-pulse',
     description: 'Vui lòng hoàn tất ký hợp đồng điện tử và thanh toán trực tuyến để xác nhận giữ buồng kho.',
-    step: 1,
+    step: 2,
     stepLabel: 'Chờ ký & thanh toán',
     priorityTag: '💳 Chờ thanh toán online',
     priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',

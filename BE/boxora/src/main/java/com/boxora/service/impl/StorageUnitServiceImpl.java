@@ -80,9 +80,6 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
     private static final List<BookingStatus> INVENTORY_HOLDING_STATUSES = List.of(
             BookingStatus.PENDING_APPROVAL,
-            BookingStatus.PENDING_PAYMENT,
-            BookingStatus.PENDING_SIGNATURE,
-            BookingStatus.SIGNED_PENDING_PAYMENT,
             BookingStatus.PAID_PENDING_ASSIGNMENT,
             BookingStatus.PAID_AND_SIGNED,
             BookingStatus.PENDING_CONTACT,

@@ -215,6 +215,34 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
   const [paymentRedirectUrl, setPaymentRedirectUrl] = useState<string | null>(null)
   const [payLaterConfirmed, setPayLaterConfirmed] = useState<boolean>(false)
+  const [hasSignedContract, setHasSignedContract] = useState<boolean>(false)
+  const [signingFormSnapshot, setSigningFormSnapshot] = useState<{
+    facilityId: string
+    sizeTierKey: string
+    rentalMonths: number
+    startDate: string
+    checkInDate: string
+    selectedPeriodId: string
+    fullName: string
+    phone: string
+    email: string
+    idCard: string
+    idCardType: string
+  } | null>(null)
+
+  useEffect(() => {
+    const handlePageShow = () => {
+      setIsPayNowProcessing(false)
+      setIsPayLaterProcessing(false)
+    }
+    window.addEventListener('pageshow', handlePageShow)
+    return () => window.removeEventListener('pageshow', handlePageShow)
+  }, [])
+
+  useEffect(() => {
+    setIsPayNowProcessing(false)
+    setIsPayLaterProcessing(false)
+  }, [currentStep])
 
   // Refresh storage units
   const refreshStorageUnits = useCallback(() => {
@@ -466,6 +494,85 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     }
   }, [selectedTierKey, rentalMonths])
 
+  // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
+  const captureSigningSnapshot = useCallback(() => ({
+    facilityId: selectedFacility?.id || '',
+    sizeTierKey: selectedTierKey,
+    rentalMonths,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    fullName: fullName.trim(),
+    phone: phone.trim().replace(/[\s.-]/g, ''),
+    email: email.trim().toLowerCase(),
+    idCard: idCard.trim(),
+    idCardType,
+  }), [
+    selectedFacility?.id,
+    selectedTierKey,
+    rentalMonths,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    fullName,
+    phone,
+    email,
+    idCard,
+    idCardType,
+  ])
+
+  // Kiểm tra xem form hiện tại có khớp hoàn toàn với thông tin của hợp đồng đã ký trước đó hay không
+  const isContractFormMatching = useMemo(() => {
+    if (!signingFormSnapshot) return false
+    return (
+      signingFormSnapshot.facilityId === (selectedFacility?.id || '') &&
+      signingFormSnapshot.sizeTierKey === selectedTierKey &&
+      signingFormSnapshot.rentalMonths === rentalMonths &&
+      signingFormSnapshot.startDate === startDate &&
+      signingFormSnapshot.checkInDate === checkInDate &&
+      signingFormSnapshot.selectedPeriodId === selectedPeriodId &&
+      signingFormSnapshot.fullName.toLowerCase() === fullName.trim().toLowerCase() &&
+      signingFormSnapshot.phone === phone.trim().replace(/[\s.-]/g, '') &&
+      signingFormSnapshot.email.toLowerCase() === email.trim().toLowerCase() &&
+      signingFormSnapshot.idCard === idCard.trim() &&
+      signingFormSnapshot.idCardType === idCardType
+    )
+  }, [
+    signingFormSnapshot,
+    selectedFacility?.id,
+    selectedTierKey,
+    rentalMonths,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    fullName,
+    phone,
+    email,
+    idCard,
+    idCardType,
+  ])
+
+  // Nếu người dùng quay lại thay đổi bất kỳ thông tin nào (cơ sở, loại kho, tháng thuê, khách hàng, ngày check-in),
+  // tự động hủy hợp đồng cũ và reset trạng thái ký để người dùng ký hợp đồng mới
+  useEffect(() => {
+    if (signingFormSnapshot && !isContractFormMatching) {
+      setHasSignedContract(false)
+      setContractForSigning(null)
+      setCreatedBookingForSigning(null)
+      setSigningFormSnapshot(null)
+    }
+  }, [signingFormSnapshot, isContractFormMatching])
+
+  const isContractAlreadySigned = Boolean(
+    isContractFormMatching &&
+    (hasSignedContract ||
+      contractForSigning?.signedAt ||
+      createdBookingForSigning?.contractSigned ||
+      (createdBookingForSigning as any)?.status === 'SIGNED_PENDING_PAYMENT' ||
+      (createdBookingForSigning as any)?.status === 'PAID_AND_SIGNED') &&
+    createdBookingForSigning?.id
+  )
+
   // Form Validation
   const validateStep3 = () => {
     const errors: Record<string, string> = {}
@@ -583,6 +690,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       }
 
       setContractForSigning(contract)
+      setSigningFormSnapshot(captureSigningSnapshot())
       setShowDocuSealModal(true)
     } catch (err: any) {
       console.error('Pay now initiation error:', err)
@@ -595,6 +703,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   // Callback sau khi ký DocuSeal thành công -> Chuyển hướng sang VNPay Sandbox
   const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
     setShowDocuSealModal(false)
+    setHasSignedContract(true)
+    setSigningFormSnapshot(captureSigningSnapshot())
+    if (_signedContract) {
+      setContractForSigning(_signedContract)
+    }
     setIsPayNowProcessing(true)
 
     try {
@@ -618,6 +731,37 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     } catch (paymentErr: any) {
       console.error('VNPay create error:', paymentErr)
       setSubmitError(paymentErr?.response?.data?.message || 'Hợp đồng đã ký thành công, nhưng không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
+    } finally {
+      setIsPayNowProcessing(false)
+    }
+  }
+
+  // Tiếp tục thực hiện thanh toán cho đơn và hợp đồng đã ký trước đó
+  const handleContinuePayment = async () => {
+    setIsPayNowProcessing(true)
+    setSubmitError(null)
+
+    try {
+      if (!createdBookingForSigning) return
+      const payableTotal = (createdBookingForSigning.totalRentalFee || quoteCalculation.totalRent) +
+        (createdBookingForSigning.depositAmount || quoteCalculation.depositAmount)
+
+      const vnpayRes = await paymentService.createVNPayPayment({
+        bookingId: createdBookingForSigning.id,
+        amount: payableTotal,
+        paymentType: 'BOOKING_PAYMENT',
+        orderInfo: `Thanh toan don dat cho ${createdBookingForSigning.bookingCode}`,
+      })
+
+      if (vnpayRes?.paymentUrl) {
+        setPaymentRedirectUrl(vnpayRes.paymentUrl)
+        window.location.href = vnpayRes.paymentUrl
+      } else {
+        throw new Error('Cổng thanh toán không trả về đường dẫn thanh toán hợp lệ.')
+      }
+    } catch (paymentErr: any) {
+      console.error('VNPay continue payment error:', paymentErr)
+      setSubmitError(paymentErr?.response?.data?.message || 'Không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
     } finally {
       setIsPayNowProcessing(false)
     }
@@ -1708,23 +1852,35 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                         {(quoteCalculation.totalRent + quoteCalculation.depositAmount).toLocaleString('vi-VN')} ₫
                       </strong>
                     </div>
+
+                    {isContractAlreadySigned && (
+                      <div className="p-3 rounded-xl bg-emerald-100/80 border border-emerald-300 text-emerald-950 text-xs flex items-start gap-2 shadow-xs">
+                        <Check size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                        <div className="space-y-0.5">
+                          <p className="font-bold">Hợp đồng điện tử đã ký thành công!</p>
+                          <p className="text-[11px] text-emerald-800">
+                            Đơn <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã hoàn tất ký hợp đồng. Nhấn <strong>"Tiếp tục thực hiện thanh toán"</strong> để chuyển sang VNPay.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-4 mt-2">
                     <button
                       type="button"
                       disabled={isPayNowProcessing}
-                      onClick={handlePayNow}
+                      onClick={isContractAlreadySigned ? handleContinuePayment : handlePayNow}
                       className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold text-xs shadow-md shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                     >
                       {isPayNowProcessing ? (
                         <>
                           <span className="animate-spin text-sm">⟳</span>
-                          <span>Đang chuẩn bị HĐ DocuSeal...</span>
+                          <span>Đang xử lý...</span>
                         </>
                       ) : (
                         <>
-                          <span>Ký hợp đồng &amp; Thanh toán ngay</span>
+                          <span>{isContractAlreadySigned ? 'Tiếp tục thực hiện thanh toán' : 'Ký hợp đồng & Thanh toán ngay'}</span>
                           <ArrowRight size={16} />
                         </>
                       )}

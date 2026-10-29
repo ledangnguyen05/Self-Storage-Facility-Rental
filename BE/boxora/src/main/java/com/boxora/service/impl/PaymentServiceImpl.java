@@ -8,6 +8,7 @@ import com.boxora.dto.response.VNPayPaymentResponse;
 import com.boxora.entity.Booking;
 import com.boxora.entity.Payment;
 import com.boxora.entity.RentalContract;
+import com.boxora.entity.User;
 import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.enums.PaymentStatus;
@@ -767,6 +768,7 @@ public class PaymentServiceImpl implements PaymentService {
                         log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking {}: {}", booking.getBookingCode(), ex.getMessage());
                     }
                 }
+                sendContractSignedConfirmationEmailIfApplicable(booking);
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE && contractRenewalServiceProvider != null) {
@@ -919,6 +921,7 @@ public class PaymentServiceImpl implements PaymentService {
                         log.warn("Khong the tu dong khoi tao hop dong DocuSeal cho booking qua IPN {}: {}", booking.getBookingCode(), ex.getMessage());
                     }
                 }
+                sendContractSignedConfirmationEmailIfApplicable(booking);
             }
 
             if (payment.getPaymentType() == PaymentType.RENEWAL_FEE && contractRenewalServiceProvider != null) {
@@ -1189,5 +1192,42 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(payment.getAmount())
                 .orderInfo(orderInfo)
                 .build();
+    }
+
+    private void sendContractSignedConfirmationEmailIfApplicable(Booking booking) {
+        if (booking == null || booking.getId() == null) {
+            return;
+        }
+        EmailService emailService = emailServiceProvider != null ? emailServiceProvider.getIfAvailable() : null;
+        if (emailService == null) {
+            return;
+        }
+        try {
+            Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+            if (contractOpt.isPresent()) {
+                RentalContract contract = contractOpt.get();
+                if (contract.getSignedAt() != null) {
+                    User customer = contract.getCustomer() != null ? contract.getCustomer() : booking.getCustomer();
+                    if (customer != null && customer.getEmail() != null && !customer.getEmail().isBlank()) {
+                        String unitDisplay = contract.getUnit() != null
+                                ? contract.getUnit().getUnitCode()
+                                : (booking.getUnitType() != null ? "Kích thước: " + booking.getUnitType().getTypeName() + " (Chờ nhân viên bàn giao)" : "Chờ bàn giao tại cơ sở");
+                        emailService.sendContractSignedConfirmationEmail(
+                                customer.getEmail(),
+                                customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
+                                contract.getContractCode(),
+                                unitDisplay,
+                                "Chưa kích hoạt (Nhân viên sẽ bàn giao mã ô kho và mã khóa IoT cho quý khách)",
+                                contract.getSignedDocumentUrl()
+                        );
+                        log.info("[PAYMENT_CONFIRMED_CONTRACT_EMAIL] Sent signed contract confirmation email to {} for contract {} / booking {}",
+                                customer.getEmail(), contract.getContractCode(), booking.getBookingCode());
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("[PAYMENT_CONFIRMED_CONTRACT_EMAIL] Failed to send contract signed confirmation email for booking {}: {}",
+                    booking.getBookingCode(), ex.getMessage());
+        }
     }
 }

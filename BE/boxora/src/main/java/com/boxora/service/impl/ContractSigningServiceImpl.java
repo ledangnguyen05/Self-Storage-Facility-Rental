@@ -802,6 +802,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         contract.setSigningMethod("ONLINE");
 
         Booking booking = contract.getBooking();
+        boolean hasPaid = false;
         if (booking != null) {
             booking = bookingRepository.findByIdForUpdate(booking.getId()).orElse(booking);
             contract.setBooking(booking);
@@ -809,7 +810,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
             booking.setContractSigned(true);
 
             // Kiểm tra trạng thái thanh toán để chuyển sang trạng thái chờ nhân viên bàn giao
-            boolean hasPaid = "PAID".equalsIgnoreCase(booking.getPaymentStatus())
+            hasPaid = "PAID".equalsIgnoreCase(booking.getPaymentStatus())
                     || isBookingInitialPaymentSatisfied(booking);
             if (hasPaid) {
                 // Đã thanh toán và đã ký -> Báo về Staff Dashboard chờ gán kho
@@ -818,30 +819,38 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 booking.setStatus(BookingStatus.SIGNED_PENDING_PAYMENT);
             }
             bookingRepository.save(booking);
+        } else {
+            hasPaid = true;
         }
 
         // Hợp đồng ở trạng thái chờ kích hoạt cho đến khi nhân viên gán kho và bàn giao
         contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
         rentalContractRepository.save(contract);
 
-        // Gửi email xác nhận ký hợp đồng (KHÔNG gửi mã PIN và KHÔNG tự gán mã kho - mã kho và mã PIN chỉ gửi khi nhân viên bàn giao)
-        try {
-            User customer = contract.getCustomer();
-            if (customer != null && customer.getEmail() != null) {
-                String unitDisplay = contract.getUnit() != null 
-                        ? contract.getUnit().getUnitCode() 
-                        : (booking != null && booking.getUnitType() != null ? "Kích thước: " + booking.getUnitType().getTypeName() + " (Chờ nhân viên bàn giao)" : "Chờ bàn giao tại cơ sở");
-                emailService.sendContractSignedConfirmationEmail(
-                        customer.getEmail(),
-                        customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
-                        contract.getContractCode(),
-                        unitDisplay,
-                        "Chưa kích hoạt (Nhân viên sẽ bàn giao mã ô kho và mã khóa IoT cho quý khách)",
-                        contract.getSignedDocumentUrl()
-                );
+        // Gửi email xác nhận ký hợp đồng CHỈ KHI khách hàng đã hoàn tất thanh toán (hasPaid == true).
+        // Nếu khách hàng chưa thanh toán, email này sẽ được gửi tự động sau khi thanh toán thành công qua PaymentService.
+        if (hasPaid) {
+            try {
+                User customer = contract.getCustomer();
+                if (customer != null && customer.getEmail() != null) {
+                    String unitDisplay = contract.getUnit() != null 
+                            ? contract.getUnit().getUnitCode() 
+                            : (booking != null && booking.getUnitType() != null ? "Kích thước: " + booking.getUnitType().getTypeName() + " (Chờ nhân viên bàn giao)" : "Chờ bàn giao tại cơ sở");
+                    emailService.sendContractSignedConfirmationEmail(
+                            customer.getEmail(),
+                            customer.getFullName() != null ? customer.getFullName() : customer.getUsername(),
+                            contract.getContractCode(),
+                            unitDisplay,
+                            "Chưa kích hoạt (Nhân viên sẽ bàn giao mã ô kho và mã khóa IoT cho quý khách)",
+                            contract.getSignedDocumentUrl()
+                    );
+                    log.info("Contract signed confirmation email sent to {} for contract {}", customer.getEmail(), contract.getContractCode());
+                }
+            } catch (Exception e) {
+                log.warn("Failed to send signed contract confirmation email: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("Failed to send signed contract confirmation email: {}", e.getMessage());
+        } else {
+            log.info("Contract {} has been signed by customer, but initial payment is not yet completed. Deferring contract signed confirmation email until payment is confirmed.", contract.getContractCode());
         }
 
         activityLogService.recordSystem(

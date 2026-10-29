@@ -1630,7 +1630,7 @@ export const StaffDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">desk</span>
-          <span>2. Bàn Tiếp Đón nhận kho</span>
+          <span>2. Bàn Tiếp Đón Nhận Kho</span>
           {arrivalStatusCounts.confirmedCheckIn > 0 && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
               staffActiveTab === 'reception'

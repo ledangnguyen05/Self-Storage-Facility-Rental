@@ -54,7 +54,7 @@ interface InspectedUnit {
   maintenanceAt?: string
 }
 
-type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'refunds' | 'performance' | 'policy'
+type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'refunds' | 'policy'
 
 const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[] => {
   let list = [...apiArrivals]
@@ -135,7 +135,7 @@ export const ManagerDashboard: React.FC = () => {
     if (role === 'STAFF') {
       return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets'
     }
-    return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'refunds' || tab === 'performance' || tab === 'policy'
+    return tab === 'overview' || tab === 'pending_orders' || tab === 'reception' || tab === 'handovers-returns' || tab === 'returns' || tab === 'renewals' || tab === 'tickets' || tab === 'refunds' || tab === 'policy'
   }
 
   const [activeTab, setActiveTabState] = useState<ManagerDashboardTab>(
@@ -159,7 +159,7 @@ export const ManagerDashboard: React.FC = () => {
     const currentTab = searchParams.get('tab') as ManagerDashboardTab | null
     if (isTabAllowed(currentTab)) {
       setActiveTabState(currentTab as ManagerDashboardTab)
-    } else if (role === 'STAFF' && (currentTab === 'performance' || currentTab === 'policy')) {
+    } else if (role === 'STAFF' && currentTab === 'policy') {
       setActiveTabState('overview')
     }
   }, [searchParams, role])
@@ -1607,7 +1607,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">account_balance</span>
-          <span>Hoàn Tiền Hủy Đơn</span>
+          <span>5. Hoàn Tiền Hủy Đơn</span>
           {pendingRefundCount > 0 && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
               activeTab === 'refunds'
@@ -1629,7 +1629,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>Sự Cố &amp; SLA</span>
+          <span>6. Sự Cố &amp; SLA</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'tickets'
               ? 'bg-white text-slate-900'
@@ -1640,33 +1640,18 @@ export const ManagerDashboard: React.FC = () => {
         </button>
 
         {role !== 'STAFF' && (
-          <>
-            <button
-              type="button"
-              onClick={() => setActiveTab('performance')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'performance'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">trending_up</span>
-              <span>4. Hiệu Suất &amp; Ngoại Lệ</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('policy')}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
-                activeTab === 'policy'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[18px]">policy</span>
-              <span>5. Chính Sách Vận Hành Cơ Sở</span>
-            </button>
-          </>
+          <button
+            type="button"
+            onClick={() => setActiveTab('policy')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
+              activeTab === 'policy'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">policy</span>
+            <span>7. Chính Sách Vận Hành Cơ Sở</span>
+          </button>
         )}
       </div>
 
@@ -2763,86 +2748,7 @@ export const ManagerDashboard: React.FC = () => {
       )}
 
       {/* ============================================================== */}
-      {/* TAB 4: HIỆU SUẤT & NGOẠI LỆ QUẢN LÝ */}
-      {/* ============================================================== */}
-      {activeTab === 'performance' && (
-        <section className="flex flex-col gap-6">
-          
-          {/* Facility Performance Overview (Summary 6) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
-            <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-              <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Tỷ Lệ Lấp Đầy Cơ Sở</span>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-3xl font-extrabold font-mono text-blue-600 tabular-nums">{rentedPercent}%</span>
-                <span className="text-xs text-slate-500">mục tiêu 85%</span>
-              </div>
-              <div className="mt-3 w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div className="bg-blue-600 h-full rounded-full" style={{ width: `${rentedPercent}%` }}></div>
-              </div>
-            </div>
-
-            <div 
-              onClick={() => setShowIoTModal(true)}
-              className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs cursor-pointer hover:border-slate-300 transition"
-              title="Xem thông số hạ tầng vi khí hậu & telemetry IoT"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase font-bold text-slate-500 font-mono block">Hạ Tầng Mạng IoT LoRaWAN</span>
-                <span className="material-symbols-outlined text-slate-400 text-[18px]">sensors</span>
-              </div>
-              <div className="mt-3 flex items-baseline gap-1">
-                <span className="text-lg font-bold text-slate-700">Not connected</span>
-                <span className="text-xs text-slate-500">hardware integration</span>
-              </div>
-              <span className="text-xs text-amber-700 font-semibold mt-2 block">No live device telemetry is available.</span>
-            </div>
-
-          </div>
-
-          {/* Exceptions Requiring Manager Review */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-purple-600 text-[22px]">gavel</span>
-                <h3 className="font-headline text-base font-bold text-slate-900">
-                  Trung Tâm Phê Duyệt &amp; Xử Lý Ngoại Lệ Nghiệp Vụ
-                </h3>
-              </div>
-              <span className="text-xs text-slate-500">Chỉ dành cho Quản lý cơ sở / BOM</span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4">
-              
-              {/* Exception 1: Asset Sealing & Delinquency */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-slate-900 text-xs">Niêm Phong Tài Sản Quá Hạn</span>
-                    <span className="px-2 py-0.5 rounded font-mono text-[10px] font-bold bg-rose-100 text-rose-800">
-                      {overdueUnitsCount} kho nợ cước
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Theo dõi hợp đồng quá hạn, thu hồi PIN/QR trong Boxora khi cần và lập biên bản niêm phong. Trạng thái khóa vật lý chưa được xác minh ({overdueItems.length} hồ sơ cần theo dõi).
-                  </p>
-                </div>
-                <Link
-                  to="/portal/overdue"
-                  className="mt-4 w-full py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition text-center block"
-                >
-                  Quản Lý Cưỡng Chế Nợ &rarr;
-                </Link>
-              </div>
-
-            </div>
-          </div>
-
-        </section>
-      )}
-
-      {/* ============================================================== */}
-      {/* TAB 5: CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
+      {/* TAB 7: CHÍNH SÁCH VẬN HÀNH CƠ SỞ */}
       {/* ============================================================== */}
       {activeTab === 'policy' && (
         <section className="flex flex-col gap-6">

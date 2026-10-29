@@ -485,6 +485,36 @@ export const BookingPage: React.FC = () => {
   const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
   const [contractForSigning, setContractForSigning] = useState<RentalContract | null>(null)
   const [createdBookingForSigning, setCreatedBookingForSigning] = useState<any>(null)
+  const [hasSignedContract, setHasSignedContract] = useState<boolean>(false)
+  const [signingFormSnapshot, setSigningFormSnapshot] = useState<{
+    facilityId: string
+    sizeId: string
+    isAc: boolean
+    durationMode: string
+    rentalMonths: number
+    customDays: number
+    startDate: string
+    checkInDate: string
+    selectedPeriodId: string
+    customerName: string
+    customerPhone: string
+    customerEmail: string
+    customerIdCard: string
+    idCardType: string
+  } | null>(null)
+
+  // Listen to BFCache / page navigation returns so isSubmitting is never permanently stuck
+  useEffect(() => {
+    const handlePageShow = () => {
+      setIsSubmitting(false)
+    }
+    window.addEventListener('pageshow', handlePageShow)
+    return () => window.removeEventListener('pageshow', handlePageShow)
+  }, [])
+
+  useEffect(() => {
+    setIsSubmitting(false)
+  }, [currentStep])
 
   // Load backend data
   useEffect(() => {
@@ -846,6 +876,97 @@ export const BookingPage: React.FC = () => {
     }
   }, [currentSelectedSize, isAcActive, isCustomDuration, rentalMonths, customDays])
 
+  // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
+  const captureSigningSnapshot = useCallback(() => ({
+    facilityId: selectedFacility?.id || '',
+    sizeId: currentSelectedSize.id,
+    isAc: isAcActive,
+    durationMode,
+    rentalMonths,
+    customDays,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    customerName: customerName.trim(),
+    customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
+    customerEmail: customerEmail.trim().toLowerCase(),
+    customerIdCard: customerIdCard.trim(),
+    idCardType,
+  }), [
+    selectedFacility?.id,
+    currentSelectedSize.id,
+    isAcActive,
+    durationMode,
+    rentalMonths,
+    customDays,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    customerName,
+    customerPhone,
+    customerEmail,
+    customerIdCard,
+    idCardType,
+  ])
+
+  // Kiểm tra xem form hiện tại có khớp hoàn toàn với thông tin của hợp đồng đã ký trước đó hay không
+  const isContractFormMatching = useMemo(() => {
+    if (!signingFormSnapshot) return false
+    return (
+      signingFormSnapshot.facilityId === (selectedFacility?.id || '') &&
+      signingFormSnapshot.sizeId === currentSelectedSize.id &&
+      signingFormSnapshot.isAc === isAcActive &&
+      signingFormSnapshot.durationMode === durationMode &&
+      signingFormSnapshot.rentalMonths === rentalMonths &&
+      signingFormSnapshot.customDays === customDays &&
+      signingFormSnapshot.startDate === startDate &&
+      signingFormSnapshot.checkInDate === checkInDate &&
+      signingFormSnapshot.selectedPeriodId === selectedPeriodId &&
+      signingFormSnapshot.customerName.toLowerCase() === customerName.trim().toLowerCase() &&
+      signingFormSnapshot.customerPhone === customerPhone.trim().replace(/[\s.-]/g, '') &&
+      signingFormSnapshot.customerEmail.toLowerCase() === customerEmail.trim().toLowerCase() &&
+      signingFormSnapshot.customerIdCard === customerIdCard.trim() &&
+      signingFormSnapshot.idCardType === idCardType
+    )
+  }, [
+    signingFormSnapshot,
+    selectedFacility?.id,
+    currentSelectedSize.id,
+    isAcActive,
+    durationMode,
+    rentalMonths,
+    customDays,
+    startDate,
+    checkInDate,
+    selectedPeriodId,
+    customerName,
+    customerPhone,
+    customerEmail,
+    customerIdCard,
+    idCardType,
+  ])
+
+  // Nếu người dùng quay lại thay đổi bất kỳ thông tin nào (cơ sở, loại kho, tháng thuê, khách hàng, ngày check-in),
+  // tự động hủy hợp đồng cũ và reset trạng thái ký để người dùng ký hợp đồng mới
+  useEffect(() => {
+    if (signingFormSnapshot && !isContractFormMatching) {
+      setHasSignedContract(false)
+      setContractForSigning(null)
+      setCreatedBookingForSigning(null)
+      setSigningFormSnapshot(null)
+    }
+  }, [signingFormSnapshot, isContractFormMatching])
+
+  const isContractAlreadySigned = Boolean(
+    isContractFormMatching &&
+    (hasSignedContract ||
+      contractForSigning?.signedAt ||
+      createdBookingForSigning?.contractSigned ||
+      createdBookingForSigning?.status === 'SIGNED_PENDING_PAYMENT' ||
+      createdBookingForSigning?.status === 'PAID_AND_SIGNED') &&
+    createdBookingForSigning?.id
+  )
+
   // Toggle AC mode for a size
   const handleToggleAc = (sizeId: string, mode: 'NON_AC' | 'AC', e?: React.MouseEvent) => {
     if (e) e.stopPropagation()
@@ -1006,6 +1127,12 @@ export const BookingPage: React.FC = () => {
       localStorage.setItem('boxora_user_cccd', customerIdCard.trim())
     }
 
+    // Nếu trước đó đã ký hợp đồng online thành công nhưng chưa thanh toán, tiếp tục thanh toán đơn hiện tại
+    if (selectedMethod === 'ONLINE' && isContractAlreadySigned && createdBookingForSigning?.id) {
+      void handleContinuePayment()
+      return
+    }
+
     // Nếu chọn Thanh toán online nhưng chưa đăng nhập tài khoản
     if (selectedMethod === 'ONLINE' && !isAuthenticated) {
       setShowAuthModal(true)
@@ -1129,6 +1256,7 @@ export const BookingPage: React.FC = () => {
         }
 
         setContractForSigning(contract)
+        setSigningFormSnapshot(captureSigningSnapshot())
         setShowDocuSealModal(true)
         setIsSubmitting(false)
         return
@@ -1164,6 +1292,11 @@ export const BookingPage: React.FC = () => {
   // Bước 3: Sau khi khách ký hợp đồng trực tuyến DocuSeal thành công -> Tạo VNPay và chuyển hướng sang Sandbox
   const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
     setShowDocuSealModal(false)
+    setHasSignedContract(true)
+    setSigningFormSnapshot(captureSigningSnapshot())
+    if (_signedContract) {
+      setContractForSigning(_signedContract)
+    }
     setIsSubmitting(true)
     setSubmitError(null)
 
@@ -1195,6 +1328,45 @@ export const BookingPage: React.FC = () => {
     } catch (err: any) {
       console.error('VNPay redirect after sign error:', err)
       setSubmitError(err?.message || 'Hợp đồng đã ký thành công, nhưng không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
+      setIsSubmitting(false)
+    }
+  }
+
+  // Tiếp tục thực hiện thanh toán cho đơn và hợp đồng đã ký trước đó
+  const handleContinuePayment = async () => {
+    setIsSubmitting(true)
+    setSubmitError(null)
+
+    try {
+      const targetBooking = createdBookingForSigning
+      if (!targetBooking?.id) {
+        await handleProcessPaymentAndConfirm('ONLINE')
+        return
+      }
+
+      const paymentAmount = (targetBooking?.totalRentalFee != null && targetBooking?.depositAmount != null)
+        ? Math.round(Number(targetBooking.totalRentalFee) + Number(targetBooking.depositAmount))
+        : (targetBooking?.initialPaymentAmount != null
+            ? Math.round(Number(targetBooking.initialPaymentAmount))
+            : quoteCalculation.totalEstimate)
+
+      const payRes = await paymentService.createVNPayPayment({
+        bookingId: targetBooking.id,
+        paymentType: 'BOOKING_PAYMENT',
+        amount: paymentAmount,
+        orderInfo: `Thanh toan giu cho ${targetBooking.bookingCode || bookingCode}`,
+        returnUrl: `${window.location.origin}/payment-result`,
+      })
+
+      if (payRes?.paymentUrl) {
+        sendReservationToStaff(targetBooking.bookingCode || bookingCode, 'ONLINE', false, targetBooking.id)
+        window.location.assign(payRes.paymentUrl)
+      } else {
+        throw new Error('Cổng thanh toán không phản hồi đường dẫn giao dịch. Vui lòng thử lại trong giây lát.')
+      }
+    } catch (err: any) {
+      console.error('Continue VNPay payment error:', err)
+      setSubmitError(err?.message || 'Không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
       setIsSubmitting(false)
     }
   }
@@ -1313,12 +1485,17 @@ export const BookingPage: React.FC = () => {
         return
       }
 
+      setIsSubmitting(false)
       setCurrentStep(5)
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
     if (currentStep === 5) {
-      void handleProcessPaymentAndConfirm()
+      if (paymentMethod === 'ONLINE' && isContractAlreadySigned) {
+        void handleContinuePayment()
+      } else {
+        void handleProcessPaymentAndConfirm()
+      }
       return
     }
   }
@@ -1341,6 +1518,7 @@ export const BookingPage: React.FC = () => {
       return
     }
     if (currentStep === 5) {
+      setIsSubmitting(false)
       setCurrentStep(4)
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
@@ -2691,6 +2869,20 @@ export const BookingPage: React.FC = () => {
               </div>
             )}
 
+            {isContractAlreadySigned && paymentMethod === 'ONLINE' && (
+              <div className="p-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 text-xs sm:text-sm flex items-start gap-3 shadow-xs">
+                <CheckCircle2 size={20} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-emerald-950 dark:text-emerald-100">
+                    Hợp đồng điện tử đã được ký kết thành công!
+                  </p>
+                  <p className="text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed">
+                    Đơn đặt chỗ <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã hoàn tất ký kết hợp đồng. Quý khách vui lòng nhấn nút <strong>"Tiếp tục thực hiện thanh toán"</strong> bên dưới để hoàn tất giao dịch qua cổng thanh toán VNPay.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-5 items-start">
               
               {/* LEFT COLUMN: 2 CONTRACT & PAYMENT OPTIONS */}
@@ -3076,7 +3268,13 @@ export const BookingPage: React.FC = () => {
                 <button
                   type="button"
                   disabled={isSubmitting}
-                  onClick={() => handleProcessPaymentAndConfirm()}
+                  onClick={() => {
+                    if (paymentMethod === 'ONLINE' && isContractAlreadySigned) {
+                      void handleContinuePayment()
+                    } else {
+                      void handleProcessPaymentAndConfirm()
+                    }
+                  }}
                   className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (
@@ -3087,7 +3285,9 @@ export const BookingPage: React.FC = () => {
                   ) : (
                     <span>
                       {paymentMethod === 'ONLINE'
-                        ? 'Tiến hành Ký HĐ & Thanh toán trực tuyến'
+                        ? (isContractAlreadySigned
+                            ? 'Tiếp tục thực hiện thanh toán'
+                            : 'Tiến hành Ký HĐ & Thanh toán trực tuyến')
                         : 'Xác nhận (Ký HĐ & Thanh toán tại cơ sở)'}
                     </span>
                   )}

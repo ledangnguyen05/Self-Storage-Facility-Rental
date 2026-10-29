@@ -42,7 +42,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
           AND b.storageUnit IS NULL
           AND b.status IN :holdingStatuses
           AND (
-            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'OVERDUE')
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
             OR (
               (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
               AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
@@ -62,7 +62,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
           AND b.storageUnit IS NULL
           AND b.status IN :holdingStatuses
           AND (
-            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'OVERDUE')
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
             OR (
               (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
               AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
@@ -80,7 +80,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
         WHERE b.storageUnit IS NULL
           AND b.status IN :holdingStatuses
           AND (
-            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'OVERDUE')
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
             OR (
               (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
               AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
@@ -99,7 +99,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
           AND b.storageUnit IS NULL
           AND b.status IN :holdingStatuses
           AND (
-            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'OVERDUE')
+            b.status NOT IN ('PENDING_PAYMENT', 'PENDING_SIGNATURE', 'SIGNED_PENDING_PAYMENT', 'OVERDUE')
             OR (
               (b.holdExpiresAt IS NULL OR b.holdExpiresAt > :now)
               AND (b.paymentExpiresAt IS NULL OR b.paymentExpiresAt > :now)
