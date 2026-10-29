@@ -5,7 +5,9 @@ import {
   StaffAssignmentResponse,
   ShiftSwapRequest,
   ShiftHandover,
-  isShiftAbsent
+  isShiftAbsent,
+  isShiftForgottenCheckout,
+  calculateShiftWorkHours
 } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
@@ -1693,11 +1695,21 @@ export const StaffMyShiftsPage: React.FC = () => {
       {/* ==================== TAB 4: ATTENDANCE HISTORY ==================== */}
       {mainTab === 'ATTENDANCE' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 flex flex-col gap-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-base font-bold text-slate-900">Lịch sử chấm công &amp; Điểm danh</h2>
-            <p className="text-xs text-slate-500">
-              Đối chiếu giờ check-in và check-out thực tế so với kế hoạch phân ca. Dữ liệu được bảo toàn tự động.
-            </p>
+          <div className="border-b border-slate-100 pb-3 flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Lịch sử chấm công &amp; Điểm danh</h2>
+              <p className="text-xs text-slate-500">
+                Đối chiếu giờ check-in và check-out thực tế so với kế hoạch phân ca. Dữ liệu được bảo toàn tự động.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <FileText className="w-4 h-4" />
+              <span>In Phiếu Chấm Công</span>
+            </button>
           </div>
 
           <div className="overflow-x-auto">
@@ -1709,6 +1721,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                   <th className="py-3 px-4">Giờ quy định</th>
                   <th className="py-3 px-4">Check-in thực tế</th>
                   <th className="py-3 px-4">Check-out thực tế</th>
+                  <th className="py-3 px-4 text-center">Giờ công</th>
                   <th className="py-3 px-4">Trạng thái</th>
                   <th className="py-3 px-4">Ghi chú</th>
                 </tr>
@@ -1732,11 +1745,26 @@ export const StaffMyShiftsPage: React.FC = () => {
                         {item.checkedInAt ? formatDateTime(item.checkedInAt) : '—'}
                       </td>
                       <td className="py-3 px-4 font-mono text-blue-700 font-semibold">
-                        {item.checkedOutAt ? formatDateTime(item.checkedOutAt) : 'Chưa ra ca'}
+                        {item.checkedOutAt ? (
+                          formatDateTime(item.checkedOutAt)
+                        ) : isShiftForgottenCheckout(item) ? (
+                          <span className="text-rose-600 font-bold font-mono">Quên ra ca (>23:59:59)</span>
+                        ) : (
+                          'Chưa ra ca'
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono font-bold">
+                        <span className={calculateShiftWorkHours(item) > 0 ? 'text-emerald-700' : 'text-slate-400'}>
+                          {calculateShiftWorkHours(item).toFixed(1)}h
+                        </span>
                       </td>
                       <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                          {STATUS_LABELS[item.status]?.label || item.status}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          isShiftForgottenCheckout(item)
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}>
+                          {isShiftForgottenCheckout(item) ? 'Không đi làm (Quên ra ca)' : (STATUS_LABELS[item.status]?.label || item.status)}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-slate-500 text-[11px] max-w-xs truncate">
@@ -1860,6 +1888,22 @@ export const StaffMyShiftsPage: React.FC = () => {
               <div>Ca làm: <strong className="text-slate-900">{SHIFT_LABELS[checkInModalShift.shift]?.label || checkInModalShift.shift}</strong></div>
               <div>Ngày làm: <strong className="font-mono text-slate-900">{formatVN(checkInModalShift.assignedDate)}</strong></div>
               <div>Khung giờ: <strong className="font-mono text-slate-900">{formatTime(checkInModalShift.startTime)} – {formatTime(checkInModalShift.endTime)}</strong></div>
+            </div>
+
+            {/* CẢNH BÁO QUY ĐỊNH BẮT BUỘC RA CA */}
+            <div className="p-3.5 rounded-xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs flex gap-2.5 items-start">
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-rose-800 uppercase tracking-wide text-[11px]">
+                  ⚠️ LƯU Ý BẮT BUỘC VỀ CHẤM CÔNG & RA CA:
+                </p>
+                <p className="leading-relaxed text-[11.5px] text-rose-900">
+                  Khi kết thúc ca làm việc, bạn <strong>bắt buộc phải bấm "Ra ca" (Check-out)</strong>.
+                </p>
+                <p className="leading-relaxed text-[11.5px] text-rose-700 font-bold bg-white/70 p-1.5 rounded-lg border border-rose-200">
+                  Nếu quên ra ca trước 23:59:59 của ngày làm việc, hệ thống sẽ tự động hủy tính công và ghi nhận là KHÔNG ĐI LÀM (VẮNG MẶT - 0 công).
+                </p>
+              </div>
             </div>
 
             <div>

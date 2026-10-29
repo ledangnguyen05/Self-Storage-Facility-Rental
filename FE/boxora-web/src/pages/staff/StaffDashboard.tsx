@@ -1562,6 +1562,30 @@ export const StaffDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* BANNER NHẮC NHỞ QUY CHẾ CHẤM CÔNG & RA CA BẮT BUỘC */}
+      <div className="p-3.5 bg-blue-50/80 border border-blue-200/90 rounded-2xl flex items-center justify-between gap-4 shadow-xs flex-wrap">
+        <div className="flex items-center gap-3 text-blue-950 font-medium text-xs">
+          <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <span className="material-symbols-outlined text-[18px]">fact_check</span>
+          </div>
+          <div>
+            <p className="font-bold text-blue-950 text-xs">
+              Quy chế chấm công bắt buộc về Ra ca:
+            </p>
+            <p className="text-blue-900 text-[11.5px] mt-0.5">
+              Khi hoàn thành ca trực, nhân viên <strong>bắt buộc phải bấm "Ra ca" (Check-out)</strong>. Nếu quên ra ca trước <strong>23:59:59</strong> của ngày làm việc, hệ thống sẽ tự động ghi nhận là <strong>Không đi làm (0.0 giờ công)</strong>.
+            </p>
+          </div>
+        </div>
+        <Link
+          to="/staff/my-shifts"
+          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1 transition-colors shadow-xs shrink-0 cursor-pointer"
+        >
+          <span>Xem ca của tôi</span>
+          <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+        </Link>
+      </div>
+
       {/* ALERT: Incoming Shift Swap waiting for confirmation */}
       {pendingIncomingSwapsCount > 0 && (
         <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl flex items-center justify-between gap-4 shadow-xs flex-wrap">

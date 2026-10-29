@@ -484,7 +484,46 @@ export const OperationsDashboard: React.FC = () => {
       URL.revokeObjectURL(url)
       showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora.', 'Boxora financial report CSV downloaded.'))
     } catch (err) {
-      console.error(err)
+      console.warn('Server CSV export failed, falling back to local dataset export:', err)
+      // Fallback: Generate CSV directly from loaded revenueData
+      if (revenueData) {
+        const summary = revenueData.systemSummary
+        const facilitiesList = revenueData.byFacility || []
+        const dateRangeStr = `${fromDate || 'Toàn bộ'} - ${toDate || 'Hiện tại'}`
+        const lines: string[] = []
+        lines.push('BÁO CÁO DOANH THU & TÀI CHÍNH BOXORA')
+        lines.push(`Kỳ báo cáo,${dateRangeStr}`)
+        lines.push('')
+        lines.push('TỔNG QUAN KPI (VND)')
+        if (summary) {
+          lines.push(`Tổng doanh thu thuần,${summary.netRevenue || 0}`)
+          lines.push(`Tổng tiền thực thu,${summary.totalCashIn || 0}`)
+          lines.push(`Doanh thu tiền thuê,${summary.rentalRevenue || 0}`)
+          lines.push(`Công nợ phải thu,${summary.totalOverdueDebt || 0}`)
+          lines.push(`Tiền cọc đang giữ,${summary.depositsHeld || 0}`)
+          lines.push(`Tiền hoàn thành công,${summary.refundedAmount || 0}`)
+          lines.push(`Tiền hoàn chờ xử lý,${summary.pendingRefundAmount || 0}`)
+        }
+        lines.push('')
+        lines.push('CHI TIẾT THEO CƠ SỞ')
+        lines.push('Cơ sở,Doanh thu thuần,Tiền thực thu,Doanh thu thuê,Tiền cọc giữ,Công nợ quá hạn,Tiền hoàn,Số giao dịch')
+        facilitiesList.forEach((f) => {
+          const name = (f.facilityName || '').replace(/"/g, '""')
+          lines.push(`"${name}",${f.netRevenue || 0},${f.totalCashIn || 0},${f.rentalRevenue || 0},${f.depositsHeld || 0},${f.totalOverdueDebt || 0},${f.refundedAmount || 0},${f.paymentCount || 0}`)
+        })
+
+        const csvContent = '﻿' + lines.join('\r\n')
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`
+        link.click()
+        URL.revokeObjectURL(url)
+        showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora.', 'Boxora financial report CSV downloaded.'))
+        return
+      }
+
       showToast(tr('Lỗi xuất file CSV từ máy chủ.', 'Failed to export CSV from server.'), true)
     }
   }

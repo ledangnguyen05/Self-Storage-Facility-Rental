@@ -374,7 +374,23 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             if (assignment.getStatus() == StaffAssignmentStatus.COMPLETED) {
                 throw new AppException(ErrorCode.STAFF_ALREADY_CHECKED_OUT);
             }
+            if (assignment.getStatus() == StaffAssignmentStatus.ABSENT) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Ca trực này đã bị ghi nhận không đi làm (vắng mặt) do quá hạn ngày làm việc.");
+            }
             throw new AppException(ErrorCode.STAFF_NOT_CHECKED_IN);
+        }
+
+        LocalDate assignedDate = assignment.getAssignedDate();
+        LocalDate todayDate = LocalDate.now(BUSINESS_ZONE);
+        boolean isNight = assignment.getShift() == StaffShift.NIGHT;
+        LocalDate maxCheckoutDay = isNight ? assignedDate.plusDays(1) : assignedDate;
+        if (todayDate.isAfter(maxCheckoutDay)) {
+            assignment.setStatus(StaffAssignmentStatus.ABSENT);
+            assignment.setNotes((assignment.getNotes() != null ? assignment.getNotes() + "\n" : "") +
+                    "[HỆ THỐNG]: Quên ra ca trong ngày làm việc -> Ghi nhận không đi làm (vắng mặt - 0 công)");
+            staffAssignmentRepository.save(assignment);
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Ca trực này đã quá hạn trong ngày làm việc. Hệ thống đã tự động ghi nhận không đi làm do quên ra ca.");
         }
 
         assignment.setStatus(StaffAssignmentStatus.COMPLETED);
@@ -517,9 +533,10 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             int priorCount = staffAssignmentRepository.markPriorToYesterdayUncheckedInAsAbsent(yesterday);
             int yesterdayCount = staffAssignmentRepository.markYesterdayEndedUncheckedInAsAbsent(yesterday, nowTime);
             int todayCount = staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(today, nowTime);
-            if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0) {
-                log.info("Auto-marked unchecked-in shifts as ABSENT: {} prior, {} yesterday, {} today",
-                        priorCount, yesterdayCount, todayCount);
+            int overdueCheckedInCount = staffAssignmentRepository.markOverdueCheckedInAsAbsent(today, yesterday, nowTime);
+            if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0 || overdueCheckedInCount > 0) {
+                log.info("Auto-marked unchecked-in or overdue shifts as ABSENT: {} prior, {} yesterday, {} today, {} overdue checked-in",
+                        priorCount, yesterdayCount, todayCount, overdueCheckedInCount);
             }
         } catch (Exception e) {
             log.warn("Failed to auto-mark absent shifts: {}", e.getMessage());

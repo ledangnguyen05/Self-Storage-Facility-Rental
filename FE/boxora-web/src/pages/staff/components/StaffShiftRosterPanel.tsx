@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { AttendanceReportTab } from '../../manager/components/AttendanceReportTab'
 import { userService } from '../../../services/userService'
 import { facilityService } from '../../../services/facilityService'
 import {
@@ -6,7 +8,9 @@ import {
   StaffAssignmentResponse,
   ShiftSwapRequest,
   ShiftHandover,
-  isShiftAbsent
+  isShiftAbsent,
+  isShiftForgottenCheckout,
+  calculateShiftWorkHours
 } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
 import { Facility, User } from '../../../types'
@@ -100,8 +104,17 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   const [dateShortcut, setDateShortcut] = useState<'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH' | 'CUSTOM'>('THIS_WEEK')
   const [dateRangeError, setDateRangeError] = useState<string | null>(null)
 
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE' ? 'ATTENDANCE' : 'ROSTER'
+
   // Sub-tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF'>('ROSTER')
+  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF' | 'ATTENDANCE'>(initialTab)
+
+  useEffect(() => {
+    if (searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE') {
+      setActiveSubTab('ATTENDANCE')
+    }
+  }, [searchParams])
 
   // Real Data States
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
@@ -368,6 +381,14 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
       showToast('Chỉ có thể điểm danh trong khung giờ của ca trực được phân công.')
       return
     }
+    const confirmed = window.confirm(
+      '⚠️ QUY ĐỊNH CHẤM CÔNG BẮT BUỘC:\n\n' +
+      'Khi kết thúc ca làm việc, bạn BẮT BUỘC PHẢI BẤM "RA CA" (Check-out).\n' +
+      'Nếu quên ra ca trước 23:59:59 của ngày làm việc, hệ thống sẽ tự động hủy tính công và ghi nhận là KHÔNG ĐI LÀM (VẮNG MẶT - 0 công).\n\n' +
+      'Bạn có chắc chắn muốn xác nhận vào ca làm việc ngay bây giờ?'
+    )
+    if (!confirmed) return
+
     setActionLoadingId(assignment.id)
     try {
       await staffAssignmentService.checkIn(assignment.id, 'Điểm danh vào ca trực tại quầy')
@@ -524,6 +545,17 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                 refresh
               </span>
               <span>Làm mới</span>
+            </button>
+
+            {/* Nút In Phiếu Chấm Công / Bảng Chấm Công */}
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('ATTENDANCE')}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+              title="Xem bảng chấm công và in phiếu báo cáo"
+            >
+              <span className="material-symbols-outlined text-[18px]">print</span>
+              <span>In Phiếu Chấm Công</span>
             </button>
 
             {/* Shift Swap Button for Staff */}
@@ -904,6 +936,19 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
           <span className="material-symbols-outlined text-[18px]">badge</span>
           <span>Danh Sách Nhân Sự Cơ Sở ({staffList.length})</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('ATTENDANCE')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'ATTENDANCE'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-white hover:bg-slate-100 text-blue-700 border border-blue-200'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px]">fact_check</span>
+          <span>Bảng Chấm Công & In Phiếu Báo Cáo</span>
+        </button>
       </div>
 
       {/* SUB-TAB 1: ROSTER TABLE */}
@@ -1138,7 +1183,11 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                         </td>
 
                         <td className="py-3 px-4 text-center">
-                          {isAbsent ? (
+                          {isShiftForgottenCheckout(assignment) ? (
+                            <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-rose-50 text-rose-700 border border-rose-200" title="Quên ra ca sau 23:59:59 ngày làm việc -> Ghi nhận không đi làm (0 công)">
+                              Không đi làm (Quên ra ca)
+                            </span>
+                          ) : isAbsent ? (
                             <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-rose-50 text-rose-700 border border-rose-200">
                               Không đi làm
                             </span>
@@ -1208,7 +1257,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                             )}
 
                             {/* Check-out: Only for caller's own checked-in shift */}
-                            {isMyShift && isCheckedIn && (
+                            {isMyShift && isCheckedIn && !isShiftForgottenCheckout(assignment) && (
                               <button
                                 type="button"
                                 disabled={isLoadingAction}
@@ -1747,6 +1796,16 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
         </div>
       )}
 
+      {/* SUB-TAB 5: ATTENDANCE & REPORTING (Chấm công & In phiếu) */}
+      {activeSubTab === 'ATTENDANCE' && (
+        <AttendanceReportTab
+          facilityId={targetFacilityId}
+          facilityName={currentFacilityName}
+          staffList={staffList}
+          currentUserName={user?.fullName || user?.username}
+        />
+      )}
+
       {/* MODAL: SHIFT DETAIL MODAL */}
       {selectedAssignmentForDetail && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
@@ -1798,7 +1857,13 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Trạng thái:</span>
-                  <span className="font-bold text-slate-900">{selectedAssignmentForDetail.status}</span>
+                  <span className="font-bold text-slate-900">
+                    {isShiftForgottenCheckout(selectedAssignmentForDetail)
+                      ? 'Không đi làm (Quên ra ca)'
+                      : isShiftAbsent(selectedAssignmentForDetail)
+                      ? 'Không đi làm'
+                      : selectedAssignmentForDetail.status}
+                  </span>
                 </div>
               </div>
 
@@ -1817,7 +1882,11 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                   <div>
                     <span className="text-slate-500">Ra thực tế:</span>{' '}
                     <strong className="text-blue-700 font-mono">
-                      {formatDateTime(selectedAssignmentForDetail.checkedOutAt)}
+                      {selectedAssignmentForDetail.checkedOutAt
+                        ? formatDateTime(selectedAssignmentForDetail.checkedOutAt)
+                        : isShiftForgottenCheckout(selectedAssignmentForDetail)
+                        ? 'Quên ra ca (>23:59:59)'
+                        : '—'}
                     </strong>
                   </div>
                 </div>
