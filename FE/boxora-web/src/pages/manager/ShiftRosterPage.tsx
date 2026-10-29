@@ -807,17 +807,21 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('CHECKED_IN')
+            setFilterStatus(prev => (prev === 'CHECKED_IN' ? 'ALL' : 'CHECKED_IN'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
             filterStatus === 'CHECKED_IN' ? 'ring-2 ring-emerald-500 border-emerald-400' : 'border-slate-200 hover:border-emerald-300'
           }`}
-          title="Bấm để lọc ca đang trực"
+          title={
+            filterStatus === 'CHECKED_IN'
+              ? 'Đang lọc ca đang trực (Bấm để xem tất cả)'
+              : 'Bấm để lọc ca đang trực'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Đang trực ca</span>
+              <span className={filterStatus === 'CHECKED_IN' ? 'text-emerald-700 font-bold' : ''}>Đang trực ca</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 Thời gian thực
@@ -846,17 +850,21 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('ASSIGNED')
+            setFilterStatus(prev => (prev === 'ASSIGNED' ? 'ALL' : 'ASSIGNED'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
             filterStatus === 'ASSIGNED' ? 'ring-2 ring-amber-500 border-amber-400' : 'border-slate-200 hover:border-amber-300'
           }`}
-          title="Bấm để lọc ca chưa vào"
+          title={
+            filterStatus === 'ASSIGNED'
+              ? 'Đang lọc ca chưa vào (Bấm để xem tất cả)'
+              : 'Bấm để lọc ca chưa vào'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Chưa vào ca</span>
+              <span className={filterStatus === 'ASSIGNED' ? 'text-amber-700 font-bold' : ''}>Chưa vào ca</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
                 Khoảng ngày
               </span>
@@ -884,7 +892,7 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('ABSENT')
+            setFilterStatus(prev => (prev === 'ABSENT' ? 'ALL' : 'ABSENT'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
@@ -894,7 +902,11 @@ export const ShiftRosterPage: React.FC = () => {
               ? 'border-rose-200 hover:border-rose-300 bg-rose-50/20'
               : 'border-slate-200 hover:border-rose-300'
           }`}
-          title="Bấm để lọc ca không đi làm / vắng mặt"
+          title={
+            filterStatus === 'ABSENT'
+              ? 'Đang lọc ca vắng mặt (Bấm để xem tất cả)'
+              : 'Bấm để lọc ca không đi làm / vắng mặt'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
@@ -926,31 +938,51 @@ export const ShiftRosterPage: React.FC = () => {
         <div
           onClick={() => {
             setActiveTab('ROSTER')
-            setFilterStatus('ALL')
+            setFilterStatus(prev => (prev === 'COMPLETED' ? 'ALL' : 'COMPLETED'))
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
-            filterStatus === 'ALL' ? 'border-slate-200 hover:border-blue-300' : 'border-slate-200 hover:border-blue-300'
+            filterStatus === 'COMPLETED'
+              ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/20'
+              : 'border-slate-200 hover:border-blue-300'
           }`}
-          title="Bấm để xem tất cả ca trực"
+          title={
+            filterStatus === 'COMPLETED'
+              ? 'Đang lọc ca trực đã hoàn thành (Bấm để xem tất cả ca)'
+              : 'Bấm để lọc ca trực đã hoàn thành'
+          }
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Ca trực &amp; Hoàn thành</span>
+              <span className={filterStatus === 'COMPLETED' ? 'text-blue-700 font-bold' : ''}>
+                Ca trực &amp; Hoàn thành
+              </span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                 Khoảng ngày
               </span>
             </div>
-            <div className="p-1.5 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-100 transition-colors">
-              <span className="material-symbols-outlined text-[18px]">calendar_view_day</span>
+            <div className={`p-1.5 rounded-lg transition-colors ${
+              filterStatus === 'COMPLETED' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100'
+            }`}>
+              <span className="material-symbols-outlined text-[18px]">task_alt</span>
             </div>
           </div>
           <div className="mt-3">
-            <div className="text-2xl font-bold text-blue-700 tracking-tight">
-              {assignments.length} ca trực
+            <div className="text-2xl font-bold text-blue-700 tracking-tight flex items-center gap-2">
+              <span>{assignments.length} ca trực</span>
+              {completedCount > 0 && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                  filterStatus === 'COMPLETED' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800'
+                }`}>
+                  {completedCount} hoàn thành
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              {completedCount} hoàn thành • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
+              <span className={filterStatus === 'COMPLETED' ? 'font-bold text-blue-700 underline' : 'font-medium text-slate-700'}>
+                {completedCount} hoàn thành
+              </span>{' '}
+              • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
             </div>
           </div>
         </div>
