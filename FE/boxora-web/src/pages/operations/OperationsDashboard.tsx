@@ -614,10 +614,6 @@ export const OperationsDashboard: React.FC = () => {
           <div className="relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 print:hidden">
             <div className="flex flex-col gap-1.5 text-left">
               <div className="flex flex-wrap items-center gap-2.5">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-800">
-                  <span className="h-2 w-2 rounded-full bg-blue-600 animate-pulse"></span>
-                  ADMIN & BUSINESS MANAGER
-                </span>
                 <span className="text-xs text-slate-500 font-medium">
                   {tr('Cập nhật lúc:', 'Updated at:')} <strong className="font-mono text-slate-700">{lastUpdatedAt.toLocaleTimeString(currencyLocale)} {lastUpdatedAt.toLocaleDateString(currencyLocale)}</strong>
                 </span>

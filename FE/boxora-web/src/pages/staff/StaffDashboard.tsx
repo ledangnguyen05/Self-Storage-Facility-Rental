@@ -55,7 +55,7 @@ const isAssignmentOnDuty = (assignment: StaffAssignmentResponse | null, now = ne
 
 export const StaffDashboard: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams()
-  const { user } = useAuth()
+  const { user, hasPermission } = useAuth()
   const { selectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     facilities?: Facility[]
@@ -402,9 +402,26 @@ export const StaffDashboard: React.FC = () => {
 
   // Tự động kiểm tra và quét gửi email thông báo cho đơn quá hạn 24h chưa tiếp nhận
   useEffect(() => {
-    reservationEmailService.checkAndSendOverdueReminders()
+    try {
+      if (typeof (reservationEmailService as any)?.checkAndSendOverdueReminders === 'function') {
+        reservationEmailService.checkAndSendOverdueReminders()
+      } else if (typeof (reservationEmailService as any)?.['checkAndSendQuá hạnReminders'] === 'function') {
+        (reservationEmailService as any)['checkAndSendQuá hạnReminders']()
+      }
+    } catch (e) {
+      console.warn('Error running initial overdue reminder check:', e)
+    }
+
     const timer = setInterval(() => {
-      reservationEmailService.checkAndSendOverdueReminders()
+      try {
+        if (typeof (reservationEmailService as any)?.checkAndSendOverdueReminders === 'function') {
+          reservationEmailService.checkAndSendOverdueReminders()
+        } else if (typeof (reservationEmailService as any)?.['checkAndSendQuá hạnReminders'] === 'function') {
+          (reservationEmailService as any)['checkAndSendQuá hạnReminders']()
+        }
+      } catch (e) {
+        console.warn('Error running interval overdue reminder check:', e)
+      }
     }, 30000)
     return () => clearInterval(timer)
   }, [])
@@ -1614,6 +1631,7 @@ export const StaffDashboard: React.FC = () => {
 
       {/* OPERATION TAB NAVIGATION FOR STAFF */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
+        {hasPermission('BOOKING_VIEW') && (
         <button
           type="button"
           onClick={() => {
@@ -1639,7 +1657,9 @@ export const StaffDashboard: React.FC = () => {
             </span>
           )}
         </button>
+      )}
 
+        {(hasPermission('HANDOVER_VIEW') || hasPermission('HANDOVER_EXECUTE')) && (
         <button
           type="button"
           onClick={() => {
@@ -1665,7 +1685,9 @@ export const StaffDashboard: React.FC = () => {
             </span>
           )}
         </button>
+      )}
 
+        {(hasPermission('CHECKOUT_REQUEST') || hasPermission('CHECKOUT_INSPECTION_COMPLETE') || hasPermission('HANDOVER_VIEW')) && (
         <button
           type="button"
           onClick={() => {
@@ -1697,7 +1719,9 @@ export const StaffDashboard: React.FC = () => {
             </span>
           )}
         </button>
+      )}
 
+        {(hasPermission('RENEWAL_APPROVE') || hasPermission('CONTRACT_EXTENDED') || hasPermission('CONTRACT_VIEW')) && (
         <button
           type="button"
           onClick={() => {
@@ -1714,6 +1738,7 @@ export const StaffDashboard: React.FC = () => {
           <span className="material-symbols-outlined text-[18px]">autorenew</span>
           <span>4. Hỗ Trợ Gia Hạn</span>
         </button>
+      )}
       </div>
 
       {staffActiveTab === 'pending_orders' ? (

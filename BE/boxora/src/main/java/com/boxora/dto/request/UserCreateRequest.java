@@ -12,8 +12,7 @@ import java.util.UUID;
 @Builder
 public class UserCreateRequest {
 
-    @NotBlank(message = "Username is required")
-    @Size(min = 3, max = 30, message = "Username must be between 3 and 30 characters")
+    @Size(max = 30, message = "Username must be between 3 and 30 characters")
     private String username;
 
     @NotBlank(message = "Email is required")
@@ -37,6 +36,7 @@ public class UserCreateRequest {
     // Admin assigns role when creating a user
     // If null, service will default to "customer"
     private UUID roleId;
+    private String roleName;
 
     // Assigned facility (applicable for STAFF / FACILITY_MANAGER)
     private UUID facilityId;
