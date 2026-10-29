@@ -6,7 +6,9 @@ import {
   StaffAssignmentResponse,
   ShiftSwapRequest,
   ShiftHandover,
-  isShiftAbsent
+  isShiftAbsent,
+  isShiftForgottenCheckout,
+  calculateShiftWorkHours
 } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
 import { Facility, User } from '../../../types'
@@ -368,6 +370,14 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
       showToast('Chỉ có thể điểm danh trong khung giờ của ca trực được phân công.')
       return
     }
+    const confirmed = window.confirm(
+      '⚠️ QUY ĐỊNH CHẤM CÔNG BẮT BUỘC:\n\n' +
+      'Khi kết thúc ca làm việc, bạn BẮT BUỘC PHẢI BẤM "RA CA" (Check-out).\n' +
+      'Nếu quên ra ca trước 23:59:59 của ngày làm việc, hệ thống sẽ tự động hủy tính công và ghi nhận là KHÔNG ĐI LÀM (VẮNG MẶT - 0 công).\n\n' +
+      'Bạn có chắc chắn muốn xác nhận vào ca làm việc ngay bây giờ?'
+    )
+    if (!confirmed) return
+
     setActionLoadingId(assignment.id)
     try {
       await staffAssignmentService.checkIn(assignment.id, 'Điểm danh vào ca trực tại quầy')
@@ -1138,7 +1148,11 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                         </td>
 
                         <td className="py-3 px-4 text-center">
-                          {isAbsent ? (
+                          {isShiftForgottenCheckout(assignment) ? (
+                            <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-rose-50 text-rose-700 border border-rose-200" title="Quên ra ca sau 23:59:59 ngày làm việc -> Ghi nhận không đi làm (0 công)">
+                              Không đi làm (Quên ra ca)
+                            </span>
+                          ) : isAbsent ? (
                             <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] bg-rose-50 text-rose-700 border border-rose-200">
                               Không đi làm
                             </span>
@@ -1208,7 +1222,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                             )}
 
                             {/* Check-out: Only for caller's own checked-in shift */}
-                            {isMyShift && isCheckedIn && (
+                            {isMyShift && isCheckedIn && !isShiftForgottenCheckout(assignment) && (
                               <button
                                 type="button"
                                 disabled={isLoadingAction}
@@ -1798,7 +1812,13 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500">Trạng thái:</span>
-                  <span className="font-bold text-slate-900">{selectedAssignmentForDetail.status}</span>
+                  <span className="font-bold text-slate-900">
+                    {isShiftForgottenCheckout(selectedAssignmentForDetail)
+                      ? 'Không đi làm (Quên ra ca)'
+                      : isShiftAbsent(selectedAssignmentForDetail)
+                      ? 'Không đi làm'
+                      : selectedAssignmentForDetail.status}
+                  </span>
                 </div>
               </div>
 
@@ -1817,7 +1837,11 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                   <div>
                     <span className="text-slate-500">Ra thực tế:</span>{' '}
                     <strong className="text-blue-700 font-mono">
-                      {formatDateTime(selectedAssignmentForDetail.checkedOutAt)}
+                      {selectedAssignmentForDetail.checkedOutAt
+                        ? formatDateTime(selectedAssignmentForDetail.checkedOutAt)
+                        : isShiftForgottenCheckout(selectedAssignmentForDetail)
+                        ? 'Quên ra ca (>23:59:59)'
+                        : '—'}
                     </strong>
                   </div>
                 </div>

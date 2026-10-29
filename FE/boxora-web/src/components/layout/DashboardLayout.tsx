@@ -435,18 +435,6 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/portal/cashier"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                    isCurrentPath('/portal/cashier')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                  <span>{t('BÁO CÁO THU NGÂN')}</span>
-                </Link>
-
-                <Link
                   to="/portal/tickets"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/tickets')
@@ -628,18 +616,6 @@ export const DashboardLayout: React.FC = () => {
                 </Link>
 
                 <Link
-                  to="/portal/cashier"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                    isCurrentPath('/portal/cashier')
-                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
-                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                  <span>{t('BÁO CÁO THU NGÂN')}</span>
-                </Link>
-
-                <Link
                   to="/portal/tickets"
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
                     isCurrentPath('/portal/tickets')
@@ -741,17 +717,6 @@ export const DashboardLayout: React.FC = () => {
                   >
                     <span className="material-symbols-outlined text-[18px]">schedule</span>
                     <span>{t('XỬ LÝ TRỰC CA')}</span>
-                  </Link>
-                  <Link
-                    to="/portal/cashier"
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                      isCurrentPath('/portal/cashier')
-                        ? 'bg-slate-100 text-slate-900'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                    <span>{t('BÁO CÁO THU NGÂN')}</span>
                   </Link>
                   <Link
                     to="/portal/tickets"
