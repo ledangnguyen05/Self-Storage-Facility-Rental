@@ -20,6 +20,9 @@ const dateTime = (value?: string | null) => value
   : 'Chưa xác định'
 
 function isSigned(contract: RentalContract | null) {
+  if (!contract || contract.status === 'SUPERSEDED' || contract.status === 'PENDING_SIGNATURE' || contract.status === 'CANCELLED') {
+    return false
+  }
   return Boolean(contract?.signedAt)
     || contract?.status === 'PENDING_ACTIVATION'
     || contract?.status === 'ACTIVE'
@@ -92,7 +95,7 @@ export const OnlineBookingContractPage = () => {
   const paidPayment = paidTransactions.find(payment => payment.paymentType === 'BOOKING_PAYMENT') || paidTransactions[0] || null
   const paidAmount = paidTransactions.reduce((total, payment) => total + Number(payment.amount || 0), 0)
   const paymentConfirmed = booking?.paymentStatus?.toUpperCase() === 'PAID' || Boolean(paidPayment) || paidAmount > 0
-  const signed = isSigned(contract) || Boolean(booking?.contractSigned)
+  const signed = isSigned(contract) || (Boolean(booking?.contractSigned) && contract?.status !== 'SUPERSEDED' && contract?.status !== 'PENDING_SIGNATURE' && booking?.status !== 'PENDING_SIGNATURE')
   const payableTotal = Number(booking?.totalRentalFee || 0) + Number(booking?.depositAmount || 0)
 
   // Auto-open signing modal when paymentConfirmed is true and autoSign=true or mockSignContractId is present

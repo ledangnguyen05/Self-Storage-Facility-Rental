@@ -42,6 +42,23 @@ public class BookingController {
                 .body(ApiResponse.success("Tạo đơn đặt kho và khởi tạo thông tin truy cập thành công", bookingService.createBooking(request)));
     }
 
+    @PutMapping("/{id}/unpaid-revision")
+    @Operation(summary = "Cập nhật thông tin đơn đặt kho chưa thanh toán và tạo lại hợp đồng mới (yêu cầu ký lại)")
+    public ResponseEntity<ApiResponse<BookingResponse>> updateUnpaidRevision(
+            @PathVariable UUID id,
+            @Valid @RequestBody BookingCreateRequest request
+    ) {
+        BookingResponse response = bookingService.updateUnpaidBooking(id, request);
+        return ResponseEntity.ok(ApiResponse.success("Đã cập nhật thông tin đặt kho và khởi tạo lại hợp đồng mới", response));
+    }
+
+    @PostMapping("/{id}/invalidate-signed-contract")
+    @Operation(summary = "Vô hiệu hóa hợp đồng đã ký khi khách hàng thay đổi thông tin đặt kho trước khi thanh toán")
+    public ResponseEntity<ApiResponse<BookingResponse>> invalidateSignedContract(@PathVariable UUID id) {
+        BookingResponse response = bookingService.invalidateSignedContractForBooking(id);
+        return ResponseEntity.ok(ApiResponse.success("Đã vô hiệu hóa hợp đồng cũ do thay đổi thông tin đặt kho. Vui lòng ký lại hợp đồng mới.", response));
+    }
+
     @PostMapping("/{id}/assign-unit")
     @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN') or hasAuthority('BOOKING_MANAGE') or isAuthenticated()")
     @Operation(summary = "Nhân viên gán ô kho vật lý và kích hoạt phát hành mã PIN/QR IoT cho khách hàng")
@@ -92,7 +109,7 @@ public class BookingController {
         return ResponseEntity.ok(ApiResponse.success(bookingService.getByBookingCode(bookingCode)));
     }
 
-@GetMapping("/my-requests")
+    @GetMapping("/my-requests")
     @PreAuthorize("hasRole('CUSTOMER')")
     @Operation(summary = "Lấy các yêu cầu đặt kho đang chờ duyệt hoặc chờ thanh toán")
     public ResponseEntity<ApiResponse<List<BookingResponse>>> getMyRequests() {

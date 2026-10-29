@@ -16,6 +16,7 @@ export interface DocuSealSimulationModalProps {
   }
   onClose: () => void
   onSignedSuccess: (updated: RentalContract) => void
+  onContractSigned?: (updated: RentalContract) => void
 }
 
 function formatDate(val?: string) {
@@ -39,6 +40,7 @@ export function DocuSealSimulationModal({
   financialSummary,
   onClose,
   onSignedSuccess,
+  onContractSigned,
 }: DocuSealSimulationModalProps) {
   const { user } = useAuth()
   const customerDisplayName = contract.customerName || user?.fullName || 'Khách hàng'
@@ -196,6 +198,7 @@ export function DocuSealSimulationModal({
       // Transition to the success confirmation view
       setSavedSignatureData(signatureData || updated.signatureData || null)
       setSignedResult(updated)
+      onContractSigned?.(updated)
     } catch (err: unknown) {
       let msg = 'Ký hợp đồng thất bại. Vui lòng thử lại.'
       if (typeof err === 'object' && err !== null && 'response' in err) {
@@ -237,7 +240,7 @@ export function DocuSealSimulationModal({
               </div>
               <button
                 type="button"
-                onClick={() => onSignedSuccess(signedResult)}
+                onClick={onClose}
                 className="rounded-lg p-1.5 text-white/80 hover:bg-white/10 hover:text-white transition-colors cursor-pointer shrink-0"
               >
                 <span className="material-symbols-outlined text-xl">close</span>

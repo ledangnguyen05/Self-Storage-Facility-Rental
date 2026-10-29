@@ -65,6 +65,16 @@ export const bookingService = {
     return this.create(data)
   },
 
+  async updateUnpaidBooking(id: string, data: BookingCreatePayload) {
+    const response = await api.put(`/api/v1/bookings/${id}/unpaid-revision`, data)
+    return response.data?.data as Booking
+  },
+
+  async invalidateSignedContract(id: string) {
+    const response = await api.post(`/api/v1/bookings/${id}/invalidate-signed-contract`)
+    return response.data?.data as Booking
+  },
+
   async getMyActive(customerId?: string) {
     const response = await api.get('/api/v1/bookings/my-active', {
       params: customerId ? { customerId } : undefined,

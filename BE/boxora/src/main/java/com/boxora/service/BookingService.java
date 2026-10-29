@@ -10,6 +10,8 @@ import java.util.UUID;
 
 public interface BookingService {
     BookingResponse createBooking(BookingCreateRequest request);
+    BookingResponse updateUnpaidBooking(UUID id, BookingCreateRequest request);
+    BookingResponse invalidateSignedContractForBooking(UUID id);
     List<BookingResponse> getMyBookingRequests();
     List<BookingResponse> getPendingApprovalRequests();
     BookingResponse reviewBookingRequest(UUID id, boolean approved);
