@@ -6405,7 +6405,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </>
                           ) : (
                             <>
-                              <strong>Ký hợp đồng &amp; Thanh toán tại chỗ:</strong> Nghiệm thu thực tế ngăn kho, ký biên bản hợp đồng và thanh toán tiền mặt hoặc chuyển khoản tại quầy.
+                              <strong>Ký hợp đồng &amp; Thanh toán tại chỗ:</strong> Nghiệm thu thực tế ngăn kho, ký hợp đồng và thanh toán trực tuyến qua quét mã VietQR / cổng VNPay.
                             </>
                           )}
                         </p>

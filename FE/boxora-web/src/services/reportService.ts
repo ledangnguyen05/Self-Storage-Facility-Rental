@@ -1,13 +1,20 @@
 import { api } from '../lib/axios'
 import { RevenueReport, OccupancyReport, OverdueDebtReport } from '../types'
 
+const sanitizeFacilityId = (id?: string | null): string | undefined => {
+  if (!id) return undefined
+  const clean = id.trim()
+  if (!clean || clean.toLowerCase() === 'all') return undefined
+  return clean
+}
+
 export const reportService = {
   async getRevenueReport(fromDate?: string, toDate?: string, facilityId?: string) {
     const response = await api.get('/api/v1/reports/revenue', {
       params: {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
-        facilityId: facilityId && facilityId !== 'all' ? facilityId : undefined,
+        facilityId: sanitizeFacilityId(facilityId),
       },
     })
     return response.data?.data as RevenueReport
@@ -16,7 +23,7 @@ export const reportService = {
   async getOccupancyReport(facilityId?: string) {
     const response = await api.get('/api/v1/reports/occupancy', {
       params: {
-        facilityId: facilityId && facilityId !== 'all' ? facilityId : undefined,
+        facilityId: sanitizeFacilityId(facilityId),
       },
     })
     return response.data?.data as OccupancyReport
@@ -25,7 +32,7 @@ export const reportService = {
   async getOverdueDebtReport(params?: { facilityId?: string }) {
     const response = await api.get('/api/v1/reports/overdue-debt', {
       params: {
-        facilityId: params?.facilityId && params.facilityId !== 'all' ? params.facilityId : undefined,
+        facilityId: sanitizeFacilityId(params?.facilityId),
       },
     })
     return response.data?.data as OverdueDebtReport
@@ -36,7 +43,7 @@ export const reportService = {
       params: {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
-        facilityId: facilityId && facilityId !== 'all' ? facilityId : undefined,
+        facilityId: sanitizeFacilityId(facilityId),
       },
       responseType: 'blob',
     })

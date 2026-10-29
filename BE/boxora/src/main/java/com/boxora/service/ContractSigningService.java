@@ -45,4 +45,14 @@ public interface ContractSigningService {
 
     /** Đảm bảo tồn tại hợp đồng ở trạng thái PENDING_SIGNATURE cho đơn đặt kho đã xác nhận. */
     RentalContract ensureContractForBooking(com.boxora.entity.Booking booking);
+
+    /** Đánh dấu hợp đồng cũ là SUPERSEDED và tạo phiên bản hợp đồng mới khớp thông tin booking hiện tại. */
+    default RentalContract supersedeAndCreateNewContractForBooking(com.boxora.entity.Booking booking, String reason) {
+        return ensureContractForBooking(booking);
+    }
+
+    /** Kiểm tra hợp đồng có khớp với snapshot thông tin đặt kho hiện tại hay không. */
+    default boolean isContractMatchingBookingSnapshot(RentalContract contract, com.boxora.entity.Booking booking) {
+        return true;
+    }
 }

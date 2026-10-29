@@ -1943,7 +1943,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       <span>Phần 1: Upload Ảnh Thanh Toán Thành Công</span>
                     </h3>
                     <span className="text-xs text-slate-500 mt-0.5 block">
-                      Tải lên chứng từ chuyển khoản ngân hàng hoặc phiếu thu tiền mặt tại cơ sở.
+                      Tải lên chứng từ chuyển khoản ngân hàng hoặc xác nhận thanh toán trực tuyến/VietQR tại cơ sở.
                     </span>
                   </div>
 

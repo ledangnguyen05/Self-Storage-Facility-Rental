@@ -485,8 +485,15 @@ export const OperationsDashboard: React.FC = () => {
       showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora.', 'Boxora financial report CSV downloaded.'))
     } catch (err) {
       console.warn('Server CSV export failed, falling back to local dataset export:', err)
-      // Fallback: Generate CSV directly from loaded revenueData
-      if (revenueData) {
+      // Fallback: Generate CSV directly from loaded revenueData or fetch live
+      let fallbackData = revenueData;
+      if (!fallbackData) {
+        try {
+          fallbackData = await reportService.getRevenueReport(fromDate, toDate, selectedFacilityId);
+        } catch {}
+      }
+      if (fallbackData) {
+        const revenueData = fallbackData;
         const summary = revenueData.systemSummary
         const facilitiesList = revenueData.byFacility || []
         const dateRangeStr = `${fromDate || 'Toàn bộ'} - ${toDate || 'Hiện tại'}`
