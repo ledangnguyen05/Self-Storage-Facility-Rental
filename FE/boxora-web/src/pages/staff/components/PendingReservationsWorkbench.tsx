@@ -828,7 +828,7 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                                         }
                                       }}
                                       className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1 transition cursor-pointer shadow-xs"
-                                      title={isInPerson ? "Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký giấy & thanh toán tại quầy" : "Chuyển sang Bàn Tiếp Đón & Nghiệm Thu Bàn Giao Kho"}
+                                      title={isInPerson ? "Chuyển sang Bàn Tiếp Đón để đón khách làm thủ tục ký hợp đồng & thanh toán số" : "Chuyển sang Bàn Tiếp Đón & Nghiệm Thu Bàn Giao Kho"}
                                     >
                                       <span className="material-symbols-outlined text-[15px]">desk</span>
                                       <span>{isActiveOrCompleted ? 'Hồ Sơ Bàn Giao' : 'Check-in'}</span>

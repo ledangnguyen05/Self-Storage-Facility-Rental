@@ -526,7 +526,7 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
                 <div className="text-[11px] text-blue-900 bg-blue-50 border border-blue-200 p-3.5 rounded-xl leading-relaxed text-left flex items-start gap-2.5">
                   <span className="material-symbols-outlined text-[18px] text-blue-600 shrink-0 mt-0.5">info</span>
                   <div>
-                    <strong>Hướng dẫn nhận kho:</strong> Quý khách mang theo bản gốc <strong>CCCD / Hộ chiếu</strong> đến quầy tiếp đón của cơ sở trước thời hạn giữ chỗ. Nhân viên trực ca sẽ tra cứu mã <strong>#{booking?.bookingCode}</strong> để hướng dẫn xem kho, thanh toán (tiền mặt / chuyển khoản) và bàn giao kho.
+                    <strong>Hướng dẫn nhận kho:</strong> Quý khách mang theo bản gốc <strong>CCCD / Hộ chiếu</strong> đến quầy tiếp đón của cơ sở trước thời hạn giữ chỗ. Nhân viên trực ca sẽ tra cứu mã <strong>#{booking?.bookingCode}</strong> để hướng dẫn xem kho, thanh toán trực tuyến qua VietQR/VNPay và bàn giao kho.
                   </div>
                 </div>
 

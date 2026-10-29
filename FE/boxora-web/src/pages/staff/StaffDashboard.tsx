@@ -1792,7 +1792,7 @@ export const StaffDashboard: React.FC = () => {
                 Hỗ Trợ Gia Hạn Hợp Đồng &amp; Ghi Nhận Thu Cước Tại Quầy
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Tra cứu yêu cầu gia hạn cơ sở, kiểm tra công nợ và ghi nhận nộp tiền mặt / chuyển khoản / POS
+                Tra cứu yêu cầu gia hạn cơ sở, kiểm tra công nợ và ghi nhận thanh toán qua chuyển khoản VietQR / VNPay
               </p>
             </div>
           </div>

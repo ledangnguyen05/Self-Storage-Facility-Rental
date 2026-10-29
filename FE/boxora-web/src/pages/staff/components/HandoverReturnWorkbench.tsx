@@ -2828,7 +2828,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="space-y-1.5 pt-1 border-t border-slate-200">
                               <div className="flex items-center justify-between">
                                 <span className="text-slate-500">Hình thức thu:</span>
-                                <strong className="text-slate-800 font-bold">Tiền mặt / QR POS tại quầy</strong>
+                                <strong className="text-slate-800 font-bold">Quét mã VietQR / Chuyển khoản ngân hàng</strong>
                               </div>
                               <div className="flex items-center justify-between">
                                 <span className="text-slate-500">Khách hàng:</span>
@@ -3135,7 +3135,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 >
                   {isOverDeposit ? (
                     <>
-                      <option value="CASH">Thu tiền mặt trực tiếp tại quầy Boxora</option>
+                      <option value="CASH">Thu tiền mặt trực tiếp (Ngoại lệ khẩn cấp)</option>
                       <option value="BANK_TRANSFER">Chuyển khoản QR tài khoản cơ sở</option>
                       <option value="VNPAY_REFUND">Quẹt thẻ ngân hàng qua máy POS quầy</option>
                     </>
@@ -3143,7 +3143,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <>
                       <option value="BANK_TRANSFER">Chuyển khoản ngân hàng (Ủy nhiệm chi)</option>
                       <option value="VNPAY_REFUND">Hoàn qua cổng VNPay / Thẻ ngân hàng</option>
-                      <option value="CASH">Chi tiền mặt tại quầy cơ sở</option>
+                      <option value="CASH">Chi tiền mặt tại quầy (Ngoại lệ khẩn cấp)</option>
                     </>
                   )}
                 </select>

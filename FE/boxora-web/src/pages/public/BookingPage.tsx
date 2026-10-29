@@ -2957,7 +2957,7 @@ export const BookingPage: React.FC = () => {
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Đặt giữ chỗ trước để Boxora chuẩn bị buồng kho. Quý khách sẽ ký kết hợp đồng và thanh toán (chuyển khoản/thẻ/tiền mặt) trực tiếp tại quầy lễ tân cơ sở vào ngày hẹn đến nhận kho.
+                          Đặt giữ chỗ trước để Boxora chuẩn bị buồng kho. Quý khách sẽ ký kết hợp đồng và thanh toán trực tuyến qua quét mã VietQR / cổng VNPay trực tiếp khi đến nhận kho (Boxora áp dụng 100% thanh toán số không dùng tiền mặt).
                         </p>
                       </div>
                     </div>
