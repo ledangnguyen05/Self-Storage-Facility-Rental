@@ -152,6 +152,9 @@ public interface HandoverService {
     /** Task 16.3 & 16.4: Khách hàng đồng ý hoặc khiếu nại đối với kết quả quyết toán */
     ReturnSettlementResponse handleCustomerDecision(UUID bookingId, com.boxora.dto.request.CustomerDecisionRequest request);
 
+    /** Khách hàng hủy / rút lại yêu cầu khiếu nại quyết toán */
+    ReturnSettlementResponse cancelDispute(UUID bookingId);
+
     /** Task 16.3: Quản lý cơ sở (FACILITY_MANAGER) giải quyết khiếu nại từ khách hàng */
     ReturnSettlementResponse resolveDispute(UUID bookingId, com.boxora.dto.request.DisputeResolveRequest request);
 

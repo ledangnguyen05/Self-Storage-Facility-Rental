@@ -616,6 +616,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     return found || filteredCases[0] || null
   }, [filteredCases, selectedCaseId])
 
+  const isCaseDisputed = useMemo(() => {
+    if (!currentCase) return false
+    return Boolean(
+      currentCase.customerDecision === 'DISPUTED' ||
+      currentCase.status === 'DISPUTED' ||
+      currentCase.approvalStatus === 'DISPUTED' ||
+      currentCase.isDisputed
+    )
+  }, [currentCase])
+
+  const isStaffBlockedByDispute = isCaseDisputed && !isFacilityManager
+
   useEffect(() => {
     if (filteredCases.length > 0) {
       if (!selectedCaseId || !filteredCases.some((c) => c.id === selectedCaseId)) {
@@ -2123,8 +2135,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </div>
                     <p className="text-[11px] text-red-700">
                       {isFacilityManager
-                        ? '💡 Quản lý cơ sở: Vui lòng xem xét ý kiến khách hàng. Bạn có thể Phê Duyệt quyết toán với số tiền đã thỏa thuận hoặc Yêu Cầu Kiểm Tra Lại.'
-                        : '💡 Nhân viên: Hồ sơ đã được ghi nhận khiếu nại và chuyển lên Quản lý cơ sở để tiến hành xem xét hòa giải.'}
+                        ? '💡 Quản lý cơ sở: Vui lòng xem xét ý kiến khiếu nại của khách hàng và thực hiện phân xử điều chỉnh quyết toán tại Khối C.'
+                        : '💡 Nhân viên: Hồ sơ đang trong trạng thái khiếu nại và chuyển lên Quản lý cơ sở giải quyết. Nhân viên không có quyền can thiệp vào quy trình đối soát này.'}
                     </p>
                   </div>
                 )}
@@ -2225,7 +2237,20 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       )}
                     </div>
 
-                    <div className="space-y-3">
+                    {/* Banner cảnh báo khi đơn bị khiếu nại đối với nhân viên */}
+                    {isStaffBlockedByDispute && (
+                      <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 text-xs flex items-start gap-2.5">
+                        <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold text-rose-900 block">Đơn đang trong trạng thái khiếu nại từ khách hàng</span>
+                          <span className="text-rose-800 text-[11px] leading-relaxed">
+                            Chỉ Quản lý cơ sở (Facility Manager) mới có thẩm quyền tiếp nhận và kiểm tra lại 7 tiêu chuẩn nghiệm thu này. Nhân viên chỉ xem hiện trạng đối soát và không thể sửa đổi hoặc gửi lại thông báo tính phí.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className={`space-y-3 ${isStaffBlockedByDispute ? 'pointer-events-none opacity-80 select-none' : ''}`}>
                       {/* 1. Cửa cuốn & Ray trượt */}
                       <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2919,7 +2944,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </div>
 
                     {/* Nút hành động Bước B */}
-                    {!isReadOnly && (
+                    {!isReadOnly && !isStaffBlockedByDispute && (
                       <div className="pt-3 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
                         <button
                           type="button"
@@ -3246,7 +3271,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                       <div className="flex items-center gap-2">
                         {/* Nút chốt quyết toán */}
-                        {!isReadOnly && currentCase.customerDecision !== 'AGREED' && (
+                        {!isReadOnly && !isStaffBlockedByDispute && currentCase.customerDecision !== 'AGREED' && (
                           <button
                             type="button"
                             onClick={() => setShowConfirmSettlementModal(true)}
@@ -3380,7 +3405,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       </div>
 
                       {!currentCase.unitReturnedPhysically && (
-                        !isReadOnly ? (
+                        isStaffBlockedByDispute ? (
+                          <div className="mt-1 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center gap-1.5">
+                            <AlertTriangle size={14} className="shrink-0 text-rose-600" />
+                            <span>Đơn đang khiếu nại: Chỉ Quản lý cơ sở mới có quyền tiếp nhận và xác nhận thu hồi buồng kho.</span>
+                          </div>
+                        ) : !isReadOnly ? (
                           <button
                             type="button"
                             onClick={handleConfirmPhysicalReturn}
@@ -3467,34 +3497,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                     : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)}
                             </span>
                           </button>
-                        )}
-
-                        {/* FACILITY_MANAGER action: Phê duyệt hoàn cọc hoặc xử lý khiếu nại */}
-                        {(currentCase.status === 'REFUND_PENDING_APPROVAL' ||
-                          currentCase.status === 'DISPUTED' ||
-                          currentCase.approvalStatus === 'PENDING_APPROVAL' ||
-                          currentCase.approvalStatus === 'DISPUTED') && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => handleApproveSettlement('REJECT')}
-                              className="px-3 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-xs cursor-pointer transition"
-                            >
-                              Yêu Cầu Kiểm Tra Lại
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleApproveSettlement('APPROVE')}
-                              className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                            >
-                              <ShieldCheck size={16} />
-                              <span>
-                                {isOverDeposit
-                                  ? `Phê Duyệt Khấu Trừ & Thu Thêm (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                  : `Phê Duyệt Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
-                              </span>
-                            </button>
-                          </div>
                         )}
 
                         {/* Action: Thực hiện hoàn tiền hoặc thu tiền bồi thường */}

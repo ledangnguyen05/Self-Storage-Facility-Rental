@@ -459,6 +459,15 @@ public class HandoverController {
                 handoverService.handleCustomerDecision(bookingId, request)));
     }
 
+    @PostMapping("/returns/{bookingId}/cancel-dispute")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('HANDOVER_VIEW')")
+    @Operation(summary = "Khách hàng hủy yêu cầu khiếu nại kết quả quyết toán")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> cancelDispute(
+            @PathVariable UUID bookingId) {
+        return ResponseEntity.ok(ApiResponse.success("Đã hủy yêu cầu khiếu nại thành công",
+                handoverService.cancelDispute(bookingId)));
+    }
+
     @PostMapping("/returns/{bookingId}/resolve-dispute")
     @PreAuthorize("hasAuthority('HANDOVER_APPROVE') or hasRole('FACILITY_MANAGER')")
     @Operation(summary = "Task 16.3: Quản lý cơ sở (FACILITY_MANAGER) giải quyết khiếu nại quyết toán")

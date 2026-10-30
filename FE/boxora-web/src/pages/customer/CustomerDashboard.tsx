@@ -619,9 +619,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     .filter(Boolean)
     .sort()[0] || '--'
 
-  // Tabs: 'my-units' (default) | 'history' | 'bookings' | 'explore' | 'contracts' | 'support'
-  type CustomerPortalTab = 'my-units' | 'history' | 'bookings' | 'explore' | 'contracts' | 'support'
-  const validCustomerTabs: CustomerPortalTab[] = ['my-units', 'history', 'bookings', 'explore', 'contracts', 'support']
+  // Tabs: 'my-units' (default) | 'history' | 'bookings' | 'explore' | 'contracts' | 'support' | 'returns'
+  type CustomerPortalTab = 'my-units' | 'history' | 'bookings' | 'explore' | 'contracts' | 'support' | 'returns'
+  const validCustomerTabs: CustomerPortalTab[] = ['my-units', 'history', 'bookings', 'explore', 'contracts', 'support', 'returns']
   const rawTab = searchParams.get('tab')
   const tabParam = (rawTab === 'requests' ? 'bookings' : rawTab) as CustomerPortalTab | null
   const [activeTab, setActiveTab] = useState<CustomerPortalTab>(
@@ -2072,6 +2072,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [combinedUnitActivityHistory])
 
+  // Lọc riêng các hoạt động & thông báo liên quan đến Trả kho & Nghiệm thu quyết toán
+  const returnActivityLogs = useMemo<CustomerUnitActivityLog[]>(() => {
+    return combinedUnitActivityHistory.filter(item => {
+      const isReturnAction = item.actionType === 'RETURN_SETTLEMENT'
+      const text = `${item.title} ${item.description}`.toLowerCase()
+      const isReturnKeyword =
+        text.includes('trả kho') ||
+        text.includes('quyết toán') ||
+        text.includes('nghiệm thu') ||
+        text.includes('khiếu nại') ||
+        text.includes('hoàn cọc') ||
+        text.includes('khấu trừ')
+      return isReturnAction || ((item.category === 'SUPPORT' || item.category === 'NOTIFICATION') && isReturnKeyword)
+    })
+  }, [combinedUnitActivityHistory])
+
+  const [returnSearch, setReturnSearch] = useState('')
+  const [returnUnitFilter, setReturnUnitFilter] = useState('ALL')
+
+  const filteredReturnLogs = useMemo(() => {
+    return returnActivityLogs.filter(log => {
+      if (returnUnitFilter !== 'ALL' && log.unitCode !== returnUnitFilter) {
+        return false
+      }
+      if (returnSearch.trim()) {
+        const q = returnSearch.toLowerCase().trim()
+        const matchTitle = log.title?.toLowerCase().includes(q)
+        const matchDesc = log.description?.toLowerCase().includes(q)
+        const matchUnit = log.unitCode?.toLowerCase().includes(q)
+        const matchStatus = log.statusLabel?.toLowerCase().includes(q)
+        if (!matchTitle && !matchDesc && !matchUnit && !matchStatus) {
+          return false
+        }
+      }
+      return true
+    })
+  }, [returnActivityLogs, returnSearch, returnUnitFilter])
+
   const openRenewModal = (c: RentalContract) => {
     // Nếu kho này đang có yêu cầu gia hạn chờ ký hoặc chờ thanh toán, mở ngay Phụ lục gia hạn cho khách thao tác tiếp
     const existingActiveRenewal = myRenewals.find(
@@ -2731,6 +2769,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               { id: 'contracts', label: 'Hợp đồng & Hóa đơn', icon: 'receipt_long', badge: visibleContracts.length },
               { id: 'explore', label: 'Tìm & Thuê kho mới', icon: 'travel_explore' },
               { id: 'support', label: 'Trung tâm hỗ trợ', icon: 'support_agent' },
+              { id: 'returns', label: 'Trả kho', icon: 'assignment_return', badge: returnActivityLogs.length },
             ].map(tabItem => {
               const isTabActive = activeTab === tabItem.id
               return (
@@ -2761,39 +2800,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
         </div>
       </div>
-
-      {/* Banner thông báo nghiệm thu & quyết toán hoàn cọc / thu bồi thường cần phản hồi */}
-      {pendingSettlementBooking && (
-        <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-amber-400/50">
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30">
-              <span className="material-symbols-outlined text-[26px] text-white">fact_check</span>
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-full bg-white/25 text-[11px] font-black uppercase tracking-wider">
-                  Biên Bản Nghiệm Thu &amp; Quyết Toán
-                </span>
-                <span className="text-xs font-semibold text-amber-100">Kho #{pendingSettlementBooking.unitCode}</span>
-              </div>
-              <h4 className="text-sm sm:text-base font-bold text-white mt-0.5">
-                {pendingSettlementBooking.notifTitle}
-              </h4>
-              <p className="text-xs text-amber-100 line-clamp-1 mt-0.5">
-                {pendingSettlementBooking.notifContent}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSelectedBookingForSettlementModal(pendingSettlementBooking.bookingId)}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-amber-900 hover:bg-amber-50 font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer shrink-0"
-          >
-            <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
-            <span>Xem Biên Bản &amp; Phản Hồi</span>
-          </button>
-        </div>
-      )}
 
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
@@ -3368,7 +3374,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   { id: 'ACCESS', label: 'Đóng / Mở kho & Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
                   { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
                   { id: 'NOTIFICATION', label: 'Thông báo & Hợp đồng', count: unitHistoryCounts.notification, icon: 'notifications' },
-                  { id: 'SUPPORT', label: 'Sự cố & Trả kho', count: unitHistoryCounts.support, icon: 'support_agent' },
+                  { id: 'SUPPORT', label: 'Trả kho', count: returnActivityLogs.length, icon: 'assignment_return' },
                 ].map(tab => {
                   const isActive = unitHistoryCategory === tab.id
                   return (
@@ -5013,6 +5019,184 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           activeContracts={activeContracts}
           contracts={contracts}
         />
+      )}
+
+      {/* 7. TAB 5: QUẢN LÝ & THÔNG BÁO TRẢ KHO (RETURNS) */}
+      {activeTab === 'returns' && (
+        <div className="flex flex-col gap-6">
+          {/* Header giới thiệu mục Trả kho */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white border border-slate-700/50 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[28px]">assignment_return</span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-lg font-black text-white">Quản Lý &amp; Thông Báo Trả Kho</h3>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-300 font-mono text-[11px] font-bold">
+                    {returnActivityLogs.length} thông báo
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Theo dõi kết quả nghiệm thu hiện trường 7 tiêu chí, đối soát chi phí khấu trừ, phản hồi khiếu nại và tiến độ hoàn tiền cọc.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleTabChange('support')}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer self-start md:self-auto shrink-0"
+            >
+              <span className="material-symbols-outlined text-[16px]">support_agent</span>
+              <span>Yêu cầu hỗ trợ mới</span>
+            </button>
+          </div>
+
+          {/* Banner Biên Bản Nghiệm Thu & Quyết Toán (Nổi bật cho đơn cần phản hồi hoặc đang khiếu nại) */}
+          {pendingSettlementBooking && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-amber-400/50 animate-in fade-in">
+              <div className="flex items-start sm:items-center gap-3.5">
+                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30">
+                  <span className="material-symbols-outlined text-[26px] text-white">fact_check</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full bg-white/25 text-[11px] font-black uppercase tracking-wider">
+                      Biên Bản Nghiệm Thu &amp; Quyết Toán
+                    </span>
+                    <span className="text-xs font-semibold text-amber-100">Kho #{pendingSettlementBooking.unitCode}</span>
+                  </div>
+                  <h4 className="text-sm sm:text-base font-bold text-white mt-0.5">
+                    {pendingSettlementBooking.notifTitle}
+                  </h4>
+                  <p className="text-xs text-amber-100 line-clamp-2 mt-0.5">
+                    {pendingSettlementBooking.notifContent}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedBookingForSettlementModal(pendingSettlementBooking.bookingId)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-amber-900 hover:bg-amber-50 font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer shrink-0"
+              >
+                <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+                <span>Xem Biên Bản &amp; Phản Hồi</span>
+              </button>
+            </div>
+          )}
+
+          {/* Danh sách các thông báo / sự kiện đối soát trả kho */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[20px] text-amber-600">notifications_active</span>
+                <span className="font-bold text-xs text-slate-800">
+                  Danh sách thông báo &amp; đối soát trả kho ({filteredReturnLogs.length})
+                </span>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <select
+                  value={returnUnitFilter}
+                  onChange={e => setReturnUnitFilter(e.target.value)}
+                  aria-label="Lọc theo kho"
+                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="ALL">Tất cả các kho ({returnActivityLogs.length})</option>
+                  {Array.from(new Set(returnActivityLogs.map(l => l.unitCode).filter(Boolean))).map(code => (
+                    <option key={code} value={code}>
+                      Kho #{code}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="relative min-w-[200px]">
+                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">
+                    search
+                  </span>
+                  <input
+                    type="text"
+                    value={returnSearch}
+                    onChange={e => setReturnSearch(e.target.value)}
+                    placeholder="Tìm theo kho, nội dung..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {filteredReturnLogs.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
+                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[28px]">assignment_return</span>
+                </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm text-slate-800">Chưa có thông báo trả kho nào</h4>
+                  <p className="text-xs text-slate-500 max-w-md">
+                    Khi bạn thực hiện thủ tục trả phòng kho, kết quả kiểm tra 7 tiêu chí hiện trường và quyết toán hoàn cọc sẽ được hiển thị chi tiết tại đây.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {filteredReturnLogs.map((log) => {
+                  const targetBookingId =
+                    log.meta?.bookingId ||
+                    (log.unitCode ? customerBookings.find(b => b.unitCode === log.unitCode)?.id : undefined)
+                  return (
+                    <div
+                      key={log.id}
+                      className="p-4 sm:p-5 hover:bg-slate-50/70 transition flex flex-col sm:flex-row items-start justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="material-symbols-outlined text-[20px]">
+                            {log.title.includes('khiếu nại') || log.title.includes('Khiếu nại')
+                              ? 'report_problem'
+                              : log.title.includes('hoàn cọc') || log.title.includes('Hoàn cọc')
+                              ? 'savings'
+                              : 'fact_check'}
+                          </span>
+                        </div>
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {log.unitCode && (
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono font-bold text-[11px]">
+                                KHO #{log.unitCode}
+                              </span>
+                            )}
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
+                              {log.statusLabel || 'Trả kho'}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              {formatRelativeTimeVi(log.timestamp)}
+                            </span>
+                          </div>
+                          <h5 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
+                            {log.title}
+                          </h5>
+                          <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">
+                            {log.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {targetBookingId && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedBookingForSettlementModal(targetBookingId)}
+                          className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 self-stretch sm:self-center shadow-2xs"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">visibility</span>
+                          <span>Xem Biên Bản</span>
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
         </>

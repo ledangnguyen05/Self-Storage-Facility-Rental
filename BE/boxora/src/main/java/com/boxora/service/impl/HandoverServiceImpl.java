@@ -3915,7 +3915,79 @@ public class HandoverServiceImpl implements HandoverService {
 
         String decision = request.getDecision() != null ? request.getDecision().trim().toUpperCase() : "";
 
-        if ("DISPUTED".equals(decision)) {
+        if ("CANCEL_DISPUTE".equals(decision) || "WITHDRAW_DISPUTE".equals(decision)) {
+            if (!"DISPUTED".equalsIgnoreCase(record.getCustomerDecision())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Chỉ có thể hủy khiếu nại khi hồ sơ đang ở trạng thái chờ giải quyết khiếu nại.");
+            }
+            if (record.getDisputeResolvedAt() != null) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Khiếu nại này đã được Quản lý cơ sở phân xử giải quyết, không thể hủy.");
+            }
+
+            record.setCustomerDecision(null);
+            record.setCustomerDecisionAt(null);
+            record.setApprovalStatus("NONE");
+            record.setDisputeReason(null);
+            record.setDisputeEvidenceUrls(null);
+
+            String logMsg = String.format("[%s] KHÁCH HÀNG HỦY KHIẾU NẠI kết quả quyết toán (V%d).\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1);
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHÁCH HÀNG HỦY KHIẾU NẠI]");
+            record = handoverRecordRepository.save(record);
+            bookingRepository.save(booking);
+
+            activityLogService.record(
+                    facility != null ? facility.getId() : null,
+                    ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                    "HandoverRecord",
+                    record.getId(),
+                    String.format("Khách hàng đã rút lại yêu cầu khiếu nại quyết toán đơn %s", booking.getBookingCode()),
+                    booking.getStatus(),
+                    booking.getStatus()
+            );
+
+            // Notify Customer & Facility Manager about dispute cancellation
+            String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+            String custName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng";
+
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                NotificationLog custNotif = NotificationLog.builder()
+                        .recipient(booking.getCustomer())
+                        .recipientEmail(booking.getCustomer().getEmail())
+                        .recipientName(custName)
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Đã hủy khiếu nại quyết toán kho [%s]", unitCode))
+                        .content(String.format("Bạn đã hủy yêu cầu khiếu nại quyết toán kho %s thành công. Vui lòng xem lại biên bản và thực hiện phản hồi xác nhận.", unitCode))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(custNotif);
+            }
+
+            if (facility != null && facility.getManager() != null && facility.getManager().getEmail() != null) {
+                NotificationLog fmNotif = NotificationLog.builder()
+                        .recipient(facility.getManager())
+                        .recipientEmail(facility.getManager().getEmail())
+                        .recipientName(facility.getManager().getFullName())
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Khách hàng đã hủy khiếu nại quyết toán kho [%s]", unitCode))
+                        .content(String.format("Khách hàng %s đã rút lại yêu cầu khiếu nại cho đơn %s (Kho %s).",
+                                custName, booking.getBookingCode(), unitCode))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(fmNotif);
+            }
+
+            return calculateSettlement(bookingId, null);
+
+        } else if ("DISPUTED".equals(decision)) {
             if (request.getDisputeReason() == null || request.getDisputeReason().isBlank()) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lòng nhập lý do khiếu nại chi tiết.");
             }
@@ -4136,8 +4208,16 @@ public class HandoverServiceImpl implements HandoverService {
             return calculateSettlement(bookingId, null);
 
         } else {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Quyết định không hợp lệ. Vui lòng chọn AGREED hoặc DISPUTED.");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Quyết định không hợp lệ. Vui lòng chọn AGREED, DISPUTED hoặc CANCEL_DISPUTE.");
         }
+    }
+
+    @Override
+    @Transactional
+    public ReturnSettlementResponse cancelDispute(UUID bookingId) {
+        return handleCustomerDecision(bookingId, com.boxora.dto.request.CustomerDecisionRequest.builder()
+                .decision("CANCEL_DISPUTE")
+                .build());
     }
 
     @Override

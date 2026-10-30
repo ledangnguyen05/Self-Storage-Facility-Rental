@@ -395,6 +395,29 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     }
   }
 
+  const handleCancelDisputeSubmit = async (ticket: SupportTicketRecord) => {
+    if (!ticket.bookingId) return
+    const isConfirmed = window.confirm(
+      'Bạn có chắc chắn muốn hủy yêu cầu khiếu nại này không?\n\nSau khi hủy, biên bản quyết toán sẽ quay lại trạng thái chờ bạn phản hồi.'
+    )
+    if (!isConfirmed) return
+
+    setIsSubmittingCustomerDecision(true)
+    try {
+      await handoverService.cancelDispute(ticket.bookingId)
+      toast.success('Đã hủy yêu cầu khiếu nại thành công!')
+      const updated = await handoverService.calculateSettlement(ticket.bookingId)
+      if (updated) {
+        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+      }
+      loadMyTickets()
+    } catch (err: any) {
+      toast.error('Lỗi khi hủy khiếu nại: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setIsSubmittingCustomerDecision(false)
+    }
+  }
+
   // Handler for customer payment of compensation via VNPay
   const handlePayCompensationVNPay = async (ticket: SupportTicketRecord, additionalDue: number) => {
     if (!ticket.bookingId) return
@@ -1238,6 +1261,18 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 const isConfirmed = settlement ? Boolean(settlement.settlementConfirmed) : true
                 const decision = settlement?.customerDecision
 
+                const isDepositDeducted =
+                  Number(totalDeductions) > 0 ||
+                  Number(additionalDue) > 0 ||
+                  (Number(depositPaid) > 0 && Number(netRefund) < Number(depositPaid)) ||
+                  Number(settlement?.doorFee || 0) > 0 ||
+                  Number(settlement?.cleaningFee || 0) > 0 ||
+                  Number(settlement?.wallStructureFee || 0) > 0 ||
+                  Number(settlement?.smartLockFee || 0) > 0 ||
+                  Number(settlement?.lostCardFee || 0) > 0 ||
+                  Number(settlement?.overdueDebt || 0) > 0 ||
+                  Number(settlement?.damageFee || 0) > 0
+
                 return (
                 <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 space-y-3 text-amber-950">
                   <div className="flex items-center justify-between">
@@ -1294,25 +1329,30 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                           <div className="text-[11px] text-amber-800 font-semibold">
                             Nhân viên đã chốt biên bản kiểm tra &amp; tính phí. Vui lòng xem xét và phản hồi:
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className={isDepositDeducted ? "grid grid-cols-2 gap-2" : "flex justify-end"}>
                             <button
                               type="button"
                               onClick={() => handleCustomerAgree(currentTkt, settlement)}
                               disabled={isSubmittingCustomerDecision}
-                              className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                              className={isDepositDeducted
+                                ? "py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                                : "w-full sm:w-auto py-2.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                              }
                             >
                               <span className="material-symbols-outlined text-[16px]">check_circle</span>
                               <span>Đồng ý với quyết định</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setShowCustomerDisputeModal(true)}
-                              disabled={isSubmittingCustomerDecision}
-                              className="py-2.5 px-3 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-50"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">report_problem</span>
-                              <span>Khiếu nại</span>
-                            </button>
+                            {isDepositDeducted && (
+                              <button
+                                type="button"
+                                onClick={() => setShowCustomerDisputeModal(true)}
+                                disabled={isSubmittingCustomerDecision}
+                                className="py-2.5 px-3 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">report_problem</span>
+                                <span>Khiếu nại</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       ) : decision === 'AGREED' ? (
@@ -1381,13 +1421,24 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                           )}
                         </div>
                       ) : decision === 'DISPUTED' ? (
-                        <div className="p-3 rounded-xl bg-rose-100/80 border border-rose-300 text-rose-900 text-xs space-y-1">
-                          <div className="font-bold flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px] text-rose-700">warning</span>
-                            <span>Quý khách đã gửi khiếu nại về quyết toán này.</span>
+                        <div className="p-3 rounded-xl bg-rose-100/80 border border-rose-300 text-rose-900 text-xs space-y-2">
+                          <div className="font-bold flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[16px] text-rose-700">warning</span>
+                              <span>Quý khách đã gửi khiếu nại về quyết toán này.</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelDisputeSubmit(currentTkt)}
+                              disabled={isSubmittingCustomerDecision}
+                              className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 border border-rose-300 text-rose-700 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[13px]">undo</span>
+                              <span>Hủy yêu cầu khiếu nại</span>
+                            </button>
                           </div>
                           <p className="italic text-[11px]">Lý do: "{settlement?.disputeReason || 'Chưa đồng ý với chi phí khấu trừ'}"</p>
-                          <p className="text-[10px] text-slate-600 pt-1">
+                          <p className="text-[10px] text-slate-600 pt-0.5">
                             Hồ sơ đang được chuyển lên Quản lý cơ sở (Facility Manager) xem xét hòa giải và điều chỉnh. Mọi khoản thanh toán / giải ngân được tạm ngưng.
                           </p>
                         </div>

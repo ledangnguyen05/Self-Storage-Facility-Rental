@@ -10,7 +10,8 @@ import {
   MessageSquareWarning,
   Send,
   RefreshCw,
-  Info
+  Info,
+  Undo2
 } from 'lucide-react'
 import { handoverService, ReturnSettlementDetail } from '../../services/handoverService'
 import { paymentService } from '../../services/paymentService'
@@ -95,6 +96,20 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   const additionalDue = settlement ? settlement.additionalAmountDue || 0 : 0
   const depositPaid = settlement ? settlement.depositPaid || 0 : 0
   const totalDeduction = settlement ? settlement.totalDeduction || 0 : 0
+
+  // Chỉ cho phép khiếu nại khi tiền cọc thực sự bị khấu trừ hoặc có phát sinh chi phí bồi thường/sửa chữa
+  const isDepositDeducted = settlement
+    ? Number(totalDeduction) > 0 ||
+      Number(additionalDue) > 0 ||
+      (Number(depositPaid) > 0 && Number(netRefund) < Number(depositPaid)) ||
+      Number(settlement.doorFee || 0) > 0 ||
+      Number(settlement.cleaningFee || 0) > 0 ||
+      Number(settlement.wallStructureFee || 0) > 0 ||
+      Number(settlement.smartLockFee || 0) > 0 ||
+      Number(settlement.lostCardFee || 0) > 0 ||
+      Number(settlement.overdueDebt || 0) > 0 ||
+      Number(settlement.damageFee || 0) > 0
+    : false
 
   // 1. Customer agrees with refund -> Prompt confirmation dialog
   const handlePromptBankConfirm = (e: React.FormEvent) => {
@@ -217,6 +232,27 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     }
   }
 
+  // 5. Customer cancels dispute
+  const handleCancelDispute = async () => {
+    const isConfirmed = window.confirm(
+      'Bạn có chắc chắn muốn hủy yêu cầu khiếu nại này không?\n\nSau khi hủy, biên bản quyết toán sẽ trở về trạng thái chờ bạn phản hồi.'
+    )
+    if (!isConfirmed) return
+
+    setSubmitting(true)
+    try {
+      await handoverService.cancelDispute(bookingId)
+      toast.success('Đã hủy yêu cầu khiếu nại thành công!')
+      setViewStep('VIEW')
+      await fetchSettlement()
+      if (onUpdated) onUpdated()
+    } catch (err: any) {
+      toast.error('Lỗi khi hủy khiếu nại: ' + (err?.response?.data?.message || err.message))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95 my-8">
@@ -272,7 +308,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   </span>
                 ) : settlement.customerDecision === 'DISPUTED' ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[11px] flex items-center gap-1">
-                    <AlertTriangle size={12} /> Đang khiếu nại (Chờ Facility Manager)
+                    <AlertTriangle size={12} /> Đang khiếu nại (Chờ Quản lý Cơ sở)
                   </span>
                 ) : (
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[11px]">
@@ -433,10 +469,12 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                 )}
 
                 {settlement.customerDecision === 'DISPUTED' && (
-                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-300 space-y-2 text-xs">
-                    <div className="font-bold text-rose-900 flex items-center gap-1.5">
-                      <MessageSquareWarning size={16} className="text-rose-600" />
-                      <span>Đơn khiếu nại của bạn đang chờ Quản lý cơ sở (Facility Manager) giải quyết</span>
+                  <div className="p-4 rounded-xl bg-rose-50 border border-rose-300 space-y-3 text-xs">
+                    <div className="font-bold text-rose-900 flex items-center justify-between gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <MessageSquareWarning size={16} className="text-rose-600" />
+                        <span>Đơn khiếu nại của bạn đang chờ Quản lý cơ sở giải quyết</span>
+                      </div>
                     </div>
                     <div className="bg-white p-2.5 rounded-lg border border-rose-200 space-y-1 text-slate-700">
                       <span className="text-slate-500 font-semibold text-[11px]">Nội dung khiếu nại đã gửi:</span>
@@ -444,20 +482,38 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     </div>
                     {settlement.disputeResolutionNote && (
                       <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 space-y-1 text-emerald-950">
-                        <span className="text-emerald-800 font-semibold text-[11px]">Phản hồi từ Facility Manager ({settlement.disputeResolvedByName}):</span>
+                        <span className="text-emerald-800 font-semibold text-[11px]">Phản hồi từ Quản lý cơ sở ({settlement.disputeResolvedByName}):</span>
                         <p className="font-medium">"{settlement.disputeResolutionNote}"</p>
                       </div>
                     )}
                     <p className="text-[11px] text-rose-800">
-                      Chỉ Quản lý cơ sở (Facility Manager) mới có thẩm quyền phân xử đơn khiếu nại này. Vui lòng chờ nhân viên liên hệ hoặc theo dõi kết quả tại đây.
+                      Chỉ Quản lý cơ sở mới có thẩm quyền phân xử đơn khiếu nại này. Vui lòng chờ nhân viên liên hệ hoặc theo dõi kết quả tại đây.
                     </p>
+
+                    {/* Button Hủy yêu cầu khiếu nại */}
+                    {!settlement.disputeResolutionNote && (
+                      <div className="pt-2 border-t border-rose-200 flex flex-col sm:flex-row items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-500 italic">
+                          Bạn có thể rút lại khiếu nại nếu muốn đồng ý quyết toán hoặc cập nhật lại.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCancelDispute}
+                          disabled={submitting}
+                          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-white hover:bg-rose-100 border border-rose-300 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition disabled:opacity-50 hover:shadow-xs"
+                        >
+                          <Undo2 size={14} className={submitting ? 'animate-spin' : ''} />
+                          <span>{submitting ? 'Đang hủy khiếu nại...' : 'Hủy yêu cầu khiếu nại'}</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) */}
                 {(!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
-                    {totalDeduction > 0 && (
+                    {isDepositDeducted && (
                       <button
                         type="button"
                         onClick={() => setViewStep('FORM_DISPUTE')}
