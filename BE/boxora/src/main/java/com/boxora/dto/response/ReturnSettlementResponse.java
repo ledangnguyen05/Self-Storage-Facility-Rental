@@ -23,6 +23,7 @@ public class ReturnSettlementResponse {
     private String customerName;
     private UUID staffId;
     private String staffName;
+    private LocalDateTime scheduledInspectionAt;
 
     /** Tiền cọc đã nộp ban đầu */
     private BigDecimal depositPaid;

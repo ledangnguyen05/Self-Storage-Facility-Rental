@@ -5198,6 +5198,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           initialCategory={selectedSupportCategory}
           initialContent={selectedSupportContent}
           initialTitle={selectedSupportTitle}
+          onNavigateToReturns={(unitCode, bookingId) => {
+            if (unitCode) setReturnUnitFilter(unitCode)
+            if (bookingId) setSelectedBookingForSettlementModal(bookingId)
+            handleTabChange('returns')
+          }}
         />
       )}
 

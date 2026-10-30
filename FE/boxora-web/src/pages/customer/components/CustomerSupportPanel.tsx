@@ -17,6 +17,7 @@ export interface CustomerSupportPanelProps {
   initialCategory?: SupportTicketCategory
   initialContent?: string
   initialTitle?: string
+  onNavigateToReturns?: (unitCode?: string, bookingId?: string) => void
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; color: string }> = {
@@ -55,6 +56,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   initialCategory,
   initialContent,
   initialTitle,
+  onNavigateToReturns,
 }) => {
   // Navigation sub-tab: 'form' (Tạo mới) | 'history' (Lịch sử)
   const [subTab, setSubTab] = useState<'form' | 'history'>('form')
@@ -335,6 +337,47 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     }
   }
 
+  // Handler: Hủy yêu cầu trả kho khi đang ở trạng thái Chờ tiếp nhận (OPEN)
+  const handleCancelReturnTicket = async (t: SupportTicketRecord) => {
+    const isReturn = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' || t.title?.toLowerCase().includes('trả kho')
+    const confirmMsg = isReturn
+      ? `Bạn có chắc chắn muốn hủy yêu cầu trả kho #${t.unitCode || ''} không?\n\nKho của bạn sẽ tiếp tục duy trì trạng thái hoạt động bình thường.`
+      : `Bạn có chắc chắn muốn hủy yêu cầu hỗ trợ #${t.ticketCode || t.id.slice(0, 8)} không?`
+
+    if (!window.confirm(confirmMsg)) return
+
+    try {
+      await supportTicketService.closeTicket(t.id, 'Khách hàng chủ động hủy yêu cầu')
+      // Đồng bộ xóa cache cục bộ nếu có
+      try {
+        const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+        if (raw) {
+          const list = JSON.parse(raw)
+          if (Array.isArray(list)) {
+            const next = list.filter((it: any) => it.id !== t.id && it.unitCode !== t.unitCode && it.bookingId !== t.bookingId)
+            localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(next))
+          }
+        }
+        const rawOld = localStorage.getItem('boxora_return_requests')
+        if (rawOld) {
+          const listOld = JSON.parse(rawOld)
+          if (Array.isArray(listOld)) {
+            const nextOld = listOld.filter((it: any) => it.id !== t.id && it.unitCode !== t.unitCode && it.bookingId !== t.bookingId)
+            localStorage.setItem('boxora_return_requests', JSON.stringify(nextOld))
+          }
+        }
+      } catch (e) {}
+
+      toast.success(isReturn ? 'Đã hủy yêu cầu trả kho thành công!' : 'Đã hủy yêu cầu hỗ trợ thành công!')
+      await loadMyTickets()
+      if (selectedTicket?.id === t.id) {
+        setSelectedTicket(null)
+      }
+    } catch (err: any) {
+      toast.error('Không thể hủy yêu cầu: ' + (err?.response?.data?.message || err.message))
+    }
+  }
+
   const handleCloseTicket = async (ticketId: string) => {
     const t = tickets.find(item => item.id === ticketId) || selectedTicket || ({ id: ticketId, title: 'Yêu cầu hỗ trợ' } as SupportTicketRecord)
     handleOpenRatingModal(t)
@@ -536,7 +579,42 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     })
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, ticket?: SupportTicketRecord) => {
+    const isReturn = ticket && (ticket.category === 'RETURN_REFUND' || ticket.category === 'RETURN_EXPIRED' || ticket.title?.toLowerCase().includes('trả kho'))
+
+    if (isReturn) {
+      if (status === 'OPEN') {
+        return (
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1 shadow-2xs">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse"></span>
+            <span>Chờ tiếp nhận</span>
+          </span>
+        )
+      }
+      if (status === 'IN_PROGRESS') {
+        return (
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-900 border border-blue-300 inline-flex items-center gap-1 shadow-2xs">
+            <span className="material-symbols-outlined text-[13px] text-blue-600">event_available</span>
+            <span>Đã được chấp nhận</span>
+          </span>
+        )
+      }
+      if (status === 'RESOLVED') {
+        return (
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
+            Đã giải quyết
+          </span>
+        )
+      }
+      if (status === 'CLOSED') {
+        return (
+          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300 shadow-2xs">
+            Đã đóng / Hủy
+          </span>
+        )
+      }
+    }
+
     switch (status) {
       case 'OPEN':
         return (
@@ -1041,7 +1119,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {paginatedTickets.map((t) => {
                     const catInfo = CATEGORY_LABELS[t.category] || CATEGORY_LABELS.OTHER
-                    const isReturnRefund = t.category === 'RETURN_REFUND'
+                    const isReturnRefund = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' || !!(t.title && t.title.toLowerCase().includes('trả kho'))
                     const needsBank = isReturnRefund && t.refundStatus === 'AWAITING_CUSTOMER_BANK_INFO'
 
                     return (
@@ -1092,7 +1170,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
                         {/* Trạng thái */}
                         <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                          {getStatusBadge(t.status)}
+                          {getStatusBadge(t.status, t)}
                         </td>
 
                         {/* Ngày gửi */}
@@ -1119,13 +1197,26 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                               </button>
                             )}
 
-                            <button
-                              type="button"
-                              onClick={() => setSelectedTicket(t)}
-                              className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer"
-                            >
-                              Chi tiết
-                            </button>
+                            {/* Khi đang ở status Chờ tiếp nhận (OPEN) thì hiển thị button Hủy yêu cầu trả kho thay vì Chi tiết */}
+                            {t.status === 'OPEN' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleCancelReturnTicket(t)}
+                                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="Hủy yêu cầu trả kho này"
+                              >
+                                <span className="material-symbols-outlined text-[13px]">cancel</span>
+                                <span>{isReturnRefund || t.category === 'RETURN_EXPIRED' ? 'Hủy yêu cầu trả kho' : 'Hủy yêu cầu'}</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedTicket(t)}
+                                className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer shadow-2xs"
+                              >
+                                Chi tiết
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1200,7 +1291,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                     <h3 className="font-bold text-sm text-slate-900">
                       Chi Tiết Yêu Cầu {selectedTicket.ticketCode || selectedTicket.ticketNumber || `#${selectedTicket.id.slice(0, 8)}`}
                     </h3>
-                    {getStatusBadge(selectedTicket.status)}
+                    {getStatusBadge(selectedTicket.status, selectedTicket)}
                   </div>
                   <span className="text-[11px] text-slate-500 font-mono">
                     Gửi lúc: {formatTimeStr(selectedTicket.createdAt)}
@@ -1269,20 +1360,77 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 </div>
               )}
 
-              {/* IN_PROGRESS Notification Banner */}
-              {selectedTicket.status === 'IN_PROGRESS' && (
-                <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-start gap-3">
-                  <span className="material-symbols-outlined text-[22px] text-blue-600 shrink-0">check_circle</span>
-                  <div>
-                    <div className="font-bold text-xs text-blue-900">
-                      Yêu cầu đã được chấp nhận — {selectedTicket.assignedStaffName ? `Nhân viên ${selectedTicket.assignedStaffName}` : 'Nhân viên cơ sở'} đang tiếp nhận &amp; xử lý
+              {/* Lịch hẹn nghiệm thu hiện trường khi đã được chấp nhận & lên lịch */}
+              {(() => {
+                const isRet = selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED' || selectedTicket.title?.toLowerCase().includes('trả kho')
+                const bId = selectedTicket.bookingId
+                const st = bId ? returnSettlementMap[bId] : null
+                const schedStr = (() => {
+                  if (st?.scheduledInspectionAt) {
+                    return formatTimeStr(st.scheduledInspectionAt)
+                  }
+                  if (selectedTicket.resolutionNote) {
+                    const match = selectedTicket.resolutionNote.match(/\d{2}:\d{2}\s+\d{2}\/\d{2}\/\d{4}/)
+                    if (match) return match[0]
+                  }
+                  try {
+                    const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+                    if (raw) {
+                      const list = JSON.parse(raw)
+                      const found = list.find((it: any) => (it.bookingId && it.bookingId === bId) || (it.unitCode && it.unitCode === selectedTicket.unitCode))
+                      if (found?.inspectionDate) return found.inspectionDate
+                    }
+                  } catch (e) {}
+                  return null
+                })()
+
+                if (isRet && (schedStr || selectedTicket.status === 'IN_PROGRESS')) {
+                  return (
+                    <div className="p-4 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-300 text-blue-950 space-y-2.5 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[22px] text-blue-700">event_available</span>
+                        <span className="font-extrabold text-xs text-blue-950">
+                          Yêu cầu trả kho đã được chấp nhận &amp; Lên lịch hẹn đón tiếp
+                        </span>
+                      </div>
+                      <div className="p-3 bg-white/90 rounded-lg border border-blue-200 text-xs space-y-2">
+                        <div className="flex items-center justify-between text-slate-700">
+                          <span className="font-semibold text-slate-500">Lịch hẹn đón tiếp &amp; nghiệm thu:</span>
+                          <strong className="font-mono text-blue-900 text-sm">
+                            {schedStr || 'Đã hẹn lịch tiếp đón (Xem chi tiết)'}
+                          </strong>
+                        </div>
+                        <div className="flex items-center justify-between text-slate-700">
+                          <span className="font-semibold text-slate-500">Địa điểm buồng kho:</span>
+                          <span className="font-medium text-slate-800">
+                            Kho #{selectedTicket.unitCode} • {selectedTicket.facilityName || 'Boxora'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 pt-1.5 border-t border-blue-100 leading-relaxed">
+                          Nhân viên cơ sở sẽ có mặt để hướng dẫn và cùng bạn lập <strong>Biên bản nghiệm thu 7 tiêu chí hiện trường</strong>. Quý khách vui lòng có mặt đúng giờ và dọn trống tài sản trong kho.
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
-                      Cơ sở đã tiếp nhận yêu cầu và lên lịch nghiệm thu / xử lý hiện trường. Quý khách vui lòng theo dõi thông báo và liên hệ hotline <strong>1900 6828</strong> nếu cần hỗ trợ gấp.
-                    </p>
-                  </div>
-                </div>
-              )}
+                  )
+                }
+
+                if (selectedTicket.status === 'IN_PROGRESS') {
+                  return (
+                    <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-start gap-3">
+                      <span className="material-symbols-outlined text-[22px] text-blue-600 shrink-0">engineering</span>
+                      <div>
+                        <div className="font-bold text-xs text-blue-900">
+                          Nhân viên {selectedTicket.assignedStaffName || 'phụ trách cơ sở'} đang trực tiếp xử lý yêu cầu của bạn
+                        </div>
+                        <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
+                          Đội ngũ kỹ thuật &amp; vận hành đang kiểm tra thực tế hiện trường. Nếu cần phối hợp khẩn cấp, vui lòng liên hệ hotline cơ sở: <strong>1900 6828</strong>.
+                        </p>
+                      </div>
+                    </div>
+                  )
+                }
+                return null
+              })()}
 
               {/* Title & Description */}
               <div className="space-y-1.5">
@@ -1334,7 +1482,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
               )}
 
               {/* Refund Info Section for RETURN_REFUND & RETURN_EXPIRED (Task 16 Settlement Flow) */}
-              {(selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED') && (() => {
+              {(selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED' || (selectedTicket.title && selectedTicket.title.toLowerCase().includes('trả kho'))) && (() => {
                 const currentTkt = selectedTicket
                 if (!currentTkt) return null
                 const bId = currentTkt.bookingId
@@ -1346,6 +1494,16 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 const totalDeductions = settlement?.totalDeductions ?? settlement?.totalDeduction ?? 0
                 const isConfirmed = settlement ? Boolean(settlement.settlementConfirmed) : true
                 const decision = settlement?.customerDecision
+
+                const hasInspectionSettlement = Boolean(
+                  settlement?.handoverRecordId ||
+                  settlement?.settlementConfirmed ||
+                  (settlement && settlement.depositPaid !== undefined && Number(settlement.depositPaid) > 0) ||
+                  (currentTkt.refundAmount && Number(currentTkt.refundAmount) > 0)
+                )
+
+                // Chỉ hiển thị biên bản đối soát 7 tiêu chí & quyết toán khi đã được lập/gửi biên bản
+                if (!hasInspectionSettlement) return null
 
                 const isDepositDeducted =
                   Number(totalDeductions) > 0 ||
@@ -1553,6 +1711,26 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       )}
                     </div>
                   )}
+
+                  {/* Nút Xem tại mục Trả kho để navigate tới đúng đơn và xem chi tiết đối soát 7 tiêu chí */}
+                  <div className="pt-2 flex items-center justify-between gap-2 border-t border-amber-200/80 flex-wrap">
+                    <span className="text-[11px] text-amber-900 font-medium">
+                      Xem chi tiết đối soát 7 tiêu chí &amp; phiếu quyết toán tại mục <strong>Trả kho</strong>:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const uCode = currentTkt.unitCode
+                        const bkId = currentTkt.bookingId
+                        setSelectedTicket(null)
+                        onNavigateToReturns?.(uCode, bkId)
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">visibility</span>
+                      <span>Xem Tại Mục Trả Kho</span>
+                    </button>
+                  </div>
                 </div>
               )})()}
 

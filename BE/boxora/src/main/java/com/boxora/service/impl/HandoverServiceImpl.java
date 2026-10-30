@@ -2890,7 +2890,7 @@ public class HandoverServiceImpl implements HandoverService {
                 }
             }
             for (SupportTicket t : linkedTickets) {
-                if (t.getStatus() == TicketStatus.OPEN) {
+                if (t.getStatus() == TicketStatus.OPEN || t.getStatus() == TicketStatus.IN_PROGRESS) {
                     t.setStatus(TicketStatus.IN_PROGRESS);
                     if (t.getAssignedStaff() == null && staff != null) {
                         t.setAssignedStaff(staff);
@@ -2898,6 +2898,9 @@ public class HandoverServiceImpl implements HandoverService {
                     if (t.getBooking() == null) {
                         t.setBooking(booking);
                     }
+                    String apptStr = scheduledAt != null ? scheduledAt.format(CHECKIN_DT_FMT) : "Chưa hẹn";
+                    t.setResolutionNote(String.format("Lịch hẹn nghiệm thu hiện trường: %s%s",
+                            apptStr, (notes != null && !notes.isBlank()) ? " • Ghi chú: " + notes : ""));
                     supportTicketRepository.save(t);
                 }
             }
@@ -3239,6 +3242,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .refundStatus(record != null && record.getRefundStatus() != null ? record.getRefundStatus() : "NONE")
                 .refundTransactionId(record != null ? record.getRefundTxnRef() : null)
                 .depositRefundSlaDays(slaDays)
+                .scheduledInspectionAt(record != null ? record.getScheduledInspectionAt() : null)
                 .checklistAllPassed(record != null && Boolean.TRUE.equals(record.getChecklistAllPassed()))
                 .checklistSummary(record != null ? record.getChecklistSummary() : "")
                 .doorConditionPassed(record != null ? record.getDoorConditionPassed() : null)
