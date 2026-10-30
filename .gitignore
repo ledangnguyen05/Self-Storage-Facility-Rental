@@ -2,22 +2,32 @@
 .idea/
 *.log
 
-# Environment variables
+# ============================================================
+# Environment variables — NEVER commit .env files
+# .env.example files are allowed (template only, no secrets)
+# ============================================================
 .env
 .env.*
 !.env.example
+*/.env
+*/.env.*
+!*/.env.example
 
-
+# Hidden / internal folders
 .github/
 BA-Blueprint-Agent/
 Development-Agent/
 bug/
 docs/
+
+# Markdown (except README)
 *.md
 !README.md
-.env*
-!.env.example
+
+# Docker
 docker-compose*.yml
+
+# Build artifacts
 uploads/
 node_modules/
 **/node_modules/
@@ -25,8 +35,11 @@ dist/
 **/dist/
 target/
 **/target/
+
+# Cloudflare Wrangler
 .wrangler/
 **/.wrangler/
 
+# Scratch / temp
 scratch/
 **/scratch/
