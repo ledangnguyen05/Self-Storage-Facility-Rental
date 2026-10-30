@@ -61,6 +61,7 @@ interface CustomerSettlementReviewModalProps {
   onClose: () => void
   bookingId: string
   readOnly?: boolean
+  initialVersion?: number
   onUpdated?: () => void
 }
 
@@ -69,9 +70,11 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   onClose,
   bookingId,
   readOnly = false,
+  initialVersion,
   onUpdated
 }) => {
   const [settlement, setSettlement] = useState<ReturnSettlementDetail | null>(null)
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(initialVersion || null)
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [viewStep, setViewStep] = useState<'VIEW' | 'FORM_BANK' | 'FORM_DISPUTE' | 'FORM_PAY'>('VIEW')
@@ -94,6 +97,11 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     try {
       const data = await handoverService.calculateSettlement(bookingId)
       setSettlement(data)
+      if (initialVersion) {
+        setSelectedVersion(initialVersion)
+      } else if (data.settlementVersion) {
+        setSelectedVersion(data.settlementVersion)
+      }
       if (data.bankName) setBankName(data.bankName)
       if (data.bankAccountNumber) setBankAccountNumber(data.bankAccountNumber)
       if (data.bankAccountName) setBankAccountName(data.bankAccountName)
@@ -109,9 +117,12 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   useEffect(() => {
     if (isOpen && bookingId) {
       setViewStep('VIEW')
+      if (initialVersion) {
+        setSelectedVersion(initialVersion)
+      }
       void fetchSettlement()
     }
-  }, [isOpen, bookingId])
+  }, [isOpen, bookingId, initialVersion])
 
   const evidencePhotosList: string[] = useMemo(() => {
     if (!settlement) return []
@@ -140,11 +151,45 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
 
   if (!isOpen) return null
 
-  const isOverDeposit = settlement ? (settlement.additionalAmountDue || 0) > 0 : false
-  const netRefund = settlement ? settlement.netRefundAmount || 0 : 0
-  const additionalDue = settlement ? settlement.additionalAmountDue || 0 : 0
-  const depositPaid = settlement ? settlement.depositPaid || 0 : 0
-  const totalDeduction = settlement ? settlement.totalDeduction || 0 : 0
+  const snapshotsList: SettlementSnapshot[] = useMemo(() => {
+    return settlement?.snapshots || []
+  }, [settlement])
+
+  const activeSnapshot: SettlementSnapshot | null = useMemo(() => {
+    if (!settlement) return null
+    if (selectedVersion && snapshotsList.length > 0) {
+      const match = snapshotsList.find(s => s.settlementVersion === selectedVersion)
+      if (match) return match
+    }
+    return null
+  }, [settlement, selectedVersion, snapshotsList])
+
+  const currentViewingVersion = activeSnapshot?.settlementVersion || selectedVersion || settlement?.settlementVersion || 1
+  const isViewingLatestVersion = settlement ? currentViewingVersion === (settlement.settlementVersion || 1) : true
+
+  // Dữ liệu đối soát hiển thị động theo phiên bản đang xem
+  const displayDepositPaid = activeSnapshot != null ? Number(activeSnapshot.depositAmount || 0) : Number(settlement?.depositPaid || 0)
+  const displayDoorFee = activeSnapshot != null ? Number(activeSnapshot.doorFee || 0) : Number(settlement?.doorFee || 0)
+  const displayCleaningFee = activeSnapshot != null ? Number(activeSnapshot.cleaningFee || 0) : Number(settlement?.cleaningFee || 0)
+  const displayWallStructureFee = activeSnapshot != null ? Number(activeSnapshot.wallStructureFee || 0) : Number(settlement?.wallStructureFee || 0)
+  const displaySmartLockFee = activeSnapshot != null ? Number(activeSnapshot.smartLockFee || 0) : Number(settlement?.smartLockFee || 0)
+  const displayLostCardFee = activeSnapshot != null ? Number(activeSnapshot.lostCardFee || 0) : Number(settlement?.lostCardFee || 0)
+  const displayOverdueDebt = activeSnapshot != null ? Number(activeSnapshot.overdueDebt || 0) : Number(settlement?.overdueDebt || 0)
+  const displayTotalDeduction = activeSnapshot != null ? Number(activeSnapshot.totalDeductions || 0) : Number(settlement?.totalDeduction || 0)
+  const displayNetRefund = activeSnapshot != null ? Number(activeSnapshot.refundAmount || 0) : Number(settlement?.netRefundAmount || 0)
+  const displayAdditionalDue = activeSnapshot != null ? Number(activeSnapshot.additionalAmountDue || 0) : Number(settlement?.additionalAmountDue || 0)
+  const displayIsOverDeposit = displayAdditionalDue > 0
+
+  const displayConfirmedByName = activeSnapshot?.confirmedByName || settlement?.settlementConfirmedByName || 'Nhân viên Boxora'
+  const displayConfirmedAt = activeSnapshot?.confirmedAt || settlement?.settlementConfirmedAt
+  const displayCustomerDecision = activeSnapshot?.customerDecision || settlement?.customerDecision || 'NONE'
+  const displayNotes = activeSnapshot?.notes || settlement?.approvalNotes
+
+  const isOverDeposit = displayIsOverDeposit
+  const netRefund = displayNetRefund
+  const additionalDue = displayAdditionalDue
+  const depositPaid = displayDepositPaid
+  const totalDeduction = displayTotalDeduction
 
   // Chỉ cho phép khiếu nại khi tiền cọc thực sự bị khấu trừ hoặc có phát sinh chi phí bồi thường/sửa chữa
   const isDepositDeducted = settlement
@@ -350,22 +395,83 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
           </div>
         ) : (
           <div className="space-y-4">
-            {/* Trạng thái quyết toán & Snapshot Version */}
+            {/* Selector chọn phiên bản nghiệm thu & quyết toán */}
+            {snapshotsList.length > 0 && (
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 border border-indigo-100/90 shadow-2xs space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px] text-indigo-600">history</span>
+                    <span className="font-bold text-slate-800">
+                      Lịch sử các phiên bản quyết toán ({snapshotsList.length} phiên bản)
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-indigo-700 bg-indigo-100/80 px-2.5 py-0.5 rounded-full font-bold">
+                    Đang xem: Phiên bản V{currentViewingVersion} {isViewingLatestVersion ? '(Mới nhất)' : '(Lưu trữ cũ)'}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {snapshotsList.map((s: SettlementSnapshot) => {
+                    const isSelected = s.settlementVersion === currentViewingVersion
+                    const isLatest = s.settlementVersion === (settlement.settlementVersion || 1)
+                    return (
+                      <button
+                        key={s.id || s.settlementVersion}
+                        type="button"
+                        onClick={() => setSelectedVersion(s.settlementVersion)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs'
+                        }`}
+                      >
+                        <span className="font-mono">Phiên bản V{s.settlementVersion}</span>
+                        {isLatest ? (
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                            isSelected ? 'bg-indigo-800 text-indigo-100' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            Mới nhất
+                          </span>
+                        ) : (
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-semibold ${
+                            isSelected ? 'bg-indigo-700 text-indigo-200' : 'bg-slate-100 text-slate-600'
+                          }`}>
+                            {s.settlementVersion === 1 ? 'Ban đầu' : 'Cũ'}
+                          </span>
+                        )}
+                        <span className="text-[11px] font-mono opacity-90">
+                          {Number(s.refundAmount || 0) > 0
+                            ? `• Hoàn ${Number(s.refundAmount || 0).toLocaleString('vi-VN')}đ`
+                            : `• Trừ ${Number(s.totalDeductions || 0).toLocaleString('vi-VN')}đ`}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Trạng thái phiên bản đang xem */}
             <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold font-mono text-[11px]">
-                  Phiên bản V{settlement.settlementVersion || 1}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold font-mono text-[11px]">
+                  Phiên bản V{currentViewingVersion}
                 </span>
                 <span className="text-slate-600">
-                  Chốt bởi: <strong>{settlement.settlementConfirmedByName || 'Nhân viên Boxora'}</strong>
+                  Chốt bởi: <strong>{displayConfirmedByName}</strong>
                 </span>
+                {displayConfirmedAt && (
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    ({new Date(displayConfirmedAt).toLocaleString('vi-VN')})
+                  </span>
+                )}
               </div>
               <div>
-                {settlement.customerDecision === 'AGREED' ? (
+                {displayCustomerDecision === 'AGREED' ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px] flex items-center gap-1">
                     <CheckCircle2 size={12} /> Bạn đã đồng ý
                   </span>
-                ) : settlement.customerDecision === 'DISPUTED' ? (
+                ) : displayCustomerDecision === 'DISPUTED' ? (
                   <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold text-[11px] flex items-center gap-1">
                     <AlertTriangle size={12} /> Đang khiếu nại (Chờ Quản lý Cơ sở)
                   </span>
@@ -377,36 +483,33 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
               </div>
             </div>
 
-            {/* TASK 20: Lịch sử các phiên bản quyết toán cho khách hàng */}
-            {settlement.snapshots && settlement.snapshots.length > 1 && (
-              <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200/80 space-y-1.5 text-xs">
-                <div className="flex items-center justify-between font-bold text-indigo-900 text-[11px]">
-                  <span className="flex items-center gap-1">
-                    <Info size={13} className="text-indigo-600" />
-                    Lịch sử các phiên bản quyết toán (Hiện tại: V{settlement.settlementVersion || 1})
-                  </span>
-                  <span className="text-[10px] text-indigo-600 font-mono">{settlement.snapshots.length} phiên bản</span>
+            {/* Banner Ghi chú giải trình điều chỉnh chi phí (nếu có ghi chú hoặc sai sót nhập liệu thừa/thiếu) */}
+            {displayNotes && (
+              <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-300/80 text-xs text-amber-950 space-y-1 shadow-2xs">
+                <div className="flex items-center gap-1.5 font-bold text-amber-950">
+                  <span className="material-symbols-outlined text-[16px] text-amber-700">edit_note</span>
+                  <span>Ghi chú giải trình điều chỉnh (Phiên bản V{currentViewingVersion}):</span>
                 </div>
-                <div className="space-y-1 divide-y divide-indigo-100 max-h-32 overflow-y-auto pr-1">
-                  {settlement.snapshots.map((s: SettlementSnapshot) => (
-                    <div key={s.id} className="pt-1 flex items-center justify-between text-[11px]">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.2 rounded font-mono font-bold text-[10px] ${s.settlementVersion === settlement.settlementVersion ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                          V{s.settlementVersion}
-                        </span>
-                        <span className="text-slate-600">
-                          {s.confirmedAt ? new Date(s.confirmedAt).toLocaleDateString('vi-VN') : ''}:
-                        </span>
-                        <span className="text-slate-700 font-medium">
-                          Khấu trừ {Number(s.totalDeductions || 0).toLocaleString('vi-VN')}đ → {Number(s.refundAmount || 0) > 0 ? `Hoàn ${Number(s.refundAmount || 0).toLocaleString('vi-VN')}đ` : `Nộp thêm ${Number(s.additionalAmountDue || 0).toLocaleString('vi-VN')}đ`}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-semibold text-slate-500">
-                        {s.customerDecision === 'AGREED' ? '✓ Đã đồng ý' : s.customerDecision === 'DISPUTED' ? '⚠️ Khiếu nại' : '⏳ Chờ duyệt'}
-                      </span>
-                    </div>
-                  ))}
+                <p className="text-[11px] leading-relaxed pl-5 whitespace-pre-line font-medium text-amber-900">
+                  {displayNotes}
+                </p>
+              </div>
+            )}
+
+            {/* Cảnh báo khi người dùng đang xem phiên bản lưu trữ cũ */}
+            {!isViewingLatestVersion && (
+              <div className="p-3 rounded-xl bg-slate-100 border border-slate-300 text-xs flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <span className="material-symbols-outlined text-[16px] text-slate-500">archive</span>
+                  <span>Bạn đang xem biên bản lưu trữ phiên bản V{currentViewingVersion} (Chỉ xem).</span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedVersion(settlement.settlementVersion || 1)}
+                  className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] cursor-pointer shadow-xs transition"
+                >
+                  Xem phiên bản mới nhất (V{settlement.settlementVersion || 1})
+                </button>
               </div>
             )}
 
@@ -429,43 +532,43 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">2. Chi phí sửa chữa cửa cuốn &amp; ray:</span>
-                      <span className={`font-mono font-semibold ${settlement.doorFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {settlement.doorFee > 0 ? `-${settlement.doorFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                      <span className={`font-mono font-semibold ${displayDoorFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {displayDoorFee > 0 ? `-${displayDoorFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">3. Chi phí dọn dẹp &amp; vệ sinh kho:</span>
-                      <span className={`font-mono font-semibold ${settlement.cleaningFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {settlement.cleaningFee > 0 ? `-${settlement.cleaningFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                      <span className={`font-mono font-semibold ${displayCleaningFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {displayCleaningFee > 0 ? `-${displayCleaningFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">4. Chi phí khắc phục hư hại vách / sàn / trần:</span>
-                      <span className={`font-mono font-semibold ${settlement.wallStructureFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {settlement.wallStructureFee > 0 ? `-${settlement.wallStructureFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                      <span className={`font-mono font-semibold ${displayWallStructureFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {displayWallStructureFee > 0 ? `-${displayWallStructureFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">5. Chi phí sửa chữa ổ khóa SmartLock IoT:</span>
-                      <span className={`font-mono font-semibold ${settlement.smartLockFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {settlement.smartLockFee > 0 ? `-${settlement.smartLockFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                      <span className={`font-mono font-semibold ${displaySmartLockFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {displaySmartLockFee > 0 ? `-${displaySmartLockFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">6. Phí bồi thường mất thẻ từ / phụ kiện:</span>
-                      <span className={`font-mono font-semibold ${settlement.lostCardFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {settlement.lostCardFee > 0 ? `-${settlement.lostCardFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                      <span className={`font-mono font-semibold ${displayLostCardFee > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {displayLostCardFee > 0 ? `-${displayLostCardFee.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </span>
                     </div>
 
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">7. Công nợ / cước thuê trễ hạn (nếu có):</span>
-                      <span className={`font-mono font-semibold ${settlement.overdueDebt > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
-                        {settlement.overdueDebt > 0 ? `-${settlement.overdueDebt.toLocaleString('vi-VN')} ₫` : '0 ₫'}
+                      <span className={`font-mono font-semibold ${displayOverdueDebt > 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {displayOverdueDebt > 0 ? `-${displayOverdueDebt.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </span>
                     </div>
 
@@ -719,8 +822,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   </div>
                 )}
 
-                {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) - CHỈ HIỂN THỊ KHI KHÔNG PHẢI READ-ONLY */}
-                {!readOnly && (!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
+                {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) - CHỈ HIỂN THỊ KHI KHÔNG PHẢI READ-ONLY VÀ ĐANG Ở BẢN MỚI NHẤT */}
+                {!readOnly && isViewingLatestVersion && (!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
                     {isDepositDeducted && (
                       <button
@@ -765,8 +868,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   </div>
                 )}
 
-                {/* FOOTER CHỈ XEM DÀNH CHO CÁC ĐƠN CŨ LIÊN QUAN ĐẾN KHO HOẶC THÔNG BÁO TRƯỚC ĐÓ */}
-                {readOnly && (
+                {/* FOOTER CHỈ XEM DÀNH CHO CÁC ĐƠN CŨ HOẶC KHI ĐANG XEM BẢN LƯU TRỮ CŨ */}
+                {(readOnly || !isViewingLatestVersion) && (
                   <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/80 -mx-6 -mb-6 p-4 rounded-b-2xl">
                     <div className="flex items-center gap-2 text-slate-600 text-xs">
                       <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">

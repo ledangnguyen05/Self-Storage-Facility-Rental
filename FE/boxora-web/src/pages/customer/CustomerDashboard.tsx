@@ -2944,7 +2944,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           <div className="flex flex-wrap items-center gap-1.5">
             {[
               { id: 'my-units', label: 'Kho của tôi & Mã PIN', icon: 'inventory_2', badge: effectiveActivatedContracts.length },
-              { id: 'history', label: 'Lịch sử thao tác & Thông báo', icon: 'history', badge: unitHistoryCounts.all },
+              { id: 'history', label: 'Thông báo', icon: 'history', badge: unitHistoryCounts.all },
               { id: 'bookings', label: 'Đơn đặt giữ chỗ', icon: 'pending_actions', badge: customerBookings.length },
               { id: 'contracts', label: 'Hợp đồng & Hóa đơn', icon: 'receipt_long', badge: visibleContracts.length },
               { id: 'explore', label: 'Tìm & Thuê kho mới', icon: 'travel_explore' },
@@ -3607,26 +3607,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           >
             {/* Header */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div className="flex items-start gap-3.5">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-sm shrink-0">
-                  <span className="material-symbols-outlined text-[26px]">history</span>
-                </div>
-                <div className="flex flex-col">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-headline text-lg sm:text-xl font-extrabold text-slate-900">
-                      Lịch Sử Thao Tác Kho, Gia Hạn &amp; Thông Báo
-                    </h2>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold font-mono">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Ghi nhận thời gian thực 24/7
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                    Theo dõi đầy đủ nhật ký mở/đóng cửa kho từ xa, giải mã &amp; đổi mã PIN, thời điểm yêu cầu và được duyệt gia hạn kho cùng toàn bộ thông báo từ hệ thống.
-                  </p>
-                </div>
-              </div>
-
+             
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
