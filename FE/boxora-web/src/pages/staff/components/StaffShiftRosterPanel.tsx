@@ -862,7 +862,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
         <div
           onClick={() => {
             setActiveSubTab('ROSTER')
-            setFilterStatus(prev => (prev === 'COMPLETED' ? 'ALL' : 'COMPLETED'))
+            setFilterStatus('COMPLETED')
             setCurrentPage(1)
           }}
           className={`p-4 rounded-xl bg-white border shadow-2xs flex flex-col justify-between transition-all cursor-pointer group ${
@@ -870,11 +870,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
               ? 'ring-2 ring-blue-500 border-blue-400 bg-blue-50/20'
               : 'border-slate-200 hover:border-blue-300'
           }`}
-          title={
-            filterStatus === 'COMPLETED'
-              ? 'Đang lọc ca trực đã hoàn thành (Bấm để xem tất cả ca)'
-              : 'Bấm để lọc ca trực đã hoàn thành'
-          }
+          title="Bấm để lọc ca trực đã hoàn thành"
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
@@ -902,11 +898,26 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                 </span>
               )}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              <span className={filterStatus === 'COMPLETED' ? 'font-bold text-blue-700 underline' : 'font-medium text-slate-700'}>
-                {completedCount} hoàn thành
-              </span>{' '}
-              • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
+            <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
+              <div>
+                <span className={filterStatus === 'COMPLETED' ? 'font-bold text-blue-700 underline' : 'font-medium text-slate-700'}>
+                  {completedCount} hoàn thành
+                </span>{' '}
+                • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
+              </div>
+              {filterStatus === 'COMPLETED' && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setFilterStatus('ALL')
+                  }}
+                  className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer shrink-0 ml-1"
+                  title="Bỏ lọc ca hoàn thành"
+                >
+                  Bỏ lọc
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -916,10 +927,16 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
       <div className="flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
         <button
           type="button"
-          onClick={() => setActiveSubTab('ROSTER')}
+          onClick={() => {
+            setActiveSubTab('ROSTER')
+            setFilterStatus('ALL')
+            setCurrentPage(1)
+          }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            activeSubTab === 'ROSTER'
+            activeSubTab === 'ROSTER' && filterStatus === 'ALL'
               ? 'bg-slate-900 text-white shadow-xs'
+              : activeSubTab === 'ROSTER'
+              ? 'bg-slate-800 text-white shadow-xs'
               : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
           }`}
         >
