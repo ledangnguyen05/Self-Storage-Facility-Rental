@@ -1443,6 +1443,14 @@ export const StaffDashboard: React.FC = () => {
     return 0
   })
 
+  const [returnMetrics, setReturnMetrics] = useState<{
+    pending: number
+    inspecting: number
+    refunding: number
+    completed: number
+    total: number
+  } | null>(null)
+
   const effectiveReturnPendingCount = useMemo(() => {
     if (returnBadgeCount > 0) return returnBadgeCount
     try {
@@ -1462,6 +1470,13 @@ export const StaffDashboard: React.FC = () => {
     const pendingList = customerReturnRequests.filter(c => c.status === 'PENDING' || !c.status)
     return pendingList.length > 0 ? pendingList.length : customerReturnRequests.length
   }, [returnBadgeCount, customerReturnRequests])
+
+  const effectiveReturnTotal = useMemo(() => {
+    if (returnMetrics) {
+      return returnMetrics.pending + returnMetrics.inspecting + returnMetrics.refunding
+    }
+    return effectiveReturnPendingCount
+  }, [returnMetrics, effectiveReturnPendingCount])
 
   // Khi chuyển sang tab 3 "Trả Kho", tự động cuộn mượt tới hiển thị KPI "1. Yêu Cầu Chờ Xử Lý"
   useEffect(() => {
@@ -1715,7 +1730,7 @@ export const StaffDashboard: React.FC = () => {
                 ? 'bg-white text-amber-900'
                 : 'bg-amber-100 text-amber-800'
             }`}>
-              {effectiveReturnPendingCount} yêu cầu
+              {effectiveReturnTotal} hợp đồng
             </span>
           )}
         </button>
@@ -1771,7 +1786,7 @@ export const StaffDashboard: React.FC = () => {
             userName={user?.fullName || 'Nhân viên trực ca'}
             activeRentals={activeRentals}
             rawReturnRequests={customerReturnRequests}
-            onMetricsChange={(m) => setReturnBadgeCount(m.pending)}
+            onMetricsChange={(m) => { setReturnBadgeCount(m.pending); setReturnMetrics(m); }}
             onReturnCompleted={() => {
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
