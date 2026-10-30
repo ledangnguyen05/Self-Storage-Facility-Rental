@@ -341,21 +341,75 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [isUploadingPayoutProof, setIsUploadingPayoutProof] = useState(false)
   const payoutProofInputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-scroll and focus with visual highlight
+  // Auto-scroll and focus with high-visibility visual highlight
   const focusAndScrollToField = (elementId: string) => {
+    // Run after DOM updates
     setTimeout(() => {
       const el = document.getElementById(elementId)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-          el.focus()
-          el.classList.add('ring-4', 'ring-rose-400', 'bg-rose-50')
-          setTimeout(() => {
-            el.classList.remove('ring-4', 'ring-rose-400')
-          }, 2500)
+      if (!el) return
+
+      // 1. Calculate target coordinates to center the element in viewport
+      const rect = el.getBoundingClientRect()
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop
+      const clientHeight = window.innerHeight || document.documentElement.clientHeight
+      const targetY = rect.top + scrollTop - (clientHeight / 2) + (rect.height / 2)
+
+      // Also handle any scrollable ancestor container
+      let p = el.parentElement
+      while (p && p !== document.body && p !== document.documentElement) {
+        const overflowY = window.getComputedStyle(p).overflowY
+        if ((overflowY === 'auto' || overflowY === 'scroll') && p.scrollHeight > p.clientHeight) {
+          const pRect = p.getBoundingClientRect()
+          const relTop = rect.top - pRect.top + p.scrollTop - (p.clientHeight / 2) + (rect.height / 2)
+          p.scrollTo({ top: Math.max(0, relTop), behavior: 'smooth' })
+          break
         }
+        p = p.parentElement
       }
-    }, 100)
+
+      // Smooth scroll window to centered target position
+      window.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: 'smooth'
+      })
+
+      try {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+      } catch {}
+
+      // 2. High-visibility highlight on input and its parent card
+      const parentCard = (el.closest('.bg-slate-50') as HTMLElement) || el
+
+      el.style.transition = 'all 0.3s ease-in-out'
+      el.style.outline = '3px solid #f43f5e'
+      el.style.boxShadow = '0 0 0 6px rgba(244, 63, 94, 0.35)'
+      el.style.backgroundColor = '#fff1f2'
+      el.style.borderColor = '#e11d48'
+
+      if (parentCard && parentCard !== el) {
+        parentCard.style.transition = 'all 0.3s ease-in-out'
+        parentCard.style.boxShadow = '0 0 0 2px rgba(244, 63, 94, 0.4)'
+        parentCard.style.borderColor = '#fca5a5'
+      }
+
+      // 3. Focus with preventScroll: true to avoid browser native focus cancelling smooth scroll
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        el.focus({ preventScroll: true })
+        el.select?.()
+      }
+
+      // Remove highlight after 3.5s
+      setTimeout(() => {
+        el.style.outline = ''
+        el.style.boxShadow = ''
+        el.style.backgroundColor = ''
+        el.style.borderColor = ''
+        if (parentCard && parentCard !== el) {
+          parentCard.style.boxShadow = ''
+          parentCard.style.borderColor = ''
+        }
+      }, 3500)
+    }, 50)
   }
 
   // Operational action states
@@ -1553,6 +1607,26 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
       if (missingNotes.length > 0) {
         toast.error(`Bắt buộc nhập mô tả chi tiết hư hại/sự cố cho: ${missingNotes.map(m => m.title).join(', ')}`)
+
+        // Highlight all missing fields so user clearly sees what is required
+        missingNotes.forEach(m => {
+          const itemEl = document.getElementById(m.elementId)
+          if (itemEl) {
+            itemEl.style.transition = 'all 0.3s ease-in-out'
+            itemEl.style.outline = '2px solid #f43f5e'
+            itemEl.style.boxShadow = '0 0 0 4px rgba(244, 63, 94, 0.25)'
+            itemEl.style.backgroundColor = '#fff1f2'
+            itemEl.style.borderColor = '#e11d48'
+            setTimeout(() => {
+              itemEl.style.outline = ''
+              itemEl.style.boxShadow = ''
+              itemEl.style.backgroundColor = ''
+              itemEl.style.borderColor = ''
+            }, 3500)
+          }
+        })
+
+        // Immediately navigate to the first missing field
         focusAndScrollToField(missingNotes[0].elementId)
         return false
       }
@@ -1570,6 +1644,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         }
         if (!doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed) {
           toast.error('Có tiêu chí chưa đạt! Vui lòng chọn "Lập biên bản có hư hại" hoặc chuyển các tiêu chí sang Đạt.')
+          if (!doorPassed) focusAndScrollToField('inspection-door-notes')
+          else if (!cleanlinessPassed) focusAndScrollToField('inspection-cleanliness-notes')
+          else if (!damagePassed) focusAndScrollToField('inspection-damage-notes')
+          else if (!smartLockPassed) focusAndScrollToField('inspection-smartlock-notes')
+          else if (!envPassed) focusAndScrollToField('inspection-env-notes')
           return false
         }
       }
