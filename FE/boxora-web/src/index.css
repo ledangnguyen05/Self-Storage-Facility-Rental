@@ -1316,11 +1316,3 @@ html.dark .bg-slate-100\/70 {
   font-family: inherit;
   z-index: 0;
 }
-/* Homepage v2 — hero scroll cue */
-@keyframes boxoraScrollCue {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(200%); }
-}
-html { scroll-behavior: smooth; }
-@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-

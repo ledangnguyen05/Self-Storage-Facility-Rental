@@ -3,6 +3,7 @@ import { useLanguage } from '../../context/LanguageContext'
 import { ArrowDown, ArrowRight } from 'lucide-react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { HeroArtVideo } from './HeroArtVideo'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -211,6 +212,7 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
         </div>
 
         <div data-hero-copy role="img" aria-label="Minh họa trừu tượng về mạng lưới kết nối Boxora" className="relative mt-4 h-[clamp(118px,22svh,190px)] w-full max-w-[1320px] sm:mt-5 sm:h-[clamp(145px,25svh,250px)] lg:mt-3 lg:h-[clamp(165px,28svh,290px)]">
+          <HeroArtVideo>
           <div data-art-core className="absolute left-1/2 top-[47%] h-[clamp(118px,22svh,190px)] w-[clamp(118px,22svh,190px)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_34%_28%,#ffffff_0%,#e4f5ff_12%,rgba(0,191,216,.84)_31%,rgba(8,102,245,.6)_51%,rgba(123,227,63,.3)_69%,transparent_76%)] shadow-[0_0_110px_rgba(8,102,245,.25)] sm:h-[clamp(145px,25svh,245px)] sm:w-[clamp(145px,25svh,245px)] lg:h-[clamp(165px,28svh,275px)] lg:w-[clamp(165px,28svh,275px)]" />
           <div data-art-orbit className="absolute left-1/2 top-[47%] h-[clamp(108px,20svh,175px)] w-[min(82vw,650px)] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border border-blue-700/25 shadow-[0_0_30px_rgba(8,102,245,.1)] sm:h-[clamp(135px,23svh,205px)] lg:h-[clamp(150px,24svh,230px)]">
             <span className="absolute left-[16%] top-[18%] h-2.5 w-2.5 rounded-full bg-blue-600 shadow-[0_0_18px_rgba(8,102,245,.62)]" />
@@ -251,6 +253,7 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
             <circle data-art-node cx="1040" cy="317" r="2.5" fill="#4AAFC0" fillOpacity=".8" />
             <path d="M720 13V57M720 303V356M548 180H505M935 180H892" stroke="#0866F5" strokeOpacity=".16" strokeDasharray="2 7" />
           </svg>
+          </HeroArtVideo>
 
         </div>
 

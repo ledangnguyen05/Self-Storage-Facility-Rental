@@ -22,7 +22,7 @@ export interface ProcessStepItem {
   imageCaption: string
 }
 
-export const PROCESS_STEPS_DATA: ProcessStepItem[] = [
+const PROCESS_STEPS_DATA: ProcessStepItem[] = [
   {
     step: 1,
     code: '01',
