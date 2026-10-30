@@ -500,6 +500,16 @@ export interface ActivityLog {
   createdAt: string
 }
 
+export interface FacilityPolicyPrice {
+  id?: string
+  unitTypeId: string
+  unitTypeName?: string
+  monthlyPrice: number
+  discount3MonthPercent?: number
+  discount6MonthPercent?: number
+  discount12MonthPercent?: number
+}
+
 export interface FacilityPolicy {
   id: string
   facilityId: string
@@ -517,6 +527,7 @@ export interface FacilityPolicy {
   overdueGraceDays?: number
   overdueAccessDisableDays?: number
   overdueSealingDays?: number
+  prices?: FacilityPolicyPrice[]
   // Legacy / UI helper aliases
   depositPercent?: number
   lateFeePerDay?: number
@@ -544,6 +555,7 @@ export interface FacilityPolicyCreateRequest {
   overdueAccessDisableDays: number
   overdueSealingDays: number
   minimumRentalMonths: number
+  prices?: FacilityPolicyPrice[]
 }
 
 export interface FacilityPolicyUpdateRequest {
@@ -560,6 +572,7 @@ export interface FacilityPolicyUpdateRequest {
   overdueAccessDisableDays?: number
   overdueSealingDays?: number
   minimumRentalMonths?: number
+  prices?: FacilityPolicyPrice[]
 }
 
 export interface MonthlyRevenueBreakdown {

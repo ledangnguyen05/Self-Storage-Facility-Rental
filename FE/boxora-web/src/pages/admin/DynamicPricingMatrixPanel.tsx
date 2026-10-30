@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Facility, FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest, UnitType } from '../../types'
+import { Facility, FacilityPolicy, FacilityPolicyCreateRequest, FacilityPolicyUpdateRequest, FacilityPolicyPrice, UnitType } from '../../types'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { useLanguage } from '../../context/LanguageContext'
@@ -10,18 +10,18 @@ interface DynamicPricingMatrixPanelProps {
 }
 
 export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps> = ({ facilities }) => {
-  const { role } = useAuth()
+  const { role, hasPermission } = useAuth()
   const { t } = useLanguage()
-  const canManagePolicies = role === 'BUSINESS_MANAGER'
+  const canManagePolicies = role === 'BUSINESS_MANAGER' || role === 'ADMIN' || hasPermission('POLICY_UPDATE') || hasPermission('UNIT_TYPE_UPDATE')
 
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('all')
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([])
   const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
 
-  // Pricing & Rule states
-  const [miniPrice, setMiniPrice] = useState('450.000')
-  const [standardPrice, setStandardPrice] = useState('1.250.000')
-  const [climatePrice, setClimatePrice] = useState('2.400.000')
+  // Pricing state: map of unitTypeId -> formatted price string (VND)
+  const [unitTypePrices, setUnitTypePrices] = useState<Record<string, string>>({})
+
+  // Rule states
   const [depositOption, setDepositOption] = useState<'1month' | '2months'>('1month')
   const [discount3M, setDiscount3M] = useState('-5')
   const [discount6M, setDiscount6M] = useState('-10')
@@ -31,6 +31,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   const [lockoutDay, setLockoutDay] = useState('Ngày thứ 05')
 
   const [isSaving, setIsSaving] = useState(false)
+  const [isAdjustingId, setIsAdjustingId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [toastIsError, setToastIsError] = useState(false)
 
@@ -40,18 +41,26 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     setTimeout(() => setToastMessage(null), 3000)
   }
 
+  const parseCurrencyInput = (val: string) => {
+    const cleaned = String(val).replace(/\D/g, '')
+    return Number(cleaned) || 0
+  }
+
   // Load Unit Types
   const loadUnitTypes = async () => {
     try {
       const uts = await storageUnitService.getUnitTypes()
       if (uts && Array.isArray(uts)) {
         setUnitTypes(uts)
-        const mini = uts.find((ut) => ut.typeName.toLowerCase().includes('mini'))
-        const standard = uts.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
-        const climate = uts.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
-        if (mini?.basePricePerMonth != null) setMiniPrice(Number(mini.basePricePerMonth).toLocaleString('vi-VN'))
-        if (standard?.basePricePerMonth != null) setStandardPrice(Number(standard.basePricePerMonth).toLocaleString('vi-VN'))
-        if (climate?.basePricePerMonth != null) setClimatePrice(Number(climate.basePricePerMonth).toLocaleString('vi-VN'))
+        setUnitTypePrices((prev) => {
+          const newMap = { ...prev }
+          uts.forEach((ut) => {
+            if (!newMap[ut.id]) {
+              newMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
+            }
+          })
+          return newMap
+        })
       }
     } catch (err) {
       console.warn('Failed to load unit types:', err)
@@ -62,6 +71,12 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   const loadFacilityPolicy = async (facId: string) => {
     if (facId === 'all') {
       setCurrentPolicy(null)
+      // Reset prices to system base prices from unitTypes
+      const baseMap: Record<string, string> = {}
+      unitTypes.forEach((ut) => {
+        baseMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
+      })
+      setUnitTypePrices(baseMap)
       return
     }
     try {
@@ -77,6 +92,21 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         if (pol.overdueAccessDisableDays != null) {
           setLockoutDay(`Ngày thứ 0${pol.overdueAccessDisableDays}`.slice(-11))
         }
+        if (pol.depositPercentage != null) {
+          setDepositOption(pol.depositPercentage >= 200 ? '2months' : '1month')
+        }
+
+        // Load facility specific prices if available
+        const priceMap: Record<string, string> = {}
+        unitTypes.forEach((ut) => {
+          const matchPrice = pol.prices?.find((p) => p.unitTypeId === ut.id)
+          if (matchPrice?.monthlyPrice != null) {
+            priceMap[ut.id] = Number(matchPrice.monthlyPrice).toLocaleString('vi-VN')
+          } else {
+            priceMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
+          }
+        })
+        setUnitTypePrices(priceMap)
       } else {
         setCurrentPolicy(null)
       }
@@ -90,14 +120,36 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   }, [])
 
   useEffect(() => {
-    void loadFacilityPolicy(selectedFacilityId)
-  }, [selectedFacilityId])
+    if (unitTypes.length > 0) {
+      void loadFacilityPolicy(selectedFacilityId)
+    }
+  }, [selectedFacilityId, unitTypes.length])
 
-  const parseCurrencyInput = (val: string) => {
-    const cleaned = String(val).replace(/\D/g, '')
-    return Number(cleaned) || 0
+  // Save single unit type price directly
+  const handleQuickUpdateSingleUnitType = async (ut: UnitType) => {
+    if (!canManagePolicies) return
+    const newPrice = parseCurrencyInput(unitTypePrices[ut.id] || '0')
+    if (!newPrice || newPrice <= 0) {
+      showToast('Giá nhập vào không hợp lệ', true)
+      return
+    }
+    setIsAdjustingId(ut.id)
+    try {
+      await storageUnitService.adjustUnitTypePrice(ut.id, {
+        newPrice,
+        reason: `Điều chỉnh đơn giá loại kho ${ut.typeName} theo quy chuẩn BR-RULE-011`,
+        cascadeToAvailableUnits: true,
+      })
+      showToast(`Đã cập nhật giá mới cho loại kho "${ut.typeName}": ${newPrice.toLocaleString('vi-VN')} đ/tháng`)
+      await loadUnitTypes()
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Không thể cập nhật giá loại kho.', true)
+    } finally {
+      setIsAdjustingId(null)
+    }
   }
 
+  // Save all policies & unit type prices
   const handleSavePolicies = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!canManagePolicies) return
@@ -105,40 +157,20 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     try {
       const priceUpdates: string[] = []
 
-      // 1. Save UnitType prices (Mini, Tiêu Chuẩn, Kho Mát) under BR-RULE-011
-      const miniUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('mini'))
-      const standardUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
-      const climateUt = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
-
-      const miniVal = parseCurrencyInput(miniPrice)
-      const standardVal = parseCurrencyInput(standardPrice)
-      const climateVal = parseCurrencyInput(climatePrice)
-
-      if (miniUt && miniVal > 0 && miniVal !== Number(miniUt.basePricePerMonth)) {
-        await storageUnitService.adjustUnitTypePrice(miniUt.id, {
-          newPrice: miniVal,
-          reason: 'Điều chỉnh ma trận giá loại kho Mini từ Cấu hình chi nhánh theo BR-RULE-011',
-          cascadeToAvailableUnits: true,
-        })
-        priceUpdates.push(`Mini: ${miniVal.toLocaleString('vi-VN')} đ`)
-      }
-
-      if (standardUt && standardVal > 0 && standardVal !== Number(standardUt.basePricePerMonth)) {
-        await storageUnitService.adjustUnitTypePrice(standardUt.id, {
-          newPrice: standardVal,
-          reason: 'Điều chỉnh ma trận giá loại kho Tiêu Chuẩn từ Cấu hình chi nhánh theo BR-RULE-011',
-          cascadeToAvailableUnits: true,
-        })
-        priceUpdates.push(`Tiêu chuẩn: ${standardVal.toLocaleString('vi-VN')} đ`)
-      }
-
-      if (climateUt && climateVal > 0 && climateVal !== Number(climateUt.basePricePerMonth)) {
-        await storageUnitService.adjustUnitTypePrice(climateUt.id, {
-          newPrice: climateVal,
-          reason: 'Điều chỉnh ma trận giá loại kho Mát từ Cấu hình chi nhánh theo BR-RULE-011',
-          cascadeToAvailableUnits: true,
-        })
-        priceUpdates.push(`Kho Mát: ${climateVal.toLocaleString('vi-VN')} đ`)
+      // 1. If 'all' facilities selected: update UnitType base prices in DB under BR-RULE-011
+      if (selectedFacilityId === 'all') {
+        for (const ut of unitTypes) {
+          const currentVal = parseCurrencyInput(unitTypePrices[ut.id] || '0')
+          const dbBase = Number(ut.basePricePerMonth || 0)
+          if (currentVal > 0 && currentVal !== dbBase) {
+            await storageUnitService.adjustUnitTypePrice(ut.id, {
+              newPrice: currentVal,
+              reason: `Điều chỉnh ma trận giá loại kho ${ut.typeName} từ Cấu hình chi nhánh theo BR-RULE-011`,
+              cascadeToAvailableUnits: true,
+            })
+            priceUpdates.push(`${ut.typeName}: ${currentVal.toLocaleString('vi-VN')} đ`)
+          }
+        }
       }
 
       // 2. Save FacilityPolicy if a specific facility is selected
@@ -147,6 +179,18 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         const lateFeeNumber = parseCurrencyInput(lateFee) || 50000
         const graceDaysNumber = Number.parseInt(graceDays.replace(/\D/g, ''), 10) || 3
         const lockoutDayNumber = Number.parseInt(lockoutDay.replace(/\D/g, ''), 10) || 5
+
+        // Prepare prices array for this facility's policy
+        const policyPrices: FacilityPolicyPrice[] = unitTypes.map((ut) => {
+          const p = parseCurrencyInput(unitTypePrices[ut.id] || '0') || Number(ut.basePricePerMonth)
+          return {
+            unitTypeId: ut.id,
+            monthlyPrice: p,
+            discount3MonthPercent: Math.abs(Number(discount3M)) || 0,
+            discount6MonthPercent: Math.abs(Number(discount6M)) || 0,
+            discount12MonthPercent: Math.abs(Number(discount12M)) || 0,
+          }
+        })
 
         if (currentPolicy?.id) {
           const updatePayload: FacilityPolicyUpdateRequest = {
@@ -162,6 +206,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             cancellationPartialRefundPercent: currentPolicy.cancellationPartialRefundPercent ?? 70,
             returnNoticeDays: currentPolicy.returnNoticeDays ?? 3,
             depositRefundSlaDays: currentPolicy.depositRefundSlaDays ?? 3,
+            prices: policyPrices,
           }
           const saved = await facilityPolicyService.update(currentPolicy.id, updatePayload)
           setCurrentPolicy(saved)
@@ -181,6 +226,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             cancellationPartialRefundPercent: 70,
             returnNoticeDays: 3,
             depositRefundSlaDays: 3,
+            prices: policyPrices,
           }
           const saved = await facilityPolicyService.create(createPayload)
           setCurrentPolicy(saved)
@@ -190,13 +236,16 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
 
       // 3. Re-fetch updated unit types
       await loadUnitTypes()
+      if (selectedFacilityId !== 'all') {
+        await loadFacilityPolicy(selectedFacilityId)
+      }
 
       if (priceUpdates.length > 0 && policySaved) {
         showToast(`Đã lưu bảng giá (${priceUpdates.join(', ')}) và chính sách cơ sở thành công!`)
       } else if (priceUpdates.length > 0) {
         showToast(`Đã cập nhật bảng giá (${priceUpdates.join(', ')}) vào CSDL và StorageUnitPriceHistory (BR-RULE-011)!`)
       } else if (policySaved) {
-        showToast(`Đã lưu chính sách cơ sở cho ${facilities.find((f) => f.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
+        showToast(`Đã lưu bảng giá theo từng loại kho và chính sách cho ${facilities.find((f) => f.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
       } else {
         showToast('Thông số chính sách và bảng giá hiện tại đã khớp CSDL.')
       }
@@ -209,12 +258,11 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   }
 
   const handleResetDefaults = () => {
-    const mini = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('mini'))
-    const standard = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('standard') || ut.typeName.toLowerCase().includes('tiêu chuẩn'))
-    const climate = unitTypes.find((ut) => ut.typeName.toLowerCase().includes('cold') || ut.typeName.toLowerCase().includes('climate') || ut.typeName.toLowerCase().includes('mát'))
-    setMiniPrice(mini?.basePricePerMonth ? Number(mini.basePricePerMonth).toLocaleString('vi-VN') : '450.000')
-    setStandardPrice(standard?.basePricePerMonth ? Number(standard.basePricePerMonth).toLocaleString('vi-VN') : '1.250.000')
-    setClimatePrice(climate?.basePricePerMonth ? Number(climate.basePricePerMonth).toLocaleString('vi-VN') : '2.400.000')
+    const baseMap: Record<string, string> = {}
+    unitTypes.forEach((ut) => {
+      baseMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
+    })
+    setUnitTypePrices(baseMap)
     setDepositOption('1month')
     setDiscount3M('-5')
     setDiscount6M('-10')
@@ -222,7 +270,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     setGraceDays('03 Ngày')
     setLateFee('50.000')
     setLockoutDay('Ngày thứ 05')
-    showToast('Đã khôi phục thông số chính sách và bảng giá loại kho')
+    showToast('Đã khôi phục thông số chính sách và bảng giá loại kho theo CSDL')
   }
 
   return (
@@ -297,57 +345,66 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
 
         {/* 4 Feature Columns */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {/* Card 1: Bảng giá niêm yết cơ sở */}
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span className="material-symbols-outlined text-cyan-600 text-[20px]">sell</span>
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Giá cơ bản / tháng (BR-RULE-011)')}</h3>
-            </div>
-            <div className="space-y-2.5">
-              <div>
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Kho Mini (0.5 - 2 m²):
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    disabled={!canManagePolicies}
-                    value={miniPrice}
-                    onChange={(e) => setMiniPrice(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800 pr-8"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-[11px] text-slate-400 font-mono">đ</span>
+          {/* Card 1: Bảng giá niêm yết theo từng loại kho */}
+          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-cyan-600 text-[20px]">sell</span>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Giá cơ bản / tháng (BR-RULE-011)')}</h3>
                 </div>
+                <span className="text-[10px] bg-cyan-100 text-cyan-800 font-bold px-1.5 py-0.5 rounded font-mono">
+                  {unitTypes.length} {t('loại kho')}
+                </span>
               </div>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Kho Tiêu chuẩn (3 - 6 m²):
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    disabled={!canManagePolicies}
-                    value={standardPrice}
-                    onChange={(e) => setStandardPrice(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800 pr-8"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-[11px] text-slate-400 font-mono">đ</span>
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">
-                  Kho Mát / Cold-storage:
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    disabled={!canManagePolicies}
-                    value={climatePrice}
-                    onChange={(e) => setClimatePrice(e.target.value)}
-                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-slate-800 pr-8"
-                  />
-                  <span className="absolute right-2.5 top-1.5 text-[11px] text-slate-400 font-mono">đ</span>
-                </div>
+              <p className="text-[11px] text-slate-500 mt-2 mb-2.5">
+                {selectedFacilityId === 'all'
+                  ? t('Thiết lập giá niêm yết cho từng loại kho toàn hệ thống:')
+                  : t('Thiết lập giá áp dụng cho từng loại kho tại cơ sở này:')}
+              </p>
+              <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                {unitTypes.map((ut) => {
+                  const currentVal = unitTypePrices[ut.id] ?? ''
+                  const dbBase = Number(ut.basePricePerMonth || 0)
+                  const currentNum = parseCurrencyInput(currentVal)
+                  const isModified = currentNum > 0 && currentNum !== dbBase
+
+                  return (
+                    <div key={ut.id} className="p-2 bg-white rounded-lg border border-slate-200/80 hover:border-slate-300 transition">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-bold text-slate-800 truncate max-w-[170px]" title={ut.typeName}>
+                          {ut.typeName}
+                        </label>
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                          {ut.areaSqm ? `${ut.areaSqm} m²` : ut.dimensions}
+                        </span>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          disabled={!canManagePolicies}
+                          value={currentVal}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '')
+                            const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
+                            setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
+                          }}
+                          placeholder="0"
+                          className={`w-full bg-slate-50/50 border rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-slate-800 pr-8 focus:bg-white focus:outline-none focus:ring-1 focus:ring-cyan-500 transition ${
+                            isModified ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200'
+                          }`}
+                        />
+                        <span className="absolute right-2.5 top-1 text-[11px] text-slate-400 font-mono">đ</span>
+                      </div>
+                      {isModified && (
+                        <div className="flex items-center justify-between mt-1 text-[10px]">
+                          <span className="text-slate-400">Gốc: {dbBase.toLocaleString('vi-VN')} đ</span>
+                          <span className="text-amber-600 font-medium">Chưa lưu</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
@@ -468,13 +525,16 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
           </div>
         </div>
 
-        {/* Reference Unit Types Table */}
+        {/* Reference & Inline Unit Types Table */}
         <div className="pt-2">
           <div className="rounded-xl border border-slate-200 overflow-hidden">
             <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                {t('Danh mục loại kho & giá niêm yết hiện hành (CSDL)')}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-cyan-600 text-[18px]">table_chart</span>
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                  {t('Danh mục loại kho & giá niêm yết hiện hành (CSDL)')}
+                </span>
+              </div>
               <span className="text-[11px] text-slate-500 font-mono">
                 {unitTypes.length} {t('loại kho đã kích hoạt')}
               </span>
@@ -486,26 +546,73 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                     <th className="py-2.5 px-4">{t('Mã / Tên loại kho')}</th>
                     <th className="py-2.5 px-4">{t('Kích thước quy chuẩn')}</th>
                     <th className="py-2.5 px-4">{t('Diện tích / Thể tích')}</th>
-                    <th className="py-2.5 px-4">{t('Giá niêm yết hiện hành')}</th>
-                    <th className="py-2.5 px-4">{t('Mô tả đặc điểm')}</th>
+                    <th className="py-2.5 px-4">{t('Giá CSDL gốc')}</th>
+                    <th className="py-2.5 px-4">{t('Giá điều chỉnh / tháng')}</th>
+                    <th className="py-2.5 px-4 text-right">{t('Thao tác')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
-                  {unitTypes.map((ut) => (
-                    <tr key={ut.id} className="hover:bg-slate-50/50">
-                      <td className="py-2.5 px-4 font-bold text-slate-800">{ut.typeName}</td>
-                      <td className="py-2.5 px-4 font-mono text-slate-600">
-                        {ut.dimensions || '—'}
-                      </td>
-                      <td className="py-2.5 px-4 font-mono text-slate-600">
-                        {ut.areaSqm ? `${ut.areaSqm} m²` : '—'}
-                      </td>
-                      <td className="py-2.5 px-4 font-mono font-bold text-cyan-800">
-                        {Number(ut.basePricePerMonth).toLocaleString('vi-VN')} đ/tháng
-                      </td>
-                      <td className="py-2.5 px-4 text-slate-500 text-[11px]">{ut.description || '—'}</td>
-                    </tr>
-                  ))}
+                  {unitTypes.map((ut) => {
+                    const currentVal = unitTypePrices[ut.id] ?? ''
+                    const dbBase = Number(ut.basePricePerMonth || 0)
+                    const currentNum = parseCurrencyInput(currentVal)
+                    const isModified = currentNum > 0 && currentNum !== dbBase
+                    const isBusy = isAdjustingId === ut.id
+
+                    return (
+                      <tr key={ut.id} className="hover:bg-slate-50/50 transition">
+                        <td className="py-2.5 px-4 font-bold text-slate-800">
+                          <div>{ut.typeName}</div>
+                          {ut.description && <div className="text-[10px] text-slate-400 font-normal">{ut.description}</div>}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-slate-600">
+                          {ut.dimensions || '—'}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-slate-600">
+                          {ut.areaSqm ? `${ut.areaSqm} m²` : '—'}
+                        </td>
+                        <td className="py-2.5 px-4 font-mono text-slate-500">
+                          {dbBase.toLocaleString('vi-VN')} đ/tháng
+                        </td>
+                        <td className="py-2.5 px-4">
+                          <div className="relative max-w-[150px]">
+                            <input
+                              type="text"
+                              disabled={!canManagePolicies}
+                              value={currentVal}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '')
+                                const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
+                                setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
+                              }}
+                              className={`w-full bg-white border rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 pr-6 ${
+                                isModified ? 'border-amber-400 bg-amber-50/30 text-amber-700' : 'border-slate-200 text-cyan-800'
+                              }`}
+                            />
+                            <span className="absolute right-2 top-1 text-[10px] text-slate-400 font-mono">đ</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-4 text-right">
+                          {canManagePolicies && (
+                            <button
+                              type="button"
+                              disabled={!isModified || isBusy || isSaving}
+                              onClick={() => handleQuickUpdateSingleUnitType(ut)}
+                              className="px-2.5 py-1 rounded-md bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-semibold text-[11px] transition border border-cyan-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
+                              title={t('Cập nhật giá riêng cho loại kho này (BR-RULE-011)')}
+                            >
+                              {isBusy ? (
+                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
+                              ) : (
+                                <span className="material-symbols-outlined text-[14px]">price_change</span>
+                              )}
+                              <span>{t('Lưu giá')}</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -515,4 +622,3 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     </div>
   )
 }
-
