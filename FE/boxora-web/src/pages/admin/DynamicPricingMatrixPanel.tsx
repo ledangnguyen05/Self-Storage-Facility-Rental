@@ -46,11 +46,62 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     return Number(cleaned) || 0
   }
 
+  // Helper matching the 5 canonical customer-facing size tiers
+  const getUnitTypeSpec = (ut: UnitType) => {
+    const area = ut.areaSqm || 0
+    const name = (ut.typeName || '').toLowerCase()
+    if (name.includes('cold') || name.includes('mát') || (area >= 4.5 && area <= 5.5)) {
+      return {
+        volume: '14 m³',
+        areaLabel: '5.0 m²',
+        boxes: '85 boxes',
+        category: 'Kho Mát A/C (18-22°C)',
+        badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+      }
+    }
+    if (area <= 1.5) {
+      return {
+        volume: '1 m³',
+        areaLabel: '1.0 m²',
+        boxes: '6 boxes',
+        category: 'Tủ cá nhân (Mini)',
+        badgeClass: 'bg-slate-100 text-slate-800 border-slate-200',
+      }
+    }
+    if (area <= 3.5) {
+      return {
+        volume: '8 m³',
+        areaLabel: '3.0 m²',
+        boxes: '48 boxes',
+        category: 'Studio (Vừa)',
+        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      }
+    }
+    if (area <= 7.0) {
+      return {
+        volume: '16 m³',
+        areaLabel: '6.0 m²',
+        boxes: '100 boxes',
+        category: 'Căn hộ 3PN (Tiêu chuẩn)',
+        badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-200',
+      }
+    }
+    return {
+      volume: '24 m³',
+      areaLabel: '12.0 m²',
+      boxes: '160 boxes',
+      category: 'Logistics / Thương mại lớn',
+      badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+    }
+  }
+
   // Load Unit Types
   const loadUnitTypes = async () => {
     try {
       const uts = await storageUnitService.getUnitTypes()
       if (uts && Array.isArray(uts)) {
+        // Sort ascending by area
+        uts.sort((a, b) => (a.areaSqm || 0) - (b.areaSqm || 0))
         setUnitTypes(uts)
         setUnitTypePrices((prev) => {
           const newMap = { ...prev }
@@ -297,7 +348,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 {t('Cấu Hình Quy Tắc Kinh Doanh & Chính Sách Giá Động (Pricing Matrix)')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {t('Lưu các trường chính sách được API hỗ trợ cho cơ sở đang chọn. Bảng giá theo diện tích áp dụng quy chuẩn BR-RULE-011.')}
+                {t('Thiết lập đơn giá cho 5 loại kho chuẩn và chính sách kinh doanh (áp dụng theo quy chuẩn BR-RULE-011).')}
               </p>
             </div>
           </div>
@@ -351,32 +402,38 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-cyan-600 text-[20px]">sell</span>
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Giá cơ bản / tháng (BR-RULE-011)')}</h3>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('5 Loại Kho Chuẩn (BR-RULE-011)')}</h3>
                 </div>
                 <span className="text-[10px] bg-cyan-100 text-cyan-800 font-bold px-1.5 py-0.5 rounded font-mono">
-                  {unitTypes.length} {t('loại kho')}
+                  {unitTypes.length}/5 {t('loại kho')}
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-2 mb-2.5">
                 {selectedFacilityId === 'all'
-                  ? t('Thiết lập giá niêm yết cho từng loại kho toàn hệ thống:')
-                  : t('Thiết lập giá áp dụng cho từng loại kho tại cơ sở này:')}
+                  ? t('Đơn giá niêm yết theo từng cỡ kho (VND/tháng):')
+                  : t('Giá áp dụng riêng tại cơ sở đã chọn:')}
               </p>
-              <div className="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                 {unitTypes.map((ut) => {
                   const currentVal = unitTypePrices[ut.id] ?? ''
                   const dbBase = Number(ut.basePricePerMonth || 0)
                   const currentNum = parseCurrencyInput(currentVal)
                   const isModified = currentNum > 0 && currentNum !== dbBase
+                  const spec = getUnitTypeSpec(ut)
 
                   return (
                     <div key={ut.id} className="p-2 bg-white rounded-lg border border-slate-200/80 hover:border-slate-300 transition">
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-[11px] font-bold text-slate-800 truncate max-w-[170px]" title={ut.typeName}>
-                          {ut.typeName}
-                        </label>
-                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
-                          {ut.areaSqm ? `${ut.areaSqm} m²` : ut.dimensions}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`text-[9px] font-bold font-mono px-1.5 py-0.2 rounded border shrink-0 ${spec.badgeClass}`}>
+                            {spec.volume}
+                          </span>
+                          <label className="text-[11px] font-bold text-slate-800 truncate" title={ut.typeName}>
+                            {ut.typeName}
+                          </label>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0 ml-1">
+                          {spec.areaLabel}
                         </span>
                       </div>
                       <div className="relative">
@@ -532,20 +589,21 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-600 text-[18px]">table_chart</span>
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {t('Danh mục loại kho & giá niêm yết hiện hành (CSDL)')}
+                  {t('Danh mục 5 loại kho chuẩn & giá niêm yết hiện hành (CSDL)')}
                 </span>
               </div>
               <span className="text-[11px] text-slate-500 font-mono">
-                {unitTypes.length} {t('loại kho đã kích hoạt')}
+                {unitTypes.length} {t('loại kho đã chuẩn hóa')}
               </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 bg-white text-[11px] font-semibold text-slate-500">
-                    <th className="py-2.5 px-4">{t('Mã / Tên loại kho')}</th>
+                    <th className="py-2.5 px-4">{t('Quy mô / Thể tích')}</th>
+                    <th className="py-2.5 px-4">{t('Tên loại kho')}</th>
                     <th className="py-2.5 px-4">{t('Kích thước quy chuẩn')}</th>
-                    <th className="py-2.5 px-4">{t('Diện tích / Thể tích')}</th>
+                    <th className="py-2.5 px-4">{t('Diện tích / Sức chứa')}</th>
                     <th className="py-2.5 px-4">{t('Giá CSDL gốc')}</th>
                     <th className="py-2.5 px-4">{t('Giá điều chỉnh / tháng')}</th>
                     <th className="py-2.5 px-4 text-right">{t('Thao tác')}</th>
@@ -558,18 +616,25 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                     const currentNum = parseCurrencyInput(currentVal)
                     const isModified = currentNum > 0 && currentNum !== dbBase
                     const isBusy = isAdjustingId === ut.id
+                    const spec = getUnitTypeSpec(ut)
 
                     return (
                       <tr key={ut.id} className="hover:bg-slate-50/50 transition">
+                        <td className="py-2.5 px-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold border ${spec.badgeClass}`}>
+                            {spec.volume}
+                          </span>
+                        </td>
                         <td className="py-2.5 px-4 font-bold text-slate-800">
                           <div>{ut.typeName}</div>
-                          {ut.description && <div className="text-[10px] text-slate-400 font-normal">{ut.description}</div>}
+                          <div className="text-[10px] text-slate-400 font-normal">{spec.category}</div>
                         </td>
                         <td className="py-2.5 px-4 font-mono text-slate-600">
                           {ut.dimensions || '—'}
                         </td>
                         <td className="py-2.5 px-4 font-mono text-slate-600">
-                          {ut.areaSqm ? `${ut.areaSqm} m²` : '—'}
+                          <div>{spec.areaLabel}</div>
+                          <div className="text-[10px] text-slate-400">{spec.boxes}</div>
                         </td>
                         <td className="py-2.5 px-4 font-mono text-slate-500">
                           {dbBase.toLocaleString('vi-VN')} đ/tháng

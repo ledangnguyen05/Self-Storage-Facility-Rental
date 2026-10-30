@@ -38,7 +38,7 @@ import {
   Smartphone,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { Facility, StorageUnit, RentalContract } from '../../types'
+import { Facility, StorageUnit, RentalContract, UnitType } from '../../types'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
@@ -315,19 +315,19 @@ import {
 export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24 }
 
 export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): string => {
-  if (size.id.includes('cold')) {
-    return '10000000-0000-0000-0000-000000000005' // Kho lạnh (kiểm soát nhiệt độ 18-22°C)
+  if (size.id.includes('cold') || size.id === '14m3' || (size.areaM2 >= 4.5 && size.areaM2 <= 5.5)) {
+    return '10000000-0000-0000-0000-000000000005' // Cold Storage (kiểm soát nhiệt độ 18-22°C) - 5m²
   }
-  if (size.volumeNumber <= 2 || size.areaM2 <= 1.0) {
+  if (size.id === '1m3' || size.id === '2m3' || size.areaM2 <= 1.5) {
     return '10000000-0000-0000-0000-000000000001' // Mini (tủ cá nhân) - 1m²
   }
-  if (size.volumeNumber <= 5 || size.areaM2 <= 2.0) {
-    return '10000000-0000-0000-0000-000000000002' // Vừa (phòng studio nhỏ) - 3m²
+  if (size.id === '8m3' || (size.areaM2 > 1.5 && size.areaM2 <= 3.5)) {
+    return '10000000-0000-0000-0000-000000000002' // Medium (Compact Studio) - 3m²
   }
-  if (size.volumeNumber <= 10 || size.areaM2 <= 4.0) {
-    return '10000000-0000-0000-0000-000000000003' // Tiêu chuẩn (căn một phòng ngủ) - 6m²
+  if (size.id === '16m3' || (size.areaM2 > 5.5 && size.areaM2 <= 7.0)) {
+    return '10000000-0000-0000-0000-000000000003' // Standard (1-Bedroom) - 6m²
   }
-  return '10000000-0000-0000-0000-000000000004' // Rất lớn (văn phòng thương mại) - 12m²
+  return '10000000-0000-0000-0000-000000000004' // Extra Large (Commercial Suite) - 12m²
 }
 
 export const BookingPage: React.FC = () => {
@@ -373,6 +373,7 @@ export const BookingPage: React.FC = () => {
   // Data
   const [facilities, setFacilities] = useState<Facility[]>([])
   const [storageUnits, setStorageUnits] = useState<StorageUnit[]>([])
+  const [dbUnitTypes, setDbUnitTypes] = useState<UnitType[]>([])
   const [loadingData, setLoadingData] = useState<boolean>(true)
 
   // Step 1: Facility Selection
@@ -525,8 +526,9 @@ export const BookingPage: React.FC = () => {
     Promise.allSettled([
       facilityService.getFacilities({ page: 0, size: 50 }),
       storageUnitService.getUnits({ status: 'AVAILABLE' }),
+      storageUnitService.getUnitTypes(),
     ])
-      .then(([facRes, unitRes]) => {
+      .then(([facRes, unitRes, utRes]) => {
         if (!isMounted) return
 
         let activeList: Facility[] = []
@@ -537,6 +539,9 @@ export const BookingPage: React.FC = () => {
 
         if (unitRes.status === 'fulfilled' && Array.isArray(unitRes.value)) {
           setStorageUnits(unitRes.value)
+        }
+        if (utRes && utRes.status === 'fulfilled' && Array.isArray(utRes.value)) {
+          setDbUnitTypes(utRes.value)
         }
 
         // Restore draft from sessionStorage or localStorage if exists (Task 2: Guest Flow Persistence)
@@ -836,9 +841,22 @@ export const BookingPage: React.FC = () => {
     return d.toISOString().split('T')[0]
   }, [startDate, isCustomDuration, customDays, rentalMonths])
 
+  const getDynamicPriceForSize = useCallback((sizeUnit: StorageSizeUnitDef, isAc: boolean) => {
+    const utId = resolveUnitTypeIdForSelectedSize(sizeUnit)
+    const matchingUnit = availableFacilityUnits.find((u) => u.unitTypeId === utId && u.pricePerMonth && u.pricePerMonth > 0)
+    if (matchingUnit?.pricePerMonth) {
+      return isAc ? Math.round(matchingUnit.pricePerMonth * 1.2) : matchingUnit.pricePerMonth
+    }
+    const matchingUt = dbUnitTypes.find((ut) => ut.id === utId && ut.basePricePerMonth && ut.basePricePerMonth > 0)
+    if (matchingUt?.basePricePerMonth) {
+      return isAc ? Math.round(matchingUt.basePricePerMonth * 1.2) : matchingUt.basePricePerMonth
+    }
+    return isAc ? sizeUnit.acRate : sizeUnit.nonAcRate
+  }, [availableFacilityUnits, dbUnitTypes])
+
   // Pricing calculation
   const quoteCalculation = useMemo(() => {
-    const baseMonthly = isAcActive ? currentSelectedSize.acRate : currentSelectedSize.nonAcRate
+    const baseMonthly = getDynamicPriceForSize(currentSelectedSize, isAcActive)
     const dailyRate = Math.round(baseMonthly / 30)
 
     let discountPercent = 0
@@ -875,7 +893,7 @@ export const BookingPage: React.FC = () => {
       depositAmount,
       totalEstimate: totalRent + depositAmount,
     }
-  }, [currentSelectedSize, isAcActive, isCustomDuration, rentalMonths, customDays])
+  }, [currentSelectedSize, isAcActive, isCustomDuration, rentalMonths, customDays, getDynamicPriceForSize])
 
   // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
   const captureSigningSnapshot = useCallback(() => ({
@@ -2005,7 +2023,7 @@ export const BookingPage: React.FC = () => {
                   {filteredSizesCatalog.map((sizeUnit) => {
                     const isSelected = selectedSizeId === sizeUnit.id
                     const unitAcMode = acSelectionMap[sizeUnit.id] || 'NON_AC'
-                    const displayPrice = unitAcMode === 'AC' ? sizeUnit.acRate : sizeUnit.nonAcRate
+                    const displayPrice = getDynamicPriceForSize(sizeUnit, unitAcMode === 'AC')
                     const realPhotoInfo = getRealPhotoForSize(sizeUnit.volumeNumber, unitAcMode === 'AC')
                     const availCount = getAvailableCountForSize(sizeUnit)
 
