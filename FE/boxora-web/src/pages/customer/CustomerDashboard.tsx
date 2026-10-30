@@ -116,9 +116,12 @@ interface CustomerUnitActivityLog {
     cycleMonths?: number
     amount?: number
     contractCode?: string
+    contractId?: string
     renewalId?: string
     bookingId?: string
     notificationId?: string
+    paymentId?: string
+    payment?: PaymentItem
   }
 }
 
@@ -1938,8 +1941,48 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
     })
 
-    // 3. Sự kiện kích hoạt hợp đồng & Bàn giao kho & Cấp mã PIN
+    // 3. Sự kiện Hợp đồng thuê kho & Bàn giao kho & Cấp mã PIN
     contracts.forEach(c => {
+      const contractTs =
+        c.paperVerifiedAt ||
+        c.signedAt ||
+        (c.startDate ? `${c.startDate.split('T')[0]}T08:00:00` : new Date().toISOString())
+      const isTerminated = c.status === 'TERMINATED'
+      const isOverdue = c.status === 'OVERDUE'
+      const isExpired = c.status === 'EXPIRED'
+
+      // Bản ghi Ký kết & Hiệu lực hợp đồng thuê kho
+      items.push({
+        id: `CTR-MAIN-${c.id}`,
+        unitCode: c.unitCode,
+        facilityName: c.facilityName,
+        category: 'CONTRACT',
+        actionType: 'CONTRACT_ACTIVATED',
+        title: `Hợp đồng thuê kho #${c.unitCode || 'Boxora'} (Mã HĐ #${c.contractCode})`,
+        description: `Hợp đồng thuê buồng kho #${c.unitCode} tại ${c.facilityName || 'Boxora'} có hiệu lực từ ngày ${formatDisplayDate(c.startDate)} đến ${formatDisplayDate(c.endDate)}. Cước phí: ${Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫/tháng, tiền ký quỹ cọc: ${getContractDepositHeld(c).toLocaleString('vi-VN')} ₫.${c.paperContractUrl ? ' (Hợp đồng giấy đã tiếp nhận tại cơ sở)' : ''}`,
+        timestamp: contractTs,
+        actorName: c.signingMethod === 'IN_PERSON' ? 'Nhân viên quầy Boxora' : 'Hệ thống Ký số Boxora Sign',
+        statusLabel: isTerminated
+          ? 'Đã thanh lý hợp đồng'
+          : isExpired
+          ? 'Hợp đồng đã hết hạn'
+          : isOverdue
+          ? 'Hợp đồng quá hạn thanh toán'
+          : c.status === 'PENDING_ACTIVATION'
+          ? 'Đã ký • Chờ nhận kho'
+          : c.status === 'PENDING_SIGNATURE'
+          ? 'Chờ ký hợp đồng'
+          : 'Hợp đồng có hiệu lực',
+        statusTone: isTerminated ? 'slate' : isExpired ? 'amber' : isOverdue ? 'rose' : 'emerald',
+        meta: {
+          oldEndDate: c.startDate,
+          newEndDate: c.endDate,
+          amount: c.monthlyFee,
+          contractCode: c.contractCode,
+          contractId: c.id,
+        },
+      })
+
       if (c.status === 'ACTIVE' || c.status === 'OVERDUE' || c.status === 'EXPIRED' || c.status === 'TERMINATED') {
         const activatedTs =
           c.paperVerifiedAt ||
@@ -1962,6 +2005,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             newEndDate: c.endDate,
             amount: c.monthlyFee,
             contractCode: c.contractCode,
+            contractId: c.id,
           },
         })
       }
@@ -1972,7 +2016,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           id: `CTR-OVD-${c.id}`,
           unitCode: c.unitCode,
           facilityName: c.facilityName,
-          category: 'NOTIFICATION',
+          category: 'CONTRACT',
           actionType: 'CONTRACT_OVERDUE',
           title: `Thông báo quá hạn kho #${c.unitCode} — Tạm khóa cửa kho IoT`,
           description: `Kho #${c.unitCode} (Hợp đồng #${c.contractCode}) đã quá hạn thuê từ ngày ${formatDisplayDate(c.endDate)}. Hệ thống SmartLock đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Quý khách vui lòng gia hạn kho để mở khóa lại.`,
@@ -1984,6 +2028,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             oldEndDate: c.startDate,
             newEndDate: c.endDate,
             contractCode: c.contractCode,
+            contractId: c.id,
           },
         })
       }
@@ -2014,7 +2059,63 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
     })
 
-    // 4. Lịch sử Thông báo hệ thống gửi cho khách (customerNotifications)
+    // 4. Lịch sử giao dịch thanh toán & biên lai điện tử (customerPayments)
+    customerPayments.forEach(p => {
+      const payTs = p.paymentTime || p.createdAt || new Date().toISOString()
+      const isDeposit = p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT'
+      const isRenewalFee = p.paymentType === 'RENEWAL' || p.paymentType === 'RENEWAL_FEE'
+      const isRefund = p.status === 'REFUNDED' || p.paymentType === 'REFUND' || p.paymentType === 'REFUND_DEPOSIT'
+
+      const paymentTypeTitle = isRefund
+        ? 'Hoàn trả tiền ký quỹ cọc'
+        : isDeposit
+        ? 'Thanh toán tiền ký quỹ (Cọc giữ kho)'
+        : isRenewalFee
+        ? 'Thanh toán phí gia hạn hợp đồng'
+        : 'Thanh toán tiền thuê buồng kho'
+
+      const methodLabel =
+        p.paymentMethod === 'VNPAY'
+          ? 'VNPAY (Cổng thanh toán điện tử)'
+          : p.paymentMethod === 'BANK_TRANSFER'
+          ? 'Chuyển khoản ngân hàng'
+          : p.paymentMethod === 'CASH'
+          ? 'Tiền mặt tại cơ sở'
+          : p.paymentMethod || 'Cổng thanh toán'
+
+      const matchedContract = contracts.find(
+        c =>
+          (p.contractId && c.id === p.contractId) ||
+          (p.contractCode && c.contractCode === p.contractCode) ||
+          (p.unitCode && c.unitCode === p.unitCode)
+      )
+      const uCode = p.unitCode || matchedContract?.unitCode
+      const facName = p.facilityName || matchedContract?.facilityName
+
+      items.push({
+        id: `PAY-REC-${p.id}`,
+        unitCode: uCode,
+        facilityName: facName,
+        category: 'CONTRACT',
+        actionType: 'PAYMENT_COMPLETED',
+        title: `${paymentTypeTitle} ${uCode ? `• Kho #${uCode}` : ''}`,
+        description: `Đã hoàn tất giao dịch số tiền ${Number(p.amount || 0).toLocaleString('vi-VN')} ₫ qua hình thức ${methodLabel}. Mã giao dịch: ${p.transactionId || p.id.slice(0, 10)}${p.receiptVoucherCode ? ` • Số chứng từ: ${p.receiptVoucherCode}` : ''}.`,
+        timestamp: payTs,
+        actorName: p.paymentMethod === 'VNPAY' ? 'Cổng thanh toán VNPAY' : (p.confirmedByName || 'Hệ thống Kế toán Boxora'),
+        statusLabel: isRefund ? 'Đã hoàn tiền' : p.status === 'PAID' ? 'Thanh toán thành công' : 'Đã xác nhận thanh toán',
+        statusTone: isRefund ? 'purple' : 'emerald',
+        meta: {
+          amount: p.amount,
+          contractCode: p.contractCode || matchedContract?.contractCode,
+          contractId: p.contractId || matchedContract?.id,
+          bookingId: p.bookingId,
+          paymentId: p.id,
+          payment: p,
+        },
+      })
+    })
+
+    // 5. Lịch sử Thông báo hệ thống gửi cho khách (customerNotifications)
     customerNotifications.forEach(n => {
       const cleanContent = (n.content || '').replace(/\[\[[\s\S]*?\]\]/g, '').trim()
       const detectedUnit = extractUnitFromText(n.title) || extractUnitFromText(cleanContent)
@@ -2038,6 +2139,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           n.title?.toLowerCase().includes('niêm phong') ||
           n.title?.toLowerCase().includes('mở khóa')
       )
+      const isContractOrPayNotif = !isSettlementNotif && Boolean(
+        n.notificationType?.includes('PAYMENT') ||
+          n.notificationType?.includes('CONTRACT') ||
+          n.title?.toLowerCase().includes('hợp đồng') ||
+          n.title?.toLowerCase().includes('thanh toán') ||
+          n.title?.toLowerCase().includes('hóa đơn') ||
+          n.title?.toLowerCase().includes('cọc') ||
+          cleanContent.toLowerCase().includes('thanh toán') ||
+          cleanContent.toLowerCase().includes('hợp đồng') ||
+          cleanContent.toLowerCase().includes('chuyển khoản') ||
+          cleanContent.toLowerCase().includes('vnpay')
+      )
 
       const matchedBooking =
         (n.referenceId ? customerBookings.find(b => b.id === n.referenceId) : undefined) ||
@@ -2048,13 +2161,23 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         id: `NOTIF-${n.id}`,
         unitCode: (detectedUnit || matchedBooking?.unitCode) ?? undefined,
         facilityName: (n.facilityName || matchedBooking?.facilityName) ?? undefined,
-        category: isSettlementNotif ? 'SUPPORT' : isRenewalNotif ? 'RENEWAL' : isAccessNotif ? 'ACCESS' : 'NOTIFICATION',
+        category: isSettlementNotif
+          ? 'SUPPORT'
+          : isRenewalNotif
+          ? 'RENEWAL'
+          : isAccessNotif
+          ? 'ACCESS'
+          : isContractOrPayNotif
+          ? 'CONTRACT'
+          : 'NOTIFICATION',
         actionType: isSettlementNotif
           ? 'RETURN_SETTLEMENT'
           : isRenewalNotif
           ? n.notificationType === 'RENEWAL_REJECTED'
             ? 'RENEWAL_REJECTED'
             : 'RENEWAL_COMPLETED'
+          : isContractOrPayNotif
+          ? 'PAYMENT_COMPLETED'
           : 'SYSTEM_NOTIFICATION',
         title: n.title || 'Thông báo từ hệ thống Boxora',
         description: cleanContent || 'Thông báo cập nhật trạng thái vận hành kho lưu trữ.',
@@ -2066,6 +2189,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           ? 'Thông báo gia hạn'
           : isAccessNotif
           ? 'Mã PIN & Khóa kho'
+          : isContractOrPayNotif
+          ? 'Hợp đồng & Thanh toán'
           : 'Thông báo hệ thống',
         statusTone: isSettlementNotif
           ? 'amber'
@@ -2073,6 +2198,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           ? 'rose'
           : isRenewalNotif
           ? 'emerald'
+          : isContractOrPayNotif
+          ? 'blue'
           : 'cyan',
         meta: {
           bookingId: targetBookingId,
@@ -2081,7 +2208,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       })
     })
 
-    // 5. Lịch sử Yêu cầu hỗ trợ / Báo sự cố / Yêu cầu trả kho (customerTickets)
+    // 6. Lịch sử Yêu cầu hỗ trợ / Báo sự cố / Yêu cầu trả kho (customerTickets)
     customerTickets.forEach(t => {
       const detectedUnit = t.unitCode || extractUnitFromText(t.title) || extractUnitFromText(t.description)
       const isResolved = t.status === 'RESOLVED' || t.status === 'CLOSED'
@@ -2110,14 +2237,22 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       const timeB = new Date(b.timestamp).getTime() || 0
       return timeB - timeA
     })
-  }, [unitActivityLogs, myRenewals, contracts, customerBookings, customerNotifications, customerTickets, user?.fullName])
+  }, [unitActivityLogs, myRenewals, contracts, customerBookings, customerNotifications, customerTickets, customerPayments, user?.fullName])
 
 
   const filteredUnitActivityHistory = useMemo(() => {
     return combinedUnitActivityHistory.filter(item => {
       if (unitHistoryCategory !== 'ALL') {
         if (unitHistoryCategory === 'NOTIFICATION') {
-          if (item.category !== 'NOTIFICATION' && item.category !== 'CONTRACT' && item.actionType !== 'RETURN_SETTLEMENT') return false
+          // Tab "Hợp đồng và thanh toán": Chỉ hiển thị các hoạt động về Hợp đồng & Thanh toán, loại bỏ nghiệm thu trả kho
+          if (
+            item.category !== 'CONTRACT' &&
+            item.actionType !== 'PAYMENT_COMPLETED' &&
+            item.actionType !== 'CONTRACT_ACTIVATED' &&
+            item.actionType !== 'CONTRACT_OVERDUE'
+          ) {
+            return false
+          }
         } else if (unitHistoryCategory === 'SUPPORT') {
           if (item.category !== 'SUPPORT' && item.actionType !== 'RETURN_SETTLEMENT') return false
         } else if (item.category !== unitHistoryCategory) {
@@ -2150,7 +2285,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       all: combinedUnitActivityHistory.length,
       access: combinedUnitActivityHistory.filter(i => i.category === 'ACCESS').length,
       renewal: combinedUnitActivityHistory.filter(i => i.category === 'RENEWAL').length,
-      notification: combinedUnitActivityHistory.filter(i => i.category === 'NOTIFICATION' || i.category === 'CONTRACT' || i.actionType === 'RETURN_SETTLEMENT').length,
+      notification: combinedUnitActivityHistory.filter(
+        i =>
+          i.category === 'CONTRACT' ||
+          i.actionType === 'PAYMENT_COMPLETED' ||
+          i.actionType === 'CONTRACT_ACTIVATED' ||
+          i.actionType === 'CONTRACT_OVERDUE'
+      ).length,
       support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT' || i.actionType === 'RETURN_SETTLEMENT').length,
     }
   }, [combinedUnitActivityHistory])
@@ -3662,14 +3803,30 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-blue-50/50 border border-blue-200/70 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+              <div
+                onClick={() => {
+                  setUnitHistoryCategory('NOTIFICATION')
+                  setUnitHistoryLimit(12)
+                }}
+                className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition ${
+                  unitHistoryCategory === 'NOTIFICATION'
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : 'bg-blue-50/50 hover:bg-blue-100/60 border-blue-200/70'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  unitHistoryCategory === 'NOTIFICATION' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700'
+                }`}>
                   <span className="material-symbols-outlined text-[20px]">receipt_long</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700/80 block">Hợp đồng và thanh toán</span>
-                  <span className="font-mono text-base font-extrabold text-blue-900">
-                    {unitHistoryCounts.notification + unitHistoryCounts.support} tin
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    unitHistoryCategory === 'NOTIFICATION' ? 'text-blue-100' : 'text-blue-700/80'
+                  }`}>Hợp đồng và thanh toán</span>
+                  <span className={`font-mono text-base font-extrabold ${
+                    unitHistoryCategory === 'NOTIFICATION' ? 'text-white' : 'text-blue-900'
+                  }`}>
+                    {unitHistoryCounts.notification} bản ghi
                   </span>
                 </div>
               </div>
@@ -3982,6 +4139,129 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <span className="material-symbols-outlined text-[15px]">assignment_turned_in</span>
                                 <span>Xem chi tiết &amp; Phản hồi quyết toán</span>
                               </button>
+                            </div>
+                          )}
+
+                          {/* Chi tiết Hợp đồng thuê kho & Button Xem văn bản hợp đồng */}
+                          {(item.actionType === 'CONTRACT_ACTIVATED' || item.actionType === 'CONTRACT_OVERDUE') && (
+                            <div className="mt-2 p-2.5 rounded-lg bg-blue-50/70 border border-blue-200/90 flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-700">
+                                {item.meta?.contractCode && (
+                                  <span className="font-mono font-bold text-blue-900 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[15px] text-blue-600">article</span>
+                                    Mã HĐ: #{item.meta.contractCode}
+                                  </span>
+                                )}
+                                {item.meta?.oldEndDate && item.meta?.newEndDate && (
+                                  <span className="font-mono text-slate-600">
+                                    Kỳ hạn: <strong>{formatDisplayDate(item.meta.oldEndDate)} → {formatDisplayDate(item.meta.newEndDate)}</strong>
+                                  </span>
+                                )}
+                                {Number(item.meta?.amount || 0) > 0 && (
+                                  <span className="font-mono text-slate-700">
+                                    Cước thuê: <strong>{Number(item.meta?.amount || 0).toLocaleString('vi-VN')} ₫/tháng</strong>
+                                  </span>
+                                )}
+                              </div>
+                              {(() => {
+                                const matchedContract = contracts.find(
+                                  c =>
+                                    (item.meta?.contractId && c.id === item.meta?.contractId) ||
+                                    (item.meta?.contractCode && c.contractCode === item.meta?.contractCode) ||
+                                    (item.unitCode && c.unitCode === item.unitCode)
+                                )
+                                if (!matchedContract) return null
+                                const cRenewals = myRenewals.filter(
+                                  r => r.contractId === matchedContract.id || (matchedContract.contractCode && r.contractCode === matchedContract.contractCode)
+                                )
+                                const completedCRenewals = cRenewals.filter(r => r.status === 'COMPLETED')
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedContractForModal(matchedContract)}
+                                      className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                    >
+                                      <span className="material-symbols-outlined text-[13px]">visibility</span>
+                                      <span>Xem văn bản hợp đồng</span>
+                                    </button>
+                                    {completedCRenewals.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setContractHistoryModal({ contract: matchedContract, renewals: completedCRenewals })}
+                                        className="px-2.5 py-1 rounded-md bg-white hover:bg-blue-50 text-blue-700 border border-blue-300 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[13px]">history_edu</span>
+                                        <span>Phụ lục ({completedCRenewals.length})</span>
+                                      </button>
+                                    )}
+                                    {matchedContract.status === 'ACTIVE' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openRenewModal(matchedContract)}
+                                        className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                      >
+                                        <span className="material-symbols-outlined text-[13px]">autorenew</span>
+                                        <span>Gia hạn kho</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          )}
+
+                          {/* Chi tiết Giao dịch Thanh toán & Button Xem Hóa đơn điện tử VAT / Chứng từ */}
+                          {(item.actionType === 'PAYMENT_COMPLETED' || item.meta?.payment) && (
+                            <div className="mt-2 p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200/90 flex flex-wrap items-center justify-between gap-2.5 text-[11px]">
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-slate-700">
+                                {Number(item.meta?.amount || 0) > 0 && (
+                                  <span className="font-mono font-bold text-emerald-900 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[15px] text-emerald-600">payments</span>
+                                    Số tiền: {Number(item.meta?.amount || 0).toLocaleString('vi-VN')} ₫
+                                  </span>
+                                )}
+                                {item.meta?.payment?.paymentMethod && (
+                                  <span className="text-slate-600">
+                                    Phương thức: <strong className="text-slate-800">{
+                                      item.meta.payment.paymentMethod === 'VNPAY'
+                                        ? 'VNPAY'
+                                        : item.meta.payment.paymentMethod === 'BANK_TRANSFER'
+                                        ? 'Chuyển khoản'
+                                        : item.meta.payment.paymentMethod === 'CASH'
+                                        ? 'Tiền mặt'
+                                        : item.meta.payment.paymentMethod
+                                    }</strong>
+                                  </span>
+                                )}
+                                {(item.meta?.payment?.transactionId || item.meta?.payment?.id) && (
+                                  <span className="font-mono text-slate-500 text-[10px]">
+                                    Mã GD: {item.meta?.payment?.transactionId || item.meta?.payment?.id.slice(0, 8)}
+                                  </span>
+                                )}
+                              </div>
+                              {item.meta?.payment && (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedVatPayment(item.meta!.payment!)}
+                                    className="px-2.5 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                  >
+                                    <span className="material-symbols-outlined text-[13px]">receipt_long</span>
+                                    <span>Hóa đơn điện tử VAT</span>
+                                  </button>
+                                  {(item.meta.payment.proofDocumentUrl || item.meta.payment.paymentMethod === 'BANK_TRANSFER') && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedProofPayment(item.meta!.payment!)}
+                                      className="px-2.5 py-1 rounded-md bg-white hover:bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold text-[11px] flex items-center gap-1 transition cursor-pointer"
+                                    >
+                                      <span className="material-symbols-outlined text-[13px]">image</span>
+                                      <span>Chứng từ chuyển tiền</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -6973,10 +7253,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             <div className="bg-slate-900 px-6 py-4 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-400">
-                  <span className="material-symbols-outlined text-xl">account_balance</span>
+                  <span className="material-symbols-outlined text-xl">receipt_long</span>
                 </div>
                 <div>
-                  <h3 className="font-bold text-sm tracking-wide uppercase">Chứng Từ / Màn Hình Chuyển Tiền</h3>
+                  <h3 className="font-bold text-sm tracking-wide uppercase">Chứng Từ / Biên Lai Thanh Toán</h3>
                   <p className="text-[10px] text-slate-400 font-mono">
                     Mã giao dịch: {selectedProofPayment.transactionId || selectedProofPayment.id}
                   </p>
@@ -7003,10 +7283,22 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 <div>
                   <span className="text-slate-400 text-[10px] uppercase font-bold block">Khoản thanh toán:</span>
                   <span className="font-semibold text-slate-800">
-                    {selectedProofPayment.paymentType === 'DEPOSIT' ? 'Tiền ký quỹ (Cọc)' : 'Tiền thuê kho'}
+                    {selectedProofPayment.paymentType === 'DEPOSIT' || selectedProofPayment.paymentType === 'BOOKING_PAYMENT'
+                      ? 'Tiền ký quỹ (Cọc giữ chỗ)'
+                      : selectedProofPayment.paymentType === 'RENEWAL'
+                      ? 'Phí gia hạn hợp đồng'
+                      : selectedProofPayment.paymentType === 'REFUND'
+                      ? 'Hoàn trả tiền ký quỹ cọc'
+                      : 'Tiền thuê buồng kho'}
                   </span>
                   <div className="text-slate-500 text-[10px]">
-                    Phương thức: <strong className="font-mono text-slate-700">BANK_TRANSFER (Chuyển khoản)</strong>
+                    Phương thức: <strong className="font-mono text-slate-700">{
+                      selectedProofPayment.paymentMethod === 'VNPAY'
+                        ? 'VNPAY (Cổng thanh toán điện tử)'
+                        : selectedProofPayment.paymentMethod === 'CASH'
+                        ? 'CASH (Tiền mặt tại cơ sở)'
+                        : 'BANK_TRANSFER (Chuyển khoản)'
+                    }</strong>
                   </div>
                 </div>
                 <div>
@@ -7016,7 +7308,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Số tiền chuyển khoản:</span>
+                  <span className="text-slate-400 text-[10px] uppercase font-bold block">Số tiền thanh toán:</span>
                   <strong className="text-emerald-700 text-sm font-mono">
                     {selectedProofPayment.amount.toLocaleString('vi-VN')} ₫
                   </strong>
@@ -7050,14 +7342,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </div>
                 ) : (
                   <div className="py-6 px-4 text-center space-y-2">
-                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center mx-auto">
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
                       <span className="material-symbols-outlined text-[24px]">verified</span>
                     </div>
                     <div className="font-bold text-slate-900 text-xs">
-                      Giao Dịch Chuyển Khoản Trực Tiếp Tại Quầy Đã Xác Nhận
+                      {selectedProofPayment.paymentMethod === 'VNPAY'
+                        ? 'Giao Dịch Cổng Thanh Toán Điện Tử VNPAY Đã Xác Thực'
+                        : selectedProofPayment.paymentMethod === 'CASH'
+                        ? 'Giao Dịch Tiền Mặt Tại Quầy Đã Thu Đủ & Xuất Phiếu Thu'
+                        : 'Giao Dịch Chuyển Khoản Trực Tiếp Đã Xác Nhận'}
                     </div>
                     <p className="text-[11px] text-slate-500 max-w-md mx-auto leading-relaxed">
-                      Nhân viên quầy tại cơ sở đã kiểm tra trực tiếp màn hình chuyển tiền thành công trên ứng dụng ngân hàng và đối soát chính xác với hệ thống tài khoản Boxora.
+                      {selectedProofPayment.paymentMethod === 'VNPAY'
+                        ? 'Giao dịch thanh toán trực tuyến qua cổng VNPAY đã được ghi nhận và đối soát tự động thành công vào hệ thống Boxora.'
+                        : 'Nhân viên quầy tại cơ sở đã kiểm tra trực tiếp màn hình chuyển tiền thành công trên ứng dụng ngân hàng và đối soát chính xác với hệ thống tài khoản Boxora.'}
                     </p>
                     {selectedProofPayment.receiptVoucherCode && (
                       <div className="inline-block mt-2 px-3 py-1 bg-slate-100 text-slate-700 rounded-lg font-mono text-[11px] border border-slate-200">
