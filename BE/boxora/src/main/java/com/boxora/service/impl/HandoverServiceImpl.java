@@ -2457,7 +2457,7 @@ public class HandoverServiceImpl implements HandoverService {
         return buildReturnCaseResponse(booking);
     }
 
-    private List<String> extractReturnHistoryNotes(String stepTransitionHistory) {
+    public List<String> extractReturnHistoryNotes(String stepTransitionHistory) {
         if (stepTransitionHistory == null || stepTransitionHistory.isBlank()) {
             return List.of();
         }

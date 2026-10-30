@@ -1755,6 +1755,39 @@ class HandoverServiceTest {
             assertThat(testBooking.getStepTransitionHistory()).contains("[EARLY_CHECKIN]");
             assertThat(testBooking.getStepTransitionHistory()).contains("Khách có nhu cầu chuyển đồ gấp");
         }
+
+        @Test
+        @DisplayName("Kiểm tra extractReturnHistoryNotes: Chỉ lấy sự kiện trả kho và lọc bỏ check-in / bản ghi trùng lặp")
+        void testExtractReturnHistoryNotes_FiltersCheckInAndDuplicates() {
+            String rawHistory = String.join("\n", List.of(
+                    "[EARLY_CHECKIN][2026-10-27T21:36:48.342876700] Tiếp nhận sớm bởi Phan Van Hau (STAFF). Lý do: Khách nhận kho sớm có xác nhận của nhân viên. Lịch hẹn gốc giữ nguyên: 09:00 28/10/2026.",
+                    "[2026-10-27T21:40:00] Hoàn tất đối soát 4 điều kiện bởi nhân viên Phan Van Hau. Chuyển sang bước Nghiệm thu hiện trường.",
+                    "[15:23 28/10/2026] Nhân viên Phan Van Hau xác nhận lịch hẹn nghiệm thu hiện trường vào lúc 15:18 28/10/2026. Ghi chú: Test schedule inspection",
+                    "[15:23 28/10/2026] Nhân viên Phan Van Hau xác nhận lịch hẹn nghiệm thu hiện trường vào lúc 15:18 28/10/2026. Ghi chú: Test schedule inspection",
+                    "[15:24 28/10/2026] Nhân viên Phan Van Hau xác nhận lịch hẹn nghiệm thu hiện trường vào lúc 15:18 28/10/2026. Ghi chú: Tiếp nhận và hẹn lịch nghiệm thu bởi Phan Van Hau",
+                    "[16:01 28/10/2026] Nhân viên Phan Van Hau bắt đầu nghiệm thu hiện trường.",
+                    "[16:11 28/10/2026] Nhân viên Phan Van Hau hoàn thành thẩm định hiện trường: Cửa cuốn: Không đạt | Vệ sinh: Bẩn | Tường vách: Hư hại | SmartLock: Tốt | Dọn đồ: Đã dọn hết | Cảm biến: Chuẩn",
+                    "[16:29 28/10/2026] Nhân viên Phan Van Hau hoàn thành thẩm định hiện trường: Cửa cuốn: Không đạt | Vệ sinh: Bẩn | Tường vách: Hư hại | SmartLock: Tốt | Dọn đồ: Đã dọn hết | Cảm biến: Chuẩn",
+                    "[19:22 28/10/2026] Nhân viên Phan Van Hau trình quản lý phê duyệt các khoản khấu trừ bồi thường. Ghi chú: Nhân viên Phan Van Hau trình duyệt quyết toán: Khấu trừ 5.450.008đ",
+                    "[20:44 28/10/2026] Ghi nhận khiếu nại tranh chấp từ khách hàng: đắt",
+                    "[20:46 28/10/2026] Nhân viên Nguyen Thi Bich trình quản lý phê duyệt các khoản khấu trừ bồi thường. Ghi chú: Nhân viên Nguyen Thi Bich trình duyệt quyết toán: Khấu trừ 5.450.008đ",
+                    "[20:53 28/10/2026] Nhân viên Nguyen Thi Bich trình quản lý phê duyệt các khoản khấu trừ bồi thường. Ghi chú: Nhân viên Nguyen Thi Bich trình duyệt quyết toán: Khấu trừ 5.450.008đ"
+            ));
+
+            List<String> notes = handoverService.extractReturnHistoryNotes(rawHistory);
+
+            assertThat(notes).isNotNull();
+            // Assert that EARLY_CHECKIN and 4 prerequisite check-in logs are excluded
+            assertThat(notes).noneMatch(n -> n.contains("EARLY_CHECKIN") || n.contains("Tiếp nhận sớm") || n.contains("đối soát 4 điều kiện"));
+            // Assert return events are retained
+            assertThat(notes).anyMatch(n -> n.contains("xác nhận lịch hẹn nghiệm thu"));
+            assertThat(notes).anyMatch(n -> n.contains("bắt đầu nghiệm thu hiện trường"));
+            assertThat(notes).anyMatch(n -> n.contains("hoàn thành thẩm định hiện trường"));
+            assertThat(notes).anyMatch(n -> n.contains("Ghi nhận khiếu nại tranh chấp"));
+            // Assert consecutive duplicates are removed
+            long inspectionSummaryCount = notes.stream().filter(n -> n.contains("hoàn thành thẩm định hiện trường")).count();
+            assertThat(inspectionSummaryCount).isEqualTo(1);
+        }
     }
 }
 
