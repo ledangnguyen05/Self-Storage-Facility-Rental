@@ -27,7 +27,7 @@ export const FACILITY_POLICY_DEFAULTS: FacilityPolicyValues = {
   cancellationPartialRefundPercent: 70,
   returnNoticeDays: 0,
   depositRefundSlaDays: 5,
-  dailyLateFee: 50000,
+  dailyLateFee: 200000,
   overdueGraceDays: 1,
   overdueAccessDisableDays: 3,
   overdueSealingDays: 7,
