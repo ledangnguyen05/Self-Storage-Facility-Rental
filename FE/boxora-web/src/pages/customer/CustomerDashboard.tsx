@@ -2003,32 +2003,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
   }, [unitActivityLogs, myRenewals, contracts, customerBookings, customerNotifications, customerTickets, user?.fullName])
 
-  const pendingSettlementBooking = useMemo(() => {
-    const notif = customerNotifications.find(
-      n =>
-        n.notificationType === 'REFUND_STATUS' ||
-        n.title?.toLowerCase().includes('tính toán chi phí') ||
-        n.title?.toLowerCase().includes('quyết toán trả kho')
-    )
-    if (notif) {
-      const matchUnit =
-        notif.title?.match(/\[(.*?)\]/)?.[1] ||
-        notif.title?.match(/#([A-Z0-9-]{3,10})/i)?.[1]
-      const targetBooking =
-        (notif.referenceId ? customerBookings.find(b => b.id === notif.referenceId) : undefined) ||
-        (matchUnit ? customerBookings.find(b => b.unitCode === matchUnit) : undefined) ||
-        (notif.referenceId ? { id: notif.referenceId, unitCode: matchUnit || 'N/A' } : undefined)
-      if (targetBooking?.id) {
-        return {
-          bookingId: targetBooking.id,
-          unitCode: targetBooking.unitCode || matchUnit || 'N/A',
-          notifTitle: notif.title,
-          notifContent: notif.content
-        }
-      }
-    }
-    return null
-  }, [customerNotifications, customerBookings])
 
   const filteredUnitActivityHistory = useMemo(() => {
     return combinedUnitActivityHistory.filter(item => {
@@ -5051,38 +5025,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </button>
           </div>
 
-          {/* Banner Biên Bản Nghiệm Thu & Quyết Toán (Nổi bật cho đơn cần phản hồi hoặc đang khiếu nại) */}
-          {pendingSettlementBooking && (
-            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-amber-400/50 animate-in fade-in">
-              <div className="flex items-start sm:items-center gap-3.5">
-                <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30">
-                  <span className="material-symbols-outlined text-[26px] text-white">fact_check</span>
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-white/25 text-[11px] font-black uppercase tracking-wider">
-                      Biên Bản Nghiệm Thu &amp; Quyết Toán
-                    </span>
-                    <span className="text-xs font-semibold text-amber-100">Kho #{pendingSettlementBooking.unitCode}</span>
-                  </div>
-                  <h4 className="text-sm sm:text-base font-bold text-white mt-0.5">
-                    {pendingSettlementBooking.notifTitle}
-                  </h4>
-                  <p className="text-xs text-amber-100 line-clamp-2 mt-0.5">
-                    {pendingSettlementBooking.notifContent}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedBookingForSettlementModal(pendingSettlementBooking.bookingId)}
-                className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-amber-900 hover:bg-amber-50 font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer shrink-0"
-              >
-                <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
-                <span>Xem Biên Bản &amp; Phản Hồi</span>
-              </button>
-            </div>
-          )}
 
           {/* Danh sách các thông báo / sự kiện đối soát trả kho */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
