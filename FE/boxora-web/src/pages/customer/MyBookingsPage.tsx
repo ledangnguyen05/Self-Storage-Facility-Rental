@@ -1038,18 +1038,11 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                       </div>
 
                       {/* Status Badges */}
-                      <div className="text-right flex flex-col items-end gap-1">
+                      <div className="text-right flex items-center justify-end">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border ${stageInfo.badgeClass}`}>
                           <span className={`w-2 h-2 rounded-full ${stageInfo.dotClass}`} />
                           <span>{stageInfo.label}</span>
                         </span>
-                        {stageInfo.priorityTag &&
-                          stageInfo.priorityTag.replace(/[✓\s]/g, '').toLowerCase() !==
-                            stageInfo.label.replace(/[✓\s]/g, '').toLowerCase() && (
-                            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${stageInfo.priorityTagClass || 'text-blue-600'}`}>
-                              {stageInfo.priorityTag}
-                            </span>
-                          )}
                       </div>
                     </div>
 
