@@ -628,6 +628,73 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const isStaffBlockedByDispute = isCaseDisputed && !isFacilityManager
   const isReadOnly = isBusinessManager || isStaffBlockedByDispute
 
+  // Bộ lọc lịch sử: Chỉ hiển thị duy nhất lịch sử liên quan đến đơn đang được chọn để trả kho
+  const returnHistoryNotes = useMemo(() => {
+    if (!currentCase?.historyNotes || currentCase.historyNotes.length === 0) return []
+    const cleaned: string[] = []
+    let prevCore: string | null = null
+
+    for (const raw of currentCase.historyNotes) {
+      if (!raw || !raw.trim()) continue
+      const line = raw.trim()
+      const lower = line.toLowerCase()
+
+      // Loại bỏ hoàn toàn các log thuộc giai đoạn check-in / nhận kho ban đầu
+      if (
+        line.startsWith('[EARLY_CHECKIN]') ||
+        lower.includes('tiếp nhận sớm') ||
+        lower.includes('nhận kho sớm') ||
+        lower.includes('hoàn tất đối soát 4 điều kiện') ||
+        lower.includes('đối soát 4 điều kiện') ||
+        lower.includes('nhận bàn giao ban đầu') ||
+        lower.includes('check-in') ||
+        lower.includes('checkin') ||
+        lower.includes('nhận kho ban đầu') ||
+        lower.includes('nhận phòng')
+      ) {
+        continue
+      }
+
+      // Chỉ chấp nhận các sự kiện thuộc vòng đời trả kho (Return / Checkout)
+      const isReturnRelated =
+        lower.includes('nghiệm thu') ||
+        lower.includes('thẩm định') ||
+        lower.includes('trả kho') ||
+        lower.includes('quyết toán') ||
+        lower.includes('khiếu nại') ||
+        lower.includes('tranh chấp') ||
+        lower.includes('hoàn cọc') ||
+        lower.includes('hoàn tiền') ||
+        lower.includes('bồi thường') ||
+        lower.includes('khấu trừ') ||
+        lower.includes('smartlock') ||
+        lower.includes('thu hồi') ||
+        lower.includes('giải phóng kho') ||
+        lower.includes('thanh lý') ||
+        lower.includes('ngân hàng') ||
+        lower.includes('chi trả') ||
+        lower.includes('nhận lại buồng kho') ||
+        lower.includes('nhận lại kho') ||
+        lower.includes('chốt tính phí') ||
+        lower.includes('nhiệm vụ') ||
+        lower.includes('portal') ||
+        lower.includes('đến hạn')
+
+      if (!isReturnRelated) {
+        continue
+      }
+
+      // Loại bỏ các dòng trùng lặp liên tiếp có cùng nội dung cốt lõi
+      const core = line.replace(/^\[.*?\]\s*/, '').trim().toLowerCase()
+      if (prevCore && prevCore === core) {
+        continue
+      }
+      prevCore = core
+      cleaned.push(line)
+    }
+    return cleaned
+  }, [currentCase?.historyNotes])
+
   useEffect(() => {
     if (filteredCases.length > 0) {
       if (!selectedCaseId || !filteredCases.some((c) => c.id === selectedCaseId)) {
@@ -3436,16 +3503,23 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         <span className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 font-mono font-bold text-xs flex items-center justify-center">
                           E
                         </span>
-                        <h3 className="font-bold text-sm text-slate-900">
-                          Lịch Sử Xử Lý &amp; Quyết Định Nghiệp Vụ
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm text-slate-900">
+                            Lịch Sử Xử Lý &amp; Quyết Định Nghiệp Vụ
+                          </h3>
+                          {currentCase && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              Đơn #{currentCase.bookingCode || currentCase.unitCode}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     {/* Timeline Notes */}
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5 text-xs max-h-48 overflow-y-auto">
-                      {currentCase.historyNotes && currentCase.historyNotes.length > 0 ? (
-                        currentCase.historyNotes.map((note, idx) => {
+                      {returnHistoryNotes && returnHistoryNotes.length > 0 ? (
+                        returnHistoryNotes.map((note, idx) => {
                           const isDisputeNote = note.includes('[KHIẾU NẠI]') || note.toLowerCase().includes('khiếu nại') || note.toLowerCase().includes('tranh chấp')
                           return (
                             <div
@@ -3464,7 +3538,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           )
                         })
                       ) : (
-                        <span className="text-slate-400">Chưa có bản ghi lịch sử xử lý.</span>
+                        <span className="text-slate-400">Chưa có bản ghi lịch sử xử lý trả kho cho đơn này.</span>
                       )}
                     </div>
 

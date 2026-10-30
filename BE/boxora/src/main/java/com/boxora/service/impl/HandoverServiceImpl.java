@@ -2457,6 +2457,74 @@ public class HandoverServiceImpl implements HandoverService {
         return buildReturnCaseResponse(booking);
     }
 
+    private List<String> extractReturnHistoryNotes(String stepTransitionHistory) {
+        if (stepTransitionHistory == null || stepTransitionHistory.isBlank()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        String[] lines = stepTransitionHistory.split("\n");
+        String prevCoreMsg = null;
+
+        for (String raw : lines) {
+            if (raw == null) continue;
+            String line = raw.trim();
+            if (line.isEmpty()) continue;
+
+            String lower = line.toLowerCase();
+
+            // Loại bỏ hoàn toàn các log thuộc giai đoạn check-in / nhận kho ban đầu
+            if (line.startsWith("[EARLY_CHECKIN]")
+                    || lower.contains("tiếp nhận sớm")
+                    || lower.contains("nhận kho sớm")
+                    || lower.contains("hoàn tất đối soát 4 điều kiện")
+                    || lower.contains("đối soát 4 điều kiện")
+                    || lower.contains("nhận bàn giao ban đầu")
+                    || lower.contains("check-in")
+                    || lower.contains("checkin")
+                    || lower.contains("nhận kho ban đầu")
+                    || lower.contains("nhận phòng")) {
+                continue;
+            }
+
+            // Chỉ chấp nhận các sự kiện thuộc vòng đời trả kho (Return / Checkout)
+            boolean isReturnLifecycleEvent = lower.contains("nghiệm thu")
+                    || lower.contains("thẩm định")
+                    || lower.contains("trả kho")
+                    || lower.contains("quyết toán")
+                    || lower.contains("khiếu nại")
+                    || lower.contains("tranh chấp")
+                    || lower.contains("hoàn cọc")
+                    || lower.contains("hoàn tiền")
+                    || lower.contains("bồi thường")
+                    || lower.contains("khấu trừ")
+                    || lower.contains("smartlock")
+                    || lower.contains("thu hồi")
+                    || lower.contains("giải phóng kho")
+                    || lower.contains("thanh lý")
+                    || lower.contains("ngân hàng")
+                    || lower.contains("chi trả")
+                    || lower.contains("nhận lại buồng kho")
+                    || lower.contains("nhận lại kho")
+                    || lower.contains("chốt tính phí")
+                    || lower.contains("nhiệm vụ")
+                    || lower.contains("portal")
+                    || lower.contains("đến hạn");
+
+            if (!isReturnLifecycleEvent) {
+                continue;
+            }
+
+            // Loại bỏ các dòng trùng lặp liên tiếp có cùng nội dung cốt lõi
+            String coreMsg = line.replaceFirst("^\\s*\\[.*?\\]\\s*", "").trim();
+            if (prevCoreMsg != null && prevCoreMsg.equalsIgnoreCase(coreMsg)) {
+                continue;
+            }
+            prevCoreMsg = coreMsg;
+            result.add(line);
+        }
+        return result;
+    }
+
     private ReturnCaseResponse buildReturnCaseResponse(Booking booking) {
         if (booking == null) return null;
         StorageUnit unit = booking.getStorageUnit();
@@ -2558,10 +2626,7 @@ public class HandoverServiceImpl implements HandoverService {
 
         LocalDate reqDate = booking.getCreatedAt() != null ? booking.getCreatedAt().toLocalDate() : LocalDate.now();
 
-        List<String> historyNotes = new ArrayList<>();
-        if (booking.getStepTransitionHistory() != null && !booking.getStepTransitionHistory().isBlank()) {
-            historyNotes.addAll(Arrays.asList(booking.getStepTransitionHistory().split("\n")));
-        }
+        List<String> historyNotes = extractReturnHistoryNotes(booking.getStepTransitionHistory());
 
         // Lấy lý do trả kho chính xác từ yêu cầu của khách hàng trong DB:
         // 1. Kiểm tra ticket từ Trung tâm hỗ trợ (SupportTicket) gửi từ phía khách hàng
