@@ -370,36 +370,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvedDeductions: item.approvedDeductions || 0,
           netRefundAmount: item.netRefundAmount || 0,
           additionalAmountDue: item.additionalAmountDue || 0,
-          status: (() => {
-            const itemHasIssue =
-              item.doorPassed === false ||
-              item.cleanlinessPassed === false ||
-              item.damagePassed === false ||
-              item.smartLockPassed === false ||
-              item.assetsClearedPassed === false ||
-              item.envPassed === false ||
-              (item.totalDeduction !== undefined && item.totalDeduction > 0) ||
-              item.status === 'INSPECTION_ISSUE' ||
-              item.inspectionStatus === 'INSPECTION_ISSUE' ||
-              item.inspectionStatus === 'ISSUE'
-
-            if (item.status === 'COMPLETED' || item.status === 'REFUNDED' || item.status === 'REFUND_PROCESSING' || item.status === 'DISPUTED') {
-              return normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus)
-            }
-            if (item.approvalStatus === 'APPROVED' || item.approvalStatus === 'REFUND_APPROVED') {
-              return 'REFUND_APPROVED'
-            }
-            if (item.approvalStatus === 'PENDING' || item.approvalStatus === 'PENDING_APPROVAL' || item.approvalStatus === 'REFUND_PENDING_APPROVAL') {
-              return 'REFUND_PENDING_APPROVAL'
-            }
-            if (itemHasIssue) {
-              return 'INSPECTION_ISSUE'
-            }
-            if (item.status === 'INSPECTION_PASSED' || item.inspectionStatus === 'INSPECTION_PASSED' || item.doorPassed !== undefined) {
-              return 'INSPECTION_PASSED'
-            }
-            return normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus)
-          })(),
+          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus),
           inspectionStatus: item.inspectionStatus,
           approvalStatus: item.approvalStatus,
           additionalPaymentStatus: item.additionalPaymentStatus,
@@ -784,6 +755,17 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       return
     }
     setStatusTabFilter(targetFilter)
+    const matching = returnCases.filter(c => {
+      const st = String(c.status || '').toUpperCase()
+      if (targetFilter === 'PENDING') return st === 'RETURN_REQUESTED' || st === 'PENDING'
+      if (targetFilter === 'INSPECTING') return ['INSPECTION_SCHEDULED', 'INSPECTION_IN_PROGRESS', 'INSPECTION_PASSED', 'INSPECTION_ISSUE', 'INSPECTING'].includes(st)
+      if (targetFilter === 'REFUNDING') return ['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'DISPUTED'].includes(st)
+      if (targetFilter === 'COMPLETED') return st === 'COMPLETED' || st === 'RESOLVED'
+      return true
+    })
+    if (matching.length > 0 && !matching.some(c => c.id === selectedCaseId)) {
+      setSelectedCaseId(matching[0].id)
+    }
   }
 
   const handleRequestSelectCase = (targetCaseId: string) => {

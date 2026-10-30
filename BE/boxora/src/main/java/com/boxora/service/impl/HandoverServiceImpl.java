@@ -2469,7 +2469,7 @@ public class HandoverServiceImpl implements HandoverService {
         HandoverRecord inspectionRecord = records.stream()
                 .filter(r -> "INSPECTION".equalsIgnoreCase(r.getRecordType()) || "CHECK_OUT".equalsIgnoreCase(r.getRecordType()))
                 .findFirst()
-                .orElse(latestRecord);
+                .orElse(null);
 
         BigDecimal depositAmount = calculateTotalDepositPaid(booking);
         BigDecimal overdueDebt = calculateOverdueDebtForBooking(booking);
@@ -2521,19 +2521,30 @@ public class HandoverServiceImpl implements HandoverService {
         );
 
         String inspStatus;
-        if (inspectionRecord != null && "DRAFT".equalsIgnoreCase(inspectionRecord.getInspectionStatus())) {
-            inspStatus = "DRAFT";
-        } else if (recordHasIssue) {
-            inspStatus = "INSPECTION_ISSUE";
-        } else if (inspectionRecord != null && ("INSPECTION_PASSED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
-                || "PASSED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
-                || (doorPassed != null && Boolean.TRUE.equals(doorPassed))
-                || booking.getStatus() == BookingStatus.INSPECTED)) {
-            inspStatus = "INSPECTION_PASSED";
-        } else if (inspectionRecord != null && inspectionRecord.getInspectionStatus() != null) {
-            inspStatus = inspectionRecord.getInspectionStatus();
-        } else {
+        if (inspectionRecord == null) {
             inspStatus = (booking.getStatus() == BookingStatus.INSPECTED ? "INSPECTION_PASSED" : "PENDING");
+        } else if ("DRAFT".equalsIgnoreCase(inspectionRecord.getInspectionStatus())) {
+            inspStatus = "DRAFT";
+        } else if (recordHasIssue || "INSPECTION_ISSUE".equalsIgnoreCase(inspectionRecord.getInspectionStatus()) || "ISSUE".equalsIgnoreCase(inspectionRecord.getInspectionStatus())) {
+            inspStatus = "INSPECTION_ISSUE";
+        } else if ("INSPECTION_PASSED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || "PASSED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || booking.getStatus() == BookingStatus.INSPECTED) {
+            inspStatus = "INSPECTION_PASSED";
+        } else if ("IN_PROGRESS".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || "INSPECTION_IN_PROGRESS".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || "INSPECTING".equalsIgnoreCase(inspectionRecord.getInspectionStatus())) {
+            inspStatus = "IN_PROGRESS";
+        } else if ("SCHEDULED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || "INSPECTION_SCHEDULED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || inspectionRecord.getScheduledInspectionAt() != null) {
+            inspStatus = "SCHEDULED";
+        } else if (inspectionRecord.getInspectionStatus() != null) {
+            inspStatus = inspectionRecord.getInspectionStatus();
+        } else if (doorPassed != null && Boolean.TRUE.equals(doorPassed)) {
+            inspStatus = "INSPECTION_PASSED";
+        } else {
+            inspStatus = "PENDING";
         }
 
         String approvalStatus = inspectionRecord != null && inspectionRecord.getApprovalStatus() != null
@@ -2636,16 +2647,16 @@ public class HandoverServiceImpl implements HandoverService {
                 || "PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)
                 || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)) {
             caseStatus = "REFUND_PENDING_APPROVAL";
-        } else if (recordHasIssue || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus) || "ISSUE".equalsIgnoreCase(inspStatus)) {
+        } else if (inspectionRecord != null && (recordHasIssue || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus) || "ISSUE".equalsIgnoreCase(inspStatus))) {
             caseStatus = "INSPECTION_ISSUE";
-        } else if ("INSPECTION_PASSED".equalsIgnoreCase(inspStatus) || "PASSED".equalsIgnoreCase(inspStatus) || booking.getStatus() == BookingStatus.INSPECTED) {
+        } else if (inspectionRecord != null && ("INSPECTION_PASSED".equalsIgnoreCase(inspStatus) || "PASSED".equalsIgnoreCase(inspStatus) || booking.getStatus() == BookingStatus.INSPECTED)) {
             caseStatus = "INSPECTION_PASSED";
-        } else if ("IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTION_IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTING".equalsIgnoreCase(inspStatus)) {
+        } else if (inspectionRecord != null && ("IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTION_IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTING".equalsIgnoreCase(inspStatus))) {
             caseStatus = "INSPECTION_IN_PROGRESS";
-        } else if ("SCHEDULED".equalsIgnoreCase(inspStatus) || "INSPECTION_SCHEDULED".equalsIgnoreCase(inspStatus)
-                || (inspectionRecord != null && inspectionRecord.getScheduledInspectionAt() != null && !"COMPLETED".equalsIgnoreCase(inspStatus))) {
+        } else if (inspectionRecord != null && ("SCHEDULED".equalsIgnoreCase(inspStatus) || "INSPECTION_SCHEDULED".equalsIgnoreCase(inspStatus)
+                || (inspectionRecord.getScheduledInspectionAt() != null && !"COMPLETED".equalsIgnoreCase(inspStatus)))) {
             caseStatus = "INSPECTION_SCHEDULED";
-        } else if (booking.getStatus() == BookingStatus.CHECKOUT_REQUESTED) {
+        } else {
             caseStatus = "RETURN_REQUESTED";
         }
 
@@ -2773,7 +2784,10 @@ public class HandoverServiceImpl implements HandoverService {
         User staff = requireAuthorizedStaffOperator(null);
 
         HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
-                .stream().findFirst().orElseGet(() -> HandoverRecord.builder()
+                .stream()
+                .filter(r -> "INSPECTION".equalsIgnoreCase(r.getRecordType()) || "CHECK_OUT".equalsIgnoreCase(r.getRecordType()))
+                .findFirst()
+                .orElseGet(() -> HandoverRecord.builder()
                         .booking(booking)
                         .staff(staff)
                         .recordType("INSPECTION")
@@ -2824,7 +2838,10 @@ public class HandoverServiceImpl implements HandoverService {
         User staff = requireAuthorizedStaffOperator(null);
 
         HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
-                .stream().findFirst().orElseGet(() -> HandoverRecord.builder()
+                .stream()
+                .filter(r -> "INSPECTION".equalsIgnoreCase(r.getRecordType()) || "CHECK_OUT".equalsIgnoreCase(r.getRecordType()))
+                .findFirst()
+                .orElseGet(() -> HandoverRecord.builder()
                         .booking(booking)
                         .staff(staff)
                         .recordType("INSPECTION")

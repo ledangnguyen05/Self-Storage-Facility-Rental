@@ -29,6 +29,7 @@ import { reservationEmailService } from '../../services/reservationEmailService'
 import { toast } from '../../utils/toast'
 import { RefundManagementWorkbench } from './components/RefundManagementWorkbench'
 import { refundService } from '../../services/refundService'
+import { handoverService } from '../../services/handoverService'
 
 interface InspectedUnit {
   id: string
@@ -193,6 +194,20 @@ export const ManagerDashboard: React.FC = () => {
   const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
   const [renewalsCount, setRenewalsCount] = useState<number>(0)
+  const [returnMetrics, setReturnMetrics] = useState<{
+    pending: number
+    inspecting: number
+    refunding: number
+    completed: number
+    total: number
+  } | null>(null)
+
+  const returnActiveTotal = useMemo(() => {
+    if (returnMetrics) {
+      return returnMetrics.pending + returnMetrics.inspecting + returnMetrics.refunding
+    }
+    return 0
+  }, [returnMetrics])
 
   // Đếm đơn đặt giữ chỗ chờ liên hệ / chờ xử lý
   const pendingOrdersCount = useMemo(() => {
@@ -368,7 +383,7 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes, renewalsRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes, renewalsRes, returnsRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
@@ -380,6 +395,7 @@ export const ManagerDashboard: React.FC = () => {
         bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
         contractService.getRenewals({ facilityId: targetId, size: 100 }),
+        handoverService.getReturnCases({ facilityId: targetId }),
       ])
 
       // 1. Process Storage Units
@@ -514,6 +530,20 @@ export const ManagerDashboard: React.FC = () => {
         setRenewalsCount(count)
       } else {
         setRenewalsCount(0)
+      }
+
+      // 8. Return Cases Metrics (Tab 3: Trả Kho)
+      if (returnsRes && returnsRes.status === 'fulfilled' && Array.isArray(returnsRes.value)) {
+        let p = 0, i = 0, r = 0, comp = 0
+        returnsRes.value.forEach((c: any) => {
+          const st = String(c.status || '').toUpperCase()
+          if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) p++
+          else if (['INSPECTION_IN_PROGRESS', 'INSPECTION_SCHEDULED', 'INSPECTION_ISSUE', 'INSPECTION_PASSED', 'INSPECTING'].includes(st)) i++
+          else if (['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUNDING', 'DISPUTED'].includes(st) || c.approvalStatus === 'PENDING_APPROVAL' || c.approvalStatus === 'DISPUTED') r++
+          else if (st === 'COMPLETED' || st === 'RESOLVED') comp++
+          else p++
+        })
+        setReturnMetrics({ pending: p, inspecting: i, refunding: r, completed: comp, total: returnsRes.value.length })
       }
 
     } catch {
@@ -1597,7 +1627,7 @@ export const ManagerDashboard: React.FC = () => {
               ? 'bg-white text-amber-800'
               : 'bg-amber-100 text-amber-800'
           }`}>
-            {activeRentals.length} hợp đồng
+            {returnActiveTotal} hợp đồng
           </span>
         </button>
         )}
@@ -2548,6 +2578,7 @@ export const ManagerDashboard: React.FC = () => {
         <section className="flex flex-col gap-6 animate-in fade-in">
           <HandoverReturnWorkbench
             initialStatusTabFilter="PENDING"
+            onMetricsChange={(m) => setReturnMetrics(m)}
             currentFacilityId={selectedFacilityId || user?.facilityId}
             facilityName={facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở Boxora'}
             userRole={role || 'FACILITY_MANAGER'}
