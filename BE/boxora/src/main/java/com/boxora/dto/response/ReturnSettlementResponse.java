@@ -128,6 +128,9 @@ public class ReturnSettlementResponse {
     /** Thời điểm ghi nhận */
     private LocalDateTime recordedAt;
 
+    /** Danh sách snapshot lịch sử các phiên bản quyết toán bất biến */
+    private List<SettlementSnapshotResponse> snapshots;
+
     /** Ghi chú */
     private String notes;
 }

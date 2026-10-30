@@ -106,4 +106,7 @@ public class ReturnCaseResponse {
     private Boolean accessRevoked;
     private LocalDateTime accessRevokedAt;
     private String postReturnUnitStatus;
+
+    /** Danh sách snapshot lịch sử các phiên bản quyết toán bất biến */
+    private java.util.List<SettlementSnapshotResponse> snapshots;
 }

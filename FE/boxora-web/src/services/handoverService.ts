@@ -96,6 +96,30 @@ export interface HandoverPrerequisites {
   paymentHistory?: PaymentRecordItem[]
 }
 
+
+export interface SettlementSnapshot {
+  id: string
+  settlementVersion: number
+  depositAmount: number
+  doorFee: number
+  cleaningFee: number
+  wallStructureFee: number
+  smartLockFee: number
+  smartLockIssueType?: string
+  lostCardFee: number
+  overdueDebt: number
+  totalDeductions: number
+  refundAmount: number
+  additionalAmountDue: number
+  confirmedById?: string
+  confirmedByName?: string
+  confirmedAt: string
+  notes?: string
+  customerDecision?: string
+  customerDecisionAt?: string
+  createdAt: string
+}
+
 export interface ReturnSettlementPreview {
   depositAmount: number
   totalDeductions: number
@@ -424,6 +448,7 @@ export const handoverService = {
     bookingId: string,
     data: {
       decision: 'AGREED' | 'DISPUTED' | 'CANCEL_DISPUTE' | 'WITHDRAW_DISPUTE'
+      settlementVersion?: number
       disputeReason?: string
       disputeEvidenceUrls?: string[]
       bankName?: string
@@ -579,6 +604,7 @@ export interface ReturnCase {
   accessRevoked?: boolean
   accessRevokedAt?: string
   postReturnUnitStatus?: string
+  snapshots?: SettlementSnapshot[]
 }
 
 export interface ReturnSettlementDetail {
@@ -626,6 +652,7 @@ export interface ReturnSettlementDetail {
   bankName?: string
   bankAccountNumber?: string
   bankAccountName?: string
+  snapshots?: SettlementSnapshot[]
   checklistAllPassed: boolean
   checklistSummary?: string
   doorConditionPassed?: boolean

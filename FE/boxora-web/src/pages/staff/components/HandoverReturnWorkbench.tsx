@@ -38,7 +38,7 @@ import {
 import { toast } from '../../../utils/toast'
 import { useAuth } from '../../../context/AuthContext'
 import { getApiBaseUrl } from '../../../lib/axios'
-import { handoverService, ReturnCase, ReturnInspectionPayload } from '../../../services/handoverService'
+import { handoverService, ReturnCase, ReturnInspectionPayload, SettlementSnapshot } from '../../../services/handoverService'
 import type { Booking } from '../../../types'
 
 export type ReturnStepStatus =
@@ -143,6 +143,7 @@ export interface ReturnCaseItem {
   disputeResolvedAt?: string
   disputeResolutionNote?: string
   refundRequestId?: string
+  snapshots?: SettlementSnapshot[]
 }
 
 interface HandoverReturnWorkbenchProps {
@@ -3686,6 +3687,67 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       </div>
                     </div>
 
+                    {/* TASK 20: LỊCH SỬ CÁC PHIÊN BẢN QUYẾT TOÁN (SNAPSHOT AUDIT HISTORY) */}
+                    {currentCase.snapshots && currentCase.snapshots.length > 0 && (
+                      <div className="mt-3 p-3.5 rounded-xl bg-slate-50/90 border border-slate-200 space-y-2 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-sm text-indigo-600">history_edu</span>
+                            Lịch Sử Phiên Bản Quyết Toán ({currentCase.snapshots.length} phiên bản đã chốt)
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">Snapshot bất biến</span>
+                        </div>
+                        <div className="space-y-1.5 divide-y divide-slate-100 max-h-40 overflow-y-auto pr-1">
+                          {currentCase.snapshots.map((snap: SettlementSnapshot) => (
+                            <div key={snap.id} className="pt-1.5 flex items-start justify-between gap-2 text-[11px]">
+                              <div>
+                                <div className="flex items-center gap-1.5 font-bold">
+                                  <span className="px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 font-mono">
+                                    V{snap.settlementVersion}
+                                  </span>
+                                  <span className="text-slate-800">
+                                    {snap.confirmedByName || 'Nhân viên Boxora'}
+                                  </span>
+                                  <span className="text-slate-400 font-normal">
+                                    ({snap.confirmedAt ? new Date(snap.confirmedAt).toLocaleString('vi-VN') : ''})
+                                  </span>
+                                </div>
+                                <div className="text-slate-600 mt-0.5">
+                                  Cọc: <strong className="font-mono text-slate-800">{Number(snap.depositAmount || 0).toLocaleString('vi-VN')}đ</strong> | 
+                                  Khấu trừ: <strong className="font-mono text-rose-600">-{Number(snap.totalDeductions || 0).toLocaleString('vi-VN')}đ</strong> | 
+                                  {Number(snap.refundAmount || 0) > 0 ? (
+                                    <> Hoàn trả: <strong className="font-mono text-emerald-700">{Number(snap.refundAmount || 0).toLocaleString('vi-VN')}đ</strong></>
+                                  ) : Number(snap.additionalAmountDue || 0) > 0 ? (
+                                    <> Cần nộp thêm: <strong className="font-mono text-amber-700">{Number(snap.additionalAmountDue || 0).toLocaleString('vi-VN')}đ</strong></>
+                                  ) : (
+                                    <> Hòa vốn: <strong className="font-mono text-slate-700">0đ</strong></>
+                                  )}
+                                </div>
+                                {snap.notes && (
+                                  <p className="text-slate-500 text-[10px] italic mt-0.5">"{snap.notes}"</p>
+                                )}
+                              </div>
+                              <div className="shrink-0 text-right">
+                                {snap.customerDecision === 'AGREED' ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    ✓ Khách đồng ý
+                                  </span>
+                                ) : snap.customerDecision === 'DISPUTED' ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                    ⚠️ Khiếu nại
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    ⏳ Chờ phản hồi
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* TASK 16.3: BANNER KHIẾU NẠI NẾU CÓ */}
                     {(currentCase.customerDecision === 'DISPUTED' || currentCase.approvalStatus === 'DISPUTED') && (
                       <div className="p-4 rounded-xl bg-rose-50 border-2 border-rose-300 space-y-3 text-xs text-rose-950 mt-3 animate-in fade-in-50">
@@ -4078,7 +4140,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 text-indigo-600">
                 <ShieldCheck size={20} />
-                <h3 className="font-bold text-base text-slate-900">Xác Nhận Đã Kiểm Tra &amp; Tính Phí Quyết Toán</h3>
+                {(() => {
+                const nextVer = currentCase.settlementConfirmed ? (currentCase.settlementVersion || 1) + 1 : 1
+                return (
+                  <h3 className="font-bold text-base text-slate-900">
+                    {currentCase.settlementConfirmed
+                      ? `Cập Nhật & Gửi Quyết Toán (Phiên bản V${nextVer})`
+                      : 'Xác Nhận Đã Kiểm Tra & Tính Phí Quyết Toán (Phiên bản V1)'}
+                  </h3>
+                )
+              })()}
               </div>
               <button
                 type="button"
@@ -4154,9 +4225,14 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 />
               </div>
 
-              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-                Hệ thống sẽ lưu snapshot quyết toán (Phiên bản V{(currentCase.settlementVersion || 0) + 1}) và gửi thông báo in-app cho khách hàng xác nhận.
-              </div>
+              {(() => {
+                const nextVer = currentCase.settlementConfirmed ? (currentCase.settlementVersion || 1) + 1 : 1
+                return (
+                  <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
+                    Hệ thống sẽ lưu snapshot quyết toán (Phiên bản V{nextVer}) và gửi thông báo in-app cho khách hàng xác nhận.
+                  </div>
+                )
+              })()}
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2">
@@ -4174,7 +4250,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
               >
                 <CheckCircle2 size={15} />
-                <span>{isConfirmingSettlement ? 'Đang chốt...' : 'Xác Nhận Quyết Toán'}</span>
+                {(() => {
+                  const nextVer = currentCase.settlementConfirmed ? (currentCase.settlementVersion || 1) + 1 : 1
+                  return (
+                    <span>
+                      {isConfirmingSettlement
+                        ? 'Đang chốt...'
+                        : currentCase.settlementConfirmed
+                          ? `Cập Nhật & Gửi (V${nextVer})`
+                          : 'Xác Nhận Quyết Toán (V1)'}
+                    </span>
+                  )
+                })()}
               </button>
             </div>
           </div>

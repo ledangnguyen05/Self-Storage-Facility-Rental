@@ -13,7 +13,7 @@ import {
   Info,
   Undo2
 } from 'lucide-react'
-import { handoverService, ReturnSettlementDetail } from '../../services/handoverService'
+import { handoverService, ReturnSettlementDetail, SettlementSnapshot } from '../../services/handoverService'
 import { paymentService } from '../../services/paymentService'
 import { toast } from '../../utils/toast'
 import { getApiBaseUrl } from '../../lib/axios'
@@ -154,6 +154,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     try {
       await handoverService.submitCustomerDecision(bookingId, {
         decision: 'AGREED',
+        settlementVersion: settlement?.settlementVersion,
         bankName,
         bankAccountNumber: bankAccountNumber.trim(),
         bankAccountName: bankAccountName.trim().toUpperCase()
@@ -234,6 +235,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     try {
       await handoverService.submitCustomerDecision(bookingId, {
         decision: 'DISPUTED',
+        settlementVersion: settlement?.settlementVersion,
         disputeReason: disputeReason.trim(),
         disputeEvidenceUrls: disputeEvidenceUrls.trim() ? [disputeEvidenceUrls.trim()] : undefined
       })
@@ -335,6 +337,39 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                 )}
               </div>
             </div>
+
+            {/* TASK 20: Lịch sử các phiên bản quyết toán cho khách hàng */}
+            {settlement.snapshots && settlement.snapshots.length > 1 && (
+              <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200/80 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between font-bold text-indigo-900 text-[11px]">
+                  <span className="flex items-center gap-1">
+                    <Info size={13} className="text-indigo-600" />
+                    Lịch sử các phiên bản quyết toán (Hiện tại: V{settlement.settlementVersion || 1})
+                  </span>
+                  <span className="text-[10px] text-indigo-600 font-mono">{settlement.snapshots.length} phiên bản</span>
+                </div>
+                <div className="space-y-1 divide-y divide-indigo-100 max-h-32 overflow-y-auto pr-1">
+                  {settlement.snapshots.map((s: SettlementSnapshot) => (
+                    <div key={s.id} className="pt-1 flex items-center justify-between text-[11px]">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`px-1.5 py-0.2 rounded font-mono font-bold text-[10px] ${s.settlementVersion === settlement.settlementVersion ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                          V{s.settlementVersion}
+                        </span>
+                        <span className="text-slate-600">
+                          {s.confirmedAt ? new Date(s.confirmedAt).toLocaleDateString('vi-VN') : ''}:
+                        </span>
+                        <span className="text-slate-700 font-medium">
+                          Khấu trừ {Number(s.totalDeductions || 0).toLocaleString('vi-VN')}đ → {Number(s.refundAmount || 0) > 0 ? `Hoàn ${Number(s.refundAmount || 0).toLocaleString('vi-VN')}đ` : `Nộp thêm ${Number(s.additionalAmountDue || 0).toLocaleString('vi-VN')}đ`}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        {s.customerDecision === 'AGREED' ? '✓ Đã đồng ý' : s.customerDecision === 'DISPUTED' ? '⚠️ Khiếu nại' : '⏳ Chờ duyệt'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* VIEW STEP: Default Overview */}
             {viewStep === 'VIEW' && (

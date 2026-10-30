@@ -22,6 +22,9 @@ public class CustomerDecisionRequest {
     /** URL ảnh/tài liệu bằng chứng nếu có */
     private String disputeEvidenceUrls;
 
+    /** Phiên bản quyết toán mà khách hàng đang phản hồi (tùy chọn để bảo vệ chống stale decision) */
+    private Integer settlementVersion;
+
     /** Thông tin tài khoản ngân hàng nhận hoàn tiền (nếu được hoàn) */
     private String bankName;
     private String bankAccountNumber;

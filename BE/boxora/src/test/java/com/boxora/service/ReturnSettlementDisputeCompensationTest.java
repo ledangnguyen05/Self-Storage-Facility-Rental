@@ -80,6 +80,8 @@ class ReturnSettlementDisputeCompensationTest {
     @Mock
     private SupportTicketRepository supportTicketRepository;
     @Mock
+    private SettlementSnapshotRepository settlementSnapshotRepository;
+    @Mock
     private PaymentMapper paymentMapper;
     @Mock
     private RentalContractMapper rentalContractMapper;
@@ -248,10 +250,10 @@ class ReturnSettlementDisputeCompensationTest {
         assertThat(res.getAdditionalAmountDue()).isEqualByComparingTo(BigDecimal.ZERO);
         assertThat(testBooking.getStepTransitionHistory())
                 .contains("Nhân viên")
-                .contains("XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ")
-                .contains("Cọc: 1.500.000 VNĐ")
-                .contains("Khấu trừ: 300.000 VNĐ")
-                .contains("Công nợ: 0 VNĐ → Hoàn trả khách hàng: 1.200.000 VNĐ");
+                .contains("đã xác nhận quyết toán trả kho (V1)")
+                .contains("Cọc 1.500.000 VNĐ")
+                .contains("khấu trừ 300.000 VNĐ")
+                .contains("hoàn trả 1.200.000 VNĐ");
 
         verify(notificationLogRepository, atLeastOnce()).save(any());
     }
@@ -593,5 +595,165 @@ class ReturnSettlementDisputeCompensationTest {
         assertThat(testReturnRecord.getAccessRevoked()).isTrue();
         assertThat(testBooking.getAccessPin()).isNull();
         verify(storageUnitLockService, atLeastOnce()).releaseLock(eq(testUnit.getId()));
+    }
+    // =========================================================================
+    // TASK 20: FIX SETTLEMENT VERSIONING, REVISED DEDUCTIONS & AUDIT HISTORY
+    // =========================================================================
+    @Test
+    @DisplayName("Task 20: Chốt lần đầu -> V1, lưu snapshot V1 và log chuẩn UTF-8")
+    void test20_FirstConfirmation_CreatesVersion1() {
+        testReturnRecord.setSettlementConfirmed(false);
+        testReturnRecord.setSettlementVersion(null);
+        testReturnRecord.setCleanlinessFee(BigDecimal.ZERO);
+        testReturnRecord.setDoorFee(BigDecimal.ZERO);
+        testReturnRecord.setWallStructureFee(BigDecimal.ZERO);
+        testReturnRecord.setLostCardFee(BigDecimal.ZERO);
+
+        SettlementConfirmRequest req = SettlementConfirmRequest.builder()
+                .notes("Chốt lần đầu không khấu trừ")
+                .build();
+
+        ReturnSettlementResponse res = handoverService.confirmSettlementCalculation(bookingId, req);
+
+        assertThat(res).isNotNull();
+        assertThat(testReturnRecord.getSettlementConfirmed()).isTrue();
+        assertThat(testReturnRecord.getSettlementVersion()).isEqualTo(1);
+        assertThat(testReturnRecord.getCustomerDecision()).isEqualTo("PENDING");
+        assertThat(res.getNetRefundAmount()).isEqualByComparingTo(new BigDecimal("1500000.00"));
+        assertThat(testBooking.getStepTransitionHistory())
+                .contains("đã xác nhận quyết toán trả kho (V1)")
+                .contains("Cọc 1.500.000 VNĐ, khấu trừ 0 VNĐ, công nợ 0 VNĐ, hoàn trả 1.500.000 VNĐ");
+
+        verify(settlementSnapshotRepository, atLeastOnce()).save(argThat(s ->
+                s.getSettlementVersion() == 1 &&
+                s.getRefundAmount().compareTo(new BigDecimal("1500000.00")) == 0 &&
+                s.getTotalDeductions().compareTo(BigDecimal.ZERO) == 0
+        ));
+    }
+
+    @Test
+    @DisplayName("Task 20: V1 điều chỉnh phí 300.000đ -> Tăng lên V2, hoàn 1.200.000đ, snapshot V2 được lưu")
+    void test20_RevisedDeductions_IncrementsToVersion2() {
+        // Setup initial V1 state
+        testReturnRecord.setSettlementConfirmed(true);
+        testReturnRecord.setSettlementVersion(1);
+        testReturnRecord.setDepositSettled(new BigDecimal("1500000.00"));
+        testReturnRecord.setDeductionAmount(BigDecimal.ZERO);
+        testReturnRecord.setRefundAmount(new BigDecimal("1500000.00"));
+        testReturnRecord.setAdditionalAmountDue(BigDecimal.ZERO);
+        testReturnRecord.setCleanlinessFee(BigDecimal.ZERO);
+
+        // Staff updates cleanliness fee to 300,000 VND
+        testReturnRecord.setCleanlinessFee(new BigDecimal("300000.00"));
+        testReturnRecord.setCleanlinessNotes("Cần dọn vệ sinh");
+
+        SettlementConfirmRequest req = SettlementConfirmRequest.builder()
+                .notes("Cập nhật phí vệ sinh sau khi kiểm tra lại")
+                .build();
+
+        ReturnSettlementResponse res = handoverService.confirmSettlementCalculation(bookingId, req);
+
+        assertThat(res).isNotNull();
+        assertThat(testReturnRecord.getSettlementVersion()).isEqualTo(2);
+        assertThat(testReturnRecord.getCustomerDecision()).isEqualTo("PENDING");
+        assertThat(res.getNetRefundAmount()).isEqualByComparingTo(new BigDecimal("1200000.00"));
+        assertThat(testBooking.getStepTransitionHistory())
+                .contains("đã cập nhật và chốt quyết toán trả kho (V2)")
+                .contains("Cọc 1.500.000 VNĐ, khấu trừ 300.000 VNĐ, công nợ 0 VNĐ, hoàn trả 1.200.000 VNĐ");
+
+        verify(settlementSnapshotRepository, atLeastOnce()).save(argThat(s ->
+                s.getSettlementVersion() == 2 &&
+                s.getCleaningFee().compareTo(new BigDecimal("300000.00")) == 0 &&
+                s.getRefundAmount().compareTo(new BigDecimal("1200000.00")) == 0
+        ));
+    }
+
+    @Test
+    @DisplayName("Task 20: V2 điều chỉnh tiếp -> Tăng tuần tự lên V3")
+    void test20_RevisedDeductions_IncrementsSequentiallyToVersion3() {
+        testReturnRecord.setSettlementConfirmed(true);
+        testReturnRecord.setSettlementVersion(2);
+        testReturnRecord.setDepositSettled(new BigDecimal("1500000.00"));
+        testReturnRecord.setDeductionAmount(new BigDecimal("300000.00"));
+        testReturnRecord.setRefundAmount(new BigDecimal("1200000.00"));
+        testReturnRecord.setCleanlinessFee(new BigDecimal("300000.00"));
+
+        // Staff additionally adds lost card fee 100,000 VND
+        testReturnRecord.setLostCardFee(new BigDecimal("100000.00"));
+
+        SettlementConfirmRequest req = SettlementConfirmRequest.builder()
+                .notes("Phát hiện mất thẻ RFID")
+                .build();
+
+        ReturnSettlementResponse res = handoverService.confirmSettlementCalculation(bookingId, req);
+
+        assertThat(res).isNotNull();
+        assertThat(testReturnRecord.getSettlementVersion()).isEqualTo(3);
+        assertThat(res.getNetRefundAmount()).isEqualByComparingTo(new BigDecimal("1100000.00"));
+        assertThat(testBooking.getStepTransitionHistory())
+                .contains("đã cập nhật và chốt quyết toán trả kho (V3)")
+                .contains("Cọc 1.500.000 VNĐ, khấu trừ 400.000 VNĐ, công nợ 0 VNĐ, hoàn trả 1.100.000 VNĐ");
+    }
+
+    @Test
+    @DisplayName("Task 20: Idempotency - Bấm chốt lại khi số tiền không đổi thì KHÔNG tạo version mới")
+    void test20_IdempotentConfirm_DoesNotBumpVersion() {
+        testReturnRecord.setSettlementConfirmed(true);
+        testReturnRecord.setSettlementVersion(2);
+        testReturnRecord.setDepositSettled(new BigDecimal("1500000.00"));
+        testReturnRecord.setDeductionAmount(new BigDecimal("300000.00"));
+        testReturnRecord.setRefundAmount(new BigDecimal("1200000.00"));
+        testReturnRecord.setAdditionalAmountDue(BigDecimal.ZERO);
+        testReturnRecord.setCleanlinessFee(new BigDecimal("300000.00"));
+        testReturnRecord.setDoorFee(BigDecimal.ZERO);
+        testReturnRecord.setWallStructureFee(BigDecimal.ZERO);
+        testReturnRecord.setLostCardFee(BigDecimal.ZERO);
+
+        SettlementSnapshot v2Snapshot = SettlementSnapshot.builder()
+                .settlementVersion(2)
+                .depositAmount(new BigDecimal("1500000.00"))
+                .totalDeductions(new BigDecimal("300000.00"))
+                .cleaningFee(new BigDecimal("300000.00"))
+                .doorFee(BigDecimal.ZERO)
+                .wallStructureFee(BigDecimal.ZERO)
+                .lostCardFee(BigDecimal.ZERO)
+                .smartLockFee(BigDecimal.ZERO)
+                .overdueDebt(BigDecimal.ZERO)
+                .refundAmount(new BigDecimal("1200000.00"))
+                .additionalAmountDue(BigDecimal.ZERO)
+                .build();
+
+        when(settlementSnapshotRepository.findTopByHandoverRecord_IdOrderBySettlementVersionDesc(testReturnRecord.getId()))
+                .thenReturn(Optional.of(v2Snapshot));
+
+        SettlementConfirmRequest req = SettlementConfirmRequest.builder()
+                .notes("Gửi lại thông báo nhưng không đổi số tiền")
+                .build();
+
+        ReturnSettlementResponse res = handoverService.confirmSettlementCalculation(bookingId, req);
+
+        // Version stays 2, no false version bump to 3
+        assertThat(testReturnRecord.getSettlementVersion()).isEqualTo(2);
+        assertThat(res.getSettlementVersion()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Task 20: Khách hàng phản hồi trên version cũ đã bị thay thế -> Báo lỗi conflict")
+    void test20_CustomerDecision_StaleVersion_ThrowsConflict() {
+        testReturnRecord.setSettlementConfirmed(true);
+        testReturnRecord.setSettlementVersion(3); // Currently at V3
+
+        // Customer attempts to respond to obsolete V1
+        CustomerDecisionRequest req = CustomerDecisionRequest.builder()
+                .decision("AGREED")
+                .settlementVersion(1)
+                .bankName("Techcombank")
+                .bankAccountNumber("19033333333333")
+                .bankAccountName("TRAN VAN A")
+                .build();
+
+        AppException ex = assertThrows(AppException.class, () -> handoverService.handleCustomerDecision(bookingId, req));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+        assertThat(ex.getMessage()).contains("V1").contains("V3").contains("đã cũ và bị thay thế");
     }
 }

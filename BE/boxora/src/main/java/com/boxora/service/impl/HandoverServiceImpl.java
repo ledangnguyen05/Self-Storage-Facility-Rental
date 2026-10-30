@@ -14,6 +14,7 @@ import com.boxora.dto.response.RentalContractResponse;
 import com.boxora.dto.response.ReturnCaseResponse;
 import com.boxora.dto.response.ReturnSettlementPreviewResponse;
 import com.boxora.dto.response.ReturnSettlementResponse;
+import com.boxora.dto.response.SettlementSnapshotResponse;
 import org.springframework.web.multipart.MultipartFile;
 import java.nio.file.Path;
 import com.boxora.entity.*;
@@ -74,6 +75,7 @@ public class HandoverServiceImpl implements HandoverService {
     private final com.boxora.service.FileStorageService fileStorageService;
     private final StorageUnitLockService storageUnitLockService;
     private final SupportTicketRepository supportTicketRepository;
+    private final SettlementSnapshotRepository settlementSnapshotRepository;
 
     /**
      * Đối soát 4 điều kiện tiên quyết trước khi check-in bàn giao (BR-RULE-005):
@@ -2879,6 +2881,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .bankAccountName(inspectionRecord != null ? inspectionRecord.getBankAccountName() : null)
                 .refundRequestId(inspectionRecord != null && inspectionRecord.getRefundRequest() != null ? inspectionRecord.getRefundRequest().getId() : null)
                 .transferProofUrl(inspectionRecord != null && inspectionRecord.getRefundRequest() != null ? inspectionRecord.getRefundRequest().getTransferProofUrl() : null)
+                .snapshots(getSnapshotsForRecord(inspectionRecord != null ? inspectionRecord.getId() : null))
                 .build();
     }
 
@@ -3341,6 +3344,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .bankAccountName(record != null ? record.getBankAccountName() : null)
                 .refundRequestId(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getId() : null)
                 .transferProofUrl(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getTransferProofUrl() : null)
+                .snapshots(getSnapshotsForRecord(record != null ? record.getId() : null))
                 .build();
     }
 
@@ -3961,6 +3965,108 @@ public class HandoverServiceImpl implements HandoverService {
         return calculateSettlement(bookingId, null);
     }
 
+    private SettlementSnapshotResponse mapSnapshotToResponse(SettlementSnapshot s) {
+        if (s == null) return null;
+        return SettlementSnapshotResponse.builder()
+                .id(s.getId())
+                .settlementVersion(s.getSettlementVersion())
+                .depositAmount(s.getDepositAmount())
+                .doorFee(s.getDoorFee())
+                .cleaningFee(s.getCleaningFee())
+                .wallStructureFee(s.getWallStructureFee())
+                .smartLockFee(s.getSmartLockFee())
+                .smartLockIssueType(s.getSmartLockIssueType())
+                .lostCardFee(s.getLostCardFee())
+                .overdueDebt(s.getOverdueDebt())
+                .totalDeductions(s.getTotalDeductions())
+                .refundAmount(s.getRefundAmount())
+                .additionalAmountDue(s.getAdditionalAmountDue())
+                .confirmedById(s.getConfirmedBy() != null ? s.getConfirmedBy().getId() : null)
+                .confirmedByName(s.getConfirmedByName())
+                .confirmedAt(s.getConfirmedAt())
+                .notes(s.getNotes())
+                .customerDecision(s.getCustomerDecision())
+                .customerDecisionAt(s.getCustomerDecisionAt())
+                .createdAt(s.getCreatedAt())
+                .build();
+    }
+
+    private List<SettlementSnapshotResponse> getSnapshotsForRecord(UUID handoverRecordId) {
+        if (settlementSnapshotRepository == null || handoverRecordId == null) {
+            return List.of();
+        }
+        return settlementSnapshotRepository.findByHandoverRecord_IdOrderBySettlementVersionAsc(handoverRecordId)
+                .stream()
+                .map(this::mapSnapshotToResponse)
+                .collect(Collectors.toList());
+    }
+
+    private boolean isAmountEqual(BigDecimal a, BigDecimal b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.compareTo(b) == 0;
+    }
+
+    private SettlementSnapshot saveSettlementSnapshot(
+            HandoverRecord record,
+            Booking booking,
+            Facility facility,
+            RentalContract contract,
+            int version,
+            BigDecimal depositAmount,
+            BigDecimal doorFee,
+            BigDecimal cleaningFee,
+            BigDecimal wallStructureFee,
+            BigDecimal smartLockFee,
+            String smartLockIssueType,
+            BigDecimal lostCardFee,
+            BigDecimal overdueDebt,
+            BigDecimal totalDeductions,
+            BigDecimal refundAmount,
+            BigDecimal additionalAmountDue,
+            User confirmedBy,
+            String notes,
+            String customerDecision,
+            LocalDateTime customerDecisionAt
+    ) {
+        if (settlementSnapshotRepository == null) return null;
+
+        Optional<SettlementSnapshot> existing = settlementSnapshotRepository.findByHandoverRecord_IdAndSettlementVersion(record.getId(), version);
+        if (existing.isPresent()) {
+            SettlementSnapshot snap = existing.get();
+            if (customerDecision != null) snap.setCustomerDecision(customerDecision);
+            if (customerDecisionAt != null) snap.setCustomerDecisionAt(customerDecisionAt);
+            if (notes != null && !notes.isBlank()) snap.setNotes(notes);
+            return settlementSnapshotRepository.save(snap);
+        }
+
+        SettlementSnapshot snap = SettlementSnapshot.builder()
+                .handoverRecord(record)
+                .booking(booking)
+                .contract(contract)
+                .facility(facility)
+                .settlementVersion(version)
+                .depositAmount(depositAmount != null ? depositAmount : BigDecimal.ZERO)
+                .doorFee(doorFee != null ? doorFee : BigDecimal.ZERO)
+                .cleaningFee(cleaningFee != null ? cleaningFee : BigDecimal.ZERO)
+                .wallStructureFee(wallStructureFee != null ? wallStructureFee : BigDecimal.ZERO)
+                .smartLockFee(smartLockFee != null ? smartLockFee : BigDecimal.ZERO)
+                .smartLockIssueType(smartLockIssueType)
+                .lostCardFee(lostCardFee != null ? lostCardFee : BigDecimal.ZERO)
+                .overdueDebt(overdueDebt != null ? overdueDebt : BigDecimal.ZERO)
+                .totalDeductions(totalDeductions != null ? totalDeductions : BigDecimal.ZERO)
+                .refundAmount(refundAmount != null ? refundAmount : BigDecimal.ZERO)
+                .additionalAmountDue(additionalAmountDue != null ? additionalAmountDue : BigDecimal.ZERO)
+                .confirmedBy(confirmedBy)
+                .confirmedByName(confirmedBy != null ? confirmedBy.getFullName() : "Nhân viên Boxora")
+                .confirmedAt(LocalDateTime.now())
+                .notes(notes)
+                .customerDecision(customerDecision != null ? customerDecision : "PENDING")
+                .customerDecisionAt(customerDecisionAt)
+                .build();
+        return settlementSnapshotRepository.save(snap);
+    }
+
     private String formatVnd(BigDecimal amount) {
         if (amount == null) return "0 VNĐ";
         java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
@@ -3988,6 +4094,17 @@ public class HandoverServiceImpl implements HandoverService {
 
         if ("DRAFT".equalsIgnoreCase(record.getInspectionStatus())) {
             throw new AppException(ErrorCode.RETURN_NOT_INSPECTED, "Biên bản nghiệm thu hiện trường đang ở trạng thái bản nháp. Cần chốt biên bản trước khi xác nhận tính phí.");
+        }
+
+        // Financial Safety Checks (Section H)
+        if ("REFUNDED".equalsIgnoreCase(record.getRefundStatus())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản hoàn tiền đã được chi trả thành công. Không thể điều chỉnh số liệu quyết toán!");
+        }
+        if ("PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Khách hàng đã thanh toán bồi thường thành công. Không thể điều chỉnh số liệu quyết toán!");
+        }
+        if ("DISPUTED".equalsIgnoreCase(record.getApprovalStatus()) && record.getDisputeResolvedAt() == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ đang có khiếu nại chưa được Quản lý cơ sở giải quyết. Không thể tự ý chốt quyết toán!");
         }
 
         // Validate no negative deductions
@@ -4019,6 +4136,66 @@ public class HandoverServiceImpl implements HandoverService {
         BigDecimal netRefund = depositPaid.subtract(totalProposedDeductions).max(BigDecimal.ZERO);
         BigDecimal additionalDue = totalProposedDeductions.subtract(depositPaid).max(BigDecimal.ZERO);
 
+        boolean isAlreadyConfirmed = Boolean.TRUE.equals(record.getSettlementConfirmed());
+        int targetVersion;
+        boolean numbersUnchanged = false;
+
+        RentalContract contract = rentalContractRepository.findByBookingId(booking.getId()).orElse(null);
+
+        if (!isAlreadyConfirmed) {
+            // Lần chốt đầu tiên: Luôn là V1 (hoặc version do reopen tạo ra)
+            targetVersion = (record.getSettlementVersion() != null && record.getSettlementVersion() > 1) ? record.getSettlementVersion() : 1;
+        } else {
+            // Đã từng chốt trước đó: kiểm tra tính idempotent (nếu số tiền không đổi thì không tăng version)
+            Optional<SettlementSnapshot> latestSnapshotOpt = settlementSnapshotRepository != null
+                    ? settlementSnapshotRepository.findTopByHandoverRecord_IdOrderBySettlementVersionDesc(record.getId())
+                    : Optional.empty();
+
+            if (latestSnapshotOpt.isPresent()) {
+                SettlementSnapshot s = latestSnapshotOpt.get();
+                numbersUnchanged = isAmountEqual(s.getDepositAmount(), depositPaid)
+                        && isAmountEqual(s.getDoorFee(), doorFee)
+                        && isAmountEqual(s.getCleaningFee(), cleanFee)
+                        && isAmountEqual(s.getWallStructureFee(), wallFee)
+                        && isAmountEqual(s.getSmartLockFee(), effectiveLockFee)
+                        && isAmountEqual(s.getLostCardFee(), lostCardFee)
+                        && isAmountEqual(s.getOverdueDebt(), overdueDebt)
+                        && isAmountEqual(s.getTotalDeductions(), totalProposedDeductions)
+                        && isAmountEqual(s.getRefundAmount(), netRefund)
+                        && isAmountEqual(s.getAdditionalAmountDue(), additionalDue);
+            } else {
+                numbersUnchanged = isAmountEqual(record.getDepositSettled(), depositPaid)
+                        && isAmountEqual(record.getDeductionAmount(), totalProposedDeductions)
+                        && isAmountEqual(record.getRefundAmount(), netRefund)
+                        && isAmountEqual(record.getAdditionalAmountDue(), additionalDue);
+            }
+
+            if (numbersUnchanged) {
+                targetVersion = record.getSettlementVersion() != null ? record.getSettlementVersion() : 1;
+                if (settlementSnapshotRepository != null && latestSnapshotOpt.isEmpty()) {
+                    saveSettlementSnapshot(record, booking, facility, contract, targetVersion,
+                            depositPaid, doorFee, cleanFee, wallFee, effectiveLockFee, lockIssueType,
+                            lostCardFee, overdueDebt, totalProposedDeductions, netRefund, additionalDue,
+                            record.getSettlementConfirmedBy() != null ? record.getSettlementConfirmedBy() : staff,
+                            request != null ? request.getNotes() : null, record.getCustomerDecision(), record.getCustomerDecisionAt());
+                }
+            } else {
+                int currentVersion = record.getSettlementVersion() != null ? record.getSettlementVersion() : 1;
+                targetVersion = currentVersion + 1;
+
+                // Nếu có yêu cầu hoàn tiền đang PENDING từ phiên bản cũ -> Hủy để tránh payout sai số tiền
+                RefundRequest oldRefund = record.getRefundRequest();
+                if (oldRefund != null && oldRefund.getStatus() == RefundStatus.PENDING_REVIEW) {
+                    oldRefund.setStatus(RefundStatus.REJECTED);
+                    oldRefund.setProcessNotes("Đã phát hành quyết toán phiên bản mới (V" + targetVersion + ")");
+                    refundRequestRepository.save(oldRefund);
+                    record.setRefundRequest(null);
+                    record.setRefundStatus("NONE");
+                }
+            }
+        }
+
+        // Cập nhật record với targetVersion
         record.setDepositSettled(depositPaid);
         record.setDeductionAmount(totalProposedDeductions);
         record.setRefundAmount(netRefund);
@@ -4026,88 +4203,116 @@ public class HandoverServiceImpl implements HandoverService {
         record.setSettlementConfirmed(true);
         record.setSettlementConfirmedBy(staff);
         record.setSettlementConfirmedAt(LocalDateTime.now());
-        record.setCustomerDecision("PENDING");
-        record.setApprovalStatus("PENDING_CUSTOMER_REVIEW");
-        if (record.getSettlementVersion() == null) {
-            record.setSettlementVersion(1);
+        record.setSettlementVersion(targetVersion);
+
+        if (!numbersUnchanged || !isAlreadyConfirmed) {
+            record.setCustomerDecision("PENDING");
+            record.setCustomerDecisionAt(null);
+            record.setApprovalStatus("PENDING_CUSTOMER_REVIEW");
         }
+
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[XÁC NHẬN TÍNH PHÍ] " + request.getNotes().trim());
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[XÁC NHẬN TÍNH PHÍ V" + targetVersion + "] " + request.getNotes().trim());
         }
 
         record = handoverRecordRepository.save(record);
 
-        java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
-        String depositStr = df.format(depositPaid) + "đ";
-        String deductionStr = df.format(totalProposedDeductions) + "đ";
-
-        String resultMsg = netRefund.compareTo(BigDecimal.ZERO) > 0
-                ? String.format("Hoàn trả khách hàng: %s", formatVnd(netRefund))
-                : (additionalDue.compareTo(BigDecimal.ZERO) > 0
-                    ? String.format("Khách hàng cần thanh toán thêm: %s", formatVnd(additionalDue))
-                    : "Quyết toán hòa vốn (Không hoàn, không thu thêm)");
-
-        String logMsg = String.format("[%s] Nhân viên %s XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ quyết toán trả kho (Phiên bản V%d): Cọc: %s, Khấu trừ: %s, Công nợ: %s → %s\n",
-                LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName(), record.getSettlementVersion(),
-                formatVnd(depositPaid), formatVnd(totalProposedDeductions.subtract(overdueDebt)), formatVnd(overdueDebt), resultMsg);
-        booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
-        bookingRepository.save(booking);
-
-        // Send tailored in-app & email notification to Customer
-        if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
-            String unitCode = unit != null ? unit.getUnitCode() : "N/A";
-            String notifTitle;
-            String notifContent;
-
-            if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
-                String refundStr = df.format(netRefund) + "đ";
-                notifTitle = String.format("Đã kiểm tra & tính toán chi phí trả kho thành công [%s]", unitCode);
-                notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và tính toán chi phí thành công cho buồng kho %s (Đơn %s). Tiền cọc: %s, Tổng khấu trừ sửa chữa: %s. Số tiền bạn được hoàn lại là: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (nhập số tài khoản ngân hàng để nhận tiền hoàn) hoặc \"Khiếu nại\" nếu có thắc mắc.",
-                        unitCode, booking.getBookingCode(), depositStr, deductionStr, refundStr);
-            } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
-                String addDueStr = df.format(additionalDue) + "đ";
-                notifTitle = String.format("Đã kiểm tra & tính toán chi phí trả kho thành công [%s]", unitCode);
-                notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và tính toán chi phí thành công cho buồng kho %s (Đơn %s). Toàn bộ tiền cọc %s đã được khấu trừ cho chi phí sửa chữa. Bạn cần thanh toán bổ sung số tiền: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (tiến hành thanh toán trực tuyến qua cổng VNPay Sandbox) hoặc \"Khiếu nại\" nếu có thắc mắc.",
-                        unitCode, booking.getBookingCode(), depositStr, addDueStr);
-            } else {
-                notifTitle = String.format("Đã kiểm tra & tính toán chi phí trả kho thành công [%s]", unitCode);
-                notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và tính toán chi phí thành công cho buồng kho %s (Đơn %s): Quyết toán hòa vốn (tiền cọc %s vừa đủ bù đắp các chi phí khấu trừ). Vui lòng vào xem chi tiết và xác nhận kết quả đối soát.",
-                        unitCode, booking.getBookingCode(), depositStr);
-            }
-
-            NotificationLog notif = NotificationLog.builder()
-                    .recipient(booking.getCustomer())
-                    .recipientEmail(booking.getCustomer().getEmail())
-                    .recipientName(booking.getCustomer().getFullName())
-                    .facility(facility)
-                    .channel(NotificationChannel.IN_APP)
-                    .notificationType(NotificationType.REFUND_STATUS)
-                    .referenceType("BOOKING")
-                    .referenceId(booking.getId())
-                    .title(notifTitle)
-                    .content(notifContent)
-                    .status("SENT")
-                    .build();
-            notificationLogRepository.save(notif);
-
-            try {
-                if (emailService != null) {
-                    emailService.sendSimpleEmail(booking.getCustomer().getEmail(), notifTitle, notifContent);
-                }
-            } catch (Exception mailEx) {
-                log.warn("[EMAIL_SEND_FAIL] Không thể gửi email thông báo quyết toán: {}", mailEx.getMessage());
-            }
+        // Lưu immutable snapshot cho phiên bản vừa chốt
+        if (!numbersUnchanged || !isAlreadyConfirmed) {
+            saveSettlementSnapshot(record, booking, facility, contract, targetVersion,
+                    depositPaid, doorFee, cleanFee, wallFee, effectiveLockFee, lockIssueType,
+                    lostCardFee, overdueDebt, totalProposedDeductions, netRefund, additionalDue,
+                    staff, request != null ? request.getNotes() : null, "PENDING", null);
         }
 
-        activityLogService.record(
-                facility != null ? facility.getId() : null,
-                ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
-                "HandoverRecord",
-                record.getId(),
-                String.format("Xác nhận tính phí quyết toán V%d đơn %s: %s", record.getSettlementVersion(), booking.getBookingCode(), resultMsg),
-                booking.getStatus(),
-                booking.getStatus()
-        );
+        // Ghi log lịch sử UTF-8 chuẩn xác theo định dạng Section G
+        if (!numbersUnchanged || !isAlreadyConfirmed) {
+            String outcomeStr = netRefund.compareTo(BigDecimal.ZERO) > 0
+                    ? String.format("hoàn trả %s", formatVnd(netRefund))
+                    : (additionalDue.compareTo(BigDecimal.ZERO) > 0
+                        ? String.format("khách nộp thêm %s", formatVnd(additionalDue))
+                        : "hòa vốn 0 VNĐ");
+
+            String actionDesc = !isAlreadyConfirmed
+                    ? String.format("đã xác nhận quyết toán trả kho (V%d)", targetVersion)
+                    : String.format("đã cập nhật và chốt quyết toán trả kho (V%d)", targetVersion);
+
+            String notesSuffix = (request != null && request.getNotes() != null && !request.getNotes().isBlank())
+                    ? String.format(". Ghi chú: %s", request.getNotes().trim())
+                    : "";
+
+            String logMsg = String.format("[%s] Nhân viên %s %s: Cọc %s, khấu trừ %s, công nợ %s, %s%s.\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT),
+                    staff.getFullName(),
+                    actionDesc,
+                    formatVnd(depositPaid),
+                    formatVnd(totalProposedDeductions.subtract(overdueDebt)),
+                    formatVnd(overdueDebt),
+                    outcomeStr,
+                    notesSuffix);
+
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+            bookingRepository.save(booking);
+
+            // Gửi thông báo in-app & email kèm phiên bản V{targetVersion} cho khách hàng
+            java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
+            String depositStr = df.format(depositPaid) + "đ";
+            String deductionStr = df.format(totalProposedDeductions) + "đ";
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+                String notifTitle;
+                String notifContent;
+
+                if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
+                    String refundStr = df.format(netRefund) + "đ";
+                    notifTitle = String.format("Đã cập nhật biên bản quyết toán trả kho (Phiên bản V%d) [%s]", targetVersion, unitCode);
+                    notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và chốt quyết toán (Phiên bản V%d) cho buồng kho %s (Đơn %s). Tiền cọc: %s, Tổng khấu trừ: %s. Số tiền bạn được hoàn lại là: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (nhập số tài khoản ngân hàng để nhận tiền hoàn) hoặc \"Khiếu nại\" nếu có thắc mắc.",
+                            targetVersion, unitCode, booking.getBookingCode(), depositStr, deductionStr, refundStr);
+                } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
+                    String addDueStr = df.format(additionalDue) + "đ";
+                    notifTitle = String.format("Đã cập nhật biên bản quyết toán trả kho (Phiên bản V%d) [%s]", targetVersion, unitCode);
+                    notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và chốt quyết toán (Phiên bản V%d) cho buồng kho %s (Đơn %s). Toàn bộ tiền cọc %s đã được khấu trừ cho chi phí sửa chữa. Bạn cần thanh toán bổ sung số tiền: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (tiến hành thanh toán trực tuyến qua cổng VNPay Sandbox) hoặc \"Khiếu nại\" nếu có thắc mắc.",
+                            targetVersion, unitCode, booking.getBookingCode(), depositStr, addDueStr);
+                } else {
+                    notifTitle = String.format("Đã cập nhật biên bản quyết toán trả kho (Phiên bản V%d) [%s]", targetVersion, unitCode);
+                    notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và chốt quyết toán (Phiên bản V%d) cho buồng kho %s (Đơn %s): Quyết toán hòa vốn (tiền cọc %s vừa đủ bù đắp các chi phí khấu trừ). Vui lòng vào xem chi tiết và xác nhận kết quả đối soát.",
+                            targetVersion, unitCode, booking.getBookingCode(), depositStr);
+                }
+
+                NotificationLog notif = NotificationLog.builder()
+                        .recipient(booking.getCustomer())
+                        .recipientEmail(booking.getCustomer().getEmail())
+                        .recipientName(booking.getCustomer().getFullName())
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(notifTitle)
+                        .content(notifContent)
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(notif);
+
+                try {
+                    if (emailService != null) {
+                        emailService.sendSimpleEmail(booking.getCustomer().getEmail(), notifTitle, notifContent);
+                    }
+                } catch (Exception mailEx) {
+                    log.warn("[EMAIL_SEND_FAIL] Không thể gửi email thông báo quyết toán: {}", mailEx.getMessage());
+                }
+            }
+
+            activityLogService.record(
+                    facility != null ? facility.getId() : null,
+                    ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                    "HandoverRecord",
+                    record.getId(),
+                    String.format("Xác nhận tính phí quyết toán V%d đơn %s: %s", targetVersion, booking.getBookingCode(), outcomeStr),
+                    booking.getStatus(),
+                    booking.getStatus()
+            );
+        }
 
         return calculateSettlement(bookingId, null);
     }
@@ -4134,6 +4339,15 @@ public class HandoverServiceImpl implements HandoverService {
 
         if (!Boolean.TRUE.equals(record.getSettlementConfirmed())) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ quyết toán chưa được nhân viên xác nhận và chốt tính phí.");
+        }
+
+        // Task 20: Stale version protection
+        if (request.getSettlementVersion() != null && record.getSettlementVersion() != null) {
+            if (!request.getSettlementVersion().equals(record.getSettlementVersion())) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        String.format("Phiên bản quyết toán bạn đang phản hồi (V%d) đã cũ và bị thay thế bởi phiên bản mới (V%d). Vui lòng tải lại trang để xem số liệu mới nhất!",
+                                request.getSettlementVersion(), record.getSettlementVersion()));
+            }
         }
 
         String decision = request.getDecision() != null ? request.getDecision().trim().toUpperCase() : "";
@@ -4216,6 +4430,14 @@ public class HandoverServiceImpl implements HandoverService {
             }
             record.setCustomerDecision("DISPUTED");
             record.setCustomerDecisionAt(LocalDateTime.now());
+            if (settlementSnapshotRepository != null && record.getId() != null) {
+                settlementSnapshotRepository.findByHandoverRecord_IdAndSettlementVersion(record.getId(), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1)
+                        .ifPresent(s -> {
+                            s.setCustomerDecision("DISPUTED");
+                            s.setCustomerDecisionAt(LocalDateTime.now());
+                            settlementSnapshotRepository.save(s);
+                        });
+            }
             record.setApprovalStatus("DISPUTED");
             record.setDisputeReason(request.getDisputeReason().trim());
             if (request.getDisputeEvidenceUrls() != null && !request.getDisputeEvidenceUrls().isBlank()) {
@@ -4288,6 +4510,14 @@ public class HandoverServiceImpl implements HandoverService {
 
             record.setCustomerDecision("AGREED");
             record.setCustomerDecisionAt(LocalDateTime.now());
+            if (settlementSnapshotRepository != null && record.getId() != null) {
+                settlementSnapshotRepository.findByHandoverRecord_IdAndSettlementVersion(record.getId(), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1)
+                        .ifPresent(s -> {
+                            s.setCustomerDecision("AGREED");
+                            s.setCustomerDecisionAt(LocalDateTime.now());
+                            settlementSnapshotRepository.save(s);
+                        });
+            }
             record.setApprovalStatus("CUSTOMER_AGREED");
 
             BigDecimal netRefund = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
@@ -4523,6 +4753,13 @@ public class HandoverServiceImpl implements HandoverService {
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
             record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[ĐIỀU CHỈNH QUYẾT TOÁN V" + nextVersion + "] " + request.getResolutionNote());
             record = handoverRecordRepository.save(record);
+
+            RentalContract contract = rentalContractRepository.findByBookingId(booking.getId()).orElse(null);
+            saveSettlementSnapshot(record, booking, facility, contract, nextVersion,
+                    depositPaid, record.getDoorFee(), record.getCleanlinessFee(), record.getWallStructureFee(),
+                    effectiveLockFee, record.getSmartLockIssueType(), record.getLostCardFee(), overdueDebt,
+                    totalProposed, netRefund, additionalDue, operator,
+                    "FM giải quyết khiếu nại: " + request.getResolutionNote(), "PENDING", null);
             bookingRepository.save(booking);
 
             // Notify Customer of adjusted version
