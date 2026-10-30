@@ -236,11 +236,21 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   onMetricsChange
 }) => {
   const { user: authUser, role: authRole } = useAuth()
-  const effectiveRole = userRole || authRole || authUser?.role || 'STAFF'
-  const isBusinessManager = effectiveRole === 'BUSINESS_MANAGER'
-  const isAdmin = effectiveRole === 'ADMIN' || effectiveRole === 'SYSTEM_ADMIN'
+  const authUserRoleName = typeof authUser?.role === 'string' ? authUser.role : authUser?.role?.name || authUser?.roleName
+  const effectiveRole = userRole || authRole || authUserRoleName || 'STAFF'
+  const isBusinessManager =
+    userRole === 'BUSINESS_MANAGER' ||
+    authRole === 'BUSINESS_MANAGER' ||
+    effectiveRole === 'BUSINESS_MANAGER'
+  const isReadOnly = isBusinessManager
+  const isAdmin = !isBusinessManager && (effectiveRole === 'ADMIN' || effectiveRole === 'SYSTEM_ADMIN')
   const canViewFullBankAccount = isBusinessManager || isAdmin
-  const isFacilityManager = userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER' || effectiveRole === 'FACILITY_MANAGER' || effectiveRole === 'ADMIN' || effectiveRole === 'BUSINESS_MANAGER'
+  const isFacilityManager =
+    !isBusinessManager &&
+    (userRole === 'FACILITY_MANAGER' ||
+      userRole === 'ADMIN' ||
+      effectiveRole === 'FACILITY_MANAGER' ||
+      effectiveRole === 'ADMIN')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>([])
@@ -739,6 +749,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   ])
 
   const shouldPromptDraftSave = (): boolean => {
+    if (isReadOnly) return false
     if (!currentCase) return false
     if (currentCase.status === 'RETURN_REQUESTED') return false
     // Chỉ hỏi lưu bản nháp khi CÓ DỮ LIỆU THAY ĐỔI trong 7 mục thẩm định so với bản gốc/lần lưu nháp gần nhất
@@ -832,6 +843,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Handle actual file upload to server
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isReadOnly) return
     const files = e.target.files
     if (!files || files.length === 0 || !currentCase) return
     const fileList = Array.from(files)
@@ -884,6 +896,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   }
 
   const handleRemovePhoto = (indexToRemove: number) => {
+    if (isReadOnly) return
     setPhotoUrls((prev) => {
       const next = prev.filter((_, idx) => idx !== indexToRemove)
       updateCurrentCase({ photoUrls: next })
@@ -1294,6 +1307,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 1: Schedule Inspection
   const handleOpenScheduleModal = () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể lên lịch tiếp nhận.')
+      return
+    }
     if (!currentCase) return
     const now = new Date()
     const defaultTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
@@ -1330,6 +1347,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 2: Start Inspection
   const handleStartInspection = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể bắt đầu nghiệm thu.')
+      return
+    }
     if (!currentCase) return
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
@@ -1354,6 +1375,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 3: Save Inspection (Draft or Official)
   const handleSaveInspection = async (resultType: 'PASSED' | 'ISSUE', isDraft: boolean = false): Promise<boolean> => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể lưu biên bản kiểm tra.')
+      return false
+    }
     if (!currentCase) return false
 
     // Pre-condition validations
@@ -1455,6 +1480,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 4: Submit for Approval
   const handleSubmitRefundApproval = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể chuyển duyệt quyết toán.')
+      return
+    }
     if (!currentCase) return
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
@@ -1487,6 +1516,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 5: Manager Approve or Reject
   const handleApproveSettlement = async (action: 'APPROVE' | 'REJECT') => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể phê duyệt quyết toán.')
+      return
+    }
     if (!currentCase) return
     if (!isFacilityManager) {
       toast.error('Chỉ Quản lý cơ sở (FACILITY_MANAGER) hoặc cấp thẩm quyền mới được phê duyệt quyết toán!')
@@ -1523,6 +1556,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Task 16.1: Confirm Settlement Calculation
   const handleConfirmSettlement = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể chốt số liệu quyết toán.')
+      return
+    }
     if (!currentCase) return
     setIsConfirmingSettlement(true)
     try {
@@ -1542,6 +1579,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Task 16.3: Resolve Dispute (Facility Manager only)
   const handleResolveDispute = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể giải quyết khiếu nại.')
+      return
+    }
     if (!currentCase) return
     if (!disputeResolutionNote.trim()) {
       toast.warning('Vui lòng nhập ghi chú phân xử khiếu nại.')
@@ -1574,6 +1615,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Task 16.4: Execute Payout to Customer (Manual Bank Transfer recorded)
   const handleExecutePayout = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem trong luồng tiếp đón trả kho.')
+      return
+    }
     if (!currentCase) return
     if (!payoutTxnRef.trim()) {
       toast.warning('Vui lòng nhập mã giao dịch ngân hàng.')
@@ -1603,6 +1648,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 7: Execute Refund or Collect Additional Payment
   const handleExecuteFinancialAction = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem trong luồng tiếp đón trả kho.')
+      return
+    }
     if (!currentCase) return
     setIsSubmittingRefund(true)
 
@@ -1641,6 +1690,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 8: Confirm Physical Return of Storage Unit
   const handleConfirmPhysicalReturn = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể xác nhận nhận lại kho.')
+      return
+    }
     if (!currentCase) return
     if (!assetsClearedPassed) {
       toast.error('Khách chưa lấy hết tài sản ra khỏi kho! Không thể nhận lại kho.')
@@ -1665,6 +1718,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 9: Revoke SmartLock Access
   const handleRevokeSmartLock = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể thu hồi SmartLock.')
+      return
+    }
     if (!currentCase) return
     setIsRevokingAccess(true)
     try {
@@ -1682,6 +1739,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Step 10: Complete Handover & Close Contract
   const handleCompleteHandoverAndRelease = async () => {
+    if (isReadOnly) {
+      toast.warning('Tài khoản Business Manager chỉ có quyền xem, không thể hoàn tất giải phóng kho.')
+      return
+    }
     if (!currentCase) return
 
     // Pre-condition validations
@@ -1780,6 +1841,25 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       </div>
 
       {/* 2. KPI Metrics Bar */}
+      {isReadOnly && (
+        <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0">
+              <Eye size={20} />
+            </div>
+            <div>
+              <div className="font-bold text-xs uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                <span>Chế độ giám sát chỉ xem (Business Manager)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200 text-amber-900 font-bold">Chỉ xem</span>
+              </div>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Tài khoản <strong>Quản Lý Kinh Doanh (Business Manager)</strong> chỉ có quyền tra cứu, theo dõi hồ sơ trả kho và đối soát tài chính. Mọi thao tác tiếp nhận, kiểm định hiện trường và quyết toán hoàn cọc do <strong>Nhân viên ca trực (Staff)</strong> và <strong>Quản lý cơ sở (Facility Manager)</strong> phụ trách.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div id="return-kpi-metrics-bar" className="grid grid-cols-2 lg:grid-cols-4 gap-3 scroll-mt-24">
         <div
           id="pending-return-kpi-card"
@@ -1932,22 +2012,24 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       {c.status === 'RETURN_REQUESTED' && (
                         <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                           <span className="text-[10px] text-amber-700 font-medium italic">Chưa tiếp nhận</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              if (shouldPromptDraftSave()) {
-                                handleRequestSelectCase(c.id)
-                                return
-                              }
-                              setSelectedCaseId(c.id)
-                              handleOpenScheduleModal()
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white font-bold text-[11px] border border-amber-300 hover:border-amber-600 transition flex items-center gap-1 cursor-pointer"
-                          >
-                            <CalendarCheck size={12} />
-                            <span>Tiếp nhận &amp; Lên lịch</span>
-                          </button>
+                          {!isReadOnly && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                if (shouldPromptDraftSave()) {
+                                  handleRequestSelectCase(c.id)
+                                  return
+                                }
+                                setSelectedCaseId(c.id)
+                                handleOpenScheduleModal()
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-600 text-amber-800 hover:text-white font-bold text-[11px] border border-amber-300 hover:border-amber-600 transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <CalendarCheck size={12} />
+                              <span>Tiếp nhận &amp; Lên lịch</span>
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -2054,17 +2136,21 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         Yêu cầu trả kho đang chờ nhân viên tiếp nhận
                       </span>
                       <span className="text-[11px] text-amber-700 mt-0.5 block">
-                        Nhấn nút bên cạnh để xác nhận lịch hẹn và chuyển hồ sơ sang giai đoạn <strong>Đang Nghiệm Thu</strong>.
+                        {isReadOnly
+                          ? 'Hồ sơ đang chờ nhân viên ca trực hoặc Quản lý cơ sở xác nhận lịch hẹn nghiệm thu.'
+                          : <>Nhấn nút bên cạnh để xác nhận lịch hẹn và chuyển hồ sơ sang giai đoạn <strong>Đang Nghiệm Thu</strong>.</>}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleOpenScheduleModal}
-                      className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-xs transition flex items-center justify-center gap-1.5 shrink-0"
-                    >
-                      <CalendarCheck size={15} />
-                      <span>Tiếp Nhận &amp; Lên Lịch Nghiệm Thu</span>
-                    </button>
+                    {!isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={handleOpenScheduleModal}
+                        className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer shadow-xs transition flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <CalendarCheck size={15} />
+                        <span>Tiếp Nhận &amp; Lên Lịch Nghiệm Thu</span>
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -2075,17 +2161,21 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         ✓ Đã lên lịch nghiệm thu: <span className="font-mono">{currentCase.inspectionDate || currentCase.expectedReturnDate}</span>
                       </span>
                       <span className="text-[11px] text-indigo-700 mt-0.5 block">
-                        Nhân viên có mặt tại buồng kho #{currentCase.unitCode} bấm nút để bắt đầu thẩm định 7 tiêu chí.
+                        {isReadOnly
+                          ? 'Nhân viên ca trực sẽ có mặt tại buồng kho để thực hiện thẩm định 7 tiêu chí.'
+                          : 'Nhân viên có mặt tại buồng kho #' + currentCase.unitCode + ' bấm nút để bắt đầu thẩm định 7 tiêu chí.'}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={handleStartInspection}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition"
-                    >
-                      <ClipboardCheck size={16} />
-                      <span>Bắt Đầu Nghiệm Thu Hiện Trường</span>
-                    </button>
+                    {!isReadOnly && (
+                      <button
+                        type="button"
+                        onClick={handleStartInspection}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm transition"
+                      >
+                        <ClipboardCheck size={16} />
+                        <span>Bắt Đầu Nghiệm Thu Hiện Trường</span>
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -2145,6 +2235,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {doorPassed ? '✓ Đạt chuẩn' : '⚠️ Có vấn đề'}
                             </span>
                           </div>
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2174,11 +2265,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               Hư hại
                             </button>
                           </div>
+                          )}
                         </div>
 
                         <div className="space-y-1">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={doorNotes}
                             onChange={(e) => {
                               setDoorNotes(e.target.value)
@@ -2209,6 +2302,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
+                                disabled={isReadOnly}
                                 value={doorFeeInput}
                                 onChange={(e) => {
                                   const val = Number(e.target.value) || 0
@@ -2234,6 +2328,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {cleanlinessPassed ? '✓ Sạch sẽ' : '⚠️ Chưa dọn'}
                             </span>
                           </div>
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2263,11 +2358,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               Chưa dọn
                             </button>
                           </div>
+                          )}
                         </div>
 
                         <div className="space-y-1">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={cleanlinessNotes}
                             onChange={(e) => {
                               setCleanlinessNotes(e.target.value)
@@ -2298,6 +2395,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
+                                disabled={isReadOnly}
                                 value={cleaningFeeInput}
                                 onChange={(e) => {
                                   const val = Number(e.target.value) || 0
@@ -2323,6 +2421,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {damagePassed ? '✓ Nguyên vẹn' : '⚠️ Có hư hỏng'}
                             </span>
                           </div>
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2352,11 +2451,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               Hư hại
                             </button>
                           </div>
+                          )}
                         </div>
 
                         <div className="space-y-1">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={damageNotes}
                             onChange={(e) => {
                               setDamageNotes(e.target.value)
@@ -2387,6 +2488,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
+                                disabled={isReadOnly}
                                 value={damageFeeInput}
                                 onChange={(e) => {
                                   const val = Number(e.target.value) || 0
@@ -2412,6 +2514,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {smartLockPassed ? '✓ Pin 94% • Hoạt động tốt' : '⚠️ Báo lỗi / Sự cố'}
                             </span>
                           </div>
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2439,11 +2542,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               Báo lỗi
                             </button>
                           </div>
+                          )}
                         </div>
 
                         <div className="space-y-1">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={smartLockNotes}
                             onChange={(e) => {
                               setSmartLockNotes(e.target.value)
@@ -2475,6 +2580,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 <span>Phân loại nguyên nhân sự cố SmartLock:</span>
                               </span>
                               <select
+                                disabled={isReadOnly}
                                 value={smartLockIssueType}
                                 onChange={(e) => {
                                   const val = e.target.value
@@ -2512,6 +2618,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 <div className="flex items-center gap-1.5">
                                   <input
                                     type="number"
+                                    disabled={isReadOnly}
                                     value={smartLockFeeInput}
                                     onChange={(e) => {
                                       const val = Number(e.target.value) || 0
@@ -2539,6 +2646,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {assetsClearedPassed ? '✓ Kho đã dọn trống' : '⚠️ Vẫn còn đồ của khách'}
                             </span>
                           </div>
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2565,10 +2673,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               Còn đồ
                             </button>
                           </div>
+                          )}
                         </div>
                         <div className="space-y-1">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={assetsClearedNotes}
                             onChange={(e) => {
                               setAssetsClearedNotes(e.target.value)
@@ -2617,6 +2727,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             )}
                           </div>
 
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 flex-wrap">
                             <button
                               type="button"
@@ -2656,9 +2767,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               </button>
                             )}
                           </div>
+                          )}
                         </div>
 
                         {photoUrls.length === 0 ? (
+                          isReadOnly ? (
+                            <div className="p-6 border border-dashed border-slate-200 bg-slate-50 rounded-xl text-center flex flex-col items-center justify-center gap-2 text-slate-400">
+                              <Camera size={24} />
+                              <p className="font-medium text-xs">Chưa có ảnh bằng chứng hiện trường tải lên.</p>
+                            </div>
+                          ) : (
                           <div
                             onClick={() => fileInputRef.current?.click()}
                             className="p-8 border-2 border-dashed border-blue-200 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-xl text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group"
@@ -2675,6 +2793,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               <span>Chọn tệp ảnh từ máy</span>
                             </span>
                           </div>
+                          )
                         ) : (
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                             {photoUrls.map((url, i) => {
@@ -2699,28 +2818,32 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                   <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-mono font-medium truncate max-w-[80%]">
                                     Ảnh {i + 1}
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleRemovePhoto(i)
-                                    }}
-                                    className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
-                                    title="Gỡ ảnh này"
-                                  >
-                                    ✕ Xóa
-                                  </button>
+                                  {!isReadOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleRemovePhoto(i)
+                                      }}
+                                      className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
+                                      title="Gỡ ảnh này"
+                                    >
+                                      ✕ Xóa
+                                    </button>
+                                  )}
                                 </div>
                               )
                             })}
 
-                            <div
-                              onClick={() => fileInputRef.current?.click()}
-                              className="h-28 rounded-xl border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/20 hover:bg-blue-50/50 flex flex-col items-center justify-center cursor-pointer transition text-blue-600 hover:text-blue-700 gap-1"
-                            >
-                              <Upload size={20} />
-                              <span className="text-xs font-bold">+ Thêm ảnh</span>
-                            </div>
+                            {!isReadOnly && (
+                              <div
+                                onClick={() => fileInputRef.current?.click()}
+                                className="h-28 rounded-xl border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/20 hover:bg-blue-50/50 flex flex-col items-center justify-center cursor-pointer transition text-blue-600 hover:text-blue-700 gap-1"
+                              >
+                                <Upload size={20} />
+                                <span className="text-xs font-bold">+ Thêm ảnh</span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -2736,6 +2859,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             </span>
                           </div>
 
+                          {!isReadOnly && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2762,11 +2886,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               Chưa đạt
                             </button>
                           </div>
+                          )}
                         </div>
 
                         <div className="space-y-1">
                           <input
                             type="text"
+                            disabled={isReadOnly}
                             value={envNotes}
                             onChange={(e) => {
                               setEnvNotes(e.target.value)
@@ -2793,27 +2919,29 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </div>
 
                     {/* Nút hành động Bước B */}
-                    <div className="pt-3 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const hasIssue = currentMarkedIssues.length > 0 || totalDeduction > 0 || !doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed || !assetsClearedPassed
-                          handleSaveInspection(hasIssue ? 'ISSUE' : 'PASSED', false)
-                        }}
-                        className={`px-4 py-2 rounded-xl text-white font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition ${
-                          currentMarkedIssues.length > 0 || totalDeduction > 0
-                            ? 'bg-rose-600 hover:bg-rose-700'
-                            : 'bg-emerald-600 hover:bg-emerald-700'
-                        }`}
-                      >
-                        <CheckCircle2 size={15} />
-                        <span>
-                          {currentMarkedIssues.length > 0 || totalDeduction > 0
-                            ? 'Lưu Biên Bản Có Hư Hại / Khấu Trừ'
-                            : 'Lưu Biên Bản Nghiệm Thu ĐẠT CHUẨN'}
-                        </span>
-                      </button>
-                    </div>
+                    {!isReadOnly && (
+                      <div className="pt-3 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const hasIssue = currentMarkedIssues.length > 0 || totalDeduction > 0 || !doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed || !assetsClearedPassed
+                            handleSaveInspection(hasIssue ? 'ISSUE' : 'PASSED', false)
+                          }}
+                          className={`px-4 py-2 rounded-xl text-white font-bold text-xs cursor-pointer shadow-xs flex items-center gap-1.5 transition ${
+                            currentMarkedIssues.length > 0 || totalDeduction > 0
+                              ? 'bg-rose-600 hover:bg-rose-700'
+                              : 'bg-emerald-600 hover:bg-emerald-700'
+                          }`}
+                        >
+                          <CheckCircle2 size={15} />
+                          <span>
+                            {currentMarkedIssues.length > 0 || totalDeduction > 0
+                              ? 'Lưu Biên Bản Có Hư Hại / Khấu Trừ'
+                              : 'Lưu Biên Bản Nghiệm Thu ĐẠT CHUẨN'}
+                          </span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* KHỐI C: ĐỐI SOÁT TIỀN CỌC & KHẤU TRỪ */}
@@ -3118,7 +3246,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                       <div className="flex items-center gap-2">
                         {/* Nút chốt quyết toán */}
-                        {currentCase.customerDecision !== 'AGREED' && (
+                        {!isReadOnly && currentCase.customerDecision !== 'AGREED' && (
                           <button
                             type="button"
                             onClick={() => setShowConfirmSettlementModal(true)}
@@ -3134,7 +3262,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         )}
 
                         {/* Nút hoàn tiền cho khách (Task 16.4) khi khách đồng ý và có tiền hoàn */}
-                        {netRefundAmount > 0 && currentCase.customerDecision === 'AGREED' && currentCase.refundStatus !== 'COMPLETED' && (
+                        {!isReadOnly && netRefundAmount > 0 && currentCase.customerDecision === 'AGREED' && currentCase.refundStatus !== 'COMPLETED' && (
                           <button
                             type="button"
                             onClick={() => setShowPayoutModal(true)}
@@ -3252,15 +3380,21 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       </div>
 
                       {!currentCase.unitReturnedPhysically && (
-                        <button
-                          type="button"
-                          onClick={handleConfirmPhysicalReturn}
-                          disabled={isConfirmingPhysical || !assetsClearedPassed}
-                          className="mt-1 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
-                        >
-                          <Warehouse size={14} />
-                          <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
-                        </button>
+                        !isReadOnly ? (
+                          <button
+                            type="button"
+                            onClick={handleConfirmPhysicalReturn}
+                            disabled={isConfirmingPhysical || !assetsClearedPassed}
+                            className="mt-1 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
+                          >
+                            <Warehouse size={14} />
+                            <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
+                          </button>
+                        ) : (
+                          <span className="mt-1 text-[11px] text-slate-500 italic block">
+                            Chờ nhân viên ca trực tiếp quản bàn giao buồng kho thực địa.
+                          </span>
+                        )
                       )}
                     </div>
                   </div>
@@ -3308,6 +3442,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     <div className="pt-2 flex items-center justify-between gap-3 flex-wrap border-t border-slate-100">
 {/* Ghi Nhận Khiếu Nại removed from Staff dashboard per Task 16.6 */}
 
+                      {isReadOnly ? (
+                        <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
+                          <Eye size={14} className="text-slate-500" />
+                          <span>Chế độ chỉ xem — Không có quyền thực hiện thao tác trả kho</span>
+                        </div>
+                      ) : (
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
                         {/* STAFF / FM action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
                         {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') && (
@@ -3395,6 +3535,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
                   </div>
                 </>
