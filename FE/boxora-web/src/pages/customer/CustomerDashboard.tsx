@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -2907,11 +2907,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <span className="material-symbols-outlined text-[24px]">event_available</span>
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hợp đồng gần nhất</span>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Hạn hết hợp đồng gần nhất</span>
               <span className="font-mono text-xl font-bold text-slate-900 mt-0.5">{nearestEndDate}</span>
-              <span className="text-xs text-amber-700 font-semibold truncate">
-                {nearestEndDate !== '--' ? `Hạn kết thúc: ${nearestEndDate}` : 'Không có hạn kết thúc'}
-              </span>
             </div>
           </div>
         </div>
@@ -4930,9 +4927,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             {c.status === 'PENDING_ACTIVATION' ? (
                               <div className="flex flex-col">
                                 <span>{c.startDate} — {c.endDate}</span>
-                                <span className="text-[10px] text-cyan-700 font-sans font-semibold">
-                                  (Kích hoạt khi check-in)
-                                </span>
                               </div>
                             ) : (
                               `${c.startDate} — ${c.endDate}`
@@ -5306,13 +5300,21 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            p.status === 'SUCCESS'
+                            p.status === 'PAID' || p.status === 'SUCCESS'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : p.status === 'PENDING'
                               ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : p.status === 'REFUNDED'
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
                               : 'bg-rose-50 text-rose-700 border-rose-200'
                           }`}>
-                            {p.status === 'SUCCESS' ? 'Thành công' : p.status === 'PENDING' ? 'Chờ xử lý' : 'Thất bại'}
+                            {p.status === 'PAID' || p.status === 'SUCCESS'
+                              ? 'Thành công'
+                              : p.status === 'PENDING'
+                              ? 'Chờ xử lý'
+                              : p.status === 'REFUNDED'
+                              ? 'Đã hoàn tiền'
+                              : 'Thất bại'}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
