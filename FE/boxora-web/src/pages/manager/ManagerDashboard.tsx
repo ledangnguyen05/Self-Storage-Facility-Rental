@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+﻿import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
@@ -155,6 +155,22 @@ export const ManagerDashboard: React.FC = () => {
       return next
     }, { replace: true })
   }
+
+  // Refresh targeted data when the active tab changes so each tab sees fresh data
+  useEffect(() => {
+    const fId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
+    if (activeTab === 'pending_orders' || activeTab === 'reception' || activeTab === 'handovers-returns') {
+      void fetchUpcomingHandovers(fId)
+    }
+    if (activeTab === 'tickets') {
+      const targetId = fId || facilities[0]?.id
+      supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined)
+        .then(data => {
+          if (Array.isArray(data)) setTickets(data)
+        })
+        .catch(() => {})
+    }
+  }, [activeTab])
 
   useEffect(() => {
     const currentTab = searchParams.get('tab') as ManagerDashboardTab | null

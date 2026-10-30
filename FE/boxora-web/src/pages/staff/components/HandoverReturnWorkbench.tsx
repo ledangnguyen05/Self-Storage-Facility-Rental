@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   ClipboardCheck,
   CalendarCheck,
@@ -423,7 +423,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [isConfirmingPhysical, setIsConfirmingPhysical] = useState(false)
 
   // 1. Fetch Real Cases from Backend API
-  const fetchReturnCases = async (showToast: boolean = false) => {
+  const fetchReturnCases = useCallback(async (showToast: boolean = false) => {
     setIsRefreshing(true)
     try {
       const data = await handoverService.getReturnCases({
@@ -637,11 +637,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     } finally {
       setIsRefreshing(false)
     }
-  }
+  }, [currentFacilityId, facilityName, rawReturnRequests, activeRentals])
 
   useEffect(() => {
     fetchReturnCases(false)
-  }, [currentFacilityId])
+  }, [fetchReturnCases])
 
   const handleRefreshWorkbench = () => {
     fetchReturnCases(true)

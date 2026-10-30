@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { userService } from '../../services/userService'
 import { facilityService } from '../../services/facilityService'
@@ -327,7 +327,7 @@ export const ShiftRosterPage: React.FC = () => {
   }
 
   // Fetch all operational data for selected facility & date range
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setIsLoading(true)
     try {
       const targetFacilityId = (!selectedFacilityId || selectedFacilityId.toUpperCase() === 'ALL') ? undefined : selectedFacilityId
@@ -398,11 +398,11 @@ export const ShiftRosterPage: React.FC = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [selectedFacilityId, appliedStartDate, appliedEndDate, isBusinessManager])
 
   useEffect(() => {
     fetchData()
-  }, [selectedFacilityId, appliedStartDate, appliedEndDate])
+  }, [fetchData])
 
   const currentFacilityName = useMemo(() => {
     if (selectedFacilityId === 'ALL') return 'Toàn chuỗi (Tất cả cơ sở)'

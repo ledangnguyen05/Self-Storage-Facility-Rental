@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -399,6 +399,20 @@ export const StaffDashboard: React.FC = () => {
     loadRadarUnits(targetFacility)
     loadShiftPayments(targetFacility)
   }, [selectedFacility])
+
+  // Re-fetch relevant data when the staff tab changes so each workbench shows fresh data
+  useEffect(() => {
+    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
+    if (staffActiveTab === 'pending_orders') {
+      fetchArrivals(targetFacility)
+    } else if (staffActiveTab === 'reception') {
+      fetchArrivals(targetFacility)
+    } else if (staffActiveTab === 'returns') {
+      loadActiveRentals(targetFacility)
+    } else if (staffActiveTab === 'renewals') {
+      loadActiveRentals(targetFacility)
+    }
+  }, [staffActiveTab])
 
   // Tự động kiểm tra và quét gửi email thông báo cho đơn quá hạn 24h chưa tiếp nhận
   useEffect(() => {

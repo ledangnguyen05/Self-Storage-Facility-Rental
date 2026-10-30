@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+﻿import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, useSearchParams, Link } from 'react-router-dom'
 import { useAuth, DEFAULT_PERMISSIONS_BY_ROLE } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
@@ -168,6 +168,25 @@ export const AdminDashboard: React.FC = () => {
     fetchRolesAndPermissions()
     fetchLogs()
   }, [])
+
+  // Re-fetch data when the active tab changes so each tab always shows fresh data
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers(facilityFilter)
+    } else if (activeTab === 'roles') {
+      fetchRolesAndPermissions()
+    } else if (activeTab === 'logs') {
+      fetchLogs(isLoginHistoryMode, logsPage)
+    } else if (activeTab === 'facilities') {
+      facilityService.getFacilities()
+        .then(res => {
+          if (res?.content && res.content.length > 0) {
+            setFacilities(res.content)
+          }
+        })
+        .catch(err => console.warn('Could not refresh facilities on tab switch:', err))
+    }
+  }, [activeTab])
 
   const fetchUsers = async (targetFacilityId?: string) => {
     setIsLoadingUsers(true)

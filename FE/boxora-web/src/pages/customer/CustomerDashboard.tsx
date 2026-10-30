@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -507,9 +507,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     fetchAvailableUnits()
     fetchFacilities()
     fetchMyRenewals()
-    fetchCustomerTickets()
     void fetchCustomerNotifications()
-  }, [user, fetchCustomerNotifications])
+  }, [user?.id, fetchCustomerNotifications])
 
   useEffect(() => {
     let isCurrent = true
@@ -921,7 +920,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return Number(contractItem?.monthlyFee || 0)
   }, [customerPayments, customerBookings])
 
-  const fetchCustomerTickets = async () => {
+  const fetchCustomerTickets = useCallback(async () => {
     try {
       setLoadingTickets(true)
       const res = await supportTicketService.getMyTickets()
@@ -933,7 +932,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     } finally {
       setLoadingTickets(false)
     }
-  }
+  }, [])
+
+  // Fetch customer tickets on mount (declared after main mount effect, so called here separately)
+  useEffect(() => {
+    void fetchCustomerTickets()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Targeted data refresh when the customer switches tabs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // (fetchCustomerBookings, fetchContracts, etc. are plain async fns without useCallback --
+  //  intentionally omitted from deps to avoid re-running on every render)
+  useEffect(() => {
+    switch (activeTab) {
+      case 'bookings':
+        fetchCustomerBookings()
+        break
+      case 'contracts':
+        fetchContracts()
+        break
+      case 'support':
+        void fetchCustomerTickets()
+        break
+      case 'history':
+        void fetchCustomerNotifications()
+        break
+      case 'returns':
+        fetchContracts()
+        break
+      case 'my-units':
+        fetchContracts()
+        fetchCustomerBookings()
+        break
+      default:
+        break
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
 
 
