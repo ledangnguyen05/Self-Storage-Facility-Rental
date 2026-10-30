@@ -110,6 +110,7 @@ public enum ErrorCode {
     FACILITY_ACCESS_DENIED(1003, "Bạn không có quyền truy cập dữ liệu của cơ sở này", HttpStatus.FORBIDDEN),
     FACILITY_INACTIVE(1004, "Cơ sở lưu trữ này hiện đang tạm ngưng hoạt động, không thể thực hiện đặt giữ chỗ mới", HttpStatus.BAD_REQUEST),
     FACILITY_UNDER_MAINTENANCE(1005, "Cơ sở lưu trữ này hiện đang bảo trì kỹ thuật, không thể thực hiện đặt giữ chỗ mới", HttpStatus.BAD_REQUEST),
+    FACILITY_IN_USE(1006, "Không thể xóa cơ sở vì đang có hợp đồng, đơn đặt kho hoặc dữ liệu vận hành liên quan", HttpStatus.CONFLICT),
 
     // ========================= FACILITY_POLICY (1100 - 1199) =========================
     FACILITY_POLICY_NOT_FOUND(1100, "Không tìm thấy chính sách cơ sở kho", HttpStatus.NOT_FOUND),

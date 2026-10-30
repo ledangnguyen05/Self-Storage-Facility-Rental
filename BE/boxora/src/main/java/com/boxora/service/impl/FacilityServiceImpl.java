@@ -38,6 +38,9 @@ public class FacilityServiceImpl implements FacilityService {
     private final FacilityMapper facilityMapper;
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
+    private final com.boxora.repository.FacilityPolicyRepository facilityPolicyRepository;
+    private final com.boxora.repository.StorageUnitRepository storageUnitRepository;
+    private final com.boxora.repository.ActivityLogRepository activityLogRepository;
 
     @Override
     public FacilityResponse getById(UUID id) {
@@ -143,12 +146,23 @@ public class FacilityServiceImpl implements FacilityService {
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(facility.getId());
-        // Preserve contracts, payments, tickets, units, and operational history. The public
-        // delete operation is a deactivation; facility-linked rows may otherwise cascade-delete.
-        facility.setStatus(FacilityStatus.INACTIVE);
-        facilityRepository.save(facility);
-        activityLogService.record(facility.getId(), ActivityAction.FACILITY_DEACTIVATE, "FACILITY", facility.getId(),
-                "Deactivated facility: " + facility.getName(), null, facility.getStatus());
+
+        String facilityName = facility.getName();
+        UUID facilityId = facility.getId();
+        try {
+            // Xóa hẳn cơ sở: gỡ chính sách và các kho thuộc cơ sở trước, sau đó xóa cơ sở.
+            // Nếu còn dữ liệu liên quan (hợp đồng, đơn đặt kho, ca trực...) ràng buộc khóa ngoại sẽ chặn lại.
+            activityLogRepository.detachFacility(facilityId);
+            facilityPolicyRepository.findByFacility_Id(facilityId).ifPresent(facilityPolicyRepository::delete);
+            storageUnitRepository.deleteAll(storageUnitRepository.findByFacility_Id(facilityId));
+            facilityRepository.delete(facility);
+            facilityRepository.flush();
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            log.warn("Cannot delete facility {} - still referenced: {}", facilityId, ex.getMostSpecificCause().getMessage());
+            throw new AppException(ErrorCode.FACILITY_IN_USE);
+        }
+        activityLogService.record((UUID) null, ActivityAction.FACILITY_DEACTIVATE, "FACILITY", facilityId,
+                "Deleted facility: " + facilityName, null, null);
     }
 
     @Override
