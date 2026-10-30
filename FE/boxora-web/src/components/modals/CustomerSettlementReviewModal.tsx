@@ -56,6 +56,7 @@ interface CustomerSettlementReviewModalProps {
   isOpen: boolean
   onClose: () => void
   bookingId: string
+  readOnly?: boolean
   onUpdated?: () => void
 }
 
@@ -63,6 +64,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   isOpen,
   onClose,
   bookingId,
+  readOnly = false,
   onUpdated
 }) => {
   const [settlement, setSettlement] = useState<ReturnSettlementDetail | null>(null)
@@ -283,8 +285,13 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
               <ShieldCheck size={22} />
             </div>
             <div>
-              <h3 className="font-extrabold text-base text-slate-900 leading-tight">
-                Biên Bản Nghiệm Thu &amp; Quyết Toán Trả Kho
+              <h3 className="font-extrabold text-base text-slate-900 leading-tight flex items-center gap-2">
+                <span>Biên Bản Nghiệm Thu &amp; Quyết Toán Trả Kho</span>
+                {readOnly && (
+                  <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold tracking-wide">
+                    Chỉ xem
+                  </span>
+                )}
               </h3>
               <p className="text-xs text-slate-500 font-mono">
                 Buồng kho #{settlement?.unitCode || '...'} • Mã đơn #{settlement?.bookingCode || '...'}
@@ -540,15 +547,17 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         ) : (
                           <div className="flex items-center justify-between">
                             <span className="text-rose-700 font-semibold">Chưa hoàn tất thanh toán bổ sung</span>
-                            <button
-                              type="button"
-                              onClick={handleProceedVNPayCompensation}
-                              disabled={submitting}
-                              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
-                            >
-                              <CreditCard size={13} />
-                              <span>Thanh toán VNPay Sandbox ngay</span>
-                            </button>
+                            {!readOnly && (
+                              <button
+                                type="button"
+                                onClick={handleProceedVNPayCompensation}
+                                disabled={submitting}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                              >
+                                <CreditCard size={13} />
+                                <span>Thanh toán VNPay Sandbox ngay</span>
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -579,7 +588,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     </p>
 
                     {/* Button Hủy yêu cầu khiếu nại */}
-                    {!settlement.disputeResolutionNote && (
+                    {!readOnly && !settlement.disputeResolutionNote && (
                       <div className="pt-2 border-t border-rose-200 flex flex-col sm:flex-row items-center justify-between gap-2">
                         <span className="text-[11px] text-slate-500 italic">
                           Bạn có thể rút lại khiếu nại nếu muốn đồng ý quyết toán hoặc cập nhật lại.
@@ -598,8 +607,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   </div>
                 )}
 
-                {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) */}
-                {(!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
+                {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) - CHỈ HIỂN THỊ KHI KHÔNG PHẢI READ-ONLY */}
+                {!readOnly && (!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
                     {isDepositDeducted && (
                       <button
@@ -641,6 +650,27 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         <span>{submitting ? 'Đang gửi...' : 'Đồng ý quyết toán hòa vốn'}</span>
                       </button>
                     )}
+                  </div>
+                )}
+
+                {/* FOOTER CHỈ XEM DÀNH CHO CÁC ĐƠN CŨ LIÊN QUAN ĐẾN KHO HOẶC THÔNG BÁO TRƯỚC ĐÓ */}
+                {readOnly && (
+                  <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/80 -mx-6 -mb-6 p-4 rounded-b-2xl">
+                    <div className="flex items-center gap-2 text-slate-600 text-xs">
+                      <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <Info size={14} />
+                      </div>
+                      <span className="leading-relaxed">
+                        Biên bản lưu trữ ở chế độ <strong>Chỉ xem</strong>. Quyết định xác nhận nhận tiền hoàn hoặc khiếu nại chỉ thực hiện trên đơn quyết toán mới nhất sau khi tính toán lại.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="w-full sm:w-auto px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition active:scale-98 cursor-pointer shrink-0"
+                    >
+                      Đóng
+                    </button>
                   </div>
                 )}
               </div>

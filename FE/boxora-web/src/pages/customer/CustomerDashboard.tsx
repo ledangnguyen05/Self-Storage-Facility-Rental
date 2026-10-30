@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -258,6 +258,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [customerNotifications, setCustomerNotifications] = useState<NotificationLog[]>([])
   const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false)
   const [selectedBookingForSettlementModal, setSelectedBookingForSettlementModal] = useState<string | null>(null)
+  const [isSettlementReadOnly, setIsSettlementReadOnly] = useState<boolean>(false)
+
+  const handleOpenSettlementModal = (bookingId: string, readOnly = false) => {
+    setIsSettlementReadOnly(readOnly)
+    setSelectedBookingForSettlementModal(bookingId)
+  }
   const [unitHistoryCategory, setUnitHistoryCategory] = useState<'ALL' | 'ACCESS' | 'RENEWAL' | 'NOTIFICATION' | 'SUPPORT'>('ALL')
   const [unitHistoryUnitFilter, setUnitHistoryUnitFilter] = useState<string>('ALL')
   const [unitHistorySearch, setUnitHistorySearch] = useState<string>('')
@@ -3989,8 +3995,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   const targetBId =
                                     item.meta?.bookingId ||
                                     (item.unitCode ? customerBookings.find(b => b.unitCode === item.unitCode)?.id : undefined)
-                                  if (targetBId) setSelectedBookingForSettlementModal(targetBId)
-                                  else toast.warning('Không tìm thấy mã đơn đặt chỗ để xem biên bản quyết toán.')
+                                  if (targetBId) {
+                                    const latestLog = returnActivityLogs.find(
+                                      l => l.unitCode && item.unitCode && l.unitCode === item.unitCode && l.actionType === 'RETURN_SETTLEMENT'
+                                    )
+                                    const isLatest = Boolean(latestLog && item.id === latestLog.id)
+                                    handleOpenSettlementModal(targetBId, !isLatest)
+                                  } else {
+                                    toast.warning('Không tìm thấy mã đơn đặt chỗ để xem biên bản quyết toán.')
+                                  }
                                 }}
                                 className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
                               >
@@ -5631,7 +5644,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             {o.bookingId && (
                               <button
                                 type="button"
-                                onClick={() => setSelectedBookingForSettlementModal(o.bookingId!)}
+                                onClick={() => {
+                                  const isReadOnly = o.status === 'COMPLETED'
+                                  handleOpenSettlementModal(o.bookingId!, isReadOnly)
+                                }}
                                 className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-600/30 transition-all cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[16px]">assignment_turned_in</span>
@@ -5724,6 +5740,23 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     (highlightedReturnUnitCode && log.unitCode && log.unitCode.toUpperCase() === highlightedReturnUnitCode.toUpperCase()) ||
                     isMatchingFilter
                   )
+
+                  // Tìm log quyết toán mới nhất (sau khi tính toán lại) của buồng kho này
+                  const latestSettlementLogForThisUnit = returnActivityLogs.find(
+                    l => l.unitCode && log.unitCode && l.unitCode === log.unitCode && l.actionType === 'RETURN_SETTLEMENT'
+                  )
+
+                  // Đơn sau mới nhất được phép ra quyết định:
+                  // Bắt buộc phải là log quyết toán (RETURN_SETTLEMENT) VÀ là log quyết toán mới nhất của kho đó!
+                  const isLatestSettlementDecisionLog = Boolean(
+                    latestSettlementLogForThisUnit &&
+                    log.id === latestSettlementLogForThisUnit.id &&
+                    log.actionType === 'RETURN_SETTLEMENT'
+                  )
+
+                  // Nếu không phải là log quyết toán mới nhất của kho (ví dụ: ticket yêu cầu trước đó, thông báo cũ hơn, hoặc đơn cũ):
+                  // -> Đây là đơn cũ / đơn trước đó liên quan đến kho -> CHỈ ĐƯỢC XEM THÔI (readOnly = true)
+                  const isReadOnlyForThisLog = !isLatestSettlementDecisionLog
                   return (
                     <div
                       key={log.id}
@@ -5772,11 +5805,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       {targetBookingId && (
                         <button
                           type="button"
-                          onClick={() => setSelectedBookingForSettlementModal(targetBookingId)}
-                          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-stretch sm:self-center shadow-md shadow-amber-600/30 active:scale-98"
+                          onClick={() => handleOpenSettlementModal(targetBookingId, isReadOnlyForThisLog)}
+                          className={`w-full sm:w-auto px-4 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-stretch sm:self-center active:scale-98 ${
+                            isReadOnlyForThisLog
+                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs'
+                              : 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/30'
+                          }`}
                         >
-                          <span className="material-symbols-outlined text-[16px]">visibility</span>
-                          <span>Xem Biên Bản</span>
+                          <span className="material-symbols-outlined text-[16px]">
+                            {isReadOnlyForThisLog ? 'visibility' : 'assignment_turned_in'}
+                          </span>
+                          <span>{isReadOnlyForThisLog ? 'Xem Biên Bản' : 'Xem Biên Bản & Quyết Định'}</span>
                         </button>
                       )}
                     </div>
@@ -7805,8 +7844,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       {selectedBookingForSettlementModal && (
         <CustomerSettlementReviewModal
           isOpen={Boolean(selectedBookingForSettlementModal)}
-          onClose={() => setSelectedBookingForSettlementModal(null)}
+          onClose={() => {
+            setSelectedBookingForSettlementModal(null)
+            setIsSettlementReadOnly(false)
+          }}
           bookingId={selectedBookingForSettlementModal}
+          readOnly={isSettlementReadOnly}
           onUpdated={async () => {
             await Promise.all([fetchCustomerNotifications(), fetchCustomerBookings()])
           }}
