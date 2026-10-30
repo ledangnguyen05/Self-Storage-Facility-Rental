@@ -127,8 +127,6 @@ export interface BookingStageInfo {
   description: string
   step: number // 1 to 4
   stepLabel: string
-  priorityTag?: string
-  priorityTagClass?: string
 }
 
 export function getBookingStage(b: Booking): BookingStageInfo {
@@ -151,8 +149,6 @@ export function getBookingStage(b: Booking): BookingStageInfo {
         description: 'Quản lý cơ sở đã hoàn tất chuyển khoản hoàn tiền vào tài khoản ngân hàng của quý khách.',
         step: 0,
         stepLabel: 'Đã hoàn tất',
-        priorityTag: '✓ Đã hoàn tiền',
-        priorityTagClass: 'text-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800',
       }
     }
 
@@ -166,8 +162,6 @@ export function getBookingStage(b: Booking): BookingStageInfo {
         description: 'Đã gửi yêu cầu hủy đơn & hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát và giải ngân qua chuyển khoản.',
         step: 0,
         stepLabel: 'Chờ duyệt hoàn tiền',
-        priorityTag: '⏳ Chờ hoàn tiền cọc',
-        priorityTagClass: 'text-amber-800 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
       }
     }
     return {
@@ -191,8 +185,6 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       description: 'Hợp đồng đang có hiệu lực 24/7. Quý khách có thể sử dụng Portal điều khiển khóa thông minh IoT.',
       step: 4,
       stepLabel: 'Đã cấp khóa IoT',
-      priorityTag: '✓ Đã mở Portal IoT',
-      priorityTagClass: 'text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800',
     }
   }
 
@@ -210,8 +202,6 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       description: `Nhân viên đã xếp buồng kho #${b.unitCode} tại ${b.facilityName}. Quý khách vui lòng đến theo lịch hẹn mang CCCD để hoàn tất nhận kho.`,
       step: 4,
       stepLabel: 'Đã xếp buồng kho',
-      priorityTag: '✓ Sẵn sàng đón tiếp',
-      priorityTagClass: 'text-cyan-700 bg-cyan-50 dark:bg-cyan-950/60 border border-cyan-200 dark:border-cyan-800',
     }
   }
 
@@ -232,8 +222,6 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       description: 'Hợp đồng điện tử DocuSeal đã ký & thanh toán thành công. Vào ngày check-in, nhân viên sẽ hỗ trợ quý khách chọn buồng kho mong muốn tại quầy.',
       step: 3,
       stepLabel: 'Chờ xếp buồng kho',
-      priorityTag: '⚡ Chờ xếp kho tại quầy',
-      priorityTagClass: 'text-indigo-700 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800',
     }
   }
 
@@ -241,14 +229,12 @@ export function getBookingStage(b: Booking): BookingStageInfo {
   if (status === 'PENDING_CONTACT' || b.signingMethod === 'IN_PERSON') {
     return {
       stage: 'PENDING_CONTACT',
-      label: 'Chờ check-in tại quầy',
+      label: 'Chờ thanh toán',
       badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
       dotClass: 'bg-amber-500 animate-pulse',
       description: 'Đơn đặt giữ chỗ thành công theo loại kho. Quý khách vui lòng đến cơ sở theo lịch hẹn để chọn vị trí buồng kho mong muốn, ký hợp đồng và thanh toán tại quầy.',
       step: 2,
-      stepLabel: 'Đã đặt chỗ thành công',
-      priorityTag: '🏢 Ký & TT tại kho',
-      priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
+      stepLabel: 'Chờ thanh toán',
     }
   }
 
@@ -262,22 +248,18 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       description: 'Hợp đồng điện tử đã ký thành công. Quý khách vui lòng hoàn tất thanh toán trực tuyến để xác nhận giữ buồng kho.',
       step: 2,
       stepLabel: 'Chờ thanh toán',
-      priorityTag: '💳 Chờ thanh toán online',
-      priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
     }
   }
 
   // Default pending payment
   return {
     stage: 'PENDING_CONTACT',
-    label: 'Chờ ký HĐ & thanh toán',
+    label: 'Chờ thanh toán',
     badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
     dotClass: 'bg-amber-500 animate-pulse',
     description: 'Vui lòng hoàn tất ký hợp đồng điện tử và thanh toán trực tuyến để xác nhận giữ buồng kho.',
     step: 2,
-    stepLabel: 'Chờ ký & thanh toán',
-    priorityTag: '💳 Chờ thanh toán online',
-    priorityTagClass: 'text-amber-700 bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800',
+    stepLabel: 'Chờ thanh toán',
   }
 }
 
