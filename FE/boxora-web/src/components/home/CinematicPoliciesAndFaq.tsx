@@ -19,7 +19,7 @@ interface CinematicPoliciesAndFaqProps {
   onBookNow: () => void
 }
 
-const POLICY_DOSSIER: Record<
+export const POLICY_DOSSIER: Record<
   PolicyTabKey,
   {
     code: string
@@ -140,7 +140,7 @@ const POLICY_DOSSIER: Record<
   }
 }
 
-const FAQ_ITEMS: { cat: Exclude<FaqCategoryKey, 'ALL'>; q: string; a: string }[] = [
+export const FAQ_ITEMS: { cat: Exclude<FaqCategoryKey, 'ALL'>; q: string; a: string }[] = [
   {
     cat: 'IOT',
     q: 'Tôi có thể ra vào buồng kho vào ban đêm hoặc ngày Lễ/Tết không?',

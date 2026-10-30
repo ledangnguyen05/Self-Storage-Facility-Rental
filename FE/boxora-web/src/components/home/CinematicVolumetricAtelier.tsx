@@ -25,7 +25,7 @@ export interface SizeTierSpec {
   scaleFactor: number
 }
 
-const SIZE_TIER_ATELIER_DATA: Record<SizeTierKey, SizeTierSpec> = {
+export const SIZE_TIER_ATELIER_DATA: Record<SizeTierKey, SizeTierSpec> = {
   LOCKER: {
     name: 'Cá Nhân & Mini (1 – 4 m³)',
     area: '1.0 – 1.6 m²',
@@ -112,7 +112,7 @@ const SIZE_TIER_ATELIER_DATA: Record<SizeTierKey, SizeTierSpec> = {
   }
 }
 
-const ALL_16_VOLUMES = [
+export const ALL_16_VOLUMES = [
   { vol: '1 m³', volM3: 1, dims: '1.0m × 1.0m × Cao 1.0m', tier: 'LOCKER' as SizeTierKey },
   { vol: '2 m³', volM3: 2, dims: '1.2m × 1.0m × Cao 1.8m', tier: 'LOCKER' as SizeTierKey },
   { vol: '3 m³', volM3: 3, dims: '1.5m × 1.0m × Cao 2.0m', tier: 'LOCKER' as SizeTierKey },

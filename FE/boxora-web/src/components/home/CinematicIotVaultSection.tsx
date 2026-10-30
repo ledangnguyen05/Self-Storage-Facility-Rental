@@ -6,7 +6,7 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger'
 
 gsap.registerPlugin(ScrollTrigger)
 
-const IOT_REAL_FEATURES = [
+export const IOT_REAL_FEATURES = [
   {
     id: 0,
     num: '01',

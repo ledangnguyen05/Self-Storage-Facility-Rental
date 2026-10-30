@@ -13,7 +13,7 @@ interface CinematicServicesSectionProps {
   onBookNow: () => void
 }
 
-const STORAGE_UNIT_TYPES = [
+export const STORAGE_UNIT_TYPES = [
   {
     index: '01',
     subtitle: 'CHẾ ĐỘ TIÊU CHUẨN • NON-A/C',
@@ -55,7 +55,7 @@ const STORAGE_UNIT_TYPES = [
   }
 ]
 
-const FACILITIES_LIST = [
+export const FACILITIES_LIST = [
   {
     code: '01 / QUẬN 1',
     name: 'Boxora Quận 1 — Central Hub',
