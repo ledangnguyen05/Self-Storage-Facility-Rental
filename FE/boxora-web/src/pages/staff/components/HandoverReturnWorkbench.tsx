@@ -242,7 +242,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     userRole === 'BUSINESS_MANAGER' ||
     authRole === 'BUSINESS_MANAGER' ||
     effectiveRole === 'BUSINESS_MANAGER'
-  const isReadOnly = isBusinessManager
   const isAdmin = !isBusinessManager && (effectiveRole === 'ADMIN' || effectiveRole === 'SYSTEM_ADMIN')
   const canViewFullBankAccount = isBusinessManager || isAdmin
   const isFacilityManager =
@@ -627,6 +626,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   }, [currentCase])
 
   const isStaffBlockedByDispute = isCaseDisputed && !isFacilityManager
+  const isReadOnly = isBusinessManager || isStaffBlockedByDispute
 
   useEffect(() => {
     if (filteredCases.length > 0) {
@@ -3475,7 +3475,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       {isReadOnly ? (
                         <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
                           <Eye size={14} className="text-slate-500" />
-                          <span>Chế độ chỉ xem — Không có quyền thực hiện thao tác trả kho</span>
+                          <span>
+                            {isStaffBlockedByDispute
+                              ? 'Đơn đang trong trạng thái khiếu nại — Chỉ Quản lý cơ sở mới có quyền tiếp nhận và kiểm tra lại'
+                              : 'Chế độ chỉ xem — Không có quyền thực hiện thao tác trả kho'}
+                          </span>
                         </div>
                       ) : (
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
