@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   ShieldCheck,
   X,
@@ -34,7 +34,8 @@ const resolveReceiptUrl = (url: string | null | undefined): string => {
   }
   const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
   const base = getApiBaseUrl()
-  return base ? `${base}${cleanUrl}` : cleanUrl
+  const cleanBase = base ? base.replace(/\/api\/?$/, '') : ''
+  return cleanBase ? `${cleanBase}${cleanUrl}` : cleanUrl
 }
 
 const POPULAR_BANKS = [
@@ -111,6 +112,31 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
       void fetchSettlement()
     }
   }, [isOpen, bookingId])
+
+  const evidencePhotosList: string[] = useMemo(() => {
+    if (!settlement) return []
+    const rawPhotos = (settlement as any).evidencePhotos || (settlement as any).photoUrls
+    if (Array.isArray(rawPhotos)) {
+      return rawPhotos.map(String).map((s: string) => s.trim()).filter(Boolean)
+    }
+    if (typeof rawPhotos === 'string' && (rawPhotos as string).trim()) {
+      return (rawPhotos as string).split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean)
+    }
+    return []
+  }, [settlement])
+
+  const disputeEvidenceList: string[] = useMemo(() => {
+    if (!settlement) return []
+    const rawEvidence = (settlement as any).disputeEvidenceUrls
+    if (!rawEvidence) return []
+    if (Array.isArray(rawEvidence)) {
+      return rawEvidence.map(String).map((s: string) => s.trim()).filter(Boolean)
+    }
+    if (typeof rawEvidence === 'string' && (rawEvidence as string).trim()) {
+      return (rawEvidence as string).split(/[;,|\n]/).map((s: string) => s.trim()).filter(Boolean)
+    }
+    return []
+  }, [settlement])
 
   if (!isOpen) return null
 
@@ -279,16 +305,16 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden">
-      <div className="bg-white rounded-2xl max-w-xl sm:max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 animate-in zoom-in-95 my-auto overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto">
+      <div className="relative w-full max-w-xl sm:max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[calc(100vh-2rem)] sm:max-h-[calc(100vh-3rem)] overflow-hidden my-auto animate-in zoom-in-95">
         {/* Header cố định */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 shrink-0 bg-white">
           <div className="flex items-center gap-2.5 text-indigo-700">
-            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
               <ShieldCheck size={22} />
             </div>
             <div>
-              <h3 className="font-extrabold text-base text-slate-900 leading-tight flex items-center gap-2">
+              <h3 className="font-extrabold text-sm sm:text-base text-slate-900 leading-tight flex items-center gap-2 flex-wrap">
                 <span>Biên Bản Nghiệm Thu &amp; Quyết Toán Trả Kho</span>
                 {readOnly && (
                   <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold tracking-wide">
@@ -304,14 +330,14 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer transition"
+            className="w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 flex items-center justify-center cursor-pointer transition shrink-0"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Vùng body cuộn mượt mà chống tràn khi zoom in / zoom out */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 min-h-0">
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0 space-y-4">
 
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
@@ -483,18 +509,24 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   </div>
                 )}
                 {/* 3.1. HÌNH ẢNH BẰNG CHỨNG NGHIỆM THU HIỆN TRƯỜNG (BƯỚC 6) */}
-                {settlement.evidencePhotos && settlement.evidencePhotos.length > 0 && (
-                  <div className="space-y-2.5 p-4 rounded-xl bg-slate-50 border border-slate-200/90 text-xs shadow-2xs">
-                    <div className="flex items-center justify-between">
-                      <div className="font-bold flex items-center gap-1.5 text-indigo-950">
-                        <Camera size={16} className="text-indigo-600" />
-                        <span>Hình ảnh kiểm tra &amp; nghiệm thu hiện trường ({settlement.evidencePhotos.length} ảnh)</span>
-                      </div>
-                      <span className="text-[11px] text-slate-500 font-medium">Nhân viên tải lên ở Bước 6</span>
+                <div className="space-y-3 p-4 rounded-xl bg-slate-50 border border-slate-200/90 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="font-bold flex items-center gap-1.5 text-indigo-950">
+                      <Camera size={16} className="text-indigo-600" />
+                      <span>Hình ảnh kiểm tra &amp; nghiệm thu hiện trường (Bước 6)</span>
                     </div>
+                    {evidencePhotosList.length > 0 ? (
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-bold">
+                        {evidencePhotosList.length} ảnh hiện trường
+                      </span>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Chưa tải ảnh</span>
+                    )}
+                  </div>
 
+                  {evidencePhotosList.length > 0 ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
-                      {settlement.evidencePhotos.map((photoUrl, pIdx) => {
+                      {evidencePhotosList.map((photoUrl, pIdx) => {
                         const resolvedUrl = resolveReceiptUrl(photoUrl)
                         return (
                           <div
@@ -507,7 +539,9 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                               alt={`Bằng chứng hiện trường ${pIdx + 1}`}
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                               onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none'
+                                const target = e.currentTarget
+                                target.onerror = null
+                                target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80'
                               }}
                             />
                             <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 flex items-center justify-center transition-colors">
@@ -522,11 +556,18 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         )
                       })}
                     </div>
+                  ) : (
+                    <div className="p-4 rounded-lg bg-white border border-dashed border-slate-200 text-center text-slate-400 space-y-1">
+                      <Camera size={20} className="mx-auto text-slate-300" />
+                      <p className="text-[11px]">Chưa có ảnh chụp hiện trường nào được ghi nhận ở bước 6.</p>
+                    </div>
+                  )}
+                  {evidencePhotosList.length > 0 && (
                     <p className="text-[11px] text-slate-500 italic">
                       * Nhấp vào từng ảnh để phóng to xem chi tiết hiện trạng buồng kho khi nghiệm thu trả kho.
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
 
 
                 {/* Tình trạng phản hồi của khách hàng */}
@@ -628,11 +669,11 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     <div className="bg-white p-2.5 rounded-lg border border-rose-200 space-y-1 text-slate-700">
                       <span className="text-slate-500 font-semibold text-[11px]">Nội dung khiếu nại đã gửi:</span>
                       <p className="italic font-medium">"{settlement.disputeReason || 'Khách hàng không đồng ý với khoản chi phí khấu trừ hiện tại.'}"</p>
-                      {settlement.disputeEvidenceUrls && settlement.disputeEvidenceUrls.length > 0 && (
+                      {disputeEvidenceList.length > 0 && (
                         <div className="pt-1.5 border-t border-rose-100 space-y-1 text-[11px]">
                           <span className="text-slate-500 font-semibold">Minh chứng đính kèm:</span>
                           <div className="flex flex-col gap-1">
-                            {settlement.disputeEvidenceUrls.map((url, uIdx) => (
+                            {disputeEvidenceList.map((url, uIdx) => (
                               <a
                                 key={uIdx}
                                 href={url}
@@ -641,7 +682,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                                 className="text-indigo-600 hover:text-indigo-700 underline font-mono font-medium truncate max-w-sm flex items-center gap-1"
                               >
                                 <span>{url}</span>
-                                <ExternalLink size={11} />
+                                <ExternalLink size={11} className="shrink-0" />
                               </a>
                             ))}
                           </div>

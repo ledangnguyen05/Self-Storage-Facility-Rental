@@ -3293,8 +3293,16 @@ public class HandoverServiceImpl implements HandoverService {
                 : null;
         int slaDays = policy != null && policy.getDepositRefundSlaDays() != null ? policy.getDepositRefundSlaDays() : 7;
 
-        List<String> evidencePhotosList = (record != null && record.getEvidencePhotos() != null && !record.getEvidencePhotos().isBlank())
-                ? Arrays.stream(record.getEvidencePhotos().split(";")).map(String::trim).filter(s -> !s.isBlank()).collect(Collectors.toList())
+        String rawEvidencePhotos = (record != null && record.getEvidencePhotos() != null && !record.getEvidencePhotos().isBlank())
+                ? record.getEvidencePhotos()
+                : records.stream()
+                        .filter(r -> r.getEvidencePhotos() != null && !r.getEvidencePhotos().isBlank())
+                        .map(HandoverRecord::getEvidencePhotos)
+                        .findFirst()
+                        .orElse(null);
+
+        List<String> evidencePhotosList = (rawEvidencePhotos != null && !rawEvidencePhotos.isBlank())
+                ? Arrays.stream(rawEvidencePhotos.split("[;,|]")).map(String::trim).filter(s -> !s.isBlank()).collect(Collectors.toList())
                 : List.of();
 
         return ReturnSettlementResponse.builder()
