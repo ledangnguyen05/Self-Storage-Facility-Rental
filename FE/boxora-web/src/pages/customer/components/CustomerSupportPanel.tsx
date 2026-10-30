@@ -139,6 +139,10 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const [bankSuccessMsg, setBankSuccessMsg] = useState<string | null>(null)
   const [bankErrorMsg, setBankErrorMsg] = useState<string | null>(null)
 
+  // Cancel return/support ticket confirmation modal state
+  const [cancelConfirmTicket, setCancelConfirmTicket] = useState<SupportTicketRecord | null>(null)
+  const [isCancellingTicket, setIsCancellingTicket] = useState<boolean>(false)
+
   // Task 16: Customer Settlement Review & Decision
   const [returnSettlementMap, setReturnSettlementMap] = useState<Record<string, any>>({})
   const [showCustomerDisputeModal, setShowCustomerDisputeModal] = useState(false)
@@ -337,15 +341,18 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     }
   }
 
-  // Handler: Hủy yêu cầu trả kho khi đang ở trạng thái Chờ tiếp nhận (OPEN)
-  const handleCancelReturnTicket = async (t: SupportTicketRecord) => {
+  // Handler: Mở modal xác nhận hủy yêu cầu trả kho / hỗ trợ
+  const handleCancelReturnTicket = (t: SupportTicketRecord) => {
+    setCancelConfirmTicket(t)
+  }
+
+  // Thực hiện hủy yêu cầu sau khi khách hàng xác nhận trên modal
+  const handleConfirmCancelTicket = async () => {
+    if (!cancelConfirmTicket) return
+    const t = cancelConfirmTicket
     const isReturn = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' || t.title?.toLowerCase().includes('trả kho')
-    const confirmMsg = isReturn
-      ? `Bạn có chắc chắn muốn hủy yêu cầu trả kho #${t.unitCode || ''} không?\n\nKho của bạn sẽ tiếp tục duy trì trạng thái hoạt động bình thường.`
-      : `Bạn có chắc chắn muốn hủy yêu cầu hỗ trợ #${t.ticketCode || t.id.slice(0, 8)} không?`
 
-    if (!window.confirm(confirmMsg)) return
-
+    setIsCancellingTicket(true)
     try {
       await supportTicketService.closeTicket(t.id, 'Khách hàng chủ động hủy yêu cầu')
       // Đồng bộ xóa cache cục bộ nếu có
@@ -369,12 +376,15 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
       } catch (e) {}
 
       toast.success(isReturn ? 'Đã hủy yêu cầu trả kho thành công!' : 'Đã hủy yêu cầu hỗ trợ thành công!')
+      setCancelConfirmTicket(null)
       await loadMyTickets()
       if (selectedTicket?.id === t.id) {
         setSelectedTicket(null)
       }
     } catch (err: any) {
       toast.error('Không thể hủy yêu cầu: ' + (err?.response?.data?.message || err.message))
+    } finally {
+      setIsCancellingTicket(false)
     }
   }
 
@@ -2120,6 +2130,104 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM CONFIRM MODAL: Hủy yêu cầu trả kho / hỗ trợ chỉnh chu */}
+      {cancelConfirmTicket && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden text-left animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="p-5 border-b border-slate-100 bg-rose-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                  <span className="material-symbols-outlined text-[22px]">warning</span>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-rose-950">
+                    {cancelConfirmTicket.category === 'RETURN_REFUND' || cancelConfirmTicket.category === 'RETURN_EXPIRED' || cancelConfirmTicket.title?.toLowerCase().includes('trả kho')
+                      ? 'Xác Nhận Hủy Yêu Cầu Trả Kho'
+                      : 'Xác Nhận Hủy Yêu Cầu Hỗ Trợ'}
+                  </h3>
+                  <span className="text-[11px] font-mono text-rose-700/80">
+                    Mã phiếu: #{cancelConfirmTicket.ticketCode || cancelConfirmTicket.id.slice(0, 8)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancelConfirmTicket(null)}
+                disabled={isCancellingTicket}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body Modal */}
+            <div className="p-6 space-y-4 text-xs text-slate-700">
+              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Buồng kho áp dụng:</span>
+                  <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    #{cancelConfirmTicket.unitCode || 'Chưa gán'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Trạng thái hiện tại:</span>
+                  <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    Chờ tiếp nhận
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-950 space-y-1.5 leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5 text-blue-900">
+                  <span className="material-symbols-outlined text-[16px] text-blue-700">info</span>
+                  <span>Quyền lợi của bạn:</span>
+                </div>
+                <p className="text-[11px] text-blue-800">
+                  Kho của bạn sẽ <strong>tiếp tục duy trì trạng thái hoạt động bình thường</strong>. Bạn vẫn có thể truy cập kho và quản lý hợp đồng như trước.
+                </p>
+                <p className="text-[11px] text-blue-700 italic">
+                  * Quý khách có thể gửi lại yêu cầu trả kho mới bất cứ lúc nào khi phát sinh nhu cầu.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isCancellingTicket}
+                  onClick={() => setCancelConfirmTicket(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
+                >
+                  Giữ Lại Yêu Cầu
+                </button>
+                <button
+                  type="button"
+                  disabled={isCancellingTicket}
+                  onClick={handleConfirmCancelTicket}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isCancellingTicket ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Đang hủy...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">cancel</span>
+                      <span>Xác Nhận Hủy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

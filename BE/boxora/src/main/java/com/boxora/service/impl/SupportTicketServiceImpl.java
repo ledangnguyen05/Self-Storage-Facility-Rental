@@ -687,10 +687,13 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             validateFacilityScope(ticket, manager);
         }
 
-        // Ticket must be in RESOLVED state to be closed
+        // Ticket must be in RESOLVED state to be closed, OR customer is cancelling their own OPEN / REOPENED ticket
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
-            throw new AppException(ErrorCode.TICKET_INVALID_STATUS_TRANSITION,
-                    "Chỉ có thể đóng ticket khi đã ở trạng thái ĐÃ XỬ LÝ (RESOLVED)");
+            boolean isCustomerCancellingEarly = isCustomer && (ticket.getStatus() == TicketStatus.OPEN || ticket.getStatus() == TicketStatus.REOPENED);
+            if (!isCustomerCancellingEarly) {
+                throw new AppException(ErrorCode.TICKET_INVALID_STATUS_TRANSITION,
+                        "Chỉ có thể đóng ticket khi đã ở trạng thái ĐÃ XỬ LÝ (RESOLVED)");
+            }
         }
 
         TicketStatus oldStatus = ticket.getStatus();
