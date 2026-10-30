@@ -445,14 +445,16 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                 {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) */}
                 {(!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setViewStep('FORM_DISPUTE')}
-                      className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs"
-                    >
-                      <MessageSquareWarning size={15} />
-                      <span>Khiếu nại kết quả</span>
-                    </button>
+                    {totalDeduction > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setViewStep('FORM_DISPUTE')}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs"
+                      >
+                        <MessageSquareWarning size={15} />
+                        <span>Khiếu nại kết quả</span>
+                      </button>
+                    )}
 
                     {netRefund > 0 ? (
                       <button
