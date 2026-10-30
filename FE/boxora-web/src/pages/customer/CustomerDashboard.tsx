@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -3183,21 +3183,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           </div>
 
                         </div>
-
-                        <div className="text-right flex flex-col items-end gap-1">
-                          <span className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border inline-block ${c.status === 'OVERDUE' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                            {c.status === 'OVERDUE' ? 'Chưa thanh toán' : 'Đã thanh toán'}
-                          </span>
-                          {c.status === 'ACTIVE' && (
-                            <span className={`text-[10px] font-medium px-2 py-0.5 rounded border ${
-                              isUnlocked
-                                ? 'bg-amber-50 text-amber-700 border-amber-200 font-semibold'
-                                : 'bg-slate-50 text-slate-600 border-slate-200'
-                            }`}>
-                              {isUnlocked ? '🔓 Trạng thái: ĐÃ MỞ' : '🔒 Trạng thái: ĐÃ KHÓA'}
-                            </span>
-                          )}
-                        </div>
                       </div>
 
                       {c.status === 'OVERDUE' && (
@@ -3688,7 +3673,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <div className="flex flex-wrap items-center gap-1.5">
                 {[
                   { id: 'ALL', label: 'Tất cả', count: unitHistoryCounts.all, icon: 'apps' },
-                  { id: 'ACCESS', label: 'Đóng / Mở kho & Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
+                  { id: 'ACCESS', label: 'Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
                   { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
                   { id: 'NOTIFICATION', label: 'Thông báo & Hợp đồng', count: unitHistoryCounts.notification, icon: 'notifications' },
                 ].map(tab => {
@@ -4939,7 +4924,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
                           </td>
                           <td className="py-3.5 px-4 text-center">
-                            {isPaper ? (
+                            {c.status === 'TERMINATED' ? (
+                              <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                                Đã thanh lý
+                              </span>
+                            ) : c.status === 'EXPIRED' ? (
+                              <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-orange-50 text-orange-700 border border-orange-200">
+                                Đã hết hạn
+                              </span>
+                            ) : c.status === 'CANCELLED' ? (
+                              <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                Đã hủy
+                              </span>
+                            ) : isPaper ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
                                 <span className="material-symbols-outlined text-[13px]">verified</span>
                                 <span>HĐ Giấy Đã Ký</span>
@@ -4952,6 +4949,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
                                   : c.status === 'PENDING_SIGNATURE'
                                   ? 'bg-amber-50 text-amber-800 border border-amber-300 animate-pulse'
+                                  : c.status === 'OVERDUE'
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
                                   : 'bg-slate-100 text-slate-600 border border-slate-200'
                               }`}>
                                 {c.status === 'ACTIVE' 
@@ -4960,6 +4959,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   ? 'Đã ký • Chờ nhận kho'
                                   : c.status === 'PENDING_SIGNATURE' 
                                   ? 'Chờ ký số' 
+                                  : c.status === 'OVERDUE'
+                                  ? 'Quá hạn thanh toán'
                                   : c.status}
                               </span>
                             )}
@@ -7640,8 +7641,22 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               </div>
               <div className="text-right space-y-0.5">
                 <span className="text-slate-500 font-medium block text-[11px]">Trạng thái hợp đồng:</span>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  {contractHistoryModal.contract.status === 'ACTIVE' ? 'Đang hoạt động' : contractHistoryModal.contract.status}
+                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                  contractHistoryModal.contract.status === 'ACTIVE'
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                    : contractHistoryModal.contract.status === 'TERMINATED'
+                    ? 'bg-slate-100 text-slate-700 border-slate-300'
+                    : contractHistoryModal.contract.status === 'EXPIRED'
+                    ? 'bg-orange-100 text-orange-800 border-orange-300'
+                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                }`}>
+                  {contractHistoryModal.contract.status === 'ACTIVE'
+                    ? 'Đang hoạt động'
+                    : contractHistoryModal.contract.status === 'TERMINATED'
+                    ? 'Đã thanh lý'
+                    : contractHistoryModal.contract.status === 'EXPIRED'
+                    ? 'Đã hết hạn'
+                    : contractHistoryModal.contract.status}
                 </span>
               </div>
             </div>

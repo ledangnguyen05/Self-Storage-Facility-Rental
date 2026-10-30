@@ -41,13 +41,29 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
               <div className="flex items-center gap-2">
                 <span className="font-mono text-xs font-bold text-blue-400">#{contract.contractCode}</span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                  isSigned
+                  contract.status === 'TERMINATED'
+                    ? 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
+                    : contract.status === 'EXPIRED'
+                    ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                    : isActive
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : isSigned
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     : isPendingSignature
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
                     : 'bg-slate-700 text-slate-300'
                 }`}>
-                  {isActive ? 'ĐANG HIỆU LỰC (ACTIVE)' : isSigned ? 'ĐÃ KÝ ĐIỆN TỬ' : isPendingSignature ? 'CHỜ KÝ SỐ (PENDING)' : contract.status}
+                  {contract.status === 'TERMINATED'
+                    ? 'ĐÃ THANH LÝ'
+                    : contract.status === 'EXPIRED'
+                    ? 'ĐÃ HẾT HẠN'
+                    : isActive
+                    ? 'ĐANG HIỆU LỰC (ACTIVE)'
+                    : isSigned
+                    ? 'ĐÃ KÝ ĐIỆN TỬ'
+                    : isPendingSignature
+                    ? 'CHỜ KÝ SỐ (PENDING)'
+                    : contract.status}
                 </span>
               </div>
               <h2 className="text-sm font-bold text-slate-100">
@@ -305,8 +321,14 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                     )}
                   </div>
                 ) : (
-                  <div className="my-4 w-48 h-36 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center p-3 text-slate-400 text-xs">
-                    {contract.status}
+                  <div className="my-4 w-48 h-36 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center p-3 text-slate-500 text-xs font-semibold">
+                    {contract.status === 'TERMINATED'
+                      ? 'Hợp đồng đã thanh lý'
+                      : contract.status === 'EXPIRED'
+                      ? 'Hợp đồng đã hết hạn'
+                      : contract.status === 'CANCELLED'
+                      ? 'Hợp đồng đã hủy'
+                      : contract.status}
                   </div>
                 )}
 

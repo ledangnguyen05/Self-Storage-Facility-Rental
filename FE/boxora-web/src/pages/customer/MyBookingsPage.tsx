@@ -398,7 +398,7 @@ export function getBookingStage(b: Booking): BookingStageInfo {
   if (isActive) {
     return {
       stage: 'ACTIVE',
-      label: 'Đang thuê hoạt động',
+      label: 'Đang thuê',
       badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800',
       dotClass: 'bg-emerald-500',
       description: 'Hợp đồng đang có hiệu lực 24/7. Quý khách có thể sử dụng Portal điều khiển khóa thông minh IoT.',
