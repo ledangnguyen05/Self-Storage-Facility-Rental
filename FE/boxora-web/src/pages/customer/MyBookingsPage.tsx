@@ -23,6 +23,7 @@ import {
   MapPin,
   Check,
   AlertCircle,
+  AlertTriangle,
   QrCode,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
@@ -109,6 +110,147 @@ const safeFormatDate = (dateVal?: string | null, fallback = ''): string => {
     return d.toLocaleDateString('vi-VN')
   } catch {
     return fallback || String(dateVal)
+  }
+}
+
+
+export interface CheckInCountdownInfo {
+  type: 'TODAY' | 'UPCOMING' | 'OVERDUE'
+  diffDays: number
+  badgeText: string
+  formattedDate: string
+  isToday: boolean
+  isUpcoming: boolean
+  isOverdue: boolean
+  overdueDays: number
+  autoCancelDeadline: Date
+  remainingMs: number
+  autoCancelCountdownStr: string
+  isAutoCancelExpired: boolean
+}
+
+export function getCheckInCountdownInfo(b: Booking, nowMs: number): CheckInCountdownInfo | null {
+  if (!b) return null
+
+  const statusUpper = (b.status || '').toUpperCase()
+  if (statusUpper === 'ACTIVE' || statusUpper === 'COMPLETED' || statusUpper === 'CANCELLED') {
+    return null
+  }
+
+  const rawDate = (b as any).checkInDate || b.expectedCheckInAt || b.startDate
+  if (!rawDate) return null
+
+  let targetDate: Date
+  if (typeof rawDate === 'string') {
+    const parsed = new Date(rawDate)
+    if (!isNaN(parsed.getTime())) {
+      targetDate = parsed
+    } else {
+      const match = rawDate.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      if (match) {
+        targetDate = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]))
+      } else {
+        return null
+      }
+    }
+  } else {
+    targetDate = new Date(rawDate)
+  }
+
+  if (isNaN(targetDate.getTime())) return null
+
+  const now = new Date(nowMs)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const targetDayStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()).getTime()
+
+  const diffMs = targetDayStart - todayStart
+  const diffDays = Math.round(diffMs / (24 * 60 * 60 * 1000))
+
+  const formattedDate = targetDate.toLocaleDateString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+
+  // Tính hạn hủy tự động theo chính sách bảo lưu giữ chỗ của cơ sở
+  let autoCancelDeadline: Date
+  if (b.holdExpiresAt) {
+    autoCancelDeadline = new Date(b.holdExpiresAt)
+  } else {
+    // Đơn ký tại quầy: gia hạn 48 giờ sau ngày hẹn. Đơn thông thường: gia hạn holdGraceHours (mặc định 24 giờ).
+    const graceHours = b.signingMethod === 'IN_PERSON' ? 48 : (b.holdGraceHours || 24)
+    // Tính từ thời điểm kết thúc ngày hẹn tiếp đón (23:59:59 của ngày hẹn)
+    const endOfCheckInDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59).getTime()
+    autoCancelDeadline = new Date(endOfCheckInDay + graceHours * 3600 * 1000)
+  }
+
+  const remainingMs = autoCancelDeadline.getTime() - nowMs
+  const isAutoCancelExpired = remainingMs <= 0
+
+  let autoCancelCountdownStr = ''
+  if (isAutoCancelExpired) {
+    autoCancelCountdownStr = 'Đã hết hạn giữ kho — Hệ thống đang xử lý tự động hủy đơn'
+  } else {
+    const totalSecs = Math.floor(remainingMs / 1000)
+    const hours = Math.floor(totalSecs / 3600)
+    const mins = Math.floor((totalSecs % 3600) / 60)
+    const secs = totalSecs % 60
+
+    if (hours >= 24) {
+      const days = Math.floor(hours / 24)
+      const remHours = hours % 24
+      autoCancelCountdownStr = `${days} ngày ${remHours.toString().padStart(2, '0')} giờ ${mins.toString().padStart(2, '0')} phút ${secs.toString().padStart(2, '0')} giây`
+    } else {
+      autoCancelCountdownStr = `${hours.toString().padStart(2, '0')} giờ ${mins.toString().padStart(2, '0')} phút ${secs.toString().padStart(2, '0')} giây`
+    }
+  }
+
+  if (diffDays === 0) {
+    return {
+      type: 'TODAY',
+      diffDays: 0,
+      badgeText: 'Hôm nay',
+      formattedDate,
+      isToday: true,
+      isUpcoming: false,
+      isOverdue: false,
+      overdueDays: 0,
+      autoCancelDeadline,
+      remainingMs,
+      autoCancelCountdownStr,
+      isAutoCancelExpired,
+    }
+  } else if (diffDays > 0) {
+    return {
+      type: 'UPCOMING',
+      diffDays,
+      badgeText: `${diffDays} ngày sắp tới`,
+      formattedDate,
+      isToday: false,
+      isUpcoming: true,
+      isOverdue: false,
+      overdueDays: 0,
+      autoCancelDeadline,
+      remainingMs,
+      autoCancelCountdownStr,
+      isAutoCancelExpired,
+    }
+  } else {
+    const overdueDays = Math.abs(diffDays)
+    return {
+      type: 'OVERDUE',
+      diffDays,
+      badgeText: `Quá ${overdueDays} ngày`,
+      formattedDate,
+      isToday: false,
+      isUpcoming: false,
+      isOverdue: true,
+      overdueDays,
+      autoCancelDeadline,
+      remainingMs,
+      autoCancelCountdownStr,
+      isAutoCancelExpired,
+    }
   }
 }
 
@@ -325,6 +467,12 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   const [selectedBookingForDetail, setSelectedBookingForDetail] = useState<Booking | null>(null)
   const [detailQrCodeUrl, setDetailQrCodeUrl] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [currentTime, setCurrentTime] = useState<number>(() => Date.now())
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Data state
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -418,6 +566,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   checkInDate: r.checkInDate,
                   checkInTime: r.checkInTime,
                   status: (r.status as any) || 'PENDING_CONTACT',
+                  holdExpiresAt: r.holdExpiresAt || null,
+                  holdGraceHours: r.holdGraceHours || 24,
                   createdAt: r.createdAt || new Date().toISOString(),
                 } as any)
               }
@@ -963,6 +1113,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {filteredBookings.map((b) => {
               const stageInfo = getBookingStage(b)
+              const checkInCountdown = getCheckInCountdownInfo(b, currentTime)
               const isPaid =
                 b.paymentStatus === 'PAID' ||
                 Number(b.depositPaid || 0) > 0 ||
@@ -1110,7 +1261,22 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                        <span className="text-slate-400 block text-[10px]">LỊCH HẸN TIẾP ĐÓN</span>
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="text-slate-400 block text-[10px] font-bold uppercase">LỊCH HẸN TIẾP ĐÓN</span>
+                          {checkInCountdown && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold border shrink-0 ${
+                                checkInCountdown.type === 'TODAY'
+                                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 animate-pulse'
+                                  : checkInCountdown.type === 'UPCOMING'
+                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                  : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 font-extrabold'
+                              }`}
+                            >
+                              {checkInCountdown.badgeText}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1 mt-0.5 font-semibold text-slate-800 dark:text-slate-200">
                           <Calendar size={12} className="text-blue-500 shrink-0" />
                           <span>{(b as any).checkInDate || safeFormatDate(b.expectedCheckInAt)}</span>
@@ -1153,6 +1319,40 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         </span>
                       </div>
                     </div>
+
+                    {/* Cảnh báo đơn đang quá thời gian check-in & đếm ngược tự động hủy đơn theo chính sách */}
+                    {checkInCountdown?.isOverdue && (
+                      <div className="p-3 rounded-xl border border-rose-300 dark:border-rose-800/80 bg-rose-50/95 dark:bg-rose-950/50 text-xs space-y-2 shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 font-bold text-rose-800 dark:text-rose-300">
+                            <AlertTriangle size={15} className="shrink-0 text-rose-600 animate-bounce" />
+                            <span>Quá thời gian check-in: Quá {checkInCountdown.overdueDays} ngày</span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-600 text-white shrink-0 uppercase tracking-wider">
+                            Quá hạn
+                          </span>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-rose-900 dark:text-rose-200">
+                          Đơn của quý khách đã quá lịch hẹn nhận kho ban đầu ({checkInCountdown.formattedDate}). Theo chính sách bảo lưu giữ chỗ của cơ sở, hệ thống sẽ <strong>tự động hủy đơn và giải phóng buồng kho</strong> sau:
+                        </p>
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 font-mono font-bold text-xs">
+                          <Clock size={14} className="text-rose-600 shrink-0 animate-spin" />
+                          <span>Thời gian còn lại: {checkInCountdown.autoCancelCountdownStr}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 pt-0.5">
+                          <span className="text-[10px] text-rose-700 dark:text-rose-400 italic">
+                            * Vui lòng mang CCCD gốc đến cơ sở nhận kho sớm nhất hoặc đổi lịch hẹn.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBookingForReschedule(b)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition shrink-0 cursor-pointer shadow-xs"
+                          >
+                            Đổi lịch hẹn
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Notice Callout Box */}
                     <div
@@ -1349,7 +1549,26 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 <span className="text-slate-500">{selectedBookingForDetail.customerPhone}</span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                <span className="text-slate-400 block text-[10px] font-bold uppercase">LỊCH HẸN TIẾP ĐÓN:</span>
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-slate-400 block text-[10px] font-bold uppercase">LỊCH HẸN TIẾP ĐÓN:</span>
+                  {(() => {
+                    const cd = getCheckInCountdownInfo(selectedBookingForDetail, currentTime)
+                    if (!cd) return null
+                    return (
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border shrink-0 ${
+                          cd.type === 'TODAY'
+                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300 animate-pulse'
+                            : cd.type === 'UPCOMING'
+                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            : 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold'
+                        }`}
+                      >
+                        {cd.badgeText}
+                      </span>
+                    )
+                  })()}
+                </div>
                 <strong className="text-slate-900 dark:text-white block mt-0.5">
                   {(selectedBookingForDetail as any).checkInDate || safeFormatDate(selectedBookingForDetail.expectedCheckInAt)}
                 </strong>

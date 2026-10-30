@@ -981,15 +981,47 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       year: 'numeric',
     })
 
+    // Tính hạn hủy tự động theo chính sách bảo lưu giữ chỗ của cơ sở
+    let autoCancelDeadline: Date
+    if (b.holdExpiresAt) {
+      autoCancelDeadline = new Date(b.holdExpiresAt)
+    } else {
+      const graceHours = b.signingMethod === 'IN_PERSON' ? 48 : (b.holdGraceHours || 24)
+      const endOfCheckInDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 23, 59, 59).getTime()
+      autoCancelDeadline = new Date(endOfCheckInDay + graceHours * 3600 * 1000)
+    }
+
+    const remainingMs = autoCancelDeadline.getTime() - Date.now()
+    const isAutoCancelExpired = remainingMs <= 0
+
+    let autoCancelCountdownStr = ''
+    if (isAutoCancelExpired) {
+      autoCancelCountdownStr = 'Đã hết hạn giữ kho — Hệ thống đang xử lý tự động hủy đơn'
+    } else {
+      const totalSecs = Math.floor(remainingMs / 1000)
+      const hours = Math.floor(totalSecs / 3600)
+      const mins = Math.floor((totalSecs % 3600) / 60)
+      const secs = totalSecs % 60
+
+      if (hours >= 24) {
+        const days = Math.floor(hours / 24)
+        const remHours = hours % 24
+        autoCancelCountdownStr = `${days} ngày ${remHours.toString().padStart(2, '0')} giờ ${mins.toString().padStart(2, '0')} phút ${secs.toString().padStart(2, '0')} giây`
+      } else {
+        autoCancelCountdownStr = `${hours.toString().padStart(2, '0')} giờ ${mins.toString().padStart(2, '0')} phút ${secs.toString().padStart(2, '0')} giây`
+      }
+    }
+
     if (diffDays < 0) {
       const overdueDays = Math.abs(diffDays)
       return {
         type: 'OVERDUE' as const,
         days: overdueDays,
-        text: `đã quá ${overdueDays} ngày`,
-        alertTitle: `Chú ý: Đã quá ${overdueDays} ngày so với lịch hẹn nhận kho!`,
-        alertMessage: `Lịch hẹn nhận kho ban đầu là ngày ${formattedDate}. Quý khách vui lòng đến cơ sở để hoàn tất nhận bàn giao kho hoặc bấm "Đổi lịch" bên dưới để hẹn ngày mới phù hợp.`,
+        text: `quá ${overdueDays} ngày`,
+        alertTitle: `Cảnh báo quá thời gian check-in: Quá ${overdueDays} ngày`,
+        alertMessage: `Lịch hẹn nhận kho ban đầu là ngày ${formattedDate}. Theo chính sách cơ sở, hệ thống sẽ tiến hành tự động hủy đơn sau: ${autoCancelCountdownStr}`,
         formattedDate,
+        autoCancelCountdownStr,
       }
     } else if (diffDays === 0) {
       return {
@@ -999,6 +1031,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         alertTitle: 'Hôm nay là ngày hẹn nhận kho!',
         alertMessage: `Lịch hẹn nhận kho của quý khách là HÔM NAY (${formattedDate})! Vui lòng mang CCCD gốc đến cơ sở Boxora để nhận bàn giao kho và kích hoạt mã PIN SmartLock.`,
         formattedDate,
+        autoCancelCountdownStr: '',
       }
     } else {
       return {
@@ -1008,6 +1041,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         alertTitle: `Lịch hẹn nhận kho: ${diffDays} ngày sắp tới`,
         alertMessage: `Lịch hẹn nhận kho dự kiến trong ${diffDays} ngày sắp tới (${formattedDate}). Quý khách vui lòng lưu ý thời gian đến cơ sở đúng hẹn.`,
         formattedDate,
+        autoCancelCountdownStr: '',
       }
     }
   }, [])
