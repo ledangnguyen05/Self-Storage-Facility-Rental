@@ -2412,27 +2412,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
   }, [customerTickets, customerBookings, contracts, returnActivityLogs])
 
-  const [returnSearch, setReturnSearch] = useState('')
   const [returnUnitFilter, setReturnUnitFilter] = useState('ALL')
+  const [expandedReturnOrderIds, setExpandedReturnOrderIds] = useState<Record<string, boolean>>({})
 
-  const filteredReturnLogs = useMemo(() => {
-    return returnActivityLogs.filter(log => {
-      if (returnUnitFilter !== 'ALL' && log.unitCode !== returnUnitFilter) {
-        return false
-      }
-      if (returnSearch.trim()) {
-        const q = returnSearch.toLowerCase().trim()
-        const matchTitle = log.title?.toLowerCase().includes(q)
-        const matchDesc = log.description?.toLowerCase().includes(q)
-        const matchUnit = log.unitCode?.toLowerCase().includes(q)
-        const matchStatus = log.statusLabel?.toLowerCase().includes(q)
-        if (!matchTitle && !matchDesc && !matchUnit && !matchStatus) {
-          return false
-        }
-      }
-      return true
-    })
-  }, [returnActivityLogs, returnSearch, returnUnitFilter])
+  const toggleExpandedReturnOrder = (orderId: string) => {
+    setExpandedReturnOrderIds(prev => ({
+      ...prev,
+      [orderId]: !prev[orderId],
+    }))
+  }
 
   const openRenewModal = (c: RentalContract) => {
     // Nếu kho này đang có yêu cầu gia hạn chờ ký hoặc chờ thanh toán, mở ngay Phụ lục gia hạn cho khách thao tác tiếp
@@ -5638,20 +5626,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           onNavigateToReturns={(unitCode, bookingId) => {
             if (unitCode) {
               setHighlightedReturnUnitCode(unitCode)
-              setReturnSearch('')
               setReturnUnitFilter('ALL')
+              const matchedOrder = activeReturnOrders.find(o => o.unitCode?.toUpperCase() === unitCode.toUpperCase())
+              if (matchedOrder) {
+                setExpandedReturnOrderIds(prev => ({ ...prev, [matchedOrder.id]: true }))
+              }
             }
             handleTabChange('returns')
             setTimeout(() => {
               const cleanCode = unitCode?.toUpperCase().trim()
-              const el = cleanCode ? document.getElementById(`return-log-${cleanCode}`) : null
+              const el = cleanCode ? document.getElementById(`return-order-card-${cleanCode}`) : null
               if (el) {
                 el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-              } else {
-                const listEl = document.getElementById('return-activity-logs-section')
-                if (listEl) {
-                  listEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
               }
             }, 300)
           }}
@@ -5730,6 +5716,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   .filter(o => returnUnitFilter === 'ALL' || o.unitCode === returnUnitFilter)
                   .map(o => {
                     const isTargeted = returnUnitFilter !== 'ALL' && o.unitCode === returnUnitFilter
+                    const isExpanded = Boolean(expandedReturnOrderIds[o.id])
+                    const orderRelatedLogs = returnActivityLogs.filter(log => {
+                      if (o.unitCode && log.unitCode && log.unitCode.toUpperCase() === o.unitCode.toUpperCase()) {
+                        return true
+                      }
+                      if (o.bookingId && log.meta?.bookingId && log.meta.bookingId === o.bookingId) {
+                        return true
+                      }
+                      if (o.ticketCode && (log.title.includes(o.ticketCode) || log.description.includes(o.ticketCode))) {
+                        return true
+                      }
+                      return false
+                    })
                     return (
                       <div
                         key={o.id}
@@ -5940,163 +5939,131 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </button>
                           </div>
 
-                          <span className="text-[11px] text-slate-500 italic">
-                            * Quy trình nghiệm thu được nhân viên &amp; quản lý Boxora xử lý trực tiếp tại cơ sở.
-                          </span>
+                          {/* Nút Xem / Ẩn danh sách thông báo & đối soát trả kho cho riêng đơn này (thay thế dòng ghi chú) */}
+                          <button
+                            type="button"
+                            onClick={() => toggleExpandedReturnOrder(o.id)}
+                            className={`px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-98 ${
+                              isExpanded
+                                ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300'
+                                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[16px] text-amber-700">
+                              {isExpanded ? 'visibility_off' : 'notifications_active'}
+                            </span>
+                            <span>
+                              {isExpanded
+                                ? 'Ẩn xem danh sách thông báo & đối soát trả kho'
+                                : `Xem danh sách thông báo & đối soát trả kho (${orderRelatedLogs.length})`}
+                            </span>
+                          </button>
                         </div>
+
+                        {/* Danh sách thông báo & đối soát trả kho riêng cho đơn này khi click Xem */}
+                        {isExpanded && (
+                          <div className="mt-4 pt-4 border-t border-amber-200/80 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center justify-between gap-2 px-1">
+                              <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-[18px] text-amber-600">notifications_active</span>
+                                <h6 className="font-bold text-xs text-slate-900 uppercase tracking-wider">
+                                  Danh sách thông báo &amp; đối soát buồng kho #{o.unitCode} ({orderRelatedLogs.length})
+                                </h6>
+                              </div>
+                              <span className="text-[11px] text-slate-500 font-mono">
+                                Đơn {o.ticketCode || o.unitCode}
+                              </span>
+                            </div>
+
+                            {orderRelatedLogs.length === 0 ? (
+                              <div className="p-6 text-center bg-slate-50/80 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                                Chưa có thông báo hoặc sự kiện đối soát nào phát sinh cho đơn trả kho này.
+                              </div>
+                            ) : (
+                              <div className="divide-y divide-slate-100 border border-amber-200/80 rounded-xl overflow-hidden bg-white shadow-2xs">
+                                {orderRelatedLogs.map(log => {
+                                  const targetBookingId =
+                                    log.meta?.bookingId ||
+                                    o.bookingId ||
+                                    (log.unitCode ? customerBookings.find(b => b.unitCode === log.unitCode)?.id : undefined)
+
+                                  const latestSettlementLogForThisUnit = returnActivityLogs.find(
+                                    l => l.unitCode && log.unitCode && l.unitCode === log.unitCode && l.actionType === 'RETURN_SETTLEMENT'
+                                  )
+                                  const isLatestSettlementDecisionLog = Boolean(
+                                    latestSettlementLogForThisUnit &&
+                                    log.id === latestSettlementLogForThisUnit.id &&
+                                    log.actionType === 'RETURN_SETTLEMENT'
+                                  )
+                                  const isReadOnlyForThisLog = !isLatestSettlementDecisionLog
+
+                                  return (
+                                    <div
+                                      key={log.id}
+                                      className="p-3.5 sm:p-4 hover:bg-slate-50/70 transition-colors flex flex-col sm:flex-row items-start justify-between gap-3"
+                                    >
+                                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                                        <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                                          <span className="material-symbols-outlined text-[18px]">
+                                            {log.title.includes('khiếu nại') || log.title.includes('Khiếu nại')
+                                              ? 'report_problem'
+                                              : log.title.includes('hoàn cọc') || log.title.includes('Hoàn cọc')
+                                              ? 'savings'
+                                              : 'fact_check'}
+                                          </span>
+                                        </div>
+                                        <div className="space-y-1 min-w-0 flex-1">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            {log.unitCode && (
+                                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono font-bold text-[10px]">
+                                                KHO #{log.unitCode}
+                                              </span>
+                                            )}
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] border border-amber-200">
+                                              {log.statusLabel || 'Trả kho'}
+                                            </span>
+                                            <span className="text-[11px] text-slate-400 font-mono">
+                                              {formatRelativeTimeVi(log.timestamp)}
+                                            </span>
+                                          </div>
+                                          <h6 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
+                                            {log.title}
+                                          </h6>
+                                          <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line font-medium">
+                                            {log.description}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {targetBookingId && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenSettlementModal(targetBookingId, isReadOnlyForThisLog)}
+                                          className={`w-full sm:w-auto px-3.5 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-stretch sm:self-center active:scale-98 ${
+                                            isReadOnlyForThisLog
+                                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs'
+                                              : 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/30'
+                                          }`}
+                                        >
+                                          <span className="material-symbols-outlined text-[16px]">
+                                            {isReadOnlyForThisLog ? 'visibility' : 'assignment_turned_in'}
+                                          </span>
+                                          <span>{isReadOnlyForThisLog ? 'Xem Biên Bản' : 'Xem Biên Bản & Quyết Định'}</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
               </div>
             </div>
           )}
-
-          {/* Danh sách các thông báo / sự kiện đối soát trả kho */}
-          <div id="return-activity-logs-section" className="bg-white rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/50 overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-[20px] text-amber-600">notifications_active</span>
-                <span className="font-bold text-xs text-slate-800">
-                  Danh sách thông báo &amp; đối soát trả kho ({filteredReturnLogs.length})
-                </span>
-              </div>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <select
-                  value={returnUnitFilter}
-                  onChange={e => setReturnUnitFilter(e.target.value)}
-                  aria-label="Lọc theo kho"
-                  className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="ALL">Tất cả các kho ({returnActivityLogs.length})</option>
-                  {Array.from(new Set(returnActivityLogs.map(l => l.unitCode).filter(Boolean))).map(code => (
-                    <option key={code} value={code}>
-                      Kho #{code}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="relative min-w-[200px]">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">
-                    search
-                  </span>
-                  <input
-                    type="text"
-                    value={returnSearch}
-                    onChange={e => setReturnSearch(e.target.value)}
-                    placeholder="Tìm theo kho, nội dung..."
-                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {filteredReturnLogs.length === 0 ? (
-              <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-[28px]">assignment_return</span>
-                </div>
-                <div className="space-y-1">
-                  <h4 className="font-bold text-sm text-slate-800">Chưa có thông báo trả kho nào</h4>
-                  <p className="text-xs text-slate-500 max-w-md">
-                    Khi bạn thực hiện thủ tục trả phòng kho, kết quả kiểm tra 7 tiêu chí hiện trường và quyết toán hoàn cọc sẽ được hiển thị chi tiết tại đây.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {filteredReturnLogs.map((log) => {
-                  const targetBookingId =
-                    log.meta?.bookingId ||
-                    (log.unitCode ? customerBookings.find(b => b.unitCode === log.unitCode)?.id : undefined)
-                  const isMatchingFilter = returnUnitFilter !== 'ALL' && log.unitCode === returnUnitFilter
-                  const isHighlighted = Boolean(
-                    (highlightedReturnUnitCode && log.unitCode && log.unitCode.toUpperCase() === highlightedReturnUnitCode.toUpperCase()) ||
-                    isMatchingFilter
-                  )
-
-                  // Tìm log quyết toán mới nhất (sau khi tính toán lại) của buồng kho này
-                  const latestSettlementLogForThisUnit = returnActivityLogs.find(
-                    l => l.unitCode && log.unitCode && l.unitCode === log.unitCode && l.actionType === 'RETURN_SETTLEMENT'
-                  )
-
-                  // Đơn sau mới nhất được phép ra quyết định:
-                  // Bắt buộc phải là log quyết toán (RETURN_SETTLEMENT) VÀ là log quyết toán mới nhất của kho đó!
-                  const isLatestSettlementDecisionLog = Boolean(
-                    latestSettlementLogForThisUnit &&
-                    log.id === latestSettlementLogForThisUnit.id &&
-                    log.actionType === 'RETURN_SETTLEMENT'
-                  )
-
-                  // Nếu không phải là log quyết toán mới nhất của kho (ví dụ: ticket yêu cầu trước đó, thông báo cũ hơn, hoặc đơn cũ):
-                  // -> Đây là đơn cũ / đơn trước đó liên quan đến kho -> CHỈ ĐƯỢC XEM THÔI (readOnly = true)
-                  const isReadOnlyForThisLog = !isLatestSettlementDecisionLog
-                  return (
-                    <div
-                      key={log.id}
-                      id={`return-log-${log.unitCode}`}
-                      className={`p-4 sm:p-5 transition-all duration-300 flex flex-col sm:flex-row items-start justify-between gap-4 ${
-                        isHighlighted
-                          ? 'bg-gradient-to-r from-amber-50/90 via-white to-amber-50/60 border-2 border-amber-400 rounded-2xl shadow-xl shadow-amber-500/25 ring-4 ring-amber-400/30 my-3'
-                          : 'hover:bg-slate-50/70'
-                      }`}
-                    >
-                      <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 shadow-xs ${
-                          isHighlighted ? 'bg-amber-200 text-amber-800' : 'bg-amber-100 text-amber-700'
-                        }`}>
-                          <span className="material-symbols-outlined text-[20px]">
-                            {log.title.includes('khiếu nại') || log.title.includes('Khiếu nại')
-                              ? 'report_problem'
-                              : log.title.includes('hoàn cọc') || log.title.includes('Hoàn cọc')
-                              ? 'savings'
-                              : 'fact_check'}
-                          </span>
-                        </div>
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {log.unitCode && (
-                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono font-bold text-[11px] shadow-2xs">
-                                KHO #{log.unitCode}
-                              </span>
-                            )}
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] border border-amber-200">
-                              {log.statusLabel || 'Trả kho'}
-                            </span>
-                            <span className="text-[11px] text-slate-400 font-mono">
-                              {formatRelativeTimeVi(log.timestamp)}
-                            </span>
-                          </div>
-                          <h5 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
-                            {log.title}
-                          </h5>
-                          <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line font-medium">
-                            {log.description}
-                          </p>
-                        </div>
-                      </div>
-
-                      {targetBookingId && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenSettlementModal(targetBookingId, isReadOnlyForThisLog)}
-                          className={`w-full sm:w-auto px-4 py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-stretch sm:self-center active:scale-98 ${
-                            isReadOnlyForThisLog
-                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 shadow-2xs'
-                              : 'bg-amber-600 hover:bg-amber-700 text-white shadow-md shadow-amber-600/30'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[16px]">
-                            {isReadOnlyForThisLog ? 'visibility' : 'assignment_turned_in'}
-                          </span>
-                          <span>{isReadOnlyForThisLog ? 'Xem Biên Bản' : 'Xem Biên Bản & Quyết Định'}</span>
-                        </button>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
