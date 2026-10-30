@@ -19,7 +19,10 @@ import {
   QrCode,
   Lock,
   Printer,
-  Send
+  Send,
+  ZoomIn,
+  ExternalLink,
+  X
 } from 'lucide-react'
 import { Booking, StorageUnit } from '../../../types'
 import { storageUnitService } from '../../../services/storageUnitService'
@@ -280,6 +283,28 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const paymentProofInputRef = useRef<HTMLInputElement | null>(null)
   const paperContractScanInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Step 3: Evidence/Document Image Lightbox Modal State
+  const [previewImageModal, setPreviewImageModal] = useState<{
+    isOpen: boolean
+    title: string
+    url: string
+    fileName?: string
+  } | null>(null)
+
+  const isImageFile = (url?: string, name?: string): boolean => {
+    if (!url && !name) return false
+    const s = (name || url || '').toLowerCase()
+    return (
+      s.endsWith('.png') ||
+      s.endsWith('.jpg') ||
+      s.endsWith('.jpeg') ||
+      s.endsWith('.webp') ||
+      s.endsWith('.gif') ||
+      s.endsWith('.svg') ||
+      s.includes('image')
+    )
+  }
+
   // Shift & Early Check-In States
   const [isEarlyCheckInConfirmed, setIsEarlyCheckInConfirmed] = useState<boolean>(false)
   const [showEarlyCheckInModal, setShowEarlyCheckInModal] = useState<boolean>(false)
@@ -469,9 +494,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     (isAlreadyActive && currentBooking?.unitCode)
   )
 
+  const effectivePaymentProofUrl =
+    currentSession.paymentProofUrl ||
+    currentPrerequisites?.paymentHistory?.find((p) => Boolean(p.proofDocumentUrl))?.proofDocumentUrl
+
+  const effectivePaymentProofName =
+    currentSession.paymentProofName ||
+    (effectivePaymentProofUrl ? effectivePaymentProofUrl.split('/').pop() : undefined)
+
+  const effectivePaperContractUrl =
+    currentSession.paperContractUrl ||
+    currentPrerequisites?.paperContractUrl
+
+  const effectivePaperContractName =
+    currentSession.paperContractName ||
+    (effectivePaperContractUrl ? effectivePaperContractUrl.split('/').pop() : undefined)
+
   const isContractAndPaymentSatisfied = Boolean(
     (isDepositMet && isRentMet && isContractMet) ||
-    (Boolean(currentSession.paymentProofUrl) && Boolean(currentSession.paperContractUrl || isContractMet))
+    (Boolean(effectivePaymentProofUrl) && Boolean(effectivePaperContractUrl || isContractMet))
   )
 
   const customerDisplayName =
@@ -1946,16 +1987,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       Tải lên chứng từ chuyển khoản ngân hàng hoặc xác nhận thanh toán trực tuyến/VietQR tại cơ sở.
                     </span>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={handleCreateCounterVNPayLink}
-                    disabled={isCreatingVNPayLink}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
-                  >
-                    <Smartphone size={14} />
-                    <span>{isCreatingVNPayLink ? 'Đang tạo link VNPay...' : 'Tạo link VNPay cho khách'}</span>
-                  </button>
                 </div>
 
                 <input
@@ -1971,35 +2002,100 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <RefreshCw size={16} className="animate-spin" />
                     <span className="font-bold">Đang tải và xác thực chứng từ thanh toán...</span>
                   </div>
-                ) : currentSession.paymentProofUrl ? (
-                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                        <CheckCircle2 size={20} />
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">✓ ĐÃ LƯU CHỨNG TỪ THANH TOÁN</span>
-                        <span className="font-bold text-xs text-emerald-950 block">
-                          {currentSession.paymentProofName || 'Chung-tu-thanh-toan.jpg'}
+                ) : effectivePaymentProofUrl ? (
+                  <div className="p-4 rounded-2xl border-2 border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/30 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+                    <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                      {/* Thumbnail ảnh preview */}
+                      {isImageFile(effectivePaymentProofUrl, effectivePaymentProofName) ? (
+                        <div
+                          onClick={() =>
+                            setPreviewImageModal({
+                              isOpen: true,
+                              title: 'Ảnh Chứng Từ Thanh Toán Đã Lưu',
+                              url: effectivePaymentProofUrl,
+                              fileName: effectivePaymentProofName,
+                            })
+                          }
+                          className="relative group w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden border-2 border-emerald-400 dark:border-emerald-600 shadow-md bg-white shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500 hover:ring-offset-1 transition-all"
+                          title="Bấm để xem ảnh phóng to"
+                        >
+                          <img
+                            src={effectivePaymentProofUrl}
+                            alt="Chứng từ thanh toán"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                          <div className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-0.5 text-white transition-opacity">
+                            <ZoomIn size={20} />
+                            <span className="text-[10px] font-bold">Xem lớn</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => window.open(effectivePaymentProofUrl, '_blank')}
+                          className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-rose-50 border-2 border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0 cursor-pointer hover:bg-rose-100 transition shadow-xs"
+                          title="Bấm để mở file PDF"
+                        >
+                          <FileText size={32} />
+                          <span className="text-[10px] font-bold font-mono mt-1 uppercase">TÀI LIỆU PDF</span>
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] uppercase font-bold tracking-wider inline-flex items-center gap-1 shadow-2xs">
+                            <CheckCircle2 size={12} />
+                            <span>✓ ĐÃ LƯU CHỨNG TỪ THANH TOÁN</span>
+                          </span>
+                        </div>
+                        <span className="font-bold text-xs text-slate-900 dark:text-white block truncate">
+                          {effectivePaymentProofName || 'Chung-tu-thanh-toan.png'}
                         </span>
-                        <span className="font-mono text-[10px] text-emerald-700 truncate block">
-                          {currentSession.paymentProofUrl}
+                        <span className="font-mono text-[10px] text-emerald-800 dark:text-emerald-300 truncate block max-w-md">
+                          {effectivePaymentProofUrl}
                         </span>
+
+                        {/* Nút xem ảnh / mở tab mới */}
+                        <div className="pt-1 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewImageModal({
+                                isOpen: true,
+                                title: 'Ảnh Chứng Từ Thanh Toán Đã Lưu',
+                                url: effectivePaymentProofUrl,
+                                fileName: effectivePaymentProofName,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 hover:text-emerald-950 bg-emerald-100/90 dark:bg-emerald-900/50 px-2.5 py-1 rounded-lg border border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-200 transition"
+                          >
+                            <Eye size={13} />
+                            <span>Xem ảnh phóng to</span>
+                          </button>
+                          <a
+                            href={effectivePaymentProofUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Mở tab mới</span>
+                          </a>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                       <button
                         type="button"
                         onClick={() => paymentProofInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer shadow-2xs"
                       >
                         Đổi ảnh khác
                       </button>
                       <button
                         type="button"
                         onClick={() => updateCurrentSession({ paymentProofUrl: undefined, paymentProofName: undefined })}
-                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs cursor-pointer border border-rose-200"
                       >
                         Xóa
                       </button>
@@ -2034,21 +2130,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       Tải lên bản chụp hoặc scan hợp đồng giấy đã có chữ ký của hai bên.
                     </span>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (currentPrerequisites?.contractCode) {
-                        setShowPdfModal(true)
-                      } else {
-                        setCheckInError('Chưa có mã hợp đồng để mở phiên ký tại quầy.')
-                      }
-                    }}
-                    className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 border border-cyan-200 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer self-start sm:self-auto"
-                  >
-                    <FileText size={14} />
-                    <span>In Hợp Đồng Cho Khách Ký</span>
-                  </button>
                 </div>
 
                 <input
@@ -2064,35 +2145,100 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     <RefreshCw size={16} className="animate-spin" />
                     <span className="font-bold">Đang tải và lưu bản scan hợp đồng...</span>
                   </div>
-                ) : currentSession.paperContractUrl ? (
-                  <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                        <CheckCircle2 size={20} />
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-emerald-800 block">✓ ĐÃ LƯU BẢN SCAN HỢP ĐỒNG GIẤY</span>
-                        <span className="font-bold text-xs text-emerald-950 block">
-                          {currentSession.paperContractName || 'Hop-dong-giay-da-ky.pdf'}
+                ) : effectivePaperContractUrl ? (
+                  <div className="p-4 rounded-2xl border-2 border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/30 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+                    <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+                      {/* Thumbnail ảnh preview */}
+                      {isImageFile(effectivePaperContractUrl, effectivePaperContractName) ? (
+                        <div
+                          onClick={() =>
+                            setPreviewImageModal({
+                              isOpen: true,
+                              title: 'Ảnh Bản Scan Hợp Đồng Giấy Đã Ký',
+                              url: effectivePaperContractUrl,
+                              fileName: effectivePaperContractName,
+                            })
+                          }
+                          className="relative group w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden border-2 border-emerald-400 dark:border-emerald-600 shadow-md bg-white shrink-0 cursor-pointer hover:ring-2 hover:ring-emerald-500 hover:ring-offset-1 transition-all"
+                          title="Bấm để xem ảnh phóng to"
+                        >
+                          <img
+                            src={effectivePaperContractUrl}
+                            alt="Bản scan hợp đồng giấy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                          <div className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-0.5 text-white transition-opacity">
+                            <ZoomIn size={20} />
+                            <span className="text-[10px] font-bold">Xem lớn</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => window.open(effectivePaperContractUrl, '_blank')}
+                          className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-rose-50 border-2 border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0 cursor-pointer hover:bg-rose-100 transition shadow-xs"
+                          title="Bấm để mở file PDF"
+                        >
+                          <FileText size={32} />
+                          <span className="text-[10px] font-bold font-mono mt-1 uppercase">TÀI LIỆU PDF</span>
+                        </div>
+                      )}
+
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] uppercase font-bold tracking-wider inline-flex items-center gap-1 shadow-2xs">
+                            <CheckCircle2 size={12} />
+                            <span>✓ ĐÃ LƯU BẢN SCAN HỢP ĐỒNG GIẤY</span>
+                          </span>
+                        </div>
+                        <span className="font-bold text-xs text-slate-900 dark:text-white block truncate">
+                          {effectivePaperContractName || 'Hop-dong-giay-da-ky.png'}
                         </span>
-                        <span className="font-mono text-[10px] text-emerald-700 truncate block">
-                          {currentSession.paperContractUrl}
+                        <span className="font-mono text-[10px] text-emerald-800 dark:text-emerald-300 truncate block max-w-md">
+                          {effectivePaperContractUrl}
                         </span>
+
+                        {/* Nút xem ảnh / mở tab mới */}
+                        <div className="pt-1 flex items-center gap-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewImageModal({
+                                isOpen: true,
+                                title: 'Ảnh Bản Scan Hợp Đồng Giấy Đã Ký',
+                                url: effectivePaperContractUrl,
+                                fileName: effectivePaperContractName,
+                              })
+                            }
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 hover:text-emerald-950 bg-emerald-100/90 dark:bg-emerald-900/50 px-2.5 py-1 rounded-lg border border-emerald-300 dark:border-emerald-700 cursor-pointer hover:bg-emerald-200 transition"
+                          >
+                            <Eye size={13} />
+                            <span>Xem ảnh phóng to</span>
+                          </button>
+                          <a
+                            href={effectivePaperContractUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                          >
+                            <ExternalLink size={12} />
+                            <span>Mở tab mới</span>
+                          </a>
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                       <button
                         type="button"
                         onClick={() => paperContractScanInputRef.current?.click()}
-                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs cursor-pointer shadow-2xs"
                       >
                         Đổi file khác
                       </button>
                       <button
                         type="button"
                         onClick={() => updateCurrentSession({ paperContractUrl: undefined, paperContractName: undefined })}
-                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs cursor-pointer border border-rose-200"
                       >
                         Xóa
                       </button>
@@ -2698,6 +2844,84 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <span>Hoàn Tất &amp; Đóng</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal: Xem Phóng To Ảnh Chứng Từ / Hợp Đồng */}
+      {previewImageModal?.isOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5 animate-in fade-in duration-200"
+          onClick={() => setPreviewImageModal(null)}
+        >
+          <div
+            className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-800/50">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                  <Eye size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                    {previewImageModal.title}
+                  </h3>
+                  {previewImageModal.fileName && (
+                    <span className="text-[11px] text-slate-500 font-mono block truncate">
+                      {previewImageModal.fileName}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewImageModal.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+                  title="Mở trong tab mới"
+                >
+                  <ExternalLink size={16} />
+                  <span className="hidden sm:inline">Mở tab mới</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewImageModal(null)}
+                  className="w-8 h-8 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 dark:hover:bg-slate-800 dark:hover:text-white flex items-center justify-center transition cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body: Image Preview */}
+            <div className="p-4 flex-1 overflow-auto flex items-center justify-center bg-slate-100/60 dark:bg-slate-950/40 min-h-[300px]">
+              {isImageFile(previewImageModal.url, previewImageModal.fileName) ? (
+                <img
+                  src={previewImageModal.url}
+                  alt={previewImageModal.title}
+                  className="max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-lg border border-slate-200 dark:border-slate-800"
+                />
+              ) : (
+                <div className="text-center p-8 space-y-3">
+                  <FileText size={48} className="mx-auto text-rose-500" />
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    Tài liệu không phải định dạng ảnh thông thường (ví dụ: file PDF)
+                  </p>
+                  <a
+                    href={previewImageModal.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs shadow-md transition cursor-pointer"
+                  >
+                    <ExternalLink size={15} />
+                    <span>Mở file để xem trực tiếp</span>
+                  </a>
+                </div>
+              )}
             </div>
           </div>
         </div>
