@@ -4050,11 +4050,12 @@ public class HandoverServiceImpl implements HandoverService {
                     record.setRefundStatus("AWAITING_BANK_INFO");
                 }
 
-                // Notify Customer about submission to Business Manager
+                // Notify Customer & Facility Manager about submission for refund payout
+                String bName = record.getBankName() != null ? record.getBankName() : "";
+                String bAccNum = record.getBankAccountNumber() != null ? record.getBankAccountNumber() : "";
+                String bAccName = record.getBankAccountName() != null ? record.getBankAccountName() : "";
+
                 if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
-                    String bName = record.getBankName() != null ? record.getBankName() : "";
-                    String bAccNum = record.getBankAccountNumber() != null ? record.getBankAccountNumber() : "";
-                    String bAccName = record.getBankAccountName() != null ? record.getBankAccountName() : "";
                     NotificationLog custNotif = NotificationLog.builder()
                             .recipient(booking.getCustomer())
                             .recipientEmail(booking.getCustomer().getEmail())
@@ -4065,11 +4066,29 @@ public class HandoverServiceImpl implements HandoverService {
                             .referenceType("BOOKING")
                             .referenceId(booking.getId())
                             .title(String.format("Xác nhận thông tin hoàn cọc [%s]", unitCode))
-                            .content(String.format("Bạn đã đồng ý quyết toán kho %s. Thông tin tài khoản ngân hàng (%s - %s - %s) để hoàn số tiền %sđ đã được gửi trực tiếp cho Quản lý kinh doanh (Business Manager) để thực hiện thanh toán.",
+                            .content(String.format("Bạn đã đồng ý quyết toán kho %s. Thông tin tài khoản ngân hàng (%s - %s - %s) để hoàn số tiền %sđ đã được gửi trực tiếp cho Quản lý cơ sở (Facility Manager) để thực hiện hoàn tiền trong mục Xử lý hoàn tiền.",
                                     unitCode, bName, bAccNum, bAccName, df.format(netRefund)))
                             .status("SENT")
                             .build();
                     notificationLogRepository.save(custNotif);
+                }
+
+                if (facility != null && facility.getManager() != null && facility.getManager().getEmail() != null) {
+                    NotificationLog fmNotif = NotificationLog.builder()
+                            .recipient(facility.getManager())
+                            .recipientEmail(facility.getManager().getEmail())
+                            .recipientName(facility.getManager().getFullName())
+                            .facility(facility)
+                            .channel(NotificationChannel.IN_APP)
+                            .notificationType(NotificationType.REFUND_STATUS)
+                            .referenceType("BOOKING")
+                            .referenceId(booking.getId())
+                            .title(String.format("Yêu cầu hoàn cọc trả kho từ khách hàng [%s]", unitCode))
+                            .content(String.format("Khách hàng %s đã cung cấp thông tin tài khoản (%s - %s - %s) để hoàn tiền cọc %sđ đơn %s (Kho %s). Vui lòng vào mục \"Xử lý hoàn tiền hủy đơn\" để thực hiện chi trả.",
+                                    custName, bName, bAccNum, bAccName, df.format(netRefund), booking.getBookingCode(), unitCode))
+                            .status("SENT")
+                            .build();
+                    notificationLogRepository.save(fmNotif);
                 }
 
             } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {

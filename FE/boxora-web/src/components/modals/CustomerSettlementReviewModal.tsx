@@ -56,6 +56,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   const [bankName, setBankName] = useState(POPULAR_BANKS[0])
   const [bankAccountNumber, setBankAccountNumber] = useState('')
   const [bankAccountName, setBankAccountName] = useState('')
+  const [showBankConfirmModal, setShowBankConfirmModal] = useState(false)
+  const [bankDisclaimerChecked, setBankDisclaimerChecked] = useState(false)
 
   // Dispute Form State
   const [disputeReason, setDisputeReason] = useState('')
@@ -94,8 +96,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   const depositPaid = settlement ? settlement.depositPaid || 0 : 0
   const totalDeduction = settlement ? settlement.totalDeduction || 0 : 0
 
-  // 1. Customer agrees with refund -> Submit bank info to Business Manager
-  const handleSubmitBankAndAgree = async (e: React.FormEvent) => {
+  // 1. Customer agrees with refund -> Prompt confirmation dialog
+  const handlePromptBankConfirm = (e: React.FormEvent) => {
     e.preventDefault()
     if (!bankAccountNumber.trim()) {
       toast.warning('Vui lòng nhập số tài khoản ngân hàng nhận tiền hoàn.')
@@ -105,7 +107,16 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
       toast.warning('Vui lòng nhập tên chủ tài khoản ngân hàng.')
       return
     }
+    setBankDisclaimerChecked(false)
+    setShowBankConfirmModal(true)
+  }
 
+  // 1.1 Customer confirms bank details & disclaimer -> Submit to Facility Manager
+  const handleConfirmAndSubmitBank = async () => {
+    if (!bankDisclaimerChecked) {
+      toast.warning('Vui lòng đánh dấu xác nhận thông tin số tài khoản đã chính xác.')
+      return
+    }
     setSubmitting(true)
     try {
       await handoverService.submitCustomerDecision(bookingId, {
@@ -115,8 +126,9 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
         bankAccountName: bankAccountName.trim().toUpperCase()
       })
       toast.success(
-        'Đã gửi thông tin tài khoản ngân hàng thành công! Quản lý kinh doanh (Business Manager) sẽ tiến hành giải ngân hoàn tiền cho bạn.'
+        'Đã gửi thông tin tài khoản ngân hàng thành công! Quản lý cơ sở (Facility Manager) sẽ tiến hành kiểm tra và thực hiện chuyển tiền hoàn cọc cho bạn.'
       )
+      setShowBankConfirmModal(false)
       setViewStep('VIEW')
       await fetchSettlement()
       if (onUpdated) onUpdated()
@@ -364,7 +376,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                       </span>
                     </div>
                     <p className="text-[11px] text-emerald-800 leading-relaxed">
-                      Tiền cọc ban đầu đủ bù đắp các chi phí sửa chữa. Sau khi quý khách xác nhận đồng ý và cung cấp số tài khoản ngân hàng, Quản lý kinh doanh (Business Manager) sẽ tiến hành chuyển khoản hoàn tiền cọc cho bạn.
+                      Tiền cọc ban đầu đủ bù đắp các chi phí sửa chữa. Sau khi quý khách xác nhận đồng ý và cung cấp số tài khoản ngân hàng, Quản lý cơ sở (Facility Manager) sẽ tiến hành kiểm tra và thực hiện chuyển khoản hoàn tiền cọc cho bạn trong mục Xử lý hoàn tiền.
                     </p>
                   </div>
                 )}
@@ -384,11 +396,11 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         <div className="pt-1 text-indigo-700 font-medium">
                           {settlement.refundStatus === 'REFUNDED' ? (
                             <span className="text-emerald-700 font-bold">
-                              ✓ Business Manager đã giải ngân hoàn tiền thành công! (Mã GD: {settlement.refundTransactionId || 'FT2630018942'})
+                              ✓ Quản lý cơ sở đã chuyển khoản hoàn tiền thành công! (Mã GD: {settlement.refundTransactionId || 'FT2630018942'})
                             </span>
                           ) : (
                             <span>
-                              ⏳ Hồ sơ đang được chuyển trực tiếp cho Quản lý kinh doanh (Business Manager) để tiến hành lệnh chuyển khoản hoàn tiền.
+                              ⏳ Hồ sơ đang được chuyển trực tiếp cho Quản lý cơ sở (Facility Manager) để tiến hành lệnh chuyển khoản hoàn tiền trong mục Xử lý hoàn tiền.
                             </span>
                           )}
                         </div>
@@ -492,14 +504,14 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
 
             {/* FORM 1: NHẬP THÔNG TIN NGÂN HÀNG KHI ĐỒNG Ý HOÀN TIỀN */}
             {viewStep === 'FORM_BANK' && (
-              <form onSubmit={handleSubmitBankAndAgree} className="space-y-4 text-xs">
+              <form onSubmit={handlePromptBankConfirm} className="space-y-4 text-xs">
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 space-y-1">
                   <div className="font-bold flex items-center gap-1.5 text-emerald-900">
                     <Building2 size={15} />
                     <span>Cung cấp số tài khoản nhận tiền hoàn cọc ({netRefund.toLocaleString('vi-VN')} ₫)</span>
                   </div>
                   <p className="text-[11px] text-emerald-800 leading-relaxed">
-                    Sau khi bạn xác nhận, thông tin tài khoản ngân hàng sẽ được chuyển trực tiếp cho <strong>Quản lý vận hành kinh doanh (Business Manager)</strong> để tiến hành giải ngân chuyển khoản.
+                    Sau khi bạn xác nhận, thông tin tài khoản ngân hàng sẽ được chuyển trực tiếp cho <strong>Quản lý cơ sở (Facility Manager)</strong> để tiến hành đối soát và thực hiện lệnh chuyển khoản hoàn tiền.
                   </p>
                 </div>
 
@@ -560,7 +572,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
                   >
                     <Send size={14} />
-                    <span>{submitting ? 'Đang gửi...' : 'Xác Nhận & Gửi Cho Business Manager'}</span>
+                    <span>{submitting ? 'Đang xử lý...' : 'Tiếp Tục & Xác Nhận Tài Khoản'}</span>
                   </button>
                 </div>
               </form>
@@ -669,6 +681,101 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
           </div>
         )}
       </div>
+
+      {/* MODAL XÁC NHẬN LẠI THÔNG TIN TÀI KHOẢN NGÂN HÀNG & MIỄN TRỪ TRÁCH NHIỆM */}
+      {showBankConfirmModal && (
+        <div className="fixed inset-0 z-60 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-start gap-3 pb-3 border-b border-slate-100">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 leading-tight">
+                  Xác Nhận Thông Tin Chuyển Khoản Hoàn Cọc
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Vui lòng đối soát kỹ thông tin người thụ hưởng trước khi gửi lên Quản lý cơ sở.
+                </p>
+              </div>
+            </div>
+
+            {/* Chi tiết thông tin chuyển khoản */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Ngân hàng thụ hưởng:</span>
+                <span className="font-bold text-slate-900">{bankName}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Số tài khoản nhận tiền:</span>
+                <span className="font-mono font-extrabold text-blue-700 text-sm tracking-wider">
+                  {bankAccountNumber.trim()}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Tên chủ tài khoản:</span>
+                <span className="font-bold text-slate-900 uppercase">
+                  {bankAccountName.trim().toUpperCase()}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-slate-500">Số tiền hoàn cọc nhận:</span>
+                <span className="font-mono font-extrabold text-emerald-700 text-sm">
+                  {netRefund.toLocaleString('vi-VN')} ₫
+                </span>
+              </div>
+            </div>
+
+            {/* Khối cảnh báo miễn trừ trách nhiệm */}
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-950 space-y-1.5 text-xs">
+              <div className="font-bold flex items-center gap-1.5 text-rose-900 text-[11px] uppercase tracking-wide">
+                <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                <span>Cảnh báo quan trọng về tài khoản thụ hưởng:</span>
+              </div>
+              <p className="text-[11px] text-rose-800 leading-relaxed">
+                Quý khách vui lòng kiểm tra thật kỹ từng ký tự Số tài khoản và Tên chủ tài khoản. Boxora sẽ tiến hành lệnh chuyển khoản hoàn tiền trực tiếp theo đúng thông tin quý khách cung cấp tại đây.
+              </p>
+              <p className="text-[11px] text-rose-900 font-bold leading-relaxed">
+                Trường hợp có sai sót về số tài khoản hoặc thông tin người thụ hưởng từ phía quý khách dẫn đến việc chuyển nhầm người nhận hoặc thất thoát, cơ sở lưu trữ Boxora hoàn toàn không chịu trách nhiệm.
+              </p>
+            </div>
+
+            {/* Checkbox cam kết */}
+            <label className="flex items-start gap-2.5 p-2 rounded-lg hover:bg-slate-50 cursor-pointer select-none text-xs">
+              <input
+                type="checkbox"
+                checked={bankDisclaimerChecked}
+                onChange={(e) => setBankDisclaimerChecked(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
+              />
+              <span className="text-[11px] text-slate-700 font-medium leading-snug">
+                Tôi đã kiểm tra kỹ và xác nhận số tài khoản ngân hàng trên là chính xác. Tôi chịu hoàn toàn trách nhiệm về tính chính xác của thông tin này.
+              </span>
+            </label>
+
+            {/* Action buttons */}
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowBankConfirmModal(false)}
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
+              >
+                Kiểm tra lại
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmAndSubmitBank}
+                disabled={!bankDisclaimerChecked || submitting}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+              >
+                <CheckCircle2 size={15} />
+                <span>{submitting ? 'Đang gửi...' : 'Xác Nhận & Gửi Cho Quản Lý Cơ Sở'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

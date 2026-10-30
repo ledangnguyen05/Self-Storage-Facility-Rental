@@ -58,6 +58,7 @@ public class RefundServiceImpl implements RefundService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final RequestContext requestContext;
     private final FileStorageService fileStorageService;
+    private final HandoverRecordRepository handoverRecordRepository;
 
     @Override
     @Transactional
@@ -374,6 +375,17 @@ public class RefundServiceImpl implements RefundService {
             linkedBooking.setAccessPin(null);
             linkedBooking.setQrAccessToken("REVOKED_REFUNDED");
             bookingRepository.save(linkedBooking);
+
+            // Đồng bộ trạng thái vào HandoverRecord nếu là quy trình quyết toán trả kho
+            List<HandoverRecord> hRecords = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(linkedBooking.getId());
+            if (hRecords != null && !hRecords.isEmpty()) {
+                HandoverRecord hr = hRecords.get(0);
+                hr.setRefundStatus("REFUNDED");
+                hr.setRefundTxnRef(refund.getTransactionReference());
+                hr.setRefundProcessedAt(LocalDateTime.now());
+                hr.setRefundMethod("BANK_TRANSFER");
+                handoverRecordRepository.save(hr);
+            }
         }
 
         // Giải phóng ô kho vật lý và chấm dứt hợp đồng liên kết nếu có

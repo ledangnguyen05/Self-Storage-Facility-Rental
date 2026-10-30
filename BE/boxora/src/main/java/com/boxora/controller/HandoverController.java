@@ -470,7 +470,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/payout")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Task 16.4: Kế toán / Quản lý kinh doanh (BUSINESS_MANAGER/ADMIN) xác nhận giải ngân hoàn tiền")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> executePayout(
             @PathVariable UUID bookingId,
