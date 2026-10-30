@@ -3374,7 +3374,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   { id: 'ACCESS', label: 'Đóng / Mở kho & Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
                   { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
                   { id: 'NOTIFICATION', label: 'Thông báo & Hợp đồng', count: unitHistoryCounts.notification, icon: 'notifications' },
-                  { id: 'SUPPORT', label: 'Trả kho', count: returnActivityLogs.length, icon: 'assignment_return' },
                 ].map(tab => {
                   const isActive = unitHistoryCategory === tab.id
                   return (
