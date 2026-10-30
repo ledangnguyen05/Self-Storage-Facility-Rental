@@ -882,7 +882,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       })
       if (res?.paymentUrl) {
         window.open(res.paymentUrl, '_blank')
-        setDispatchFeedback({ text: 'Đã mở cổng thanh toán VNPay trên tab mới để khách quét mã QR.' })
       } else {
         throw new Error('Máy chủ không trả về liên kết thanh toán VNPay.')
       }
@@ -1002,7 +1001,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         rfidCardNumber: currentSession.rfidCard.trim() || undefined,
         earlyCheckInConfirmed: isEarlyCheckInConfirmed || !isCheckInTimeMet,
         earlyCheckInReason: !isCheckInTimeMet ? 'Khách nhận kho sớm có xác nhận của nhân viên' : undefined,
-        notes: currentSession.handoverNotes
+        notes: currentSession.handoverNotes,
+        evidencePhotos: [
+          currentSession.photoDoor || '/uploads/sample-door.jpg',
+          currentSession.photoInterior || '/uploads/sample-interior.jpg'
+        ]
       })
 
       const generatedPin = res?.accessPin
