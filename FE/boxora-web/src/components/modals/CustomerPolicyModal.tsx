@@ -254,10 +254,11 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
           {/* TAB 3: Hủy & Hoàn cọc */}
           {activeTab === 'cancellation' && (
             <div className="space-y-4">
+              {/* 1. Đơn thanh toán & ký trực tuyến (Online) */}
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
                 <h4 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wide mb-3 flex items-center gap-2">
                   <span className="material-symbols-outlined text-amber-600 text-[18px]">rule</span>
-                  Mốc thời gian hủy đơn giữ chỗ &amp; Tỷ lệ hoàn cọc (kể từ khi đặt kho)
+                  Đơn Ký &amp; Thanh Toán Trực Tuyến: Tỷ Lệ Hoàn Cọc Khi Hủy Giữ Chỗ
                 </h4>
                 <div className="space-y-2.5 text-xs">
                   <div className="flex items-center justify-between p-3 rounded-lg bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60">
@@ -285,6 +286,42 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                     <strong className="font-mono font-bold text-sky-700 dark:text-sky-400">
                       Hoàn lại 50% tiền cọc
                     </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Đơn thanh toán & ký hợp đồng tại cơ sở (IN_PERSON) */}
+              <div className="p-4 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-amber-700 dark:text-amber-400 text-[20px]">storefront</span>
+                  <h4 className="font-bold text-amber-950 dark:text-amber-200 text-xs uppercase tracking-wide">
+                    Đơn Ký &amp; Thanh Toán Tại Kho (IN_PERSON): Chính Sách Giữ Chỗ &amp; Hủy Đơn
+                  </h4>
+                </div>
+                <div className="space-y-2 text-xs leading-relaxed text-slate-800 dark:text-slate-200">
+                  <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-amber-200/80 flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[16px] text-emerald-600 shrink-0 mt-0.5">check_circle</span>
+                    <div>
+                      <strong>Chi phí giữ chỗ ban đầu: 0 ₫.</strong> Khách hàng không cần đặt cọc hay trả trước tiền thuê trên website, thanh toán và ký trực tiếp tại cơ sở.
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-amber-200/80 flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[16px] text-amber-600 shrink-0 mt-0.5">schedule</span>
+                    <div>
+                      <strong>Thời gian bảo lưu giữ chỗ:</strong> Buồng kho được giữ cho đến ngày hẹn tiếp đón + <strong>48 giờ gia hạn (ân hạn)</strong> sau ngày hẹn. Trong 24h đầu sau lịch hẹn, hệ thống gửi thông báo nhắc nhở mang CCCD đến quầy hoàn tất thủ tục.
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-amber-200/80 flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[16px] text-rose-600 shrink-0 mt-0.5">auto_delete</span>
+                    <div>
+                      <strong>Tự động giải phóng buồng kho:</strong> Quá 48 giờ sau lịch hẹn mà khách hàng không đến nhận kho và không chủ động đổi lịch hẹn, hệ thống sẽ tự động hủy đơn giữ chỗ và giải phóng buồng kho để phục vụ khách khác.
+                    </div>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-amber-200/80 flex items-start gap-2">
+                    <span className="material-symbols-outlined text-[16px] text-blue-600 shrink-0 mt-0.5">thumb_up</span>
+                    <div>
+                      <strong>Khách hàng chủ động hủy đơn:</strong> Miễn phí 100% (không mất phí phạt và không hoàn cọc do chưa đóng cọc).
+                    </div>
                   </div>
                 </div>
               </div>

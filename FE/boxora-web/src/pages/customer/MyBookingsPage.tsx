@@ -129,6 +129,63 @@ export interface CheckInCountdownInfo {
   isAutoCancelExpired: boolean
 }
 
+/**
+ * Trích xuất giờ hẹn tiếp đón từ booking (từ expectedCheckInAt hoặc checkInTime)
+ */
+export function getCheckInTimeString(b: any): string | null {
+  if (b?.checkInTime) return b.checkInTime
+  const raw = b?.expectedCheckInAt
+  if (!raw) return null
+  try {
+    if (typeof raw === 'string') {
+      const match = raw.match(/[T\s](\d{2}:\d{2})/)
+      if (match) return match[1]
+    }
+    const d = new Date(raw)
+    if (!isNaN(d.getTime())) {
+      const hours = d.getHours()
+      const minutes = d.getMinutes()
+      if (hours > 0 || minutes > 0 || (typeof raw === 'string' && raw.includes('T'))) {
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+      }
+    }
+  } catch (e) {}
+  return null
+}
+
+/**
+ * Kiểm tra xem đơn đã hoàn tất ký hợp đồng và thanh toán trực tuyến hay chưa.
+ * Đơn đã thanh toán + ký online không áp dụng chính sách tự động hủy giữ chỗ.
+ */
+export function isBookingFullyPaidAndSignedOnline(b: Booking): boolean {
+  if (!b) return false
+  const statusUpper = (b.status || '').toUpperCase()
+
+  const isPaid =
+    b.paymentStatus === 'PAID' ||
+    Number(b.depositPaid || 0) > 0 ||
+    statusUpper === 'PAID_CONFIRMED' ||
+    statusUpper === 'PAID_AND_SIGNED' ||
+    statusUpper === 'PAID_PENDING_ASSIGNMENT' ||
+    statusUpper === 'CONFIRMED' ||
+    statusUpper === 'READY_FOR_CHECKIN'
+
+  const isSigned =
+    b.signingMethod === 'ONLINE' ||
+    (b.signingMethod !== 'IN_PERSON' && (
+      Boolean(b.contractSigned) ||
+      Boolean((b as any).hasContract) ||
+      (b as any).contractStatus === 'SIGNED' ||
+      (b as any).contractStatus === 'ACTIVE' ||
+      statusUpper === 'PAID_AND_SIGNED' ||
+      statusUpper === 'PAID_PENDING_ASSIGNMENT' ||
+      statusUpper === 'CONFIRMED' ||
+      statusUpper === 'READY_FOR_CHECKIN'
+    ))
+
+  return isPaid && isSigned
+}
+
 export function getCheckInCountdownInfo(b: Booking, nowMs: number): CheckInCountdownInfo | null {
   if (!b) return null
 
@@ -205,6 +262,8 @@ export function getCheckInCountdownInfo(b: Booking, nowMs: number): CheckInCount
     }
   }
 
+  const isFullyPaidAndSignedOnline = isBookingFullyPaidAndSignedOnline(b)
+
   if (diffDays === 0) {
     return {
       type: 'TODAY',
@@ -236,6 +295,24 @@ export function getCheckInCountdownInfo(b: Booking, nowMs: number): CheckInCount
       isAutoCancelExpired,
     }
   } else {
+    // Nếu đơn ĐÃ THANH TOÁN + KÝ TRỰC TUYẾN: Không áp dụng tự động hủy đơn giữ chỗ quá hạn
+    if (isFullyPaidAndSignedOnline) {
+      return {
+        type: 'UPCOMING',
+        diffDays,
+        badgeText: 'Chờ nhận kho',
+        formattedDate,
+        isToday: false,
+        isUpcoming: true,
+        isOverdue: false,
+        overdueDays: 0,
+        autoCancelDeadline,
+        remainingMs: 0,
+        autoCancelCountdownStr: '',
+        isAutoCancelExpired: false,
+      }
+    }
+
     const overdueDays = Math.abs(diffDays)
     return {
       type: 'OVERDUE',
@@ -1269,7 +1346,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                                 checkInCountdown.type === 'TODAY'
                                   ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800 animate-pulse'
                                   : checkInCountdown.type === 'UPCOMING'
-                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                  ? (checkInCountdown.badgeText === 'Chờ nhận kho'
+                                      ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800 font-bold'
+                                      : 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800')
                                   : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 font-extrabold'
                               }`}
                             >
@@ -1277,16 +1356,14 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 mt-0.5 font-semibold text-slate-800 dark:text-slate-200">
-                          <Calendar size={12} className="text-blue-500 shrink-0" />
+                        <div className="flex items-center gap-1.5 mt-1 font-bold text-slate-900 dark:text-white text-xs">
+                          <Calendar size={13} className="text-blue-600 dark:text-blue-400 shrink-0" />
                           <span>{(b as any).checkInDate || safeFormatDate(b.expectedCheckInAt)}</span>
                         </div>
-                        {b.checkInTime && (
-                          <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5">
-                            <Clock size={11} />
-                            <span>{b.checkInTime}</span>
-                          </div>
-                        )}
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 dark:text-blue-300 mt-1 bg-blue-50/80 dark:bg-blue-950/40 px-2 py-0.5 rounded-md border border-blue-100 dark:border-blue-900/50 w-fit">
+                          <Clock size={11} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                          <span>{getCheckInTimeString(b) ? `Giờ hẹn: ${getCheckInTimeString(b)}` : 'Giờ hành chính (08:00 - 18:00)'}</span>
+                        </div>
                       </div>
 
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
@@ -1320,8 +1397,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                       </div>
                     </div>
 
-                    {/* Cảnh báo đơn đang quá thời gian check-in & đếm ngược tự động hủy đơn theo chính sách */}
-                    {checkInCountdown?.isOverdue && (
+                    {/* Cảnh báo đơn đang quá thời gian check-in & đếm ngược tự động hủy đơn theo chính sách (chỉ áp dụng cho đơn chưa thanh toán & chưa ký online) */}
+                    {checkInCountdown?.isOverdue && !isBookingFullyPaidAndSignedOnline(b) && (
                       <div className="p-3 rounded-xl border border-rose-300 dark:border-rose-800/80 bg-rose-50/95 dark:bg-rose-950/50 text-xs space-y-2 shadow-xs">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 font-bold text-rose-800 dark:text-rose-300">
@@ -1560,7 +1637,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           cd.type === 'TODAY'
                             ? 'bg-emerald-100 text-emerald-800 border-emerald-300 animate-pulse'
                             : cd.type === 'UPCOMING'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            ? (cd.badgeText === 'Chờ nhận kho'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200 font-bold'
+                                : 'bg-blue-50 text-blue-700 border-blue-200')
                             : 'bg-rose-100 text-rose-800 border-rose-300 font-extrabold'
                         }`}
                       >
@@ -1569,10 +1648,17 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                     )
                   })()}
                 </div>
-                <strong className="text-slate-900 dark:text-white block mt-0.5">
+                <strong className="text-slate-900 dark:text-white block mt-0.5 font-bold">
                   {(selectedBookingForDetail as any).checkInDate || safeFormatDate(selectedBookingForDetail.expectedCheckInAt)}
                 </strong>
-                <span className="text-blue-600 font-semibold">{selectedBookingForDetail.checkInTime || 'Giờ hành chính'}</span>
+                <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1 text-xs mt-1">
+                  <Clock size={12} />
+                  <span>
+                    {getCheckInTimeString(selectedBookingForDetail)
+                      ? `Giờ hẹn tiếp đón: ${getCheckInTimeString(selectedBookingForDetail)}`
+                      : 'Giờ hành chính (08:00 - 18:00)'}
+                  </span>
+                </span>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                 <span className="text-slate-400 block text-[10px] font-bold uppercase">LOẠI BUỒNG KHO:</span>
