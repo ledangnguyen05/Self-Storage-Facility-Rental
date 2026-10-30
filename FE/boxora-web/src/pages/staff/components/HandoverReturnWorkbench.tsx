@@ -36,6 +36,7 @@ import {
   Save
 } from 'lucide-react'
 import { toast } from '../../../utils/toast'
+import { useAuth } from '../../../context/AuthContext'
 import { getApiBaseUrl } from '../../../lib/axios'
 import { handoverService, ReturnCase, ReturnInspectionPayload } from '../../../services/handoverService'
 import type { Booking } from '../../../types'
@@ -234,7 +235,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   onRefresh,
   onMetricsChange
 }) => {
-  const isFacilityManager = userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER'
+  const { user: authUser, role: authRole } = useAuth()
+  const effectiveRole = userRole || authRole || authUser?.role || 'STAFF'
+  const isBusinessManager = effectiveRole === 'BUSINESS_MANAGER'
+  const isAdmin = effectiveRole === 'ADMIN' || effectiveRole === 'SYSTEM_ADMIN'
+  const canViewFullBankAccount = isBusinessManager || isAdmin
+  const isFacilityManager = userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER' || effectiveRole === 'FACILITY_MANAGER' || effectiveRole === 'ADMIN' || effectiveRole === 'BUSINESS_MANAGER'
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>([])
@@ -348,7 +354,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           expectedReturnDate: item.expectedReturnDate || '',
           inspectionDate: item.inspectionDate || '',
           reason: item.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-          bankName: item.bankName || 'Vietcombank',
+          bankName: item.bankName || '',
           bankAccountNumber: item.bankAccountNumber || '',
           bankAccountName: item.bankAccountName || (item.customerName || '').toUpperCase(),
           depositAmount: item.depositAmount || 0,
@@ -473,7 +479,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               expectedReturnDate: req.expectedReturnDate || '',
               inspectionDate: req.inspectionDate || '',
               reason: req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-              bankName: req.bankName || 'Vietcombank',
+              bankName: req.bankName || '',
               bankAccountNumber: req.bankAccountNumber || '',
               bankAccountName: req.bankAccountName || '',
               depositAmount: req.depositAmount || req.depositPaid || 3500000,
@@ -523,8 +529,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               expectedReturnDate: r.endDate || '',
               inspectionDate: '',
               reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-              bankName: 'MB Bank',
-              bankAccountNumber: '098765432199',
+              bankName: (r as any).bankName || '',
+              bankAccountNumber: (r as any).bankAccountNumber || '',
               bankAccountName: (r.customerName || 'KHACH THUE').toUpperCase(),
               depositAmount: r.depositPaid || r.depositAmount || 3000000,
               outstandingDebt: 0,
@@ -2945,31 +2951,111 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       {/* Cột 2: Thông tin tài khoản nhận hoàn hoặc thu bồi thường */}
                       <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
                         {!isOverDeposit ? (
-                          <>
-                            <span className="text-[10px] uppercase font-bold text-slate-400 block">
-                              Thông Tin Nhận Tiền Cọc Của Khách Hàng
-                            </span>
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-500">Ngân hàng:</span>
-                                <strong className="text-slate-900 font-bold">{currentCase.bankName || 'Vietcombank'}</strong>
+                          (() => {
+                            const isDisputed = currentCase.customerDecision === 'DISPUTED' || currentCase.isDisputed || currentCase.approvalStatus === 'DISPUTED';
+                            const hasCustomerAgreed = currentCase.customerDecision === 'AGREED' || currentCase.approvalStatus === 'CUSTOMER_AGREED';
+                            const hasBankInfo = Boolean(currentCase.bankName && currentCase.bankAccountNumber);
+
+                            if (isDisputed) {
+                              return (
+                                <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 space-y-2 text-xs">
+                                  <div className="flex items-center gap-1.5 font-bold text-amber-900">
+                                    <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                                    <span>Khách Hàng Đã Khiếu Nại Quyết Toán</span>
+                                  </div>
+                                  <p className="text-amber-800 text-[11px] leading-relaxed">
+                                    Lý do khiếu nại: <strong>{currentCase.disputeReason || 'Khách hàng không đồng ý với khoản khấu trừ tính phí.'}</strong>
+                                  </p>
+                                  <div className="pt-1 border-t border-amber-200 text-[10px] text-amber-700 italic">
+                                    Chờ Quản lý cơ sở (Facility Manager) phân xử giải quyết khiếu nại. Chưa thực hiện hoàn tiền cọc.
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            if (hasCustomerAgreed && hasBankInfo) {
+                              const rawAcc = currentCase.bankAccountNumber || '';
+                              const maskedAcc = canViewFullBankAccount
+                                ? rawAcc
+                                : (rawAcc.length > 4 ? '****' + rawAcc.slice(-4) : '****' + rawAcc);
+
+                              const refundBadge = currentCase.refundTxnRef || currentCase.refundStatus === 'COMPLETED' || currentCase.refundStatus === 'REFUNDED'
+                                ? `Đã hoàn (${currentCase.refundTxnRef || 'Thành công'})`
+                                : (currentCase.refundStatus === 'PENDING_PAYOUT' || currentCase.refundStatus === 'PENDING_ADMIN_PAYOUT' || currentCase.refundStatus === 'PENDING_REVIEW'
+                                  ? 'Chờ giải ngân chuyển khoản'
+                                  : 'Chờ thực hiện');
+
+                              return (
+                                <>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[10px] uppercase font-bold text-emerald-700 block">
+                                      Thông Tin Nhận Tiền Cọc Của Khách Hàng
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                      Khách đã đồng ý
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-slate-500">Ngân hàng:</span>
+                                      <strong className="text-slate-900 font-bold">{currentCase.bankName}</strong>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-slate-500">Số tài khoản:</span>
+                                      <strong className="text-slate-900 font-mono font-bold">{maskedAcc}</strong>
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-slate-500">Chủ tài khoản:</span>
+                                      <strong className="text-slate-900 font-bold">{currentCase.bankAccountName || currentCase.customerName.toUpperCase()}</strong>
+                                    </div>
+                                    <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                                      <span className="text-slate-500">Trạng thái hoàn tiền:</span>
+                                      <strong className="text-indigo-700 font-bold">{refundBadge}</strong>
+                                    </div>
+                                  </div>
+                                </>
+                              );
+                            }
+
+                            if (hasCustomerAgreed && !hasBankInfo) {
+                              return (
+                                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 space-y-2 text-xs">
+                                  <div className="flex items-center gap-1.5 font-bold text-blue-900">
+                                    <Clock size={15} className="text-blue-600 shrink-0" />
+                                    <span>Khách Hàng Đã Đồng Ý Quyết Toán</span>
+                                  </div>
+                                  <p className="text-blue-800 text-[11px] leading-relaxed">
+                                    Khách hàng đã đồng ý với biên bản đối soát. Đang chờ khách hàng nhập và gửi số tài khoản ngân hàng để giải ngân tiền hoàn cọc.
+                                  </p>
+                                  <div className="pt-1 border-t border-blue-200 flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-500">Trạng thái hoàn:</span>
+                                    <span className="font-semibold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                                      Chờ khách nhập STK
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            // Customer has not agreed or responded yet
+                            return (
+                              <div className="p-3 bg-slate-100/90 rounded-xl border border-slate-200 space-y-2 text-xs">
+                                <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                  <Clock size={15} className="text-amber-600 shrink-0" />
+                                  <span>Chờ Khách Hàng Xác Nhận Quyết Toán</span>
+                                </div>
+                                <p className="text-slate-600 text-[11px] leading-relaxed">
+                                  Sau khi nhân viên kiểm tra hiện trường và tính phí quyết toán, khách hàng có quyền kiểm tra các khoản khấu trừ. Nếu khách hàng đồng ý, hệ thống mới yêu cầu cung cấp thông tin tài khoản ngân hàng để chuyển khoản hoàn cọc.
+                                </p>
+                                <div className="pt-1 border-t border-slate-200 flex items-center justify-between text-[11px]">
+                                  <span className="text-slate-500">Trạng thái:</span>
+                                  <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                                    Chờ khách xác nhận
+                                  </span>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-500">Số tài khoản:</span>
-                                <strong className="text-slate-900 font-mono font-bold">{currentCase.bankAccountNumber || '1029384756'}</strong>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-slate-500">Chủ tài khoản:</span>
-                                <strong className="text-slate-900 font-bold">{currentCase.bankAccountName || currentCase.customerName.toUpperCase()}</strong>
-                              </div>
-                              <div className="flex items-center justify-between pt-1 border-t border-slate-200">
-                                <span className="text-slate-500">Trạng thái hoàn tiền:</span>
-                                <strong className="text-indigo-700 font-bold">
-                                  {currentCase.refundTxnRef ? `Đã hoàn (${currentCase.refundTxnRef})` : 'Chờ thực hiện'}
-                                </strong>
-                              </div>
-                            </div>
-                          </>
+                            );
+                          })()
                         ) : (
                           <>
                             <div className="flex items-center justify-between">
@@ -3364,7 +3450,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                   {isOverDeposit ? (
                     <>Khách nộp: <strong>{currentCase.customerName}</strong> ({currentCase.customerPhone})</>
                   ) : (
-                    <>Khách nhận: <strong>{currentCase.customerName}</strong> ({currentCase.bankAccountNumber} - {currentCase.bankName})</>
+                    <>Khách nhận: <strong>{currentCase.customerName}</strong> ({currentCase.bankAccountNumber ? (canViewFullBankAccount ? currentCase.bankAccountNumber : '****' + currentCase.bankAccountNumber.slice(-4)) : 'Chưa có STK'} - {currentCase.bankName || 'Chưa cung cấp'})</>
                   )}
                 </span>
               </div>

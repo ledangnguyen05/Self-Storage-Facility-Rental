@@ -246,6 +246,12 @@ class ReturnSettlementDisputeCompensationTest {
         assertThat(res.getDepositPaid()).isEqualByComparingTo(new BigDecimal("1500000.00"));
         assertThat(res.getNetRefundAmount()).isEqualByComparingTo(new BigDecimal("1200000.00"));
         assertThat(res.getAdditionalAmountDue()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(testBooking.getStepTransitionHistory())
+                .contains("Nhân viên")
+                .contains("XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ")
+                .contains("Cọc: 1.500.000 VNĐ")
+                .contains("Khấu trừ: 300.000 VNĐ")
+                .contains("Công nợ: 0 VNĐ → Hoàn trả khách hàng: 1.200.000 VNĐ");
 
         verify(notificationLogRepository, atLeastOnce()).save(any());
     }
@@ -375,6 +381,26 @@ class ReturnSettlementDisputeCompensationTest {
     // =========================================================================
     // 16.4: Khách Hàng Đồng Ý & Giải Ngân Hoàn Cọc
     // =========================================================================
+    @Test
+    @DisplayName("Task 4 & 16.4: Khách hàng đồng ý không gửi kèm STK -> Lưu trạng thái AGREED, refundStatus = AWAITING_BANK_INFO")
+    void testTask4_CustomerAgreed_WithoutBankDetails_SetsAwaitingBankInfo() {
+        testReturnRecord.setSettlementConfirmed(true);
+        testReturnRecord.setRefundAmount(new BigDecimal("1000000.00"));
+        testReturnRecord.setDeductionAmount(new BigDecimal("500000.00"));
+
+        CustomerDecisionRequest req = CustomerDecisionRequest.builder()
+                .decision("AGREED")
+                .build();
+
+        ReturnSettlementResponse res = handoverService.handleCustomerDecision(bookingId, req);
+
+        assertThat(testReturnRecord.getCustomerDecision()).isEqualTo("AGREED");
+        assertThat(testReturnRecord.getApprovalStatus()).isEqualTo("CUSTOMER_AGREED");
+        assertThat(testReturnRecord.getRefundStatus()).isEqualTo("AWAITING_BANK_INFO");
+        assertThat(testReturnRecord.getBankName()).isNull();
+        assertThat(testReturnRecord.getBankAccountNumber()).isNull();
+    }
+
     @Test
     @DisplayName("Task 16.4: Khách đồng ý & cung cấp số tài khoản nhận tiền hoàn cọc")
     void test16_CustomerAgreed_ProvidesBankDetails() {

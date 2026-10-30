@@ -3721,6 +3721,14 @@ public class HandoverServiceImpl implements HandoverService {
         return calculateSettlement(bookingId, null);
     }
 
+    private String formatVnd(BigDecimal amount) {
+        if (amount == null) return "0 VNĐ";
+        java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
+        java.text.DecimalFormatSymbols symbols = new java.text.DecimalFormatSymbols(java.util.Locale.GERMANY);
+        df.setDecimalFormatSymbols(symbols);
+        return df.format(amount.longValue()) + " VNĐ";
+    }
+
     @Override
     @Transactional
     public ReturnSettlementResponse confirmSettlementCalculation(UUID bookingId, com.boxora.dto.request.SettlementConfirmRequest request) {
@@ -3790,13 +3798,14 @@ public class HandoverServiceImpl implements HandoverService {
         record = handoverRecordRepository.save(record);
 
         String resultMsg = netRefund.compareTo(BigDecimal.ZERO) > 0
-                ? String.format("Hoàn trả khách hàng: %s VNĐ", netRefund)
+                ? String.format("Hoàn trả khách hàng: %s", formatVnd(netRefund))
                 : (additionalDue.compareTo(BigDecimal.ZERO) > 0
-                    ? String.format("Khách hàng cần thanh toán thêm: %s VNĐ", additionalDue)
+                    ? String.format("Khách hàng cần thanh toán thêm: %s", formatVnd(additionalDue))
                     : "Quyết toán hòa vốn (Không hoàn, không thu thêm)");
 
-        String logMsg = String.format("[%s] Nhân viên %s XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ quyết toán trả kho (Phiên bản V%d): Cọc: %s VNĐ, Khấu trừ: %s VNĐ, Công nợ: %s VNĐ -> %s\n",
-                LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName(), record.getSettlementVersion(), depositPaid, totalProposedDeductions.subtract(overdueDebt), overdueDebt, resultMsg);
+        String logMsg = String.format("[%s] Nhân viên %s XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ quyết toán trả kho (Phiên bản V%d): Cọc: %s, Khấu trừ: %s, Công nợ: %s → %s\n",
+                LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName(), record.getSettlementVersion(),
+                formatVnd(depositPaid), formatVnd(totalProposedDeductions.subtract(overdueDebt)), formatVnd(overdueDebt), resultMsg);
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
         bookingRepository.save(booking);
 
@@ -3813,8 +3822,8 @@ public class HandoverServiceImpl implements HandoverService {
                     .referenceType("BOOKING")
                     .referenceId(booking.getId())
                     .title(String.format("Kết quả quyết toán trả kho [%s] - Chờ bạn xác nhận", unitCode))
-                    .content(String.format("Nhân viên Boxora đã kiểm tra và gửi kết quả đối soát quyết toán cho đơn %s (Kho %s): Tiền cọc: %sđ, Khấu trừ: %sđ -> %s. Vui lòng vào Khách Hàng Dashboard để xác nhận hoặc khiếu nại.",
-                            booking.getBookingCode(), unitCode, depositPaid, totalProposedDeductions, resultMsg))
+                    .content(String.format("Nhân viên Boxora đã kiểm tra và gửi kết quả đối soát quyết toán cho đơn %s (Kho %s): Tiền cọc: %s, Khấu trừ: %s → %s. Vui lòng vào Khách Hàng Dashboard để xác nhận hoặc khiếu nại.",
+                            booking.getBookingCode(), unitCode, formatVnd(depositPaid), formatVnd(totalProposedDeductions), resultMsg))
                     .status("SENT")
                     .build();
             notificationLogRepository.save(notif);
@@ -3903,51 +3912,53 @@ public class HandoverServiceImpl implements HandoverService {
             BigDecimal additionalDue = record.getAdditionalAmountDue() != null ? record.getAdditionalAmountDue() : BigDecimal.ZERO;
 
             if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
-                // Must provide bank info
-                if (request.getBankName() == null || request.getBankName().isBlank()
-                        || request.getBankAccountNumber() == null || request.getBankAccountNumber().isBlank()
-                        || request.getBankAccountName() == null || request.getBankAccountName().isBlank()) {
-                    throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản hoàn tiền cọc > 0. Quý khách vui lòng cung cấp đầy đủ thông tin ngân hàng để nhận tiền hoàn.");
-                }
+                boolean hasBankInfo = request.getBankName() != null && !request.getBankName().isBlank()
+                        && request.getBankAccountNumber() != null && !request.getBankAccountNumber().isBlank()
+                        && request.getBankAccountName() != null && !request.getBankAccountName().isBlank();
 
-                String bName = request.getBankName().trim();
-                String bAccNum = request.getBankAccountNumber().trim().replaceAll("[^0-9a-zA-Z]", "");
-                String bAccName = request.getBankAccountName().trim().toUpperCase();
+                if (hasBankInfo) {
+                    String bName = request.getBankName().trim();
+                    String bAccNum = request.getBankAccountNumber().trim().replaceAll("[^0-9a-zA-Z]", "");
+                    String bAccName = request.getBankAccountName().trim().toUpperCase();
 
-                record.setBankName(bName);
-                record.setBankAccountNumber(bAccNum);
-                record.setBankAccountName(bAccName);
-                record.setRefundStatus("PENDING_PAYOUT");
+                    record.setBankName(bName);
+                    record.setBankAccountNumber(bAccNum);
+                    record.setBankAccountName(bAccName);
+                    record.setRefundStatus("PENDING_PAYOUT");
 
-                // Create or link RefundRequest for Business Manager to process
-                String reqCode = "REF-" + booking.getBookingCode() + "-V" + (record.getSettlementVersion() != null ? record.getSettlementVersion() : 1);
-                RefundRequest refundReq = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
-                if (refundReq == null) {
-                    refundReq = RefundRequest.builder()
-                            .requestCode(reqCode)
-                            .customer(booking.getCustomer())
-                            .facility(facility)
-                            .booking(booking)
-                            .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
-                            .requestedAmount(record.getDepositSettled() != null ? record.getDepositSettled() : netRefund)
-                            .deductionAmount(record.getDeductionAmount() != null ? record.getDeductionAmount() : BigDecimal.ZERO)
-                            .finalRefundAmount(netRefund)
-                            .bankName(bName)
-                            .bankAccountNumber(bAccNum)
-                            .bankAccountName(bAccName)
-                            .reason(String.format("Quyết toán trả kho V%d đơn %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()))
-                            .status(RefundStatus.PENDING_REVIEW)
-                            .requestedBy(booking.getCustomer())
-                            .build();
-                    refundReq = refundRequestRepository.save(refundReq);
+                    // Create or link RefundRequest for Business Manager to process
+                    String reqCode = "REF-" + booking.getBookingCode() + "-V" + (record.getSettlementVersion() != null ? record.getSettlementVersion() : 1);
+                    RefundRequest refundReq = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                    if (refundReq == null) {
+                        refundReq = RefundRequest.builder()
+                                .requestCode(reqCode)
+                                .customer(booking.getCustomer())
+                                .facility(facility)
+                                .booking(booking)
+                                .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
+                                .requestedAmount(record.getDepositSettled() != null ? record.getDepositSettled() : netRefund)
+                                .deductionAmount(record.getDeductionAmount() != null ? record.getDeductionAmount() : BigDecimal.ZERO)
+                                .finalRefundAmount(netRefund)
+                                .bankName(bName)
+                                .bankAccountNumber(bAccNum)
+                                .bankAccountName(bAccName)
+                                .reason(String.format("Quyết toán trả kho V%d đơn %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()))
+                                .status(RefundStatus.PENDING_REVIEW)
+                                .requestedBy(booking.getCustomer())
+                                .build();
+                        refundReq = refundRequestRepository.save(refundReq);
+                    } else {
+                        refundReq.setFinalRefundAmount(netRefund);
+                        refundReq.setBankName(bName);
+                        refundReq.setBankAccountNumber(bAccNum);
+                        refundReq.setBankAccountName(bAccName);
+                        refundReq = refundRequestRepository.save(refundReq);
+                    }
+                    record.setRefundRequest(refundReq);
                 } else {
-                    refundReq.setFinalRefundAmount(netRefund);
-                    refundReq.setBankName(bName);
-                    refundReq.setBankAccountNumber(bAccNum);
-                    refundReq.setBankAccountName(bAccName);
-                    refundReq = refundRequestRepository.save(refundReq);
+                    // Customer agreed to settlement calculation, pending providing bank info for payout
+                    record.setRefundStatus("AWAITING_BANK_INFO");
                 }
-                record.setRefundRequest(refundReq);
 
             } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
                 if (!"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
@@ -3955,8 +3966,9 @@ public class HandoverServiceImpl implements HandoverService {
                 }
             }
 
-            String logMsg = String.format("[%s] KHÁCH HÀNG ĐÃ ĐỒNG Ý kết quả quyết toán (V%d). Tiền hoàn: %sđ, Tiền nợ thêm: %sđ\n",
-                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, netRefund, additionalDue);
+            String logMsg = String.format("[%s] KHÁCH HÀNG ĐÃ ĐỒNG Ý kết quả quyết toán (V%d). Tiền hoàn: %s, Tiền nợ thêm: %s\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1,
+                    formatVnd(netRefund), formatVnd(additionalDue));
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
             record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHÁCH HÀNG ĐỒNG Ý] " + logMsg.trim());
             record = handoverRecordRepository.save(record);

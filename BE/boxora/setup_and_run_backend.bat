@@ -107,11 +107,11 @@ if defined FOUND_JDK (
     if exist "!FOUND_JDK!\bin\java.exe" set "JAVA_EXE=!FOUND_JDK!\bin\java.exe"
 )
 
-echo [RUNNING] "!JAVA_EXE!" -Xms512m -Xmx1536m -jar !JAR_FILE!
+echo [RUNNING] "!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar !JAR_FILE!
 echo ------------------------------------------------------------------------------
 echo Nhan Ctrl + C de dung ung dung.
 echo ------------------------------------------------------------------------------
-"!JAVA_EXE!" -Xms512m -Xmx1536m -jar "!JAR_FILE!"
+"!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar "!JAR_FILE!"
 if !errorlevel! neq 0 (
     echo [INFO] Ung dung da dung lai voi ma loi: !errorlevel!
 )
@@ -145,7 +145,7 @@ echo [INFO] Thu muc lam viec: %cd%
 "!NSSM_PATH!" stop BoxoraBackend >nul 2>&1
 "!NSSM_PATH!" remove BoxoraBackend confirm >nul 2>&1
 
-"!NSSM_PATH!" install BoxoraBackend "!JAVA_BIN!" "-Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
+"!NSSM_PATH!" install BoxoraBackend "!JAVA_BIN!" "-Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
 "!NSSM_PATH!" set BoxoraBackend AppDirectory "%cd%"
 "!NSSM_PATH!" set BoxoraBackend Start SERVICE_AUTO_START
 "!NSSM_PATH!" start BoxoraBackend

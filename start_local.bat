@@ -59,9 +59,9 @@ if defined FOUND_JDK (
 
 echo   - Dang bat Backend trong cua so rieng...
 if exist "%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar" (
-    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && java -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
+    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && java -Dfile.encoding=UTF-8 -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
 ) else (
-    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && java -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
+    start "BOXORA - BACKEND SPRING BOOT (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA - BACKEND (PORT 8080) && java -Dfile.encoding=UTF-8 -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
 )
 
 echo   - Dang cho Backend san sang tren Port 8080...
