@@ -338,6 +338,10 @@ export const ManagerDashboard: React.FC = () => {
     totalDebt: string
   } | null>(null)
 
+  // Delete unit confirm state
+  const [deleteUnitConfirm, setDeleteUnitConfirm] = useState<InspectedUnit | null>(null)
+  const [isDeletingUnit, setIsDeletingUnit] = useState(false)
+
   // Quét tự động gửi email nhắc nhở quá hạn 24h đối với đơn ký + thanh toán tại quầy
   useEffect(() => {
     try {
@@ -886,6 +890,23 @@ export const ManagerDashboard: React.FC = () => {
     }
   }
 
+
+  const handleDeleteUnit = async () => {
+    if (!deleteUnitConfirm) return
+    setIsDeletingUnit(true)
+    try {
+      await storageUnitService.deleteUnit(deleteUnitConfirm.backendId || deleteUnitConfirm.id)
+      setUnits(prev => prev.filter(u => u.id !== deleteUnitConfirm.id))
+      if (selectedUnit?.id === deleteUnitConfirm.id) setSelectedUnit(null)
+      setDeleteUnitConfirm(null)
+      triggerAction(`Da xoa kho # thanh cong!`)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Khong the xoa kho nay. Vui long thu lai.'
+      triggerAction(msg)
+    } finally {
+      setIsDeletingUnit(false)
+    }
+  }
   const handleConfirmEnterMaintenance = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!maintenanceModalUnit || !maintenanceModalUnit.backendId) return
@@ -2124,6 +2145,19 @@ export const ManagerDashboard: React.FC = () => {
                   <span>{selectedUnit.status === 'Maintenance' ? 'Hoàn tất bảo trì (Mở lại kho)' : 'Chuyển bảo trì kỹ thuật'}</span>
                 </button>
 
+
+                {(role === 'BUSINESS_MANAGER' || role === 'FACILITY_MANAGER') &&
+                  (selectedUnit.status === 'Available' || selectedUnit.status === 'Maintenance') && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteUnitConfirm(selectedUnit)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all w-full justify-center mt-1"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    Xoa kho
+                  </button>
+                )}
+
               </div>
 
             </div>
@@ -2856,6 +2890,42 @@ export const ManagerDashboard: React.FC = () => {
         </div>
       )}
 
+      {/* Delete Unit Confirm Modal */}
+      {deleteUnitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
+                <span className="material-symbols-outlined text-rose-600 text-[20px]">delete_forever</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Xac nhan xoa kho</h3>
+                <p className="text-xs text-slate-500">Hanh dong nay khong the hoan tac</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-700 mb-5">
+              Ban co chac muon xoa <strong>Kho #{deleteUnitConfirm.id}</strong> ({deleteUnitConfirm.size})?
+              Kho nay phai khong co hop dong hoac don dat hang dang hoat dong.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteUnitConfirm(null)}
+                disabled={isDeletingUnit}
+                className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
+              >
+                Huy
+              </button>
+              <button
+                onClick={handleDeleteUnit}
+                disabled={isDeletingUnit}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-all disabled:opacity-60"
+              >
+                {isDeletingUnit ? 'Dang xoa...' : 'Xoa kho'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <CancelOverdueBookingModal
         isOpen={Boolean(cancellingOverdueBooking)}
         booking={cancellingOverdueBooking}

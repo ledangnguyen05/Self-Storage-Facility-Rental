@@ -82,7 +82,7 @@ public class StorageUnitController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<Void>> deleteUnit(@PathVariable UUID id) {
         storageUnitService.deleteUnit(id);
         return ResponseEntity.ok(ApiResponse.success("Xóa ngăn kho thành công", null));

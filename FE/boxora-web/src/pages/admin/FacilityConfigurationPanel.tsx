@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -147,6 +147,10 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const [facilityPolicyErrors, setFacilityPolicyErrors] = useState<Record<string, 'missing' | 'error'>>({})
   const [loadingPolicyFacilityId, setLoadingPolicyFacilityId] = useState<string | null>(null)
   const [modalPolicyFacility, setModalPolicyFacility] = useState<Facility | null>(null)
+  // Delete facility confirm state
+  const [deleteFacilityConfirm, setDeleteFacilityConfirm] = useState<Facility | null>(null)
+  const [isDeletingFacility, setIsDeletingFacility] = useState(false)
+  const [deleteFacilityNotice, setDeleteFacilityNotice] = useState('')
 
   const togglePolicy = async (facility: Facility) => {
     if (expandedPolicyFacilityId === facility.id) {
@@ -189,6 +193,26 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
     onFacilitiesChange(facilityList)
   }
 
+  const handleDeleteFacility = async () => {
+    if (!deleteFacilityConfirm) return
+    setIsDeletingFacility(true)
+    setDeleteFacilityNotice('')
+    try {
+      await facilityService.deleteFacility(deleteFacilityConfirm.id)
+      onFacilitiesChange(
+        facilities.map((f) =>
+          f.id === deleteFacilityConfirm.id ? { ...f, status: 'INACTIVE' } : f
+        )
+      )
+      setDeleteFacilityConfirm(null)
+      setNotice('Da vo hieu hoa co so thanh cong.')
+    } catch (err: unknown) {
+      const msg = getRequestError(err) || 'Khong the vo hieu hoa co so nay.'
+      setDeleteFacilityNotice(msg)
+    } finally {
+      setIsDeletingFacility(false)
+    }
+  }
   const startCreate = () => {
     setEditingFacility(null)
     setDraft(blankDraft())
@@ -654,6 +678,16 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                               className="text-[11px] font-bold text-cyan-700 hover:underline dark:text-cyan-400 cursor-pointer"
                             >
                               {t('Tự sinh mã', 'Auto generate')}
+                            </button>
+                          )}
+                          {canManage && editingFacility && editingFacility.status !== 'INACTIVE' && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteFacilityConfirm(editingFacility)}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/40 cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                              {t('Vo hieu hoa', 'Deactivate')}
                             </button>
                           )}
                         </div>
@@ -1465,6 +1499,47 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
             </div>
           )}
 
+          {/* Delete Facility Confirm Modal */}
+          {deleteFacilityConfirm && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 p-6 max-w-sm w-full mx-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/50 flex items-center justify-center">
+                    <span className="material-symbols-outlined text-rose-600 text-[20px]">domain_disabled</span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Xac nhan vo hieu hoa co so</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Co so se bi chuyen sang trang thai INACTIVE</p>
+                  </div>
+                </div>
+                {deleteFacilityNotice && (
+                  <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-lg px-3 py-2 mb-3">{deleteFacilityNotice}</p>
+                )}
+                <p className="text-sm text-slate-700 dark:text-slate-300 mb-5">
+                  Ban co chac muon vo hieu hoa co so <strong>{deleteFacilityConfirm.name}</strong>?
+                  Hanh dong nay se an co so khoi hoat dong. Co the kich hoat lai bang cach chinh sua sau.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => { setDeleteFacilityConfirm(null); setDeleteFacilityNotice('') }}
+                    disabled={isDeletingFacility}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all"
+                  >
+                    Huy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDeleteFacility}
+                    disabled={isDeletingFacility}
+                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-all disabled:opacity-60"
+                  >
+                    {isDeletingFacility ? 'Dang xu ly...' : 'Vo hieu hoa'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {modalPolicyFacility && (
             <FacilityPolicyViewModal
               isOpen={Boolean(modalPolicyFacility)}
