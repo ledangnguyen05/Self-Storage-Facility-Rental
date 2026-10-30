@@ -31,15 +31,18 @@ public class UnitTypeUpdateRequest {
     private Double areaSqm;
 
     @Positive(message = "Base price per month must be greater than zero")
-    @Schema(description = "Đơn giá cơ bản mới mỗi tháng (VNĐ)", example = "500000.00")
+    @Schema(description = "Đơn giá tiêu chuẩn mới mỗi tháng (VNĐ)", example = "350000.00")
     private BigDecimal basePricePerMonth;
 
+    @Positive(message = "AC price per month must be greater than zero")
+    @Schema(description = "Đơn giá máy lạnh A/C mới mỗi tháng (VNĐ)", example = "420000.00")
+    private BigDecimal acPricePerMonth;
+
     @PositiveOrZero(message = "Deposit amount cannot be negative")
-    @Schema(description = "Tiền đặt cọc chuẩn mới (VNĐ)", example = "500000.00")
+    @Schema(description = "Tiền đặt cọc chuẩn mới (VNĐ)", example = "350000.00")
     private BigDecimal depositAmount;
 
     @Schema(description = "Lý do thay đổi giá bắt buộc theo BR-RULE-011 nếu có thay đổi basePricePerMonth",
             example = "Điều chỉnh giá niêm yết theo định kỳ quý 4")
     private String priceChangeReason;
 }
-

@@ -19,7 +19,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
 
   // Pricing state: map of unitTypeId -> formatted price string (VND)
+  // 1. Standard (Tiêu chuẩn / Non-AC)
   const [unitTypePrices, setUnitTypePrices] = useState<Record<string, string>>({})
+  // 2. AC (Máy lạnh A/C)
+  const [unitTypeAcPrices, setUnitTypeAcPrices] = useState<Record<string, string>>({})
 
   // Rule states
   const [depositOption, setDepositOption] = useState<'1month' | '2months'>('1month')
@@ -54,7 +57,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       return {
         volume: '14 m³',
         areaLabel: '5.0 m²',
-        boxes: '85 boxes',
+        boxes: '85 boxes (Căn hộ 2PN lớn)',
         category: 'Kho Mát A/C (18-22°C)',
         badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
       }
@@ -81,15 +84,15 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       return {
         volume: '16 m³',
         areaLabel: '6.0 m²',
-        boxes: '100 boxes',
-        category: 'Căn hộ 3PN (Tiêu chuẩn)',
+        boxes: '100 boxes (Căn hộ 3PN)',
+        category: 'Tiêu chuẩn 3PN',
         badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-200',
       }
     }
     return {
       volume: '24 m³',
       areaLabel: '12.0 m²',
-      boxes: '160 boxes',
+      boxes: '160 boxes (Kho logistics lớn)',
       category: 'Logistics / Thương mại lớn',
       badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
     }
@@ -112,6 +115,16 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
           })
           return newMap
         })
+        setUnitTypeAcPrices((prev) => {
+          const newMap = { ...prev }
+          uts.forEach((ut) => {
+            if (!newMap[ut.id]) {
+              const val = ut.acPricePerMonth != null ? Number(ut.acPricePerMonth) : Math.round(Number(ut.basePricePerMonth || 0) * 1.2)
+              newMap[ut.id] = val.toLocaleString('vi-VN')
+            }
+          })
+          return newMap
+        })
       }
     } catch (err) {
       console.warn('Failed to load unit types:', err)
@@ -124,10 +137,14 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       setCurrentPolicy(null)
       // Reset prices to system base prices from unitTypes
       const baseMap: Record<string, string> = {}
+      const acMap: Record<string, string> = {}
       unitTypes.forEach((ut) => {
         baseMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
+        const acVal = ut.acPricePerMonth != null ? Number(ut.acPricePerMonth) : Math.round(Number(ut.basePricePerMonth || 0) * 1.2)
+        acMap[ut.id] = acVal.toLocaleString('vi-VN')
       })
       setUnitTypePrices(baseMap)
+      setUnitTypeAcPrices(acMap)
       return
     }
     try {
@@ -149,6 +166,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
 
         // Load facility specific prices if available
         const priceMap: Record<string, string> = {}
+        const acPriceMap: Record<string, string> = {}
         unitTypes.forEach((ut) => {
           const matchPrice = pol.prices?.find((p) => p.unitTypeId === ut.id)
           if (matchPrice?.monthlyPrice != null) {
@@ -156,8 +174,16 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
           } else {
             priceMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
           }
+          if (matchPrice?.acMonthlyPrice != null) {
+            acPriceMap[ut.id] = Number(matchPrice.acMonthlyPrice).toLocaleString('vi-VN')
+          } else if (ut.acPricePerMonth != null) {
+            acPriceMap[ut.id] = Number(ut.acPricePerMonth).toLocaleString('vi-VN')
+          } else {
+            acPriceMap[ut.id] = Math.round(Number(ut.basePricePerMonth || 0) * 1.2).toLocaleString('vi-VN')
+          }
         })
         setUnitTypePrices(priceMap)
+        setUnitTypeAcPrices(acPriceMap)
       } else {
         setCurrentPolicy(null)
       }
@@ -180,23 +206,34 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   const handleQuickUpdateSingleUnitType = async (ut: UnitType) => {
     if (!canManagePolicies) return
     const newPrice = parseCurrencyInput(unitTypePrices[ut.id] || '0')
+    const newAcPrice = parseCurrencyInput(unitTypeAcPrices[ut.id] || '0')
     if (!newPrice || newPrice <= 0) {
-      showToast('Giá nhập vào không hợp lệ', true)
+      showToast('Đơn giá tiêu chuẩn nhập vào không hợp lệ', true)
       return
     }
     setIsAdjustingId(ut.id)
     try {
       await storageUnitService.adjustUnitTypePrice(ut.id, {
         newPrice,
-        reason: `Điều chỉnh đơn giá loại kho ${ut.typeName} theo quy chuẩn BR-RULE-011`,
+        newAcPrice: newAcPrice > 0 ? newAcPrice : Math.round(newPrice * 1.2),
+        reason: `Điều chỉnh giá niêm yết (Tiêu chuẩn & Máy lạnh A/C) loại kho ${ut.typeName} theo quy chuẩn BR-RULE-011`,
         cascadeToAvailableUnits: true,
       })
-      showToast(`Đã cập nhật giá mới cho loại kho "${ut.typeName}": ${newPrice.toLocaleString('vi-VN')} đ/tháng`)
+      showToast(`Đã cập nhật giá mới cho loại kho "${ut.typeName}": Tiêu chuẩn ${newPrice.toLocaleString('vi-VN')} đ | AC ${newAcPrice.toLocaleString('vi-VN')} đ`)
       await loadUnitTypes()
     } catch (err: any) {
       showToast(err?.response?.data?.message || 'Không thể cập nhật giá loại kho.', true)
     } finally {
       setIsAdjustingId(null)
+    }
+  }
+
+  // Auto-calculate AC price (+20%) for a unit type
+  const handleAutoCalcAc = (utId: string) => {
+    const std = parseCurrencyInput(unitTypePrices[utId] || '0')
+    if (std > 0) {
+      const computedAc = Math.round(std * 1.2)
+      setUnitTypeAcPrices((prev) => ({ ...prev, [utId]: computedAc.toLocaleString('vi-VN') }))
     }
   }
 
@@ -208,18 +245,28 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     try {
       const priceUpdates: string[] = []
 
-      // 1. If 'all' facilities selected: update UnitType base prices in DB under BR-RULE-011
+      // 1. If 'all' facilities selected: update UnitType base & AC prices in DB under BR-RULE-011
       if (selectedFacilityId === 'all') {
         for (const ut of unitTypes) {
           const currentVal = parseCurrencyInput(unitTypePrices[ut.id] || '0')
+          const currentAcVal = parseCurrencyInput(unitTypeAcPrices[ut.id] || '0')
           const dbBase = Number(ut.basePricePerMonth || 0)
-          if (currentVal > 0 && currentVal !== dbBase) {
+          const dbAc = Number(ut.acPricePerMonth || 0)
+
+          const isStdChanged = currentVal > 0 && currentVal !== dbBase
+          const isAcChanged = currentAcVal > 0 && currentAcVal !== dbAc
+
+          if (isStdChanged || isAcChanged) {
+            const finalBase = currentVal > 0 ? currentVal : dbBase
+            const finalAc = currentAcVal > 0 ? currentAcVal : (dbAc > 0 ? dbAc : Math.round(finalBase * 1.2))
+
             await storageUnitService.adjustUnitTypePrice(ut.id, {
-              newPrice: currentVal,
-              reason: `Điều chỉnh ma trận giá loại kho ${ut.typeName} từ Cấu hình chi nhánh theo BR-RULE-011`,
+              newPrice: finalBase,
+              newAcPrice: finalAc,
+              reason: `Điều chỉnh ma trận giá (Tiêu chuẩn & Máy lạnh A/C) loại kho ${ut.typeName} theo BR-RULE-011`,
               cascadeToAvailableUnits: true,
             })
-            priceUpdates.push(`${ut.typeName}: ${currentVal.toLocaleString('vi-VN')} đ`)
+            priceUpdates.push(`${ut.typeName}: TC ${finalBase.toLocaleString('vi-VN')} đ | AC ${finalAc.toLocaleString('vi-VN')} đ`)
           }
         }
       }
@@ -234,9 +281,11 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         // Prepare prices array for this facility's policy
         const policyPrices: FacilityPolicyPrice[] = unitTypes.map((ut) => {
           const p = parseCurrencyInput(unitTypePrices[ut.id] || '0') || Number(ut.basePricePerMonth)
+          const acP = parseCurrencyInput(unitTypeAcPrices[ut.id] || '0') || Number(ut.acPricePerMonth || Math.round(p * 1.2))
           return {
             unitTypeId: ut.id,
             monthlyPrice: p,
+            acMonthlyPrice: acP,
             discount3MonthPercent: Math.abs(Number(discount3M)) || 0,
             discount6MonthPercent: Math.abs(Number(discount6M)) || 0,
             discount12MonthPercent: Math.abs(Number(discount12M)) || 0,
@@ -296,7 +345,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       } else if (priceUpdates.length > 0) {
         showToast(`Đã cập nhật bảng giá (${priceUpdates.join(', ')}) vào CSDL và StorageUnitPriceHistory (BR-RULE-011)!`)
       } else if (policySaved) {
-        showToast(`Đã lưu bảng giá theo từng loại kho và chính sách cho ${facilities.find((f) => f.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
+        showToast(`Đã lưu bảng giá (Tiêu chuẩn & Máy lạnh A/C) và chính sách cho ${facilities.find((f) => f.id === selectedFacilityId)?.name || 'cơ sở đã chọn'}.`)
       } else {
         showToast('Thông số chính sách và bảng giá hiện tại đã khớp CSDL.')
       }
@@ -310,10 +359,14 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
 
   const handleResetDefaults = () => {
     const baseMap: Record<string, string> = {}
+    const acMap: Record<string, string> = {}
     unitTypes.forEach((ut) => {
       baseMap[ut.id] = Number(ut.basePricePerMonth || 0).toLocaleString('vi-VN')
+      const acVal = ut.acPricePerMonth != null ? Number(ut.acPricePerMonth) : Math.round(Number(ut.basePricePerMonth || 0) * 1.2)
+      acMap[ut.id] = acVal.toLocaleString('vi-VN')
     })
     setUnitTypePrices(baseMap)
+    setUnitTypeAcPrices(acMap)
     setDepositOption('1month')
     setDiscount3M('-5')
     setDiscount6M('-10')
@@ -348,7 +401,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 {t('Cấu Hình Quy Tắc Kinh Doanh & Chính Sách Giá Động (Pricing Matrix)')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {t('Thiết lập đơn giá cho 5 loại kho chuẩn và chính sách kinh doanh (áp dụng theo quy chuẩn BR-RULE-011).')}
+                {t('Thiết lập đơn giá Tiêu Chuẩn & Máy Lạnh A/C cho 5 loại kho chuẩn và chính sách kinh doanh (áp dụng theo quy chuẩn BR-RULE-011).')}
               </p>
             </div>
           </div>
@@ -396,13 +449,13 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
 
         {/* 4 Feature Columns */}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {/* Card 1: Bảng giá niêm yết theo từng loại kho */}
+          {/* Card 1: Bảng giá niêm yết theo từng loại kho (Tiêu chuẩn & Máy lạnh A/C) */}
           <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-cyan-600 text-[20px]">sell</span>
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('5 Loại Kho Chuẩn (BR-RULE-011)')}</h3>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('5 Loại Kho (BR-RULE-011)')}</h3>
                 </div>
                 <span className="text-[10px] bg-cyan-100 text-cyan-800 font-bold px-1.5 py-0.5 rounded font-mono">
                   {unitTypes.length}/5 {t('loại kho')}
@@ -410,20 +463,27 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               </div>
               <p className="text-[11px] text-slate-500 mt-2 mb-2.5">
                 {selectedFacilityId === 'all'
-                  ? t('Đơn giá niêm yết theo từng cỡ kho (VND/tháng):')
-                  : t('Giá áp dụng riêng tại cơ sở đã chọn:')}
+                  ? t('Cấu hình giá Tiêu chuẩn và Máy lạnh A/C toàn hệ thống:')
+                  : t('Cấu hình giá Tiêu chuẩn và Máy lạnh A/C tại cơ sở này:')}
               </p>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
                 {unitTypes.map((ut) => {
                   const currentVal = unitTypePrices[ut.id] ?? ''
+                  const currentAcVal = unitTypeAcPrices[ut.id] ?? ''
                   const dbBase = Number(ut.basePricePerMonth || 0)
+                  const dbAc = Number(ut.acPricePerMonth || Math.round(dbBase * 1.2))
+
                   const currentNum = parseCurrencyInput(currentVal)
-                  const isModified = currentNum > 0 && currentNum !== dbBase
+                  const currentAcNum = parseCurrencyInput(currentAcVal)
+
+                  const isStdModified = currentNum > 0 && currentNum !== dbBase
+                  const isAcModified = currentAcNum > 0 && currentAcNum !== dbAc
                   const spec = getUnitTypeSpec(ut)
 
                   return (
-                    <div key={ut.id} className="p-2 bg-white rounded-lg border border-slate-200/80 hover:border-slate-300 transition">
-                      <div className="flex items-center justify-between mb-1">
+                    <div key={ut.id} className="p-2.5 bg-white rounded-lg border border-slate-200/80 hover:border-slate-300 transition space-y-1.5 shadow-2xs">
+                      {/* Header */}
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className={`text-[9px] font-bold font-mono px-1.5 py-0.2 rounded border shrink-0 ${spec.badgeClass}`}>
                             {spec.volume}
@@ -436,27 +496,76 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                           {spec.areaLabel}
                         </span>
                       </div>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          disabled={!canManagePolicies}
-                          value={currentVal}
-                          onChange={(e) => {
-                            const raw = e.target.value.replace(/\D/g, '')
-                            const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
-                            setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
-                          }}
-                          placeholder="0"
-                          className={`w-full bg-slate-50/50 border rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-slate-800 pr-8 focus:bg-white focus:outline-none focus:ring-1 focus:ring-cyan-500 transition ${
-                            isModified ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200'
-                          }`}
-                        />
-                        <span className="absolute right-2.5 top-1 text-[11px] text-slate-400 font-mono">đ</span>
+
+                      {/* 2 Price Inputs: Tiêu chuẩn vs Máy lạnh A/C */}
+                      <div className="grid grid-cols-2 gap-2 pt-0.5">
+                        {/* 1. Tiêu chuẩn (Non-AC) */}
+                        <div>
+                          <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">
+                            {t('Tiêu chuẩn')}:
+                          </span>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              disabled={!canManagePolicies}
+                              value={currentVal}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '')
+                                const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
+                                setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
+                              }}
+                              placeholder="0"
+                              className={`w-full bg-slate-50/50 border rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-slate-800 pr-5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-cyan-500 transition ${
+                                isStdModified ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200'
+                              }`}
+                            />
+                            <span className="absolute right-1.5 top-1 text-[10px] text-slate-400 font-mono">đ</span>
+                          </div>
+                        </div>
+
+                        {/* 2. Máy lạnh A/C */}
+                        <div>
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="text-[10px] font-semibold text-blue-700 flex items-center gap-0.5">
+                              <span className="material-symbols-outlined text-[12px]">ac_unit</span>
+                              {t('Máy lạnh A/C')}:
+                            </span>
+                            {canManagePolicies && (
+                              <button
+                                type="button"
+                                onClick={() => handleAutoCalcAc(ut.id)}
+                                title={t('Tự động tính +20% so với giá tiêu chuẩn')}
+                                className="text-[9px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
+                              >
+                                +20%
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              disabled={!canManagePolicies}
+                              value={currentAcVal}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(/\D/g, '')
+                                const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
+                                setUnitTypeAcPrices((prev) => ({ ...prev, [ut.id]: formatted }))
+                              }}
+                              placeholder="0"
+                              className={`w-full bg-blue-50/20 border rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-blue-900 pr-5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition ${
+                                isAcModified ? 'border-amber-400 bg-amber-50/20' : 'border-blue-200'
+                              }`}
+                            />
+                            <span className="absolute right-1.5 top-1 text-[10px] text-blue-400 font-mono">đ</span>
+                          </div>
+                        </div>
                       </div>
-                      {isModified && (
-                        <div className="flex items-center justify-between mt-1 text-[10px]">
-                          <span className="text-slate-400">Gốc: {dbBase.toLocaleString('vi-VN')} đ</span>
-                          <span className="text-amber-600 font-medium">Chưa lưu</span>
+
+                      {/* Modification indicator */}
+                      {(isStdModified || isAcModified) && (
+                        <div className="flex items-center justify-between text-[9px] pt-0.5">
+                          <span className="text-slate-400">Gốc: {dbBase.toLocaleString('vi-VN')} đ | AC: {dbAc.toLocaleString('vi-VN')} đ</span>
+                          <span className="text-amber-600 font-semibold">{t('Chưa lưu')}</span>
                         </div>
                       )}
                     </div>
@@ -589,7 +698,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-600 text-[18px]">table_chart</span>
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {t('Danh mục 5 loại kho chuẩn & giá niêm yết hiện hành (CSDL)')}
+                  {t('Danh mục 5 loại kho chuẩn & giá niêm yết hiện hành (Tiêu chuẩn vs Máy lạnh A/C)')}
                 </span>
               </div>
               <span className="text-[11px] text-slate-500 font-mono">
@@ -600,47 +709,60 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="border-b border-slate-100 bg-white text-[11px] font-semibold text-slate-500">
-                    <th className="py-2.5 px-4">{t('Quy mô / Thể tích')}</th>
-                    <th className="py-2.5 px-4">{t('Tên loại kho')}</th>
-                    <th className="py-2.5 px-4">{t('Kích thước quy chuẩn')}</th>
-                    <th className="py-2.5 px-4">{t('Diện tích / Sức chứa')}</th>
-                    <th className="py-2.5 px-4">{t('Giá CSDL gốc')}</th>
-                    <th className="py-2.5 px-4">{t('Giá điều chỉnh / tháng')}</th>
-                    <th className="py-2.5 px-4 text-right">{t('Thao tác')}</th>
+                    <th className="py-2.5 px-3">{t('Quy mô / Thể tích')}</th>
+                    <th className="py-2.5 px-3">{t('Tên loại kho')}</th>
+                    <th className="py-2.5 px-3">{t('Kích thước quy chuẩn')}</th>
+                    <th className="py-2.5 px-3">{t('Diện tích / Sức chứa')}</th>
+                    <th className="py-2.5 px-3 min-w-[140px]">{t('Giá Tiêu chuẩn / tháng')}</th>
+                    <th className="py-2.5 px-3 min-w-[150px]">{t('Giá Máy lạnh A/C / tháng')}</th>
+                    <th className="py-2.5 px-3 text-right">{t('Thao tác')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {unitTypes.map((ut) => {
                     const currentVal = unitTypePrices[ut.id] ?? ''
+                    const currentAcVal = unitTypeAcPrices[ut.id] ?? ''
                     const dbBase = Number(ut.basePricePerMonth || 0)
+                    const dbAc = Number(ut.acPricePerMonth || Math.round(dbBase * 1.2))
+
                     const currentNum = parseCurrencyInput(currentVal)
-                    const isModified = currentNum > 0 && currentNum !== dbBase
+                    const currentAcNum = parseCurrencyInput(currentAcVal)
+
+                    const isStdModified = currentNum > 0 && currentNum !== dbBase
+                    const isAcModified = currentAcNum > 0 && currentAcNum !== dbAc
+                    const isModified = isStdModified || isAcModified
                     const isBusy = isAdjustingId === ut.id
                     const spec = getUnitTypeSpec(ut)
 
                     return (
                       <tr key={ut.id} className="hover:bg-slate-50/50 transition">
-                        <td className="py-2.5 px-4">
+                        {/* 1. Quy mô */}
+                        <td className="py-2.5 px-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-bold border ${spec.badgeClass}`}>
                             {spec.volume}
                           </span>
                         </td>
-                        <td className="py-2.5 px-4 font-bold text-slate-800">
+
+                        {/* 2. Tên loại kho */}
+                        <td className="py-2.5 px-3 font-bold text-slate-800">
                           <div>{ut.typeName}</div>
                           <div className="text-[10px] text-slate-400 font-normal">{spec.category}</div>
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-slate-600">
+
+                        {/* 3. Kích thước */}
+                        <td className="py-2.5 px-3 font-mono text-slate-600">
                           {ut.dimensions || '—'}
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-slate-600">
+
+                        {/* 4. Diện tích & Sức chứa */}
+                        <td className="py-2.5 px-3 font-mono text-slate-600">
                           <div>{spec.areaLabel}</div>
                           <div className="text-[10px] text-slate-400">{spec.boxes}</div>
                         </td>
-                        <td className="py-2.5 px-4 font-mono text-slate-500">
-                          {dbBase.toLocaleString('vi-VN')} đ/tháng
-                        </td>
-                        <td className="py-2.5 px-4">
-                          <div className="relative max-w-[150px]">
+
+                        {/* 5. Giá Tiêu chuẩn */}
+                        <td className="py-2.5 px-3">
+                          <div className="relative max-w-[140px]">
                             <input
                               type="text"
                               disabled={!canManagePolicies}
@@ -650,21 +772,61 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                                 const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
                                 setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
                               }}
-                              className={`w-full bg-white border rounded-lg px-2 py-1 text-xs font-mono font-bold text-slate-800 pr-6 ${
-                                isModified ? 'border-amber-400 bg-amber-50/30 text-amber-700' : 'border-slate-200 text-cyan-800'
+                              className={`w-full bg-white border rounded-lg px-2 py-1 text-xs font-mono font-bold pr-5 ${
+                                isStdModified ? 'border-amber-400 bg-amber-50/30 text-amber-700' : 'border-slate-200 text-slate-800'
                               }`}
                             />
-                            <span className="absolute right-2 top-1 text-[10px] text-slate-400 font-mono">đ</span>
+                            <span className="absolute right-1.5 top-1 text-[10px] text-slate-400 font-mono">đ</span>
                           </div>
+                          {isStdModified && (
+                            <div className="text-[9px] text-slate-400 mt-0.5">Gốc: {dbBase.toLocaleString('vi-VN')} đ</div>
+                          )}
                         </td>
-                        <td className="py-2.5 px-4 text-right">
+
+                        {/* 6. Giá Máy lạnh A/C */}
+                        <td className="py-2.5 px-3">
+                          <div className="flex items-center gap-1 max-w-[160px]">
+                            <div className="relative flex-1">
+                              <input
+                                type="text"
+                                disabled={!canManagePolicies}
+                                value={currentAcVal}
+                                onChange={(e) => {
+                                  const raw = e.target.value.replace(/\D/g, '')
+                                  const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
+                                  setUnitTypeAcPrices((prev) => ({ ...prev, [ut.id]: formatted }))
+                                }}
+                                className={`w-full bg-blue-50/20 border rounded-lg px-2 py-1 text-xs font-mono font-bold pr-5 ${
+                                  isAcModified ? 'border-amber-400 bg-amber-50/30 text-amber-700' : 'border-blue-200 text-blue-900'
+                                }`}
+                              />
+                              <span className="absolute right-1.5 top-1 text-[10px] text-blue-400 font-mono">đ</span>
+                            </div>
+                            {canManagePolicies && (
+                              <button
+                                type="button"
+                                onClick={() => handleAutoCalcAc(ut.id)}
+                                title={t('Tự động tính +20% từ giá tiêu chuẩn')}
+                                className="px-1.5 py-1 text-[10px] rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-mono font-semibold cursor-pointer shrink-0"
+                              >
+                                +20%
+                              </button>
+                            )}
+                          </div>
+                          {isAcModified && (
+                            <div className="text-[9px] text-slate-400 mt-0.5">Gốc: {dbAc.toLocaleString('vi-VN')} đ</div>
+                          )}
+                        </td>
+
+                        {/* 7. Thao tác */}
+                        <td className="py-2.5 px-3 text-right">
                           {canManagePolicies && (
                             <button
                               type="button"
                               disabled={!isModified || isBusy || isSaving}
                               onClick={() => handleQuickUpdateSingleUnitType(ut)}
                               className="px-2.5 py-1 rounded-md bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-semibold text-[11px] transition border border-cyan-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                              title={t('Cập nhật giá riêng cho loại kho này (BR-RULE-011)')}
+                              title={t('Cập nhật cả giá Tiêu chuẩn và Máy lạnh A/C cho loại kho này (BR-RULE-011)')}
                             >
                               {isBusy ? (
                                 <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />

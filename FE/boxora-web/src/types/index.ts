@@ -68,6 +68,7 @@ export interface UnitType {
   dimensions: string // e.g. "1.5m x 2m x 2.5m"
   areaSqm: number // e.g. 3.0
   basePricePerMonth: number // e.g. 1200000
+  acPricePerMonth?: number // Giá máy lạnh A/C (VNĐ)
   depositAmount: number // e.g. 1200000
   description?: string
   suitableFor?: string
@@ -76,6 +77,7 @@ export interface UnitType {
 
 export interface UnitTypePriceAdjustmentRequest {
   newPrice: number
+  newAcPrice?: number
   reason: string
   effectiveFrom?: string
   cascadeToAvailableUnits?: boolean
@@ -505,6 +507,7 @@ export interface FacilityPolicyPrice {
   unitTypeId: string
   unitTypeName?: string
   monthlyPrice: number
+  acMonthlyPrice?: number
   discount3MonthPercent?: number
   discount6MonthPercent?: number
   discount12MonthPercent?: number

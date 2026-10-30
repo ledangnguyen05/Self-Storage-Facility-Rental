@@ -26,6 +26,9 @@ public class UnitType extends BaseEntity {
     @Column(name = "base_price_per_month", nullable = false, precision = 12, scale = 2)
     private BigDecimal basePricePerMonth;
 
+    @Column(name = "ac_price_per_month", precision = 12, scale = 2)
+    private BigDecimal acPricePerMonth;
+
     @Column(name = "deposit_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal depositAmount;
 }

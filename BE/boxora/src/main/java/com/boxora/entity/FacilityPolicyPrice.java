@@ -28,6 +28,9 @@ public class FacilityPolicyPrice extends BaseEntity {
     @Column(name = "monthly_price", nullable = false, precision = 12, scale = 2)
     private BigDecimal monthlyPrice;
 
+    @Column(name = "ac_monthly_price", precision = 12, scale = 2)
+    private BigDecimal acMonthlyPrice;
+
     @Column(name = "discount_3_month_percent", nullable = false)
     @Builder.Default
     private Double discount3MonthPercent = 0.0;

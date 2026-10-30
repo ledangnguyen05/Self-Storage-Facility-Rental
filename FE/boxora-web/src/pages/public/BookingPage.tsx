@@ -849,7 +849,12 @@ export const BookingPage: React.FC = () => {
     }
     const matchingUt = dbUnitTypes.find((ut) => ut.id === utId && ut.basePricePerMonth && ut.basePricePerMonth > 0)
     if (matchingUt?.basePricePerMonth) {
-      return isAc ? Math.round(matchingUt.basePricePerMonth * 1.2) : matchingUt.basePricePerMonth
+      if (isAc) {
+        return matchingUt.acPricePerMonth != null && Number(matchingUt.acPricePerMonth) > 0
+          ? Number(matchingUt.acPricePerMonth)
+          : Math.round(matchingUt.basePricePerMonth * 1.2)
+      }
+      return matchingUt.basePricePerMonth
     }
     return isAc ? sizeUnit.acRate : sizeUnit.nonAcRate
   }, [availableFacilityUnits, dbUnitTypes])

@@ -111,6 +111,10 @@ public class UnitTypeServiceImpl implements UnitTypeService {
             unitType.setDepositAmount(request.getDepositAmount());
         }
 
+        if (request.getAcPricePerMonth() != null && request.getAcPricePerMonth().compareTo(BigDecimal.ZERO) > 0) {
+            unitType.setAcPricePerMonth(request.getAcPricePerMonth());
+        }
+
         // BR-RULE-011: Nếu có cập nhật basePricePerMonth, lưu vào lịch sử giá
         if (request.getBasePricePerMonth() != null) {
             BigDecimal currentPrice = unitType.getBasePricePerMonth();
@@ -166,6 +170,11 @@ public class UnitTypeServiceImpl implements UnitTypeService {
                 }
             }
             log.info("Cascaded new price {} to available storage units of unit type {}", request.getNewPrice(), id);
+        }
+
+        if (request.getNewAcPrice() != null && request.getNewAcPrice().compareTo(BigDecimal.ZERO) > 0) {
+            unitType.setAcPricePerMonth(request.getNewAcPrice());
+            unitTypeRepository.save(unitType);
         }
 
         UnitType reloaded = unitTypeRepository.findById(id).orElse(unitType);

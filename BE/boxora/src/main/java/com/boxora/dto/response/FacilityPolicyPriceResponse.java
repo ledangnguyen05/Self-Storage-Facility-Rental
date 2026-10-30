@@ -13,6 +13,7 @@ public class FacilityPolicyPriceResponse {
     private UUID unitTypeId;
     private String unitTypeName;
     private BigDecimal monthlyPrice;
+    private BigDecimal acMonthlyPrice;
     private Double discount3MonthPercent;
     private Double discount6MonthPercent;
     private Double discount12MonthPercent;

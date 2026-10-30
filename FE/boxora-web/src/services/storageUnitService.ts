@@ -70,6 +70,7 @@ export const storageUnitService = {
     id: string,
     data: {
       newPrice: number
+      newAcPrice?: number
       reason: string
       effectiveFrom?: string
       cascadeToAvailableUnits?: boolean

@@ -22,6 +22,8 @@ public class FacilityPolicyPriceRequest {
     @PositiveOrZero
     private BigDecimal monthlyPrice;
 
+    private BigDecimal acMonthlyPrice;
+
     @DecimalMin("0.0")
     @DecimalMax("100.0")
     private Double discount3MonthPercent;

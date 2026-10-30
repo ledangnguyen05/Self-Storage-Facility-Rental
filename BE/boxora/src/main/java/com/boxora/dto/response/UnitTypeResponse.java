@@ -22,9 +22,9 @@ public class UnitTypeResponse {
     private String dimensions;
     private Double areaSqm;
     private BigDecimal basePricePerMonth;
+    private BigDecimal acPricePerMonth;
     private BigDecimal depositAmount;
     private Long activeUnitsCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
-
