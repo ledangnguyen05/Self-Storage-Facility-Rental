@@ -3050,14 +3050,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                       <div className="flex items-center gap-2">
                         {/* Nút chốt quyết toán */}
-                        {(!currentCase.settlementConfirmed || currentCase.customerDecision === 'DISPUTED') && (
+                        {currentCase.customerDecision !== 'AGREED' && (
                           <button
                             type="button"
                             onClick={() => setShowConfirmSettlementModal(true)}
                             className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                           >
                             <ShieldCheck size={14} />
-                            <span>Xác nhận đã kiểm tra &amp; tính phí</span>
+                            <span>
+                              {currentCase.settlementConfirmed
+                                ? 'Cập nhật & Gửi thông báo tính phí'
+                                : 'Xác nhận đã kiểm tra & tính phí'}
+                            </span>
                           </button>
                         )}
 

@@ -586,6 +586,7 @@ export interface ReturnSettlementDetail {
   settlementConfirmedAt?: string
   customerDecision?: string
   customerDecisionAt?: string
+  disputeReason?: string
   disputeEvidenceUrls?: string[]
   disputeResolvedByName?: string
   disputeResolvedAt?: string

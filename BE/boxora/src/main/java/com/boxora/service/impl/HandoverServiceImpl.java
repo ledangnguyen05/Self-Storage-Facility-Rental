@@ -3786,10 +3786,14 @@ public class HandoverServiceImpl implements HandoverService {
 
         record = handoverRecordRepository.save(record);
 
+        java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
+        String depositStr = df.format(depositPaid) + "đ";
+        String deductionStr = df.format(totalProposedDeductions) + "đ";
+
         String resultMsg = netRefund.compareTo(BigDecimal.ZERO) > 0
-                ? String.format("Hoàn trả khách hàng: %s VNĐ", netRefund)
+                ? String.format("Hoàn trả khách hàng: %s VNĐ", df.format(netRefund))
                 : (additionalDue.compareTo(BigDecimal.ZERO) > 0
-                    ? String.format("Khách hàng cần thanh toán thêm: %s VNĐ", additionalDue)
+                    ? String.format("Khách hàng cần thanh toán thêm: %s VNĐ", df.format(additionalDue))
                     : "Quyết toán hòa vốn (Không hoàn, không thu thêm)");
 
         String logMsg = String.format("[%s] Nhân viên %s XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ quyết toán trả kho (Phiên bản V%d): Cọc: %s VNĐ, Khấu trừ: %s VNĐ, Công nợ: %s VNĐ -> %s\n",
@@ -3797,9 +3801,28 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
         bookingRepository.save(booking);
 
-        // Send in-app notification to Customer
+        // Send tailored in-app & email notification to Customer
         if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
             String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+            String notifTitle;
+            String notifContent;
+
+            if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
+                String refundStr = df.format(netRefund) + "đ";
+                notifTitle = String.format("Đã kiểm tra & tính toán chi phí trả kho thành công [%s]", unitCode);
+                notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và tính toán chi phí thành công cho buồng kho %s (Đơn %s). Tiền cọc: %s, Tổng khấu trừ sửa chữa: %s. Số tiền bạn được hoàn lại là: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (nhập số tài khoản ngân hàng để nhận tiền hoàn) hoặc \"Khiếu nại\" nếu có thắc mắc.",
+                        unitCode, booking.getBookingCode(), depositStr, deductionStr, refundStr);
+            } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
+                String addDueStr = df.format(additionalDue) + "đ";
+                notifTitle = String.format("Đã kiểm tra & tính toán chi phí trả kho thành công [%s]", unitCode);
+                notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và tính toán chi phí thành công cho buồng kho %s (Đơn %s). Toàn bộ tiền cọc %s đã được khấu trừ cho chi phí sửa chữa. Bạn cần thanh toán bổ sung số tiền: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (tiến hành thanh toán trực tuyến qua cổng VNPay Sandbox) hoặc \"Khiếu nại\" nếu có thắc mắc.",
+                        unitCode, booking.getBookingCode(), depositStr, addDueStr);
+            } else {
+                notifTitle = String.format("Đã kiểm tra & tính toán chi phí trả kho thành công [%s]", unitCode);
+                notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và tính toán chi phí thành công cho buồng kho %s (Đơn %s): Quyết toán hòa vốn (tiền cọc %s vừa đủ bù đắp các chi phí khấu trừ). Vui lòng vào xem chi tiết và xác nhận kết quả đối soát.",
+                        unitCode, booking.getBookingCode(), depositStr);
+            }
+
             NotificationLog notif = NotificationLog.builder()
                     .recipient(booking.getCustomer())
                     .recipientEmail(booking.getCustomer().getEmail())
@@ -3809,12 +3832,19 @@ public class HandoverServiceImpl implements HandoverService {
                     .notificationType(NotificationType.REFUND_STATUS)
                     .referenceType("BOOKING")
                     .referenceId(booking.getId())
-                    .title(String.format("Kết quả quyết toán trả kho [%s] - Chờ bạn xác nhận", unitCode))
-                    .content(String.format("Nhân viên Boxora đã kiểm tra và gửi kết quả đối soát quyết toán cho đơn %s (Kho %s): Tiền cọc: %sđ, Khấu trừ: %sđ -> %s. Vui lòng vào Khách Hàng Dashboard để xác nhận hoặc khiếu nại.",
-                            booking.getBookingCode(), unitCode, depositPaid, totalProposedDeductions, resultMsg))
+                    .title(notifTitle)
+                    .content(notifContent)
                     .status("SENT")
                     .build();
             notificationLogRepository.save(notif);
+
+            try {
+                if (emailService != null) {
+                    emailService.sendSimpleEmail(booking.getCustomer().getEmail(), notifTitle, notifContent);
+                }
+            } catch (Exception mailEx) {
+                log.warn("[EMAIL_SEND_FAIL] Không thể gửi email thông báo quyết toán: {}", mailEx.getMessage());
+            }
         }
 
         activityLogService.record(
@@ -3885,6 +3915,46 @@ public class HandoverServiceImpl implements HandoverService {
                     booking.getStatus()
             );
 
+            // Notify Customer & Facility Manager about the dispute
+            String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+            String custName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng";
+
+            if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                NotificationLog custNotif = NotificationLog.builder()
+                        .recipient(booking.getCustomer())
+                        .recipientEmail(booking.getCustomer().getEmail())
+                        .recipientName(custName)
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Đã tiếp nhận khiếu nại quyết toán kho [%s]", unitCode))
+                        .content(String.format("Đơn khiếu nại của bạn về quyết toán kho %s đã được gửi thành công. Quản lý cơ sở (Facility Manager) sẽ trực tiếp tiếp nhận và xử lý khiếu nại này.", unitCode))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(custNotif);
+            }
+
+            // Also notify Facility Manager
+            if (facility != null && facility.getManager() != null && facility.getManager().getEmail() != null) {
+                NotificationLog fmNotif = NotificationLog.builder()
+                        .recipient(facility.getManager())
+                        .recipientEmail(facility.getManager().getEmail())
+                        .recipientName(facility.getManager().getFullName())
+                        .facility(facility)
+                        .channel(NotificationChannel.IN_APP)
+                        .notificationType(NotificationType.REFUND_STATUS)
+                        .referenceType("BOOKING")
+                        .referenceId(booking.getId())
+                        .title(String.format("Khiếu nại quyết toán trả kho từ khách hàng [%s]", unitCode))
+                        .content(String.format("Khách hàng %s đã gửi khiếu nại quyết toán đơn %s (Kho %s). Lý do: \"%s\". Vui lòng tiếp nhận và phân xử giải quyết.",
+                                custName, booking.getBookingCode(), unitCode, request.getDisputeReason().trim()))
+                        .status("SENT")
+                        .build();
+                notificationLogRepository.save(fmNotif);
+            }
+
             return calculateSettlement(bookingId, null);
 
         } else if ("AGREED".equals(decision)) {
@@ -3898,6 +3968,9 @@ public class HandoverServiceImpl implements HandoverService {
 
             BigDecimal netRefund = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
             BigDecimal additionalDue = record.getAdditionalAmountDue() != null ? record.getAdditionalAmountDue() : BigDecimal.ZERO;
+            java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
+            String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+            String custName = booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách hàng";
 
             if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
                 // Must provide bank info
@@ -3946,14 +4019,51 @@ public class HandoverServiceImpl implements HandoverService {
                 }
                 record.setRefundRequest(refundReq);
 
+                // Notify Customer about submission to Business Manager
+                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                    NotificationLog custNotif = NotificationLog.builder()
+                            .recipient(booking.getCustomer())
+                            .recipientEmail(booking.getCustomer().getEmail())
+                            .recipientName(custName)
+                            .facility(facility)
+                            .channel(NotificationChannel.IN_APP)
+                            .notificationType(NotificationType.REFUND_STATUS)
+                            .referenceType("BOOKING")
+                            .referenceId(booking.getId())
+                            .title(String.format("Xác nhận thông tin hoàn cọc [%s]", unitCode))
+                            .content(String.format("Bạn đã đồng ý quyết toán kho %s. Thông tin tài khoản ngân hàng (%s - %s - %s) để hoàn số tiền %sđ đã được gửi trực tiếp cho Quản lý kinh doanh (Business Manager) để thực hiện thanh toán.",
+                                    unitCode, bName, bAccNum, bAccName, df.format(netRefund)))
+                            .status("SENT")
+                            .build();
+                    notificationLogRepository.save(custNotif);
+                }
+
             } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
                 if (!"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
                     record.setAdditionalPaymentStatus("PENDING");
                 }
+
+                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                    NotificationLog custNotif = NotificationLog.builder()
+                            .recipient(booking.getCustomer())
+                            .recipientEmail(booking.getCustomer().getEmail())
+                            .recipientName(custName)
+                            .facility(facility)
+                            .channel(NotificationChannel.IN_APP)
+                            .notificationType(NotificationType.REFUND_STATUS)
+                            .referenceType("BOOKING")
+                            .referenceId(booking.getId())
+                            .title(String.format("Xác nhận đồng ý thanh toán bồi thường [%s]", unitCode))
+                            .content(String.format("Bạn đã đồng ý quyết toán kho %s. Vui lòng hoàn tất thanh toán khoản bổ sung %sđ qua cổng thanh toán trực tuyến VNPay Sandbox.",
+                                    unitCode, df.format(additionalDue)))
+                            .status("SENT")
+                            .build();
+                    notificationLogRepository.save(custNotif);
+                }
             }
 
             String logMsg = String.format("[%s] KHÁCH HÀNG ĐÃ ĐỒNG Ý kết quả quyết toán (V%d). Tiền hoàn: %sđ, Tiền nợ thêm: %sđ\n",
-                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, netRefund, additionalDue);
+                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, df.format(netRefund), df.format(additionalDue));
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
             record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHÁCH HÀNG ĐỒNG Ý] " + logMsg.trim());
             record = handoverRecordRepository.save(record);
@@ -4194,6 +4304,11 @@ public class HandoverServiceImpl implements HandoverService {
 
         // Notify Customer with proof and amount
         if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+            java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
+            String refundStr = df.format(refundAmount);
+            String title = String.format("Giải ngân hoàn tiền cọc thành công [%s]", unit != null ? unit.getUnitCode() : "");
+            String content = String.format("Boxora đã hoàn tất chuyển khoản số tiền %s VNĐ vào tài khoản ngân hàng %s (%s) của bạn. Mã giao dịch ngân hàng: %s.",
+                    refundStr, record.getBankName(), record.getBankAccountNumber(), txnRef);
             NotificationLog notif = NotificationLog.builder()
                     .recipient(booking.getCustomer())
                     .recipientEmail(booking.getCustomer().getEmail())
@@ -4203,12 +4318,19 @@ public class HandoverServiceImpl implements HandoverService {
                     .notificationType(NotificationType.REFUND_PAYOUT_COMPLETED)
                     .referenceType("BOOKING")
                     .referenceId(booking.getId())
-                    .title(String.format("Giải ngân hoàn tiền cọc thành công [%s]", unit != null ? unit.getUnitCode() : ""))
-                    .content(String.format("Boxora đã hoàn tất chuyển khoản số tiền %s VNĐ vào tài khoản ngân hàng %s (%s) của bạn. Mã giao dịch ngân hàng: %s.",
-                            refundAmount, record.getBankName(), record.getBankAccountNumber(), txnRef))
+                    .title(title)
+                    .content(content)
                     .status("SENT")
                     .build();
             notificationLogRepository.save(notif);
+
+            try {
+                if (emailService != null) {
+                    emailService.sendSimpleEmail(booking.getCustomer().getEmail(), title, content);
+                }
+            } catch (Exception mailEx) {
+                log.warn("[EMAIL_SEND_FAIL] Failed to send payout confirmation email: {}", mailEx.getMessage());
+            }
         }
 
         activityLogService.record(

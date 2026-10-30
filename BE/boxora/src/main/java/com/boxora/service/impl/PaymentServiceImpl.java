@@ -545,9 +545,17 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         if (request.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
-            com.boxora.entity.HandoverRecord record = handoverRecordRepository != null
-                    ? handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(booking.getId(), "RETURN").orElse(null)
-                    : null;
+            UUID targetBookingId = booking.getId();
+            com.boxora.entity.HandoverRecord record = null;
+            if (handoverRecordRepository != null) {
+                record = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(targetBookingId, "RETURN").orElse(null);
+                if (record == null) {
+                    record = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(targetBookingId, "INSPECTION").orElse(null);
+                }
+                if (record == null) {
+                    record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(targetBookingId).stream().findFirst().orElse(null);
+                }
+            }
             if (record == null) {
                 throw new AppException(ErrorCode.RESOURCE_NOT_FOUND, "Không tìm thấy hồ sơ trả kho cho đơn này.");
             }
@@ -974,9 +982,15 @@ public class PaymentServiceImpl implements PaymentService {
 
             if (payment.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
                 if (payment.getBooking() != null && handoverRecordRepository != null) {
-                    java.util.Optional<com.boxora.entity.HandoverRecord> recordOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(payment.getBooking().getId(), "RETURN");
-                    if (recordOpt.isPresent()) {
-                        com.boxora.entity.HandoverRecord record = recordOpt.get();
+                    UUID targetBookingId = payment.getBooking().getId();
+                    com.boxora.entity.HandoverRecord record = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(targetBookingId, "RETURN").orElse(null);
+                    if (record == null) {
+                        record = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(targetBookingId, "INSPECTION").orElse(null);
+                    }
+                    if (record == null) {
+                        record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(targetBookingId).stream().findFirst().orElse(null);
+                    }
+                    if (record != null) {
                         record.setAdditionalPaymentStatus("PAID");
                         record.setAdditionalPaymentTxnRef(txnRef);
                         record.setAdditionalPaymentMethod("VNPAY");
@@ -1000,6 +1014,25 @@ public class PaymentServiceImpl implements PaymentService {
                             .build();
                     notificationLogRepository.save(notif);
                 }
+
+                EmailService emailService = emailServiceProvider != null ? emailServiceProvider.getIfAvailable() : null;
+                if (emailService != null && payment.getBooking() != null && payment.getBooking().getCustomer() != null) {
+                    try {
+                        String customerEmail = payment.getBooking().getCustomer().getEmail();
+                        String customerName = payment.getBooking().getCustomer().getFullName() != null
+                                ? payment.getBooking().getCustomer().getFullName()
+                                : "Quý khách";
+                        if (customerEmail != null && !customerEmail.isBlank()) {
+                            String bookingCode = payment.getBooking().getBookingCode();
+                            String desc = "Thanh toán bồi thường / phí bổ sung quyết toán trả kho cho đơn #" + bookingCode;
+                            emailService.sendPaymentSuccessEmail(customerEmail, customerName, txnRef, payment.getAmount(), desc);
+                            log.info("[PAYMENT_EMAIL] Sent return compensation email to {} for txnRef {}", customerEmail, txnRef);
+                        }
+                    } catch (Exception mailEx) {
+                        log.warn("[PAYMENT_EMAIL] Failed to send compensation payment email: {}", mailEx.getMessage());
+                    }
+                }
+
                 UUID facilityId = extractFacilityId(payment);
                 activityLogService.record(
                         facilityId,
@@ -1195,9 +1228,15 @@ public class PaymentServiceImpl implements PaymentService {
 
             if (payment.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
                 if (payment.getBooking() != null && handoverRecordRepository != null) {
-                    java.util.Optional<com.boxora.entity.HandoverRecord> recordOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(payment.getBooking().getId(), "RETURN");
-                    if (recordOpt.isPresent()) {
-                        com.boxora.entity.HandoverRecord record = recordOpt.get();
+                    UUID targetBookingId = payment.getBooking().getId();
+                    com.boxora.entity.HandoverRecord record = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(targetBookingId, "RETURN").orElse(null);
+                    if (record == null) {
+                        record = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(targetBookingId, "INSPECTION").orElse(null);
+                    }
+                    if (record == null) {
+                        record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(targetBookingId).stream().findFirst().orElse(null);
+                    }
+                    if (record != null) {
                         record.setAdditionalPaymentStatus("PAID");
                         record.setAdditionalPaymentTxnRef(txnRef);
                         record.setAdditionalPaymentMethod("VNPAY");
@@ -1221,6 +1260,25 @@ public class PaymentServiceImpl implements PaymentService {
                             .build();
                     notificationLogRepository.save(notif);
                 }
+
+                EmailService ipnEmailService = emailServiceProvider != null ? emailServiceProvider.getIfAvailable() : null;
+                if (ipnEmailService != null && payment.getBooking() != null && payment.getBooking().getCustomer() != null) {
+                    try {
+                        String customerEmail = payment.getBooking().getCustomer().getEmail();
+                        String customerName = payment.getBooking().getCustomer().getFullName() != null
+                                ? payment.getBooking().getCustomer().getFullName()
+                                : "Quý khách";
+                        if (customerEmail != null && !customerEmail.isBlank()) {
+                            String bookingCode = payment.getBooking().getBookingCode();
+                            String desc = "Thanh toán bồi thường / phí bổ sung quyết toán trả kho cho đơn #" + bookingCode;
+                            ipnEmailService.sendPaymentSuccessEmail(customerEmail, customerName, txnRef, payment.getAmount(), desc);
+                            log.info("[PAYMENT_IPN_EMAIL] Sent return compensation email to {} for txnRef {}", customerEmail, txnRef);
+                        }
+                    } catch (Exception mailEx) {
+                        log.warn("[PAYMENT_IPN_EMAIL] Failed to send compensation payment email: {}", mailEx.getMessage());
+                    }
+                }
+
                 UUID facilityId = extractFacilityId(payment);
                 activityLogService.record(
                         facilityId,

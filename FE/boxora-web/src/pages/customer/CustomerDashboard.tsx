@@ -19,6 +19,7 @@ import { BookingRescheduleModal } from '../../components/modals/BookingReschedul
 import { BookingRescheduleHistorySection } from '../../components/booking/BookingRescheduleHistorySection'
 import { TicketCloseConfirmModal } from '../../components/modals/TicketCloseConfirmModal'
 import { PortalBookingReservationModal, PortalBookingUnitData } from '../../components/booking/PortalBookingReservationModal'
+import { CustomerSettlementReviewModal } from '../../components/modals/CustomerSettlementReviewModal'
 import { getFacilityImage } from '../public/BookingPage'
 import { extractFloor } from '../../utils/floorUtils'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
@@ -100,6 +101,7 @@ interface CustomerUnitActivityLog {
     | 'CONTRACT_OVERDUE'
     | 'PAYMENT_COMPLETED'
     | 'SUPPORT_REQUEST'
+    | 'RETURN_SETTLEMENT'
     | 'SYSTEM_NOTIFICATION'
   title: string
   description: string
@@ -114,6 +116,8 @@ interface CustomerUnitActivityLog {
     amount?: number
     contractCode?: string
     renewalId?: string
+    bookingId?: string
+    notificationId?: string
   }
 }
 
@@ -252,6 +256,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   // Customer notifications & unit activity history state
   const [customerNotifications, setCustomerNotifications] = useState<NotificationLog[]>([])
   const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false)
+  const [selectedBookingForSettlementModal, setSelectedBookingForSettlementModal] = useState<string | null>(null)
   const [unitHistoryCategory, setUnitHistoryCategory] = useState<'ALL' | 'ACCESS' | 'RENEWAL' | 'NOTIFICATION' | 'SUPPORT'>('ALL')
   const [unitHistoryUnitFilter, setUnitHistoryUnitFilter] = useState<string>('ALL')
   const [unitHistorySearch, setUnitHistorySearch] = useState<string>('')
@@ -1906,12 +1911,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     customerNotifications.forEach(n => {
       const cleanContent = (n.content || '').replace(/\[\[[\s\S]*?\]\]/g, '').trim()
       const detectedUnit = extractUnitFromText(n.title) || extractUnitFromText(cleanContent)
-      const isRenewalNotif = Boolean(
+      const isSettlementNotif = Boolean(
+        n.notificationType === 'REFUND_STATUS' ||
+          n.notificationType === 'REFUND_PAYOUT_COMPLETED' ||
+          n.title?.toLowerCase().includes('quyết toán') ||
+          n.title?.toLowerCase().includes('tính toán chi phí') ||
+          cleanContent.toLowerCase().includes('quyết toán') ||
+          cleanContent.toLowerCase().includes('khấu trừ')
+      )
+      const isRenewalNotif = !isSettlementNotif && Boolean(
         n.notificationType?.includes('RENEWAL') ||
           n.title?.toLowerCase().includes('gia hạn') ||
           cleanContent.toLowerCase().includes('gia hạn')
       )
-      const isAccessNotif = Boolean(
+      const isAccessNotif = !isSettlementNotif && Boolean(
         n.notificationType?.includes('PIN') ||
           n.notificationType?.includes('SEAL') ||
           n.title?.toLowerCase().includes('mã pin') ||
@@ -1919,12 +1932,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           n.title?.toLowerCase().includes('mở khóa')
       )
 
+      const matchedBooking =
+        (n.referenceId ? customerBookings.find(b => b.id === n.referenceId) : undefined) ||
+        (detectedUnit ? customerBookings.find(b => b.unitCode === detectedUnit) : undefined)
+      const targetBookingId = n.referenceId || matchedBooking?.id
+
       items.push({
         id: `NOTIF-${n.id}`,
-        unitCode: detectedUnit,
-        facilityName: n.facilityName,
-        category: isRenewalNotif ? 'RENEWAL' : isAccessNotif ? 'ACCESS' : 'NOTIFICATION',
-        actionType: isRenewalNotif
+        unitCode: (detectedUnit || matchedBooking?.unitCode) ?? undefined,
+        facilityName: (n.facilityName || matchedBooking?.facilityName) ?? undefined,
+        category: isSettlementNotif ? 'SUPPORT' : isRenewalNotif ? 'RENEWAL' : isAccessNotif ? 'ACCESS' : 'NOTIFICATION',
+        actionType: isSettlementNotif
+          ? 'RETURN_SETTLEMENT'
+          : isRenewalNotif
           ? n.notificationType === 'RENEWAL_REJECTED'
             ? 'RENEWAL_REJECTED'
             : 'RENEWAL_COMPLETED'
@@ -1933,17 +1953,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         description: cleanContent || 'Thông báo cập nhật trạng thái vận hành kho lưu trữ.',
         timestamp: n.createdAt || new Date().toISOString(),
         actorName: n.facilityName || 'Hệ thống Boxora',
-        statusLabel: isRenewalNotif
+        statusLabel: isSettlementNotif
+          ? 'Nghiệm thu & Quyết toán kho'
+          : isRenewalNotif
           ? 'Thông báo gia hạn'
           : isAccessNotif
           ? 'Mã PIN & Khóa kho'
           : 'Thông báo hệ thống',
-        statusTone:
-          n.notificationType === 'RENEWAL_REJECTED' || n.notificationType === 'SEALING_NOTICE'
-            ? 'rose'
-            : isRenewalNotif
-            ? 'emerald'
-            : 'cyan',
+        statusTone: isSettlementNotif
+          ? 'amber'
+          : n.notificationType === 'RENEWAL_REJECTED' || n.notificationType === 'SEALING_NOTICE'
+          ? 'rose'
+          : isRenewalNotif
+          ? 'emerald'
+          : 'cyan',
+        meta: {
+          bookingId: targetBookingId,
+          notificationId: n.id
+        }
       })
     })
 
@@ -1976,11 +2003,40 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
   }, [unitActivityLogs, myRenewals, contracts, customerBookings, customerNotifications, customerTickets, user?.fullName])
 
+  const pendingSettlementBooking = useMemo(() => {
+    const notif = customerNotifications.find(
+      n =>
+        n.notificationType === 'REFUND_STATUS' ||
+        n.title?.toLowerCase().includes('tính toán chi phí') ||
+        n.title?.toLowerCase().includes('quyết toán trả kho')
+    )
+    if (notif) {
+      const matchUnit =
+        notif.title?.match(/\[(.*?)\]/)?.[1] ||
+        notif.title?.match(/#([A-Z0-9-]{3,10})/i)?.[1]
+      const targetBooking =
+        (notif.referenceId ? customerBookings.find(b => b.id === notif.referenceId) : undefined) ||
+        (matchUnit ? customerBookings.find(b => b.unitCode === matchUnit) : undefined) ||
+        (notif.referenceId ? { id: notif.referenceId, unitCode: matchUnit || 'N/A' } : undefined)
+      if (targetBooking?.id) {
+        return {
+          bookingId: targetBooking.id,
+          unitCode: targetBooking.unitCode || matchUnit || 'N/A',
+          notifTitle: notif.title,
+          notifContent: notif.content
+        }
+      }
+    }
+    return null
+  }, [customerNotifications, customerBookings])
+
   const filteredUnitActivityHistory = useMemo(() => {
     return combinedUnitActivityHistory.filter(item => {
       if (unitHistoryCategory !== 'ALL') {
         if (unitHistoryCategory === 'NOTIFICATION') {
-          if (item.category !== 'NOTIFICATION' && item.category !== 'CONTRACT') return false
+          if (item.category !== 'NOTIFICATION' && item.category !== 'CONTRACT' && item.actionType !== 'RETURN_SETTLEMENT') return false
+        } else if (unitHistoryCategory === 'SUPPORT') {
+          if (item.category !== 'SUPPORT' && item.actionType !== 'RETURN_SETTLEMENT') return false
         } else if (item.category !== unitHistoryCategory) {
           return false
         }
@@ -2011,8 +2067,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       all: combinedUnitActivityHistory.length,
       access: combinedUnitActivityHistory.filter(i => i.category === 'ACCESS').length,
       renewal: combinedUnitActivityHistory.filter(i => i.category === 'RENEWAL').length,
-      notification: combinedUnitActivityHistory.filter(i => i.category === 'NOTIFICATION' || i.category === 'CONTRACT').length,
-      support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT').length,
+      notification: combinedUnitActivityHistory.filter(i => i.category === 'NOTIFICATION' || i.category === 'CONTRACT' || i.actionType === 'RETURN_SETTLEMENT').length,
+      support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT' || i.actionType === 'RETURN_SETTLEMENT').length,
     }
   }, [combinedUnitActivityHistory])
 
@@ -2705,6 +2761,39 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
         </div>
       </div>
+
+      {/* Banner thông báo nghiệm thu & quyết toán hoàn cọc / thu bồi thường cần phản hồi */}
+      {pendingSettlementBooking && (
+        <div className="mb-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border border-amber-400/50">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center shrink-0 border border-white/30">
+              <span className="material-symbols-outlined text-[26px] text-white">fact_check</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-white/25 text-[11px] font-black uppercase tracking-wider">
+                  Biên Bản Nghiệm Thu &amp; Quyết Toán
+                </span>
+                <span className="text-xs font-semibold text-amber-100">Kho #{pendingSettlementBooking.unitCode}</span>
+              </div>
+              <h4 className="text-sm sm:text-base font-bold text-white mt-0.5">
+                {pendingSettlementBooking.notifTitle}
+              </h4>
+              <p className="text-xs text-amber-100 line-clamp-1 mt-0.5">
+                {pendingSettlementBooking.notifContent}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedBookingForSettlementModal(pendingSettlementBooking.bookingId)}
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-white text-amber-900 hover:bg-amber-50 font-bold text-xs flex items-center justify-center gap-2 shadow-md transition cursor-pointer shrink-0"
+          >
+            <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+            <span>Xem Biên Bản &amp; Phản Hồi</span>
+          </button>
+        </div>
+      )}
 
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
@@ -3411,6 +3500,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         return { icon: 'payments', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
                       case 'SUPPORT_REQUEST':
                         return { icon: 'support_agent', bg: 'bg-indigo-100 text-indigo-700 border-indigo-200' }
+                      case 'RETURN_SETTLEMENT':
+                        return { icon: 'fact_check', bg: 'bg-amber-100 text-amber-800 border-amber-300' }
                       default:
                         return { icon: 'notifications_active', bg: 'bg-cyan-100 text-cyan-700 border-cyan-200' }
                     }
@@ -3546,6 +3637,30 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   </div>
                                 )
                               })()}
+                            </div>
+                          )}
+
+                          {/* Chi tiết Quyết toán trả kho & Button Xem chi tiết */}
+                          {item.actionType === 'RETURN_SETTLEMENT' && (
+                            <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                              <div className="flex items-center gap-2 text-amber-950 font-medium">
+                                <span className="material-symbols-outlined text-[18px] text-amber-700">fact_check</span>
+                                <span>Biên bản nghiệm thu &amp; đối soát chi phí đã sẵn sàng. Vui lòng phản hồi để tiếp tục.</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const targetBId =
+                                    item.meta?.bookingId ||
+                                    (item.unitCode ? customerBookings.find(b => b.unitCode === item.unitCode)?.id : undefined)
+                                  if (targetBId) setSelectedBookingForSettlementModal(targetBId)
+                                  else toast.warning('Không tìm thấy mã đơn đặt chỗ để xem biên bản quyết toán.')
+                                }}
+                                className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">assignment_turned_in</span>
+                                <span>Xem chi tiết &amp; Phản hồi quyết toán</span>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -6913,6 +7028,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         </div>
       )}
 
+      {/* Modal Nghiệm thu, Đối soát hoàn cọc / bồi thường dành cho Khách hàng */}
+      {selectedBookingForSettlementModal && (
+        <CustomerSettlementReviewModal
+          isOpen={Boolean(selectedBookingForSettlementModal)}
+          onClose={() => setSelectedBookingForSettlementModal(null)}
+          bookingId={selectedBookingForSettlementModal}
+          onUpdated={async () => {
+            await Promise.all([fetchCustomerNotifications(), fetchCustomerBookings()])
+          }}
+        />
+      )}
 
     </div>
   )
