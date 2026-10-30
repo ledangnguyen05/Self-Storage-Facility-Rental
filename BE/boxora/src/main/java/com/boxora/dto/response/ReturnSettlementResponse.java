@@ -75,6 +75,7 @@ public class ReturnSettlementResponse {
     /** Trạng thái hoàn tiền */
     private String refundStatus;
     private String refundTransactionId;
+    private String transferProofUrl;
 
     /** Cam kết thời gian hoàn tiền (SLA số ngày) */
     private Integer depositRefundSlaDays;

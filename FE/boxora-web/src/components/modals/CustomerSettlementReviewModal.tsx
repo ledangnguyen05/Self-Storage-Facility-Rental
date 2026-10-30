@@ -16,6 +16,23 @@ import {
 import { handoverService, ReturnSettlementDetail } from '../../services/handoverService'
 import { paymentService } from '../../services/paymentService'
 import { toast } from '../../utils/toast'
+import { getApiBaseUrl } from '../../lib/axios'
+
+const resolveReceiptUrl = (url: string | null | undefined): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  return base ? `${base}${cleanUrl}` : cleanUrl
+}
 
 const POPULAR_BANKS = [
   'Vietcombank (VCB)',
@@ -59,6 +76,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   const [bankAccountName, setBankAccountName] = useState('')
   const [showBankConfirmModal, setShowBankConfirmModal] = useState(false)
   const [bankDisclaimerChecked, setBankDisclaimerChecked] = useState(false)
+  const [previewProofModal, setPreviewProofModal] = useState<string | null>(null)
 
   // Dispute Form State
   const [disputeReason, setDisputeReason] = useState('')
@@ -440,6 +458,41 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                             </span>
                           )}
                         </div>
+
+                        {settlement.refundStatus === 'REFUNDED' && settlement.transferProofUrl && (
+                          <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                            <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 space-y-2">
+                              <div className="flex items-center justify-between text-xs font-bold text-emerald-900">
+                                <span className="flex items-center gap-1.5">
+                                  <CheckCircle2 size={15} className="text-emerald-600" />
+                                  <span>Ảnh biên lai / UNC chuyển khoản hoàn tiền:</span>
+                                </span>
+                                <a
+                                  href={resolveReceiptUrl(settlement.transferProofUrl)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-emerald-700 hover:text-emerald-800 text-[11px] underline flex items-center gap-1"
+                                >
+                                  <span>Mở ảnh gốc</span>
+                                  <ExternalLink size={12} />
+                                </a>
+                              </div>
+                              <div
+                                className="relative h-44 rounded-lg overflow-hidden border border-emerald-300 bg-white cursor-pointer group shadow-2xs"
+                                onClick={() => setPreviewProofModal(resolveReceiptUrl(settlement.transferProofUrl))}
+                              >
+                                <img
+                                  src={resolveReceiptUrl(settlement.transferProofUrl)}
+                                  alt="Biên lai chuyển khoản hoàn tiền"
+                                  className="w-full h-full object-contain transition group-hover:scale-102"
+                                />
+                                <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition">
+                                  🔍 Nhấp để xem kích thước lớn
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                     {isOverDeposit && (
@@ -827,6 +880,50 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
               >
                 <CheckCircle2 size={15} />
                 <span>{submitting ? 'Đang gửi...' : 'Xác Nhận & Gửi Cho Quản Lý Cơ Sở'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xem phóng to ảnh biên lai chuyển khoản */}
+      {previewProofModal && (
+        <div
+          className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setPreviewProofModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full p-4 shadow-2xl border border-slate-200 space-y-3 cursor-default animate-in zoom-in-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                <CheckCircle2 size={15} className="text-emerald-600" />
+                <span>Biên Lai Chuyển Khoản Hoàn Tiền Cọc Boxora</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewProofModal(null)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="rounded-xl overflow-hidden bg-slate-950 flex items-center justify-center max-h-[75vh]">
+              <img
+                src={previewProofModal}
+                alt="Phóng to biên lai"
+                className="max-h-[75vh] w-auto object-contain"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500">
+              <span>Được ghi nhận trực tiếp từ Quản lý Boxora</span>
+              <button
+                type="button"
+                onClick={() => setPreviewProofModal(null)}
+                className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Đóng
               </button>
             </div>
           </div>

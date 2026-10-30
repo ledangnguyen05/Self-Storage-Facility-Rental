@@ -2808,6 +2808,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .bankAccountNumber(inspectionRecord != null ? inspectionRecord.getBankAccountNumber() : null)
                 .bankAccountName(inspectionRecord != null ? inspectionRecord.getBankAccountName() : null)
                 .refundRequestId(inspectionRecord != null && inspectionRecord.getRefundRequest() != null ? inspectionRecord.getRefundRequest().getId() : null)
+                .transferProofUrl(inspectionRecord != null && inspectionRecord.getRefundRequest() != null ? inspectionRecord.getRefundRequest().getTransferProofUrl() : null)
                 .build();
     }
 
@@ -3210,6 +3211,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .bankAccountNumber(record != null ? record.getBankAccountNumber() : null)
                 .bankAccountName(record != null ? record.getBankAccountName() : null)
                 .refundRequestId(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getId() : null)
+                .transferProofUrl(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getTransferProofUrl() : null)
                 .build();
     }
 
@@ -4477,21 +4479,42 @@ public class HandoverServiceImpl implements HandoverService {
 
         String txnRef = request.getTransactionReference().trim();
 
-        // Update RefundRequest to COMPLETED
-        if (record.getRefundRequest() != null) {
-            RefundRequest r = record.getRefundRequest();
-            r.setStatus(RefundStatus.COMPLETED);
-            r.setProcessedBy(operator);
-            r.setProcessedAt(LocalDateTime.now());
-            r.setTransactionReference(txnRef);
-            if (request.getTransferProofUrl() != null && !request.getTransferProofUrl().isBlank()) {
-                r.setTransferProofUrl(request.getTransferProofUrl().trim());
+        // Update or create RefundRequest to COMPLETED
+        RefundRequest r = record.getRefundRequest();
+        if (r == null) {
+            String reqCode = "REF-" + booking.getBookingCode() + "-V" + (record.getSettlementVersion() != null ? record.getSettlementVersion() : 1);
+            r = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+            if (r == null) {
+                r = RefundRequest.builder()
+                        .requestCode(reqCode)
+                        .customer(booking.getCustomer())
+                        .facility(facility)
+                        .booking(booking)
+                        .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
+                        .requestedAmount(refundAmount)
+                        .finalRefundAmount(refundAmount)
+                        .bankName(record.getBankName())
+                        .bankAccountNumber(record.getBankAccountNumber())
+                        .bankAccountName(record.getBankAccountName())
+                        .reason(String.format("Quyết toán trả kho V%d đơn %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()))
+                        .requestedBy(booking.getCustomer() != null ? booking.getCustomer() : operator)
+                        .build();
             }
-            if (request.getProcessNotes() != null) {
-                r.setProcessNotes(request.getProcessNotes().trim());
-            }
-            refundRequestRepository.save(r);
+            record.setRefundRequest(r);
         }
+
+        r.setStatus(RefundStatus.COMPLETED);
+        r.setProcessedBy(operator);
+        r.setProcessedAt(LocalDateTime.now());
+        r.setTransactionReference(txnRef);
+        if (request.getTransferProofUrl() != null && !request.getTransferProofUrl().isBlank()) {
+            r.setTransferProofUrl(request.getTransferProofUrl().trim());
+        }
+        if (request.getProcessNotes() != null) {
+            r.setProcessNotes(request.getProcessNotes().trim());
+        }
+        r = refundRequestRepository.save(r);
+        record.setRefundRequest(r);
 
         record.setRefundStatus("REFUNDED");
         record.setRefundTxnRef(txnRef);
@@ -4510,8 +4533,11 @@ public class HandoverServiceImpl implements HandoverService {
             java.text.DecimalFormat df = new java.text.DecimalFormat("#,###");
             String refundStr = df.format(refundAmount);
             String title = String.format("Giải ngân hoàn tiền cọc thành công [%s]", unit != null ? unit.getUnitCode() : "");
-            String content = String.format("Boxora đã hoàn tất chuyển khoản số tiền %s VNĐ vào tài khoản ngân hàng %s (%s) của bạn. Mã giao dịch ngân hàng: %s.",
-                    refundStr, record.getBankName(), record.getBankAccountNumber(), txnRef);
+            String proofInfo = (r != null && r.getTransferProofUrl() != null && !r.getTransferProofUrl().isBlank())
+                    ? String.format(" Biên lai chuyển khoản: %s.", r.getTransferProofUrl())
+                    : "";
+            String content = String.format("Boxora đã hoàn tất chuyển khoản số tiền %s VNĐ vào tài khoản ngân hàng %s (%s) của bạn. Mã giao dịch ngân hàng: %s.%s",
+                    refundStr, record.getBankName(), record.getBankAccountNumber(), txnRef, proofInfo);
             NotificationLog notif = NotificationLog.builder()
                     .recipient(booking.getCustomer())
                     .recipientEmail(booking.getCustomer().getEmail())

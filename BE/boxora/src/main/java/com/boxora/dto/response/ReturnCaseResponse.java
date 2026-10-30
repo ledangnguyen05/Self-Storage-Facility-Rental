@@ -52,6 +52,7 @@ public class ReturnCaseResponse {
     private String additionalPaymentTxnRef;
     private String refundStatus;
     private String refundTxnRef;
+    private String transferProofUrl;
     private LocalDateTime refundProcessedAt;
     private String inspectorName;
     private String approverName;

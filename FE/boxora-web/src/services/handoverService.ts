@@ -459,9 +459,27 @@ export const handoverService = {
 
   async executePayout(
     bookingId: string,
-    data: { transactionRef: string; proofDocumentUrl?: string; notes?: string }
+    data: {
+      transactionReference?: string
+      transactionRef?: string
+      transferProofUrl?: string
+      proofDocumentUrl?: string
+      processNotes?: string
+      notes?: string
+    }
   ): Promise<ReturnSettlementDetail> {
-    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/payout`, data)
+    const txn = (data.transactionReference || data.transactionRef || '').trim()
+    const proof = (data.transferProofUrl || data.proofDocumentUrl || '').trim()
+    const notes = (data.processNotes || data.notes || '').trim()
+    const payload = {
+      transactionReference: txn,
+      transactionRef: txn,
+      transferProofUrl: proof,
+      proofDocumentUrl: proof,
+      processNotes: notes,
+      notes: notes,
+    }
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/payout`, payload)
     return response.data?.data as ReturnSettlementDetail
   },
 }
@@ -515,6 +533,7 @@ export interface ReturnCase {
   refundRequestId?: string
   refundTxnRef?: string
   refundProcessedAt?: string
+  transferProofUrl?: string
   inspectorName?: string
   approverName?: string
   approvedAt?: string
@@ -597,6 +616,7 @@ export interface ReturnSettlementDetail {
   disputeResolvedAt?: string
   disputeResolutionNote?: string
   refundRequestId?: string
+  transferProofUrl?: string
   bankName?: string
   bankAccountNumber?: string
   bankAccountName?: string

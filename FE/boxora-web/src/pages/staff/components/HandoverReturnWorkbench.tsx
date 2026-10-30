@@ -337,6 +337,25 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [payoutProofUrl, setPayoutProofUrl] = useState('')
   const [payoutNotes, setPayoutNotes] = useState('')
   const [isExecutingPayout, setIsExecutingPayout] = useState(false)
+  const [isUploadingPayoutProof, setIsUploadingPayoutProof] = useState(false)
+  const payoutProofInputRef = useRef<HTMLInputElement>(null)
+
+  // Auto-scroll and focus with visual highlight
+  const focusAndScrollToField = (elementId: string) => {
+    setTimeout(() => {
+      const el = document.getElementById(elementId)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          el.focus()
+          el.classList.add('ring-4', 'ring-rose-400', 'bg-rose-50')
+          setTimeout(() => {
+            el.classList.remove('ring-4', 'ring-rose-400')
+          }, 2500)
+        }
+      }
+    }, 100)
+  }
 
   // Operational action states
   const [isFinishingHandover, setIsFinishingHandover] = useState(false)
@@ -998,6 +1017,45 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     toast.info('Đã gỡ ảnh khỏi biên bản.')
   }
 
+  // Handle upload payout transfer proof receipt
+  const handlePayoutProofUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !currentCase) return
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.warning(`Tệp ${file.name} vượt quá 10MB cho phép.`)
+      return
+    }
+
+    setIsUploadingPayoutProof(true)
+    try {
+      if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+        const res = await handoverService.uploadHandoverDocument(currentCase.bookingId, file, 'PAYMENT_PROOF')
+        if (res?.fileUrl) {
+          setPayoutProofUrl(res.fileUrl)
+          toast.success('Đã tải lên ảnh biên lai chuyển khoản!')
+        }
+      } else {
+        const reader = new FileReader()
+        reader.onload = (loadEvt) => {
+          const result = loadEvt.target?.result
+          if (typeof result === 'string') {
+            setPayoutProofUrl(result)
+            toast.success('Đã tải lên ảnh biên lai chuyển khoản (Demo)!')
+          }
+        }
+        reader.readAsDataURL(file)
+      }
+    } catch (err: any) {
+      toast.error(`Lỗi tải ảnh biên lai: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsUploadingPayoutProof(false)
+      if (e.target) {
+        e.target.value = ''
+      }
+    }
+  }
+
   // Financial calculations
   const deposit = currentCase?.depositAmount || 0
   const cleaningFee = cleanlinessPassed ? 0 : cleaningFeeInput
@@ -1484,26 +1542,29 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
     // Pre-condition validations
     if (!isDraft) {
-      const missingNotes: string[] = []
-      if (!doorPassed && !doorNotes.trim()) missingNotes.push('1. Cửa cuốn & Ray trượt')
-      if (!cleanlinessPassed && !cleanlinessNotes.trim()) missingNotes.push('2. Vệ sinh kho & Sàn nhà')
-      if (!damagePassed && !damageNotes.trim()) missingNotes.push('3. Kết cấu tường vách & Sàn trần')
-      if (!smartLockPassed && !smartLockNotes.trim()) missingNotes.push('4. Ổ khóa SmartLock IoT')
-      if (!assetsClearedPassed && !assetsClearedNotes.trim()) missingNotes.push('5. Xác nhận dọn trống tài sản')
-      if (!envPassed && !envNotes.trim()) missingNotes.push('7. Cảm biến môi trường Boxora IoT')
+      const missingNotes: { title: string; elementId: string }[] = []
+      if (!doorPassed && !doorNotes.trim()) missingNotes.push({ title: '1. Cửa cuốn & Ray trượt', elementId: 'inspection-door-notes' })
+      if (!cleanlinessPassed && !cleanlinessNotes.trim()) missingNotes.push({ title: '2. Vệ sinh kho & Sàn nhà', elementId: 'inspection-cleanliness-notes' })
+      if (!damagePassed && !damageNotes.trim()) missingNotes.push({ title: '3. Kết cấu tường vách & Sàn trần', elementId: 'inspection-damage-notes' })
+      if (!smartLockPassed && !smartLockNotes.trim()) missingNotes.push({ title: '4. Ổ khóa SmartLock IoT', elementId: 'inspection-smartlock-notes' })
+      if (!assetsClearedPassed && !assetsClearedNotes.trim()) missingNotes.push({ title: '5. Xác nhận dọn trống tài sản', elementId: 'inspection-assets-notes' })
+      if (!envPassed && !envNotes.trim()) missingNotes.push({ title: '7. Cảm biến môi trường Boxora IoT', elementId: 'inspection-env-notes' })
 
       if (missingNotes.length > 0) {
-        toast.error(`Bắt buộc nhập mô tả chi tiết hư hại/sự cố cho: ${missingNotes.join(', ')}`)
+        toast.error(`Bắt buộc nhập mô tả chi tiết hư hại/sự cố cho: ${missingNotes.map(m => m.title).join(', ')}`)
+        focusAndScrollToField(missingNotes[0].elementId)
         return false
       }
 
       if (resultType === 'PASSED') {
         if (photoUrls.length < 2) {
           toast.error('Quy định Boxora bắt buộc: Cần tối thiểu 2 ảnh bằng chứng hiện trường trước khi lưu nghiệm thu ĐẠT CHUẨN!')
+          focusAndScrollToField('inspection-section-photos')
           return false
         }
         if (!assetsClearedPassed) {
           toast.error('Kho chưa dọn trống tài sản của khách hàng! Không thể lập biên bản ĐẠT CHUẨN.')
+          focusAndScrollToField('inspection-assets-notes')
           return false
         }
         if (!doorPassed || !cleanlinessPassed || !damagePassed || !smartLockPassed || !envPassed) {
@@ -1721,7 +1782,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       return
     }
     if (!currentCase) return
-    if (!payoutTxnRef.trim()) {
+    const txnRef = payoutTxnRef.trim()
+    if (!txnRef) {
       toast.warning('Vui lòng nhập mã giao dịch ngân hàng.')
       return
     }
@@ -1729,8 +1791,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
         await handoverService.executePayout(currentCase.bookingId, {
-          transactionRef: payoutTxnRef.trim(),
+          transactionReference: txnRef,
+          transactionRef: txnRef,
+          transferProofUrl: payoutProofUrl.trim(),
           proofDocumentUrl: payoutProofUrl.trim(),
+          processNotes: payoutNotes.trim(),
           notes: payoutNotes.trim()
         })
       }
@@ -2373,6 +2438,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 const newNotes = doorNotes.trim() === INSPECTION_DEFAULT_NOTES.door ? '' : doorNotes
                                 setDoorNotes(newNotes)
                                 updateCurrentCase({ doorPassed: false, doorFeeInput: newFee, doorFee: newFee, doorNotes: newNotes })
+                                focusAndScrollToField('inspection-door-notes')
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!doorPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -2384,6 +2450,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                         <div className="space-y-1">
                           <input
+                            id="inspection-door-notes"
                             type="text"
                             disabled={isReadOnly}
                             value={doorNotes}
@@ -2466,6 +2533,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 const newNotes = cleanlinessNotes.trim() === INSPECTION_DEFAULT_NOTES.cleanliness ? '' : cleanlinessNotes
                                 setCleanlinessNotes(newNotes)
                                 updateCurrentCase({ cleanlinessPassed: false, cleaningFeeInput: newFee, cleaningFee: newFee, cleanlinessNotes: newNotes })
+                                focusAndScrollToField('inspection-cleanliness-notes')
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!cleanlinessPassed ? 'bg-amber-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -2477,6 +2545,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                         <div className="space-y-1">
                           <input
+                            id="inspection-cleanliness-notes"
                             type="text"
                             disabled={isReadOnly}
                             value={cleanlinessNotes}
@@ -2559,6 +2628,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 const newNotes = damageNotes.trim() === INSPECTION_DEFAULT_NOTES.damage ? '' : damageNotes
                                 setDamageNotes(newNotes)
                                 updateCurrentCase({ damagePassed: false, damageFeeInput: newFee, damageFee: newFee, damageNotes: newNotes })
+                                focusAndScrollToField('inspection-damage-notes')
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!damagePassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -2570,6 +2640,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                         <div className="space-y-1">
                           <input
+                            id="inspection-damage-notes"
                             type="text"
                             disabled={isReadOnly}
                             value={damageNotes}
@@ -2650,6 +2721,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 const newNotes = smartLockNotes.trim() === INSPECTION_DEFAULT_NOTES.smartLock ? '' : smartLockNotes
                                 setSmartLockNotes(newNotes)
                                 updateCurrentCase({ smartLockPassed: false, smartLockNotes: newNotes })
+                                focusAndScrollToField('inspection-smartlock-notes')
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!smartLockPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -2661,6 +2733,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                         <div className="space-y-1">
                           <input
+                            id="inspection-smartlock-notes"
                             type="text"
                             disabled={isReadOnly}
                             value={smartLockNotes}
@@ -2781,6 +2854,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 const newNotes = assetsClearedNotes.trim() === INSPECTION_DEFAULT_NOTES.assetsCleared ? '' : assetsClearedNotes
                                 setAssetsClearedNotes(newNotes)
                                 updateCurrentCase({ assetsClearedPassed: false, assetsClearedNotes: newNotes })
+                                focusAndScrollToField('inspection-assets-notes')
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!assetsClearedPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -2791,6 +2865,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         </div>
                         <div className="space-y-1">
                           <input
+                            id="inspection-assets-notes"
                             type="text"
                             disabled={isReadOnly}
                             value={assetsClearedNotes}
@@ -2818,7 +2893,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       </div>
 
                       {/* 6. Ảnh chụp hiện trường có Upload thật (TỐI THIỂU 2 ẢNH) */}
-                      <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
+                      <div id="inspection-section-photos" className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs">
                         <input
                           type="file"
                           ref={fileInputRef}
@@ -2994,6 +3069,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 const newNotes = envNotes.trim() === INSPECTION_DEFAULT_NOTES.env ? '' : envNotes
                                 setEnvNotes(newNotes)
                                 updateCurrentCase({ envPassed: false, envNotes: newNotes })
+                                focusAndScrollToField('inspection-env-notes')
                               }}
                               className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition ${!envPassed ? 'bg-rose-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'}`}
                             >
@@ -3005,6 +3081,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
                         <div className="space-y-1">
                           <input
+                            id="inspection-env-notes"
                             type="text"
                             disabled={isReadOnly}
                             value={envNotes}
@@ -4124,14 +4201,55 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Link ảnh biên lai chuyển khoản (tùy chọn):</label>
+                <label className="block font-bold text-slate-700 mb-1">Ảnh biên lai / UNC chuyển khoản thành công:</label>
                 <input
-                  type="text"
-                  value={payoutProofUrl}
-                  onChange={(e) => setPayoutProofUrl(e.target.value)}
-                  placeholder="https://... hoặc link upload UNC"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-emerald-400"
+                  type="file"
+                  ref={payoutProofInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handlePayoutProofUpload}
                 />
+                {payoutProofUrl ? (
+                  <div className="p-2.5 rounded-xl border border-emerald-200 bg-emerald-50/50 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                        <CheckCircle2 size={13} className="text-emerald-600" />
+                        <span>Đã có ảnh biên lai chuyển khoản</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPayoutProofUrl('')}
+                        className="text-rose-600 hover:text-rose-800 text-[11px] font-bold cursor-pointer"
+                      >
+                        ✕ Xóa ảnh
+                      </button>
+                    </div>
+                    <div
+                      className="relative h-36 rounded-lg overflow-hidden border border-emerald-300 bg-white cursor-pointer group"
+                      onClick={() => setPreviewImageModal(resolveImageUrl(payoutProofUrl))}
+                    >
+                      <img
+                        src={resolveImageUrl(payoutProofUrl)}
+                        alt="Biên lai chuyển khoản"
+                        className="w-full h-full object-contain transition group-hover:scale-102"
+                      />
+                      <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition">
+                        🔍 Nhấp để phóng to
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => payoutProofInputRef.current?.click()}
+                    className="p-4 border-2 border-dashed border-emerald-300 hover:border-emerald-500 bg-emerald-50/40 hover:bg-emerald-50/80 rounded-xl text-center cursor-pointer transition flex flex-col items-center justify-center gap-1.5"
+                  >
+                    <Upload size={20} className={isUploadingPayoutProof ? 'text-emerald-600 animate-spin' : 'text-emerald-600'} />
+                    <span className="font-bold text-xs text-emerald-900">
+                      {isUploadingPayoutProof ? 'Đang tải lên ảnh biên lai...' : 'Tải lên ảnh biên lai / UNC chuyển khoản'}
+                    </span>
+                    <span className="text-[10px] text-slate-500">Hỗ trợ JPG, PNG (tối đa 10MB) • Khách hàng sẽ xem được ảnh này</span>
+                  </div>
+                )}
               </div>
 
               <div>
