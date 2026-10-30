@@ -653,6 +653,26 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
   const getRefundBadge = (ticket: SupportTicketRecord) => {
     if (ticket.category !== 'RETURN_REFUND') return null
+
+    // Nếu phiếu đã đóng, đã giải quyết, bị từ chối hoặc hủy: không bao giờ hiển thị "Chờ quản lý duyệt"
+    const isClosedOrResolved =
+      ticket.status === 'CLOSED' ||
+      ticket.status === 'RESOLVED' ||
+      ticket.status === 'CANCELLED' ||
+      ticket.status === 'REJECTED'
+
+    if (isClosedOrResolved) {
+      if (ticket.refundStatus === 'COMPLETED') {
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300">
+            Đã hoàn tiền
+          </span>
+        )
+      }
+      // Khách hàng đã xác nhận hài lòng & đóng phiếu thì không hiển thị "Chờ quản lý duyệt"
+      return null
+    }
+
     const rStatus = ticket.refundStatus || 'PENDING_FM_APPROVAL'
     switch (rStatus) {
       case 'PENDING_FM_APPROVAL':
@@ -1120,10 +1140,18 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                   {paginatedTickets.map((t) => {
                     const catInfo = CATEGORY_LABELS[t.category] || CATEGORY_LABELS.OTHER
                     const isReturnRefund = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' || !!(t.title && t.title.toLowerCase().includes('trả kho'))
-                    const needsBank = isReturnRefund && t.refundStatus === 'AWAITING_CUSTOMER_BANK_INFO'
+                    const isSelectedUnit = (filterUnit !== 'ALL' && t.unitCode === filterUnit) || (initialUnit && t.unitCode === initialUnit)
+                    const needsBank = isReturnRefund && t.refundStatus === 'AWAITING_CUSTOMER_BANK_INFO' && t.status !== 'CLOSED' && t.status !== 'RESOLVED'
 
                     return (
-                      <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
+                      <tr
+                        key={t.id}
+                        className={`transition-colors ${
+                          isSelectedUnit
+                            ? 'bg-amber-50/70 font-medium'
+                            : 'hover:bg-slate-50/80'
+                        }`}
+                      >
                         {/* Mã phiếu */}
                         <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
                           {t.ticketCode || t.ticketNumber || `#${t.id.slice(0, 8)}`}

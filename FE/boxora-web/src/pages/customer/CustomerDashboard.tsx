@@ -2099,6 +2099,106 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
   }, [combinedUnitActivityHistory])
 
+  // Trích xuất mã kho từ chuỗi văn bản nếu có
+  const extractUnitCodeForReturn = (text?: string): string | undefined => {
+    if (!text) return undefined
+    const match = text.match(/#?([A-Z]{2,4}-[A-Z0-9]+)/i)
+    return match ? match[1].toUpperCase() : undefined
+  }
+
+  // Danh sách các hồ sơ / đơn yêu cầu trả kho & nghiệm thu đang hoạt động của khách hàng
+  const activeReturnOrders = useMemo(() => {
+    const list: Array<{
+      id: string
+      ticketCode?: string
+      unitCode: string
+      facilityName?: string
+      title: string
+      description: string
+      status: 'OPEN' | 'IN_PROGRESS' | 'COMPLETED'
+      rawStatus?: string
+      createdAt?: string
+      bookingId?: string
+      isSettlement?: boolean
+      refundStatus?: string
+      refundAmount?: number
+      bankInfo?: {
+        bankName?: string
+        bankAccountNumber?: string
+        bankAccountName?: string
+      }
+    }> = []
+
+    // 1. Quét từ customerTickets (RETURN_REFUND / RETURN_EXPIRED hoặc có từ khóa trả kho)
+    customerTickets.forEach(t => {
+      const isReturnCategory =
+        t.category === 'RETURN_REFUND' ||
+        t.category === 'RETURN_EXPIRED' ||
+        t.title?.toLowerCase().includes('trả kho') ||
+        t.description?.toLowerCase().includes('trả kho') ||
+        t.title?.toLowerCase().includes('hoàn cọc') ||
+        t.description?.toLowerCase().includes('hoàn cọc')
+      const isNotCancelled = t.status !== 'CANCELLED' && t.status !== 'REJECTED'
+      if (!isReturnCategory || !isNotCancelled) return
+
+      const detectedUnit = t.unitCode || extractUnitCodeForReturn(t.title) || extractUnitCodeForReturn(t.description) || ''
+      const isCompleted = t.status === 'RESOLVED' || t.status === 'CLOSED'
+      const targetBookingId = t.bookingId || (detectedUnit ? customerBookings.find(b => b.unitCode === detectedUnit)?.id : undefined)
+      const targetContract = detectedUnit ? contracts.find(c => c.unitCode === detectedUnit) : undefined
+
+      list.push({
+        id: t.id,
+        ticketCode: t.ticketCode || t.ticketNumber || `#${t.id.slice(0, 8)}`,
+        unitCode: detectedUnit || 'Chung',
+        facilityName: t.facilityName || targetContract?.facilityName || 'Boxora Hub',
+        title: t.title || `Yêu cầu trả kho #${detectedUnit}`,
+        description: t.description || 'Yêu cầu trả kho và quyết toán hoàn cọc lưu ký.',
+        status: isCompleted ? 'COMPLETED' : t.status === 'IN_PROGRESS' ? 'IN_PROGRESS' : 'OPEN',
+        rawStatus: t.status,
+        createdAt: t.createdAt,
+        bookingId: targetBookingId,
+        isSettlement: t.title?.toLowerCase().includes('quyết toán') || t.description?.toLowerCase().includes('quyết toán') || false,
+        refundStatus: t.refundStatus,
+        refundAmount: t.refundAmount,
+        bankInfo: t.bankName ? {
+          bankName: t.bankName,
+          bankAccountNumber: t.bankAccountNumber,
+          bankAccountName: t.bankAccountName,
+        } : undefined,
+      })
+    })
+
+    // 2. Bổ sung từ returnActivityLogs nếu đơn chưa có trong danh sách
+    returnActivityLogs.forEach(log => {
+      if (!log.unitCode) return
+      const alreadyInList = list.some(item => item.unitCode === log.unitCode)
+      if (alreadyInList) return
+
+      const isCompleted = log.title?.toLowerCase().includes('hoàn tất') || log.description?.toLowerCase().includes('đã hoàn tất')
+      const targetBookingId = log.meta?.bookingId || customerBookings.find(b => b.unitCode === log.unitCode)?.id
+      const targetContract = contracts.find(c => c.unitCode === log.unitCode)
+
+      list.push({
+        id: log.id,
+        unitCode: log.unitCode,
+        facilityName: targetContract?.facilityName || 'Boxora Facility Hub',
+        title: log.title || `Hồ sơ nghiệm thu & trả kho #${log.unitCode}`,
+        description: log.description || 'Đang tiến hành thủ tục kiểm tra kho và quyết toán hoàn cọc.',
+        status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
+        createdAt: log.timestamp,
+        bookingId: targetBookingId,
+        isSettlement: true,
+      })
+    })
+
+    // Sắp xếp đơn mới nhất lên đầu
+    return list.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return timeB - timeA
+    })
+  }, [customerTickets, customerBookings, contracts, returnActivityLogs])
+
   const [returnSearch, setReturnSearch] = useState('')
   const [returnUnitFilter, setReturnUnitFilter] = useState('ALL')
 
@@ -3088,36 +3188,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                       {/* BANNER TRẠNG THÁI TRẢ KHO & NGHIỆM THU TRÊN THẺ KHO */}
                       {activeReturnRequest && (
-                        <div className="p-3.5 rounded-xl border bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border-amber-300 flex flex-col gap-2 shadow-2xs">
+                        <div className="p-4 rounded-xl border-2 border-amber-300 bg-gradient-to-r from-amber-50/95 via-orange-50/60 to-amber-50/95 flex flex-col gap-2.5 shadow-lg shadow-amber-500/15 ring-1 ring-amber-400/30 transition-all hover:shadow-xl hover:shadow-amber-500/25">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0">
-                                assignment_return
-                              </span>
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/60 shadow-2xs">
+                                <span className="material-symbols-outlined text-[20px]">
+                                  assignment_return
+                                </span>
+                              </div>
                               <div>
-                                <span className="text-xs font-extrabold text-slate-900 block">
+                                <span className="text-xs font-black text-slate-900 block tracking-tight">
                                   {activeReturnRequest.status === 'COMPLETED'
                                     ? 'Hồ sơ trả kho đã hoàn tất'
                                     : activeReturnRequest.isSettlement
                                     ? 'Đang tiến hành đối soát & quyết toán hoàn cọc'
                                     : 'Đang xử lý yêu cầu trả kho & nghiệm thu'}
                                 </span>
-                                <span className="text-[11px] text-slate-600 line-clamp-2">
+                                <span className="text-[11px] text-slate-700 line-clamp-2 font-medium">
                                   {activeReturnRequest.description || activeReturnRequest.title || 'Hệ thống đang tiến hành thủ tục kiểm tra kho và hoàn trả tiền cọc lưu ký.'}
                                 </span>
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 pt-1 border-t border-amber-200/60">
+                          <div className="flex items-center gap-2 pt-2 border-t border-amber-200/80">
                             <button
                               type="button"
                               onClick={() => {
                                 setReturnUnitFilter(c.unitCode)
                                 handleTabChange('returns')
+                                setTimeout(() => {
+                                  const el = document.getElementById(`return-order-card-${c.unitCode}`) || document.getElementById(`return-log-${c.unitCode}`)
+                                  if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                  }
+                                }, 150)
                               }}
-                              className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer"
+                              className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-98 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-amber-600/30 transition-all cursor-pointer"
                             >
-                              <span className="material-symbols-outlined text-[14px]">visibility</span>
+                              <span className="material-symbols-outlined text-[15px]">visibility</span>
                               <span>Theo dõi tiến độ trả kho</span>
                             </button>
                           </div>
@@ -3395,8 +3503,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           onClick={() => {
                             setReturnUnitFilter(c.unitCode)
                             handleTabChange('returns')
+                            setTimeout(() => {
+                              const el = document.getElementById(`return-order-card-${c.unitCode}`) || document.getElementById(`return-log-${c.unitCode}`)
+                              if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                              }
+                            }, 150)
                           }}
-                          className="px-3.5 h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                          className="px-3.5 h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/15 hover:shadow-lg hover:shadow-amber-500/25 active:scale-98"
                           title="Kho đã có yêu cầu trả kho. Nhấn để theo dõi tiến độ và đối soát quyết toán."
                         >
                           <span className="material-symbols-outlined text-[16px] text-amber-700">assignment_return</span>
@@ -4605,10 +4719,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </button>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-                      <span className="text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[13px]">verified</span>
-                        Bảo lưu cọc 100%
-                      </span>
+                      
                       <button
                         type="button"
                         onClick={(e) => {
@@ -5238,8 +5349,266 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
 
+          {/* KHU VỰC HỒ SƠ / ĐƠN YÊU CẦU TRẢ KHO & NGHIỆM THU ĐANG XỬ LÝ (NỔI BẬT SHADOW & TIẾN ĐỘ) */}
+          {activeReturnOrders.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shadow-md shadow-amber-500/30">
+                    <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm sm:text-base text-slate-900 tracking-tight flex items-center gap-2">
+                      <span>Đơn Yêu Cầu Trả Kho &amp; Nghiệm Thu</span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[11px] font-bold border border-amber-300">
+                        {activeReturnOrders.length} hồ sơ
+                      </span>
+                    </h4>
+                    {returnUnitFilter !== 'ALL' && (
+                      <p className="text-xs text-amber-800 font-semibold mt-0.5">
+                        Đang xem chi tiết tiến độ đơn trả kho #{returnUnitFilter}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {returnUnitFilter !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => setReturnUnitFilter('ALL')}
+                    className="self-start sm:self-auto px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">format_list_bulleted</span>
+                    <span>Xem tất cả các kho</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-5">
+                {activeReturnOrders
+                  .filter(o => returnUnitFilter === 'ALL' || o.unitCode === returnUnitFilter)
+                  .map(o => {
+                    const isTargeted = returnUnitFilter !== 'ALL' && o.unitCode === returnUnitFilter
+                    return (
+                      <div
+                        key={o.id}
+                        id={`return-order-card-${o.unitCode}`}
+                        className={`relative overflow-hidden rounded-2xl transition-all duration-300 ${
+                          isTargeted
+                            ? 'p-6 bg-gradient-to-br from-amber-50/95 via-white to-orange-50/70 border-2 border-amber-400 shadow-2xl shadow-amber-500/25 ring-4 ring-amber-400/30'
+                            : 'p-5 bg-white border border-slate-200/90 shadow-xl shadow-slate-200/60 hover:shadow-2xl hover:shadow-amber-500/15'
+                        }`}
+                      >
+                        {/* Top Header Bar */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-amber-200/70">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-3 py-1 rounded-lg bg-slate-900 text-white font-mono font-black text-xs tracking-wider shadow-sm flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-[15px] text-amber-400">warehouse</span>
+                              KHO #{o.unitCode}
+                            </span>
+                            {o.ticketCode && (
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 font-mono font-bold text-xs border border-slate-300/80 shadow-2xs">
+                                {o.ticketCode}
+                              </span>
+                            )}
+                            <span className="text-xs text-slate-600 font-semibold">
+                              {o.facilityName}
+                            </span>
+                            {o.createdAt && (
+                              <span className="text-[11px] text-slate-400 font-mono">
+                                • {formatRelativeTimeVi(o.createdAt)}
+                              </span>
+                            )}
+                          </div>
+
+                          <div>
+                            {o.status === 'OPEN' && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-xs">
+                                <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                                <span>⏳ Chờ tiếp nhận</span>
+                              </span>
+                            )}
+                            {o.status === 'IN_PROGRESS' && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-blue-100 text-blue-900 border border-blue-300 shadow-xs">
+                                <span className="material-symbols-outlined text-[15px]">verified</span>
+                                <span>✓ Đã được chấp nhận</span>
+                              </span>
+                            )}
+                            {o.status === 'COMPLETED' && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-xs">
+                                <span className="material-symbols-outlined text-[15px]">task_alt</span>
+                                <span>✓ Đã hoàn tất trả kho</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Tiêu đề & Nội dung đơn */}
+                        <div className="mt-4 space-y-2.5">
+                          <div className="flex items-start gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                              <span className="material-symbols-outlined text-[18px]">assignment</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h5 className="font-black text-sm sm:text-base text-slate-900 leading-snug">
+                                {o.title}
+                              </h5>
+                            </div>
+                          </div>
+
+                          <div className="p-3.5 sm:p-4 rounded-xl bg-amber-50/80 border border-amber-200/90 shadow-xs">
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900 uppercase tracking-wider mb-1">
+                              <span className="material-symbols-outlined text-[14px]">chat</span>
+                              Nội dung yêu cầu từ khách hàng:
+                            </div>
+                            <p className="text-xs sm:text-sm font-semibold text-slate-800 italic leading-relaxed">
+                              "{o.description}"
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Tiến trình 4 bước trả kho */}
+                        <div className="mt-5 pt-4 border-t border-slate-200/70">
+                          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px] text-amber-600">linear_scale</span>
+                            Tiến độ thực hiện quy trình trả kho:
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                            {/* Bước 1 */}
+                            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2 shadow-2xs">
+                              <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                                ✓
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-bold text-emerald-900">1. Gửi yêu cầu</div>
+                                <div className="text-[10px] text-emerald-700 truncate">Đã gửi hệ thống</div>
+                              </div>
+                            </div>
+
+                            {/* Bước 2 */}
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs ${
+                              o.status === 'IN_PROGRESS' || o.status === 'COMPLETED'
+                                ? 'bg-blue-50 border-blue-200'
+                                : 'bg-amber-50/80 border-amber-200'
+                            }`}>
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                o.status === 'IN_PROGRESS' || o.status === 'COMPLETED'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-amber-500 text-white'
+                              }`}>
+                                {o.status === 'IN_PROGRESS' || o.status === 'COMPLETED' ? '✓' : '2'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className={`text-[11px] font-bold ${
+                                  o.status === 'IN_PROGRESS' || o.status === 'COMPLETED' ? 'text-blue-900' : 'text-amber-900'
+                                }`}>
+                                  2. Tiếp nhận &amp; Lịch
+                                </div>
+                                <div className={`text-[10px] truncate ${
+                                  o.status === 'IN_PROGRESS' || o.status === 'COMPLETED' ? 'text-blue-700' : 'text-amber-700'
+                                }`}>
+                                  {o.status === 'OPEN' ? 'Chờ xác nhận' : 'Đã chấp nhận'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bước 3 */}
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs ${
+                              o.status === 'COMPLETED'
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : o.status === 'IN_PROGRESS'
+                                ? 'bg-amber-50 border-amber-200'
+                                : 'bg-slate-50 border-slate-200 text-slate-400'
+                            }`}>
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                o.status === 'COMPLETED'
+                                  ? 'bg-emerald-600 text-white'
+                                  : o.status === 'IN_PROGRESS'
+                                  ? 'bg-amber-500 text-white'
+                                  : 'bg-slate-200 text-slate-500'
+                              }`}>
+                                {o.status === 'COMPLETED' ? '✓' : '3'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className={`text-[11px] font-bold ${
+                                  o.status === 'COMPLETED'
+                                    ? 'text-emerald-900'
+                                    : o.status === 'IN_PROGRESS'
+                                    ? 'text-amber-900'
+                                    : 'text-slate-600'
+                                }`}>
+                                  3. Nghiệm thu 7 tiêu chí
+                                </div>
+                                <div className="text-[10px] truncate text-slate-500">
+                                  {o.status === 'COMPLETED' ? 'Đã nghiệm thu' : o.status === 'IN_PROGRESS' ? 'Đang thực hiện' : 'Chờ kiểm tra'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Bước 4 */}
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs ${
+                              o.status === 'COMPLETED'
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : 'bg-slate-50 border-slate-200 text-slate-400'
+                            }`}>
+                              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                                o.status === 'COMPLETED' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'
+                              }`}>
+                                {o.status === 'COMPLETED' ? '✓' : '4'}
+                              </div>
+                              <div className="min-w-0">
+                                <div className={`text-[11px] font-bold ${
+                                  o.status === 'COMPLETED' ? 'text-emerald-900' : 'text-slate-600'
+                                }`}>
+                                  4. Quyết toán hoàn cọc
+                                </div>
+                                <div className="text-[10px] truncate text-slate-500">
+                                  {o.status === 'COMPLETED' ? 'Đã hoàn tiền' : 'Chờ hoàn tất'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Thao tác xem chi tiết & biên bản */}
+                        <div className="mt-5 pt-3.5 border-t border-slate-200/70 flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            {o.bookingId && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBookingForSettlementModal(o.bookingId!)}
+                                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-amber-600/30 transition-all cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">assignment_turned_in</span>
+                                <span>Xem Biên Bản Nghiệm Thu &amp; Quyết Toán</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedSupportUnit(o.unitCode)
+                                handleTabChange('support')
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">support_agent</span>
+                              <span>Trung tâm hỗ trợ</span>
+                            </button>
+                          </div>
+
+                          <span className="text-[11px] text-slate-500 italic">
+                            * Quy trình nghiệm thu được nhân viên &amp; quản lý Boxora xử lý trực tiếp tại cơ sở.
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            </div>
+          )}
+
           {/* Danh sách các thông báo / sự kiện đối soát trả kho */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/50 overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[20px] text-amber-600">notifications_active</span>
@@ -5279,7 +5648,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
             {filteredReturnLogs.length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center justify-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shadow-xs">
                   <span className="material-symbols-outlined text-[28px]">assignment_return</span>
                 </div>
                 <div className="space-y-1">
@@ -5295,13 +5664,21 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   const targetBookingId =
                     log.meta?.bookingId ||
                     (log.unitCode ? customerBookings.find(b => b.unitCode === log.unitCode)?.id : undefined)
+                  const isMatchingFilter = returnUnitFilter !== 'ALL' && log.unitCode === returnUnitFilter
                   return (
                     <div
                       key={log.id}
-                      className="p-4 sm:p-5 hover:bg-slate-50/70 transition flex flex-col sm:flex-row items-start justify-between gap-4"
+                      id={`return-log-${log.unitCode}`}
+                      className={`p-4 sm:p-5 transition-all duration-300 flex flex-col sm:flex-row items-start justify-between gap-4 ${
+                        isMatchingFilter
+                          ? 'bg-gradient-to-r from-amber-50/80 via-white to-amber-50/50 border-2 border-amber-400 rounded-2xl shadow-xl shadow-amber-500/20 ring-4 ring-amber-400/20 my-3'
+                          : 'hover:bg-slate-50/70'
+                      }`}
                     >
                       <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                        <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0 mt-0.5">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 shadow-xs ${
+                          isMatchingFilter ? 'bg-amber-200 text-amber-800' : 'bg-amber-100 text-amber-700'
+                        }`}>
                           <span className="material-symbols-outlined text-[20px]">
                             {log.title.includes('khiếu nại') || log.title.includes('Khiếu nại')
                               ? 'report_problem'
@@ -5313,11 +5690,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <div className="space-y-1 min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             {log.unitCode && (
-                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono font-bold text-[11px]">
+                              <span className="px-2 py-0.5 rounded-md bg-slate-900 text-white font-mono font-bold text-[11px] shadow-2xs">
                                 KHO #{log.unitCode}
                               </span>
                             )}
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px]">
+                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] border border-amber-200">
                               {log.statusLabel || 'Trả kho'}
                             </span>
                             <span className="text-[11px] text-slate-400 font-mono">
@@ -5327,7 +5704,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <h5 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug">
                             {log.title}
                           </h5>
-                          <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">
+                          <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line font-medium">
                             {log.description}
                           </p>
                         </div>
@@ -5337,7 +5714,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <button
                           type="button"
                           onClick={() => setSelectedBookingForSettlementModal(targetBookingId)}
-                          className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shrink-0 self-stretch sm:self-center shadow-2xs"
+                          className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-stretch sm:self-center shadow-md shadow-amber-600/30 active:scale-98"
                         >
                           <span className="material-symbols-outlined text-[16px]">visibility</span>
                           <span>Xem Biên Bản</span>
