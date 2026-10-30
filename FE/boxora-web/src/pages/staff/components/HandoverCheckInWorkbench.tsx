@@ -96,9 +96,6 @@ export const loadPersistedSessions = (): Record<string, BookingWorkbenchSession>
     Object.values(parsed).forEach((session: any) => {
       if (session && typeof session === 'object') {
         delete session.idCardNumber
-        if (!session.isCompleted) {
-          delete session.assignedUnitCode
-        }
       }
     })
     return parsed
@@ -123,10 +120,11 @@ export const createInitialSession = (
   bookingId: string,
   isAlreadyActive = false,
   existingPin = '',
-  initialUnitCode = ''
+  initialUnitCode = '',
+  initialIdVerified = false
 ): BookingWorkbenchSession => ({
   bookingId,
-  assignedUnitCode: isAlreadyActive ? (initialUnitCode || undefined) : undefined,
+  assignedUnitCode: initialUnitCode && !['N/A', 'CHƯA GÁN', 'Chưa gán'].includes(initialUnitCode) ? initialUnitCode : undefined,
   activeStepTab: isAlreadyActive ? 'pin' : 'verify',
   checklist: { ...defaultChecklist },
   photoDoor: '',
@@ -136,7 +134,7 @@ export const createInitialSession = (
   emailSent: false,
   webPushSent: false,
   handoverNotes: 'Đã đối soát đầy đủ hồ sơ tại quầy tiếp đón.',
-  identityVerified: isAlreadyActive,
+  identityVerified: isAlreadyActive || initialIdVerified,
   isCompleted: isAlreadyActive
 })
 
@@ -390,33 +388,54 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         currentBooking?.status === 'ACTIVE' ||
         currentBooking?.status === 'COMPLETED'
       const existingPin = currentBooking?.accessPin || ''
-      const existingUnitCode = currentBooking?.unitCode || ''
+      const existingUnitCode =
+        currentBooking?.unitCode ||
+        (currentBooking as any)?.storageUnit?.unitCode ||
+        currentPrerequisites?.unitCode ||
+        ''
+      const existingIdVerified = Boolean(
+        currentBooking?.identityVerified ||
+        currentBooking?.identityOriginalDocumentSeen ||
+        currentPrerequisites?.identityVerified
+      )
       return {
         ...prev,
         [selectedBookingId]: createInitialSession(
           selectedBookingId,
           isAlreadyActive,
           existingPin,
-          existingUnitCode
+          existingUnitCode,
+          existingIdVerified
         )
       }
     })
-  }, [selectedBookingId, currentBooking])
+  }, [selectedBookingId, currentBooking, currentPrerequisites])
 
   const currentSession: BookingWorkbenchSession = useMemo(() => {
     if (!selectedBookingId || !sessions[selectedBookingId]) {
       const isAlreadyActive =
         currentBooking?.status === 'ACTIVE' ||
         currentBooking?.status === 'COMPLETED'
+      const existingUnitCode =
+        currentBooking?.unitCode ||
+        (currentBooking as any)?.storageUnit?.unitCode ||
+        currentPrerequisites?.unitCode ||
+        ''
+      const existingIdVerified = Boolean(
+        currentBooking?.identityVerified ||
+        currentBooking?.identityOriginalDocumentSeen ||
+        currentPrerequisites?.identityVerified
+      )
       return createInitialSession(
         selectedBookingId,
         isAlreadyActive,
         currentBooking?.accessPin || '',
-        currentBooking?.unitCode || ''
+        existingUnitCode,
+        existingIdVerified
       )
     }
     return sessions[selectedBookingId]
-  }, [selectedBookingId, sessions, currentBooking])
+  }, [selectedBookingId, sessions, currentBooking, currentPrerequisites])
 
   const updateCurrentSession = useCallback(
     (patch: Partial<BookingWorkbenchSession> | ((prev: BookingWorkbenchSession) => Partial<BookingWorkbenchSession>)) => {
@@ -472,7 +491,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isDepositMet = currentPrerequisites ? Boolean(currentPrerequisites.depositSatisfied) : false
   const isRentMet = currentPrerequisites ? Boolean(currentPrerequisites.firstMonthRentSatisfied) : false
   const isContractMet = currentPrerequisites ? Boolean(currentPrerequisites.contractSigned) : false
-  const isIdMet = currentPrerequisites ? Boolean(currentPrerequisites.identityVerified) : currentSession.identityVerified
   const isCheckInTimeMet = currentPrerequisites ? (currentPrerequisites.checkInTimeMet ?? true) : false
 
   const isAlreadyActive =
@@ -484,16 +502,33 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     isAlreadyActive
   )
 
-  const unitDisplayCode =
-    currentSession?.assignedUnitCode ||
-    (isAlreadyActive ? (currentBooking?.unitCode || currentPrerequisites?.unitCode) : undefined) ||
-    ''
-
-  const isUnitAssigned = Boolean(
-    currentSession?.assignedUnitCode ||
-    (isAlreadyActive && currentBooking?.unitCode)
+  // 1. Trạng thái xác minh danh tính từ CSDL backend & session
+  const isPersistedIdVerified = Boolean(
+    currentPrerequisites?.identityVerified ||
+    currentBooking?.identityVerified ||
+    currentBooking?.identityOriginalDocumentSeen
   )
+  const isIdMet = Boolean(isPersistedIdVerified || currentSession.identityVerified)
 
+  // 2. Ô kho vật lý đã gán từ CSDL backend (Nguồn chuẩn xác)
+  const persistedUnitCode = useMemo(() => {
+    const candidates = [
+      currentPrerequisites?.unitCode,
+      currentBooking?.unitCode,
+      (currentBooking as any)?.storageUnit?.unitCode
+    ]
+    for (const c of candidates) {
+      if (c && typeof c === 'string' && !['N/A', 'CHƯA GÁN', 'Chưa gán', 'null', 'undefined'].includes(c.trim())) {
+        return c.trim()
+      }
+    }
+    return ''
+  }, [currentPrerequisites?.unitCode, currentBooking?.unitCode, (currentBooking as any)?.storageUnit?.unitCode])
+
+  const unitDisplayCode = currentSession?.assignedUnitCode || persistedUnitCode || ''
+  const isUnitAssigned = Boolean(currentSession?.assignedUnitCode || persistedUnitCode)
+
+  // 3. Chứng từ thanh toán & Hợp đồng thuê từ CSDL & session
   const effectivePaymentProofUrl =
     currentSession.paymentProofUrl ||
     currentPrerequisites?.paymentHistory?.find((p) => Boolean(p.proofDocumentUrl))?.proofDocumentUrl
@@ -510,10 +545,71 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     currentSession.paperContractName ||
     (effectivePaperContractUrl ? effectivePaperContractUrl.split('/').pop() : undefined)
 
-  const isContractAndPaymentSatisfied = Boolean(
-    (isDepositMet && isRentMet && isContractMet) ||
-    (Boolean(effectivePaymentProofUrl) && Boolean(effectivePaperContractUrl || isContractMet))
-  )
+  const isContractDone = Boolean(isContractMet || effectivePaperContractUrl)
+  const isPaymentDone = Boolean((isDepositMet && isRentMet) || effectivePaymentProofUrl)
+  const isContractAndPaymentSatisfied = Boolean(isContractDone && isPaymentDone)
+
+  // Đồng bộ hai chiều từ CSDL backend vào workbench session khi nạp dữ liệu đơn
+  useEffect(() => {
+    if (!selectedBookingId) return
+
+    const updates: Partial<BookingWorkbenchSession> = {}
+
+    if (persistedUnitCode && !currentSession.assignedUnitCode) {
+      updates.assignedUnitCode = persistedUnitCode
+    }
+    if (isPersistedIdVerified && !currentSession.identityVerified) {
+      updates.identityVerified = true
+    }
+    if (effectivePaperContractUrl && !currentSession.paperContractUrl) {
+      updates.paperContractUrl = effectivePaperContractUrl
+      updates.paperContractName = effectivePaperContractName
+    }
+    if (effectivePaymentProofUrl && !currentSession.paymentProofUrl) {
+      updates.paymentProofUrl = effectivePaymentProofUrl
+      updates.paymentProofName = effectivePaymentProofName
+    }
+
+    // Tự động mở tab tương ứng với tiến trình thực tế từ CSDL nếu chưa có chỉ định tab từ người dùng
+    const currentTab = sessions[selectedBookingId]?.activeStepTab
+    if (!currentTab || currentTab === 'verify') {
+      const dbIdDone = Boolean(isPersistedIdVerified || currentSession.identityVerified)
+      const dbUnitDone = Boolean(persistedUnitCode || currentSession.assignedUnitCode)
+      const dbContractAndPaymentDone = Boolean(
+        (isContractMet || effectivePaperContractUrl) &&
+        ((isDepositMet && isRentMet) || effectivePaymentProofUrl)
+      )
+
+      if (dbIdDone && dbUnitDone && dbContractAndPaymentDone) {
+        updates.activeStepTab = 'pin'
+      } else if (dbIdDone && dbUnitDone) {
+        updates.activeStepTab = 'contract_payment'
+      } else if (dbIdDone) {
+        updates.activeStepTab = 'assign'
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updateCurrentSession(updates)
+    }
+  }, [
+    selectedBookingId,
+    persistedUnitCode,
+    isPersistedIdVerified,
+    effectivePaperContractUrl,
+    effectivePaperContractName,
+    effectivePaymentProofUrl,
+    effectivePaymentProofName,
+    isContractMet,
+    isDepositMet,
+    isRentMet,
+    currentSession.assignedUnitCode,
+    currentSession.identityVerified,
+    currentSession.paperContractUrl,
+    currentSession.paymentProofUrl,
+    sessions,
+    updateCurrentSession
+  ])
 
   const customerDisplayName =
     currentBooking?.customerName ||
@@ -670,7 +766,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return
     }
 
-    const isSignedAndPaid = Boolean(isDepositMet && isRentMet && isContractMet)
+    const isSignedAndPaid = isContractAndPaymentSatisfied
 
     if (tab === 'assign' && !isIdMet) {
       setCheckInError('Cần xác minh CCCD/Hộ chiếu gốc của khách hàng tại quầy ở Bước 1 trước khi chuyển sang chọn ô kho.')
@@ -958,11 +1054,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setCheckInError('Bước 2: Cần chọn và gán ô kho vật lý trước khi bàn giao!')
       return
     }
-    if (!isContractMet && !currentSession.paperContractUrl) {
+    if (!isContractDone) {
       setCheckInError('Bước 3: Chưa hoàn tất ký hợp đồng thuê kho!')
       return
     }
-    if ((!isDepositMet || !isRentMet) && !currentSession.paymentProofUrl) {
+    if (!isPaymentDone) {
       setCheckInError('Bước 3: Chưa hoàn tất thanh toán cọc và tiền thuê tháng đầu!')
       return
     }

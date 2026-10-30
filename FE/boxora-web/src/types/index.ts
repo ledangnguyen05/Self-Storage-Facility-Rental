@@ -187,6 +187,8 @@ export interface Booking {
   staffAssignmentNotes?: string | null
   identityCardNumber?: string | null
   identityCardType?: string | null
+  identityVerified?: boolean | null
+  identityOriginalDocumentSeen?: boolean | null
   contractId?: string | null
   contractCode?: string | null
   contractStatus?: string | null
@@ -391,6 +393,7 @@ export interface ContractRenewal {
   assignedStaffEmail?: string
   assignedStaffAt?: string
   identityVerified?: boolean
+  identityOriginalDocumentSeen?: boolean
   identityDocType?: string
   identityNumber?: string
   identityNotes?: string
