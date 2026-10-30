@@ -93,7 +93,7 @@ export const OperationsDashboard: React.FC = () => {
     return { start, today }
   }
 
-  const [activePreset, setActivePreset] = useState<'TODAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR' | 'CUSTOM'>('THIS_MONTH')
+  const [activePreset, setActivePreset] = useState<'TODAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR' | 'CUSTOM'>('THIS_MONTH')
   const [fromDate, setFromDate] = useState<string>(() => getInitialMonthRange().start)
   const [toDate, setToDate] = useState<string>(() => getInitialMonthRange().today)
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
@@ -247,7 +247,7 @@ export const OperationsDashboard: React.FC = () => {
   }, [selectedFacilityId, fromDate, toDate, paymentsPage, paymentsPageSize, tablePaymentStatus, tablePaymentType])
 
   // Preset Handlers
-  const applyPreset = (presetKey: 'TODAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_QUARTER' | 'THIS_YEAR') => {
+  const applyPreset = (presetKey: 'TODAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR') => {
     const now = new Date()
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     let nextFrom = ''
@@ -268,11 +268,6 @@ export const OperationsDashboard: React.FC = () => {
       const lastDay = new Date(now.getFullYear(), now.getMonth(), 0)
       nextFrom = `${firstDay.getFullYear()}-${String(firstDay.getMonth() + 1).padStart(2, '0')}-01`
       nextTo = `${lastDay.getFullYear()}-${String(lastDay.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`
-    } else if (presetKey === 'THIS_QUARTER') {
-      const currentQuarter = Math.floor(now.getMonth() / 3)
-      const quarterStartMonth = currentQuarter * 3 + 1
-      nextFrom = `${now.getFullYear()}-${String(quarterStartMonth).padStart(2, '0')}-01`
-      nextTo = todayStr
     } else if (presetKey === 'THIS_YEAR') {
       nextFrom = `${now.getFullYear()}-01-01`
       nextTo = todayStr
@@ -714,7 +709,6 @@ export const OperationsDashboard: React.FC = () => {
                             { key: 'LAST_7_DAYS', label: tr('7 ngày qua', 'Last 7 days') },
                             { key: 'THIS_MONTH', label: tr('Tháng này', 'This month') },
                             { key: 'LAST_MONTH', label: tr('Tháng trước', 'Last month') },
-                            { key: 'THIS_QUARTER', label: tr('Quý này', 'This quarter') },
                             { key: 'THIS_YEAR', label: tr('Năm nay', 'This year') },
                           ].map((item) => (
                             <button
