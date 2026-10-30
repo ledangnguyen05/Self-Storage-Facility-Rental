@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
@@ -899,7 +899,7 @@ export const ManagerDashboard: React.FC = () => {
       setUnits(prev => prev.filter(u => u.id !== deleteUnitConfirm.id))
       if (selectedUnit?.id === deleteUnitConfirm.id) setSelectedUnit(null)
       setDeleteUnitConfirm(null)
-      triggerAction(`Da xoa kho # thanh cong!`)
+      triggerAction(`Da xoa kho ${deleteUnitConfirm.id} thanh cong!`)
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Khong the xoa kho nay. Vui long thu lai.'
       triggerAction(msg)
