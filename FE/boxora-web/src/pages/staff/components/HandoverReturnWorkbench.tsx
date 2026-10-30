@@ -3656,29 +3656,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         </div>
                       ) : (
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
-                        {/* STAFF / FM action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
-                        {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') &&
-                          currentCase.customerDecision !== 'AGREED' &&
-                          currentCase.approvalStatus !== 'CUSTOMER_AGREED' && (
-                            <button
-                              type="button"
-                              onClick={handleSubmitRefundApproval}
-                              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                            >
-                              <Send size={15} />
-                              <span>
-                                {isFacilityManager
-                                  ? (isOverDeposit
-                                      ? `Chuyển Quyết Toán Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                      : `Chuyển Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)
-                                  : (isOverDeposit
-                                      ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                      : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)}
-                              </span>
-                            </button>
-                          )}
-
-                        {/* Thông báo trạng thái khi khách chưa gửi STK hoặc chưa đồng ý */}
+                        {/* Thông báo tiến trình quyết toán & hoàn tiền */}
                         {!isOverDeposit && currentCase.status !== 'REFUNDED' && currentCase.refundStatus !== 'REFUNDED' && currentCase.refundStatus !== 'COMPLETED' && (
                           (() => {
                             const hasCustomerAgreed =
@@ -3695,43 +3673,20 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 </div>
                               )
                             }
+                            if (hasCustomerAgreed && hasBankInfo) {
+                              return (
+                                <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold flex items-center gap-1.5">
+                                  <Clock size={14} className="text-emerald-600 shrink-0" />
+                                  <span>Khách đã gửi thông tin ngân hàng — Hồ sơ chuyển cho Quản lý cơ sở thực hiện chuyển khoản ({netRefundAmount.toLocaleString('vi-VN')}đ) tại mục "Xử lý hoàn tiền hủy đơn"</span>
+                                </div>
+                              )
+                            }
                             if (!hasCustomerAgreed && currentCase.status !== 'DISPUTED' && currentCase.approvalStatus !== 'DISPUTED') {
                               return (
                                 <div className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold flex items-center gap-1.5">
                                   <Clock size={14} className="text-amber-600 shrink-0" />
                                   <span>Chờ khách hàng xác nhận đồng ý biên bản quyết toán</span>
                                 </div>
-                              )
-                            }
-                            return null
-                          })()
-                        )}
-
-                        {/* Action: Thực hiện hoàn tiền cho khách (Chỉ hiển thị khi khách đã đồng ý & có thông tin ngân hàng) */}
-                        {!isOverDeposit && (
-                          (() => {
-                            const hasCustomerAgreed =
-                              currentCase.customerDecision === 'AGREED' ||
-                              currentCase.approvalStatus === 'CUSTOMER_AGREED' ||
-                              currentCase.refundStatus === 'PENDING_PAYOUT'
-                            const hasBankInfo = Boolean(currentCase.bankAccountNumber && currentCase.bankAccountNumber.trim())
-                            const isNotRefundedYet =
-                              currentCase.status !== 'REFUNDED' &&
-                              currentCase.refundStatus !== 'REFUNDED' &&
-                              currentCase.refundStatus !== 'COMPLETED'
-
-                            if (hasCustomerAgreed && hasBankInfo && isNotRefundedYet) {
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => setShowRefundModal(true)}
-                                  className="px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition bg-blue-600 hover:bg-blue-700"
-                                >
-                                  <CreditCard size={15} />
-                                  <span>
-                                    {`Thực Hiện Hoàn Tiền Cho Khách (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
-                                  </span>
-                                </button>
                               )
                             }
                             return null
