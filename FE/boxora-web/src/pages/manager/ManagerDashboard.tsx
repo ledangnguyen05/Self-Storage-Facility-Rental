@@ -899,9 +899,9 @@ export const ManagerDashboard: React.FC = () => {
       setUnits(prev => prev.filter(u => u.id !== deleteUnitConfirm.id))
       if (selectedUnit?.id === deleteUnitConfirm.id) setSelectedUnit(null)
       setDeleteUnitConfirm(null)
-      triggerAction(`Da xoa kho ${deleteUnitConfirm.id} thanh cong!`)
+      triggerAction(`Đã xóa kho ${deleteUnitConfirm.id} thành công!`)
     } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Khong the xoa kho nay. Vui long thu lai.'
+      const msg = err?.response?.data?.message || 'Không thể xóa kho này. Vui lòng thử lại.'
       triggerAction(msg)
     } finally {
       setIsDeletingUnit(false)
@@ -2154,7 +2154,7 @@ export const ManagerDashboard: React.FC = () => {
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all w-full justify-center mt-1"
                   >
                     <span className="material-symbols-outlined text-[16px]">delete</span>
-                    Xoa kho
+                    Xóa kho
                   </button>
                 )}
 
@@ -2899,13 +2899,13 @@ export const ManagerDashboard: React.FC = () => {
                 <span className="material-symbols-outlined text-rose-600 text-[20px]">delete_forever</span>
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Xac nhan xoa kho</h3>
-                <p className="text-xs text-slate-500">Hanh dong nay khong the hoan tac</p>
+                <h3 className="text-sm font-bold text-slate-900">Xác nhận xóa kho</h3>
+                <p className="text-xs text-slate-500">Hành động này không thể hoàn tác</p>
               </div>
             </div>
             <p className="text-sm text-slate-700 mb-5">
-              Ban co chac muon xoa <strong>Kho #{deleteUnitConfirm.id}</strong> ({deleteUnitConfirm.size})?
-              Kho nay phai khong co hop dong hoac don dat hang dang hoat dong.
+              Bạn có chắc muốn xóa <strong>Kho #{deleteUnitConfirm.id}</strong> ({deleteUnitConfirm.size})?
+              Kho này phải không có hợp đồng hoặc đơn đặt hàng đang hoạt động.
             </p>
             <div className="flex gap-3">
               <button
@@ -2913,14 +2913,14 @@ export const ManagerDashboard: React.FC = () => {
                 disabled={isDeletingUnit}
                 className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all"
               >
-                Huy
+                Hủy
               </button>
               <button
                 onClick={handleDeleteUnit}
                 disabled={isDeletingUnit}
                 className="flex-1 px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-all disabled:opacity-60"
               >
-                {isDeletingUnit ? 'Dang xoa...' : 'Xoa kho'}
+                {isDeletingUnit ? 'Đang xóa...' : 'Xóa kho'}
               </button>
             </div>
           </div>

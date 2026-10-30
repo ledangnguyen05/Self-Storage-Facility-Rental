@@ -205,9 +205,9 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
         )
       )
       setDeleteFacilityConfirm(null)
-      setNotice('Da vo hieu hoa co so thanh cong.')
+      setNotice('Đã vô hiệu hóa cơ sở thành công.')
     } catch (err: unknown) {
-      const msg = getRequestError(err) || 'Khong the vo hieu hoa co so nay.'
+      const msg = getRequestError(err) || 'Không thể vô hiệu hóa cơ sở này.'
       setDeleteFacilityNotice(msg)
     } finally {
       setIsDeletingFacility(false)
@@ -1338,10 +1338,10 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                               type="button"
                               onClick={() => setDeleteFacilityConfirm(facility)}
                               className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/40 cursor-pointer"
-                              title={t('Vo hieu hoa chi nhanh', 'Deactivate branch')}
+                              title={t('Vô hiệu hóa chi nhánh', 'Deactivate branch')}
                             >
                               <span className="material-symbols-outlined text-[15px]">delete</span>
-                              {t('Xoa', 'Delete')}
+                              {t('Xóa', 'Delete')}
                             </button>
                           )}
                         </div>
@@ -1510,16 +1510,16 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                     <span className="material-symbols-outlined text-rose-600 text-[20px]">domain_disabled</span>
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Xac nhan vo hieu hoa co so</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Co so se bi chuyen sang trang thai INACTIVE</p>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Xác nhận vô hiệu hóa cơ sở</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Cơ sở sẽ bị chuyển sang trạng thái INACTIVE</p>
                   </div>
                 </div>
                 {deleteFacilityNotice && (
                   <p className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/40 rounded-lg px-3 py-2 mb-3">{deleteFacilityNotice}</p>
                 )}
                 <p className="text-sm text-slate-700 dark:text-slate-300 mb-5">
-                  Ban co chac muon vo hieu hoa co so <strong>{deleteFacilityConfirm.name}</strong>?
-                  Hanh dong nay se an co so khoi hoat dong. Co the kich hoat lai bang cach chinh sua sau.
+                  Bạn có chắc muốn vô hiệu hóa cơ sở <strong>{deleteFacilityConfirm.name}</strong>?
+                  Hành động này sẽ ẩn cơ sở khỏi hoạt động. Có thể kích hoạt lại bằng cách chỉnh sửa sau.
                 </p>
                 <div className="flex gap-3">
                   <button
@@ -1528,7 +1528,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                     disabled={isDeletingFacility}
                     className="flex-1 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-all"
                   >
-                    Huy
+                    Hủy
                   </button>
                   <button
                     type="button"
@@ -1536,7 +1536,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                     disabled={isDeletingFacility}
                     className="flex-1 px-4 py-2 text-sm font-medium text-white bg-rose-600 hover:bg-rose-700 rounded-lg transition-all disabled:opacity-60"
                   >
-                    {isDeletingFacility ? 'Dang xu ly...' : 'Vo hieu hoa'}
+                    {isDeletingFacility ? 'Đang xử lý...' : 'Vô hiệu hóa'}
                   </button>
                 </div>
               </div>
