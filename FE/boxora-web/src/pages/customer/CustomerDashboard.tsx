@@ -193,6 +193,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('ALL')
   const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
   const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
+  const [highlightedReturnUnitCode, setHighlightedReturnUnitCode] = useState<string | null>(null)
   const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
   const [bookingCreated, setBookingCreated] = useState<boolean>(false)
   const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
@@ -2065,6 +2066,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         timestamp: t.updatedAt || t.createdAt || new Date().toISOString(),
         statusLabel: isResolved ? 'Đã xử lý xong' : t.status === 'IN_PROGRESS' ? 'Đã được chấp nhận' : 'Chờ tiếp nhận',
         statusTone: isResolved ? 'emerald' : t.status === 'IN_PROGRESS' ? 'blue' : 'amber',
+        meta: {
+          bookingId: t.bookingId
+        }
       })
     })
 
@@ -5346,9 +5350,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           initialContent={selectedSupportContent}
           initialTitle={selectedSupportTitle}
           onNavigateToReturns={(unitCode, bookingId) => {
-            if (unitCode) setReturnUnitFilter(unitCode)
-            if (bookingId) setSelectedBookingForSettlementModal(bookingId)
+            if (unitCode) {
+              setHighlightedReturnUnitCode(unitCode)
+              setReturnSearch('')
+              setReturnUnitFilter('ALL')
+            }
             handleTabChange('returns')
+            setTimeout(() => {
+              const cleanCode = unitCode?.toUpperCase().trim()
+              const el = cleanCode ? document.getElementById(`return-log-${cleanCode}`) : null
+              if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              } else {
+                const listEl = document.getElementById('return-activity-logs-section')
+                if (listEl) {
+                  listEl.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              }
+            }, 300)
           }}
         />
       )}
@@ -5644,7 +5663,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           )}
 
           {/* Danh sách các thông báo / sự kiện đối soát trả kho */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/50 overflow-hidden">
+          <div id="return-activity-logs-section" className="bg-white rounded-2xl border border-slate-200 shadow-lg shadow-slate-200/50 overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-[20px] text-amber-600">notifications_active</span>
@@ -5701,19 +5720,23 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     log.meta?.bookingId ||
                     (log.unitCode ? customerBookings.find(b => b.unitCode === log.unitCode)?.id : undefined)
                   const isMatchingFilter = returnUnitFilter !== 'ALL' && log.unitCode === returnUnitFilter
+                  const isHighlighted = Boolean(
+                    (highlightedReturnUnitCode && log.unitCode && log.unitCode.toUpperCase() === highlightedReturnUnitCode.toUpperCase()) ||
+                    isMatchingFilter
+                  )
                   return (
                     <div
                       key={log.id}
                       id={`return-log-${log.unitCode}`}
                       className={`p-4 sm:p-5 transition-all duration-300 flex flex-col sm:flex-row items-start justify-between gap-4 ${
-                        isMatchingFilter
-                          ? 'bg-gradient-to-r from-amber-50/80 via-white to-amber-50/50 border-2 border-amber-400 rounded-2xl shadow-xl shadow-amber-500/20 ring-4 ring-amber-400/20 my-3'
+                        isHighlighted
+                          ? 'bg-gradient-to-r from-amber-50/90 via-white to-amber-50/60 border-2 border-amber-400 rounded-2xl shadow-xl shadow-amber-500/25 ring-4 ring-amber-400/30 my-3'
                           : 'hover:bg-slate-50/70'
                       }`}
                     >
                       <div className="flex items-start gap-3.5 min-w-0 flex-1">
                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 shadow-xs ${
-                          isMatchingFilter ? 'bg-amber-200 text-amber-800' : 'bg-amber-100 text-amber-700'
+                          isHighlighted ? 'bg-amber-200 text-amber-800' : 'bg-amber-100 text-amber-700'
                         }`}>
                           <span className="material-symbols-outlined text-[20px]">
                             {log.title.includes('khiếu nại') || log.title.includes('Khiếu nại')

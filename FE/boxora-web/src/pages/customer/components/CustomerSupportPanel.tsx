@@ -1249,7 +1249,14 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => setSelectedTicket(t)}
+                                onClick={() => {
+                                  if (isReturnRefund) {
+                                    const uCode = t.unitCode || (t.title?.match(/#?([A-Z]{2,4}-[A-Z0-9]+)/i)?.[1])
+                                    onNavigateToReturns?.(uCode, t.bookingId)
+                                  } else {
+                                    setSelectedTicket(t)
+                                  }
+                                }}
                                 className="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer shadow-2xs"
                               >
                                 Chi tiết
@@ -1758,7 +1765,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const uCode = currentTkt.unitCode
+                        const uCode = currentTkt.unitCode || (currentTkt.title?.match(/#?([A-Z]{2,4}-[A-Z0-9]+)/i)?.[1])
                         const bkId = currentTkt.bookingId
                         setSelectedTicket(null)
                         onNavigateToReturns?.(uCode, bkId)
