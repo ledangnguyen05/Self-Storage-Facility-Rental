@@ -1,5 +1,7 @@
 import { api } from '../lib/axios'
-import { getAssignmentWindow } from '../constants/shiftConstants'
+import { getAssignmentWindow, isShiftStarted } from '../constants/shiftConstants'
+
+export { isShiftStarted }
 
 export interface StaffAssignmentCreatePayload {
   staffId: string
@@ -19,6 +21,7 @@ export interface StaffAssignmentResponse {
   staffUsername?: string
   staffFullName?: string
   staffEmail?: string
+  staffRole?: string
   facilityId: string
   facilityName?: string
   facilityCode?: string

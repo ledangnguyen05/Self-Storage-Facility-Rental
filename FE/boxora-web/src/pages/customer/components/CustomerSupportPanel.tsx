@@ -220,6 +220,22 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
         bankAccountName: bankAccountName.trim().toUpperCase(),
         note: bankNote.trim() || undefined,
       })
+      if (bankInfoTicket.bookingId) {
+        try {
+          await handoverService.submitCustomerDecision(bankInfoTicket.bookingId, {
+            decision: 'AGREED',
+            bankName: bankName.trim(),
+            bankAccountNumber: bankAccountNumber.trim(),
+            bankAccountName: bankAccountName.trim().toUpperCase()
+          })
+          const updated = await handoverService.calculateSettlement(bankInfoTicket.bookingId)
+          if (updated) {
+            setReturnSettlementMap(prev => ({ ...prev, [bankInfoTicket.bookingId!]: updated }))
+          }
+        } catch (decisionErr) {
+          console.warn('Could not sync bank info with handover record:', decisionErr)
+        }
+      }
       setBankSuccessMsg('Đã lưu thông tin tài khoản ngân hàng thành công! Bộ phận kế toán/quản trị sẽ tiến hành đối soát và giải ngân tiền hoàn.')
       await loadMyTickets()
       setTimeout(() => {
@@ -323,6 +339,16 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   // Handler for customer decision: AGREE
   const handleCustomerAgree = async (ticket: SupportTicketRecord, settlement: any) => {
     if (!ticket.bookingId) return
+    const netRefund = settlement?.netRefundAmount || 0
+    if (netRefund > 0) {
+      // Directly prompt modal for customer to enter bank details
+      setBankInfoTicket(ticket)
+      setBankName(ticket.bankName || '')
+      setBankAccountNumber(ticket.bankAccountNumber || '')
+      setBankAccountName(ticket.bankAccountName || user?.fullName || '')
+      return
+    }
+
     setIsSubmittingCustomerDecision(true)
     try {
       await handoverService.submitCustomerDecision(ticket.bookingId, {
@@ -332,12 +358,6 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
       const updated = await handoverService.calculateSettlement(ticket.bookingId)
       if (updated) {
         setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
-      }
-      if ((settlement?.netRefundAmount || 0) > 0) {
-        setBankInfoTicket(ticket)
-        setBankName(ticket.bankName || '')
-        setBankAccountNumber(ticket.bankAccountNumber || '')
-        setBankAccountName(ticket.bankAccountName || user?.fullName || '')
       }
     } catch (err: any) {
       toast.error('Lỗi gửi xác nhận: ' + (err.response?.data?.message || err.message))

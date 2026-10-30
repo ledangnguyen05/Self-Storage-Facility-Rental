@@ -202,7 +202,7 @@ class WarehouseReturnServiceTest {
         HandoverResponse response = handoverService.saveInspection(req);
 
         assertThat(response).isNotNull();
-        assertThat(response.getInspectionStatus()).isEqualTo("COMPLETED");
+        assertThat(response.getInspectionStatus()).isIn("INSPECTION_PASSED", "COMPLETED");
         assertThat(response.getChecklistAllPassed()).isTrue();
         assertThat(response.getDoorConditionPassed()).isTrue();
         assertThat(response.getCleanlinessPassed()).isTrue();

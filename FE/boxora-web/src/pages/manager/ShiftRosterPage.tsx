@@ -9,6 +9,7 @@ import {
   ShiftHandover,
   isShiftAbsent,
   isShiftForgottenCheckout,
+  isShiftStarted,
   calculateShiftWorkHours
 } from '../../services/staffAssignmentService'
 import { AttendanceReportTab } from './components/AttendanceReportTab'
@@ -127,6 +128,26 @@ export const ShiftRosterPage: React.FC = () => {
   const isBusinessManager = userRole === 'BUSINESS_MANAGER'
   const isAdmin = userRole === 'ADMIN' || userRole === 'SYSTEM_ADMIN'
   const isFacilityManager = userRole === 'FACILITY_MANAGER'
+
+  // FM can only edit/cancel shifts of regular STAFF (never other Facility Managers, never self)
+  const isStaffAssignment = (a: StaffAssignmentResponse) => {
+    if (a.roleInShift === 'FACILITY_LEAD') return false
+    if (a.staffRole && a.staffRole.toUpperCase() !== 'STAFF') return false
+    if (staffList.length > 0 && !staffList.some(s => s.id === a.staffId)) {
+      return false
+    }
+    return true
+  }
+
+  const canManagerEditOrDelete = (a: StaffAssignmentResponse) => {
+    if (isFacilityManager) {
+      return user?.id !== a.staffId && isStaffAssignment(a)
+    }
+    if (isBusinessManager) {
+      return a.roleInShift === 'FACILITY_LEAD' || a.staffRole === 'FACILITY_MANAGER'
+    }
+    return false
+  }
   const canFilterFacility = isBusinessManager || isAdmin
 
   const todayStr = useMemo(() => formatDateLocal(new Date()), [])
@@ -1477,7 +1498,7 @@ export const ShiftRosterPage: React.FC = () => {
                             )}
 
                             {/* Request Shift Swap ONLY for own upcoming valid shift (hidden if absent/past) */}
-                            {user?.id === assignment.staffId && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && (
+                            {user?.id === assignment.staffId && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && !isShiftStarted(assignment) && (
                               <button
                                 type="button"
                                 onClick={() => setSelectedAssignmentForSwap(assignment)}
@@ -1489,7 +1510,7 @@ export const ShiftRosterPage: React.FC = () => {
                             )}
 
                             {/* Edit assigned shift: FM can edit unstarted shift; BM can edit FM unstarted shift */}
-                            {isAssigned && ((isFacilityManager && user?.id !== assignment.staffId) || (isBusinessManager && assignment.roleInShift === 'FACILITY_LEAD')) && (
+                            {isAssigned && canManagerEditOrDelete(assignment) && (
                               <button
                                 type="button"
                                 onClick={() => setSelectedAssignmentForEdit(assignment)}
@@ -1501,7 +1522,7 @@ export const ShiftRosterPage: React.FC = () => {
                             )}
 
                             {/* Cancel / Delete assignment */}
-                            {isAssigned && ((isFacilityManager && user?.id !== assignment.staffId) || (isBusinessManager && assignment.roleInShift === 'FACILITY_LEAD')) && (
+                            {isAssigned && canManagerEditOrDelete(assignment) && (
                               <button
                                 type="button"
                                 disabled={isLoadingAction}
@@ -2024,7 +2045,7 @@ export const ShiftRosterPage: React.FC = () => {
                     <span>Check-out kết thúc ca</span>
                   </button>
                 )}
-                {user?.id === selectedAssignmentForDetail.staffId && !isShiftAbsent(selectedAssignmentForDetail) && selectedAssignmentForDetail.status === 'ASSIGNED' && selectedAssignmentForDetail.assignedDate >= todayStr && (
+                {user?.id === selectedAssignmentForDetail.staffId && !isShiftAbsent(selectedAssignmentForDetail) && selectedAssignmentForDetail.status === 'ASSIGNED' && selectedAssignmentForDetail.assignedDate >= todayStr && !isShiftStarted(selectedAssignmentForDetail) && (
                   <button
                     type="button"
                     onClick={() => {

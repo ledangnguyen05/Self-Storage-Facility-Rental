@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useAuth } from '../../../context/AuthContext'
 import { staffAssignmentService, StaffAssignmentResponse } from '../../../services/staffAssignmentService'
 import { STANDARD_SHIFTS_LIST, isShiftInPast, getFirstAvailableShiftForDate } from '../../../constants/shiftConstants'
 
@@ -21,6 +22,7 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const { role } = useAuth()
 
   useEffect(() => {
     if (assignment) {
@@ -40,6 +42,10 @@ export const ShiftEditModal: React.FC<ShiftEditModalProps> = ({
     e.preventDefault()
     if (isShiftInPast(assignment.assignedDate, shiftType)) {
       setErrorMessage('Khung giờ ca trực đã chọn đã trôi qua. Chỉ được phân ca cho thời gian hiện tại đến tương lai.')
+      return
+    }
+    if (role === 'FACILITY_MANAGER' && (assignment.roleInShift === 'FACILITY_LEAD' || (assignment.staffRole && assignment.staffRole !== 'STAFF'))) {
+      setErrorMessage('Quản lý cơ sở chỉ có quyền hiệu chỉnh ca trực của nhân viên (STAFF).')
       return
     }
     setIsSubmitting(true)

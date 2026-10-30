@@ -184,6 +184,29 @@ export const isShiftInPast = (
   return now.getTime() >= win.end.getTime()
 }
 
+/**
+ * Kiểm tra xem một ca trực đã tới giờ bắt đầu hay chưa:
+ * Trả về true nếu thời điểm hiện tại >= giờ bắt đầu ca trực (startTime),
+ * hoặc ngày làm việc đã nằm trong quá khứ.
+ */
+export const isShiftStarted = (
+  assignment: {
+    assignedDate?: string | null
+    startTime?: string | null
+    endTime?: string | null
+    shift?: string | null
+  } | null | undefined,
+  now = new Date()
+): boolean => {
+  if (!assignment || !assignment.assignedDate) return false
+  const win = getAssignmentWindow(assignment)
+  if (!win) {
+    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    return assignment.assignedDate < todayLocal
+  }
+  return now.getTime() >= win.start.getTime()
+}
+
 export const getFirstAvailableShiftForDate = (
   assignedDate: string,
   now = new Date()
@@ -194,6 +217,4 @@ export const getFirstAvailableShiftForDate = (
     }
   }
   return null
-
 }
-

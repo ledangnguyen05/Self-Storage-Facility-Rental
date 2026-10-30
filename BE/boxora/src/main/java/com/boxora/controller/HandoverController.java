@@ -337,6 +337,10 @@ public class HandoverController {
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> calculateSettlement(
             @PathVariable UUID bookingId,
             @RequestBody(required = false) HandoverRequest request) {
+        if (request == null) {
+            request = new HandoverRequest();
+        }
+        request.setBookingId(bookingId);
         return ResponseEntity.ok(ApiResponse.success("Tính toán quyết toán cọc thành công",
                 handoverService.calculateSettlement(bookingId, request)));
     }
@@ -356,7 +360,11 @@ public class HandoverController {
     @Operation(summary = "Quản lý cơ sở / Ban quản lý phê duyệt hoặc từ chối quyết toán khấu trừ")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> approveSettlement(
             @PathVariable UUID bookingId,
-            @Valid @RequestBody HandoverRequest request) {
+            @RequestBody(required = false) HandoverRequest request) {
+        if (request == null) {
+            request = new HandoverRequest();
+        }
+        request.setBookingId(bookingId);
         return ResponseEntity.ok(ApiResponse.success("Xử lý phê duyệt quyết toán khấu trừ thành công",
                 handoverService.approveSettlement(bookingId, request)));
     }
@@ -376,7 +384,11 @@ public class HandoverController {
     @Operation(summary = "Thu khoản bồi thường bổ sung khi chi phí vượt quá tiền cọc")
     public ResponseEntity<ApiResponse<PaymentResponse>> collectAdditionalPayment(
             @PathVariable UUID bookingId,
-            @Valid @RequestBody HandoverRequest request) {
+            @RequestBody(required = false) HandoverRequest request) {
+        if (request == null) {
+            request = new HandoverRequest();
+        }
+        request.setBookingId(bookingId);
         return ResponseEntity.ok(ApiResponse.success("Thu khoản bồi thường bổ sung thành công",
                 handoverService.collectAdditionalPayment(bookingId, request)));
     }
@@ -386,7 +398,11 @@ public class HandoverController {
     @Operation(summary = "Thực hiện lệnh hoàn trả tiền cọc cho khách hàng")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> executeRefund(
             @PathVariable UUID bookingId,
-            @Valid @RequestBody HandoverRequest request) {
+            @RequestBody(required = false) HandoverRequest request) {
+        if (request == null) {
+            request = new HandoverRequest();
+        }
+        request.setBookingId(bookingId);
         return ResponseEntity.ok(ApiResponse.success("Lệnh hoàn trả tiền cọc đã được thực hiện thành công",
                 handoverService.executeRefund(bookingId, request)));
     }
@@ -396,7 +412,11 @@ public class HandoverController {
     @Operation(summary = "Xác nhận nhận lại kho vật lý & đồ đạc đã dọn sạch")
     public ResponseEntity<ApiResponse<HandoverResponse>> confirmPhysicalReturn(
             @PathVariable UUID bookingId,
-            @Valid @RequestBody HandoverRequest request) {
+            @RequestBody(required = false) HandoverRequest request) {
+        if (request == null) {
+            request = new HandoverRequest();
+        }
+        request.setBookingId(bookingId);
         return ResponseEntity.ok(ApiResponse.success("Xác nhận nhận lại kho vật lý thành công",
                 handoverService.confirmPhysicalReturn(bookingId, request)));
     }
