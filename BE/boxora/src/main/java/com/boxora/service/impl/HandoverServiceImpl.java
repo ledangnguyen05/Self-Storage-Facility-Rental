@@ -2706,7 +2706,11 @@ public class HandoverServiceImpl implements HandoverService {
             caseStatus = "REFUNDED";
         } else if ("PROCESSING".equalsIgnoreCase(refStatus) || "REFUND_PROCESSING".equalsIgnoreCase(refStatus)) {
             caseStatus = "REFUND_PROCESSING";
-        } else if ("APPROVED".equalsIgnoreCase(approvalStatus) || "REFUND_APPROVED".equalsIgnoreCase(approvalStatus)) {
+        } else if ("APPROVED".equalsIgnoreCase(approvalStatus)
+                || "REFUND_APPROVED".equalsIgnoreCase(approvalStatus)
+                || "CUSTOMER_AGREED".equalsIgnoreCase(approvalStatus)
+                || "PENDING_PAYOUT".equalsIgnoreCase(refStatus)
+                || "AGREED".equalsIgnoreCase(inspectionRecord != null ? inspectionRecord.getCustomerDecision() : null)) {
             caseStatus = "REFUND_APPROVED";
         } else if ("PENDING".equalsIgnoreCase(approvalStatus)
                 || "PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)

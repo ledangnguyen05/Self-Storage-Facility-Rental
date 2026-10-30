@@ -162,18 +162,22 @@ const normalizeStatus = (
   rawStatus: any,
   inspectionStatus?: string,
   approvalStatus?: string,
-  refundStatus?: string
+  refundStatus?: string,
+  customerDecision?: string
 ): ReturnStepStatus => {
   const insp = String(inspectionStatus || '').toUpperCase()
   const app = String(approvalStatus || '').toUpperCase()
   const ref = String(refundStatus || '').toUpperCase()
+  const dec = String(customerDecision || '').toUpperCase()
   const st = String(rawStatus || '').toUpperCase()
 
   if (st === 'COMPLETED' || st === 'RESOLVED') return 'COMPLETED'
-  if (st === 'DISPUTED' || app === 'DISPUTED') return 'DISPUTED'
+  if (st === 'DISPUTED' || app === 'DISPUTED' || dec === 'DISPUTED') return 'DISPUTED'
   if (ref === 'COMPLETED' || ref === 'REFUNDED' || st === 'REFUNDED') return 'REFUNDED'
   if (ref === 'PROCESSING' || ref === 'REFUND_PROCESSING' || st === 'REFUND_PROCESSING') return 'REFUND_PROCESSING'
+  if (ref === 'PENDING_PAYOUT') return 'REFUND_APPROVED'
   if (app === 'APPROVED' || app === 'REFUND_APPROVED' || st === 'REFUND_APPROVED') return 'REFUND_APPROVED'
+  if (dec === 'AGREED' || app === 'CUSTOMER_AGREED') return 'REFUND_APPROVED'
   if (app === 'PENDING' || app === 'PENDING_APPROVAL' || app === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
   if (insp === 'ISSUE' || insp === 'INSPECTION_ISSUE' || st === 'INSPECTION_ISSUE') return 'INSPECTION_ISSUE'
   if (insp === 'PASSED' || insp === 'COMPLETED' || insp === 'INSPECTION_PASSED' || st === 'INSPECTION_PASSED' || st === 'INSPECTED') return 'INSPECTION_PASSED'
@@ -379,7 +383,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvedDeductions: item.approvedDeductions || 0,
           netRefundAmount: item.netRefundAmount || 0,
           additionalAmountDue: item.additionalAmountDue || 0,
-          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus),
+          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus, item.customerDecision),
           inspectionStatus: item.inspectionStatus,
           approvalStatus: item.approvalStatus,
           additionalPaymentStatus: item.additionalPaymentStatus,
@@ -569,17 +573,24 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const filteredCases = useMemo(() => {
     return returnCases.filter((c) => {
       const st = String(c.status || '').toUpperCase()
+      const isCustomerAgreed =
+        c.customerDecision === 'AGREED' ||
+        c.approvalStatus === 'CUSTOMER_AGREED' ||
+        c.refundStatus === 'PENDING_PAYOUT' ||
+        st === 'REFUND_APPROVED' ||
+        st === 'REFUND_PENDING_APPROVAL'
+
       if (statusTabFilter !== 'ALL') {
         if (statusTabFilter === 'PENDING' && !(st === 'RETURN_REQUESTED' || st === 'PENDING')) return false
         if (
           statusTabFilter === 'INSPECTING' &&
-          !(
+          (!(
             st === 'INSPECTION_IN_PROGRESS' ||
             st === 'INSPECTION_SCHEDULED' ||
             st === 'INSPECTION_ISSUE' ||
             st === 'INSPECTION_PASSED' ||
             st === 'INSPECTING'
-          )
+          ) || isCustomerAgreed)
         )
           return false
         if (
@@ -591,7 +602,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             st === 'REFUNDED' ||
             st === 'DISPUTED' ||
             c.approvalStatus === 'PENDING_APPROVAL' ||
-            c.approvalStatus === 'DISPUTED'
+            c.approvalStatus === 'DISPUTED' ||
+            c.approvalStatus === 'CUSTOMER_AGREED' ||
+            c.customerDecision === 'AGREED' ||
+            c.refundStatus === 'PENDING_PAYOUT'
           )
         )
           return false
@@ -1344,16 +1358,15 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     let completed = 0
     returnCases.forEach((c) => {
       const st = String(c.status || '').toUpperCase()
-      if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) {
-        pending++
-      } else if (
-        st === 'INSPECTION_IN_PROGRESS' ||
-        st === 'INSPECTION_SCHEDULED' ||
-        st === 'INSPECTION_ISSUE' ||
-        st === 'INSPECTION_PASSED' ||
-        st === 'INSPECTING'
-      ) {
-        inspecting++
+      const isCustomerAgreed =
+        c.customerDecision === 'AGREED' ||
+        c.approvalStatus === 'CUSTOMER_AGREED' ||
+        c.refundStatus === 'PENDING_PAYOUT' ||
+        st === 'REFUND_APPROVED' ||
+        st === 'REFUND_PENDING_APPROVAL'
+
+      if (st === 'COMPLETED' || st === 'RESOLVED') {
+        completed++
       } else if (
         st === 'REFUND_PENDING_APPROVAL' ||
         st === 'REFUND_APPROVED' ||
@@ -1362,11 +1375,20 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         st === 'REFUNDING' ||
         st === 'DISPUTED' ||
         c.approvalStatus === 'PENDING_APPROVAL' ||
-        c.approvalStatus === 'DISPUTED'
+        c.approvalStatus === 'DISPUTED' ||
+        isCustomerAgreed
       ) {
         refunding++
-      } else if (st === 'COMPLETED' || st === 'RESOLVED') {
-        completed++
+      } else if (
+        st === 'INSPECTION_IN_PROGRESS' ||
+        st === 'INSPECTION_SCHEDULED' ||
+        st === 'INSPECTION_ISSUE' ||
+        st === 'INSPECTION_PASSED' ||
+        st === 'INSPECTING'
+      ) {
+        inspecting++
+      } else if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) {
+        pending++
       } else {
         pending++
       }
@@ -3558,45 +3580,105 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       ) : (
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
                         {/* STAFF / FM action: Trình duyệt hoàn cọc hoặc quyết toán bồi thường */}
-                        {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') && (
-                          <button
-                            type="button"
-                            onClick={handleSubmitRefundApproval}
-                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                          >
-                            <Send size={15} />
-                            <span>
-                              {isFacilityManager
-                                ? (isOverDeposit
-                                    ? `Chuyển Quyết Toán Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                    : `Chuyển Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)
-                                : (isOverDeposit
-                                    ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                    : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)}
-                            </span>
-                          </button>
+                        {(currentCase.status === 'INSPECTION_PASSED' || currentCase.status === 'INSPECTION_ISSUE') &&
+                          currentCase.customerDecision !== 'AGREED' &&
+                          currentCase.approvalStatus !== 'CUSTOMER_AGREED' && (
+                            <button
+                              type="button"
+                              onClick={handleSubmitRefundApproval}
+                              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                            >
+                              <Send size={15} />
+                              <span>
+                                {isFacilityManager
+                                  ? (isOverDeposit
+                                      ? `Chuyển Quyết Toán Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                      : `Chuyển Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)
+                                  : (isOverDeposit
+                                      ? `Trình Duyệt Bồi Thường (Thu Thêm ${customerPayableAmount.toLocaleString('vi-VN')}đ)`
+                                      : `Trình Duyệt Quyết Toán Hoàn Cọc (${netRefundAmount.toLocaleString('vi-VN')}đ)`)}
+                              </span>
+                            </button>
+                          )}
+
+                        {/* Thông báo trạng thái khi khách chưa gửi STK hoặc chưa đồng ý */}
+                        {!isOverDeposit && currentCase.status !== 'REFUNDED' && currentCase.refundStatus !== 'REFUNDED' && currentCase.refundStatus !== 'COMPLETED' && (
+                          (() => {
+                            const hasCustomerAgreed =
+                              currentCase.customerDecision === 'AGREED' ||
+                              currentCase.approvalStatus === 'CUSTOMER_AGREED' ||
+                              currentCase.refundStatus === 'PENDING_PAYOUT'
+                            const hasBankInfo = Boolean(currentCase.bankAccountNumber && currentCase.bankAccountNumber.trim())
+
+                            if (hasCustomerAgreed && !hasBankInfo) {
+                              return (
+                                <div className="px-3.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-semibold flex items-center gap-1.5">
+                                  <Clock size={14} className="text-blue-600 shrink-0" />
+                                  <span>Chờ khách hàng gửi số tài khoản ngân hàng để hoàn tiền ({netRefundAmount.toLocaleString('vi-VN')}đ)</span>
+                                </div>
+                              )
+                            }
+                            if (!hasCustomerAgreed && currentCase.status !== 'DISPUTED' && currentCase.approvalStatus !== 'DISPUTED') {
+                              return (
+                                <div className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold flex items-center gap-1.5">
+                                  <Clock size={14} className="text-amber-600 shrink-0" />
+                                  <span>Chờ khách hàng xác nhận đồng ý biên bản quyết toán</span>
+                                </div>
+                              )
+                            }
+                            return null
+                          })()
                         )}
 
-                        {/* Action: Thực hiện hoàn tiền hoặc thu tiền bồi thường */}
-                        {(currentCase.status === 'REFUND_APPROVED' || (currentCase.status === 'INSPECTION_PASSED' && totalDeduction === 0)) && (
-                          <button
-                            type="button"
-                            onClick={() => setShowRefundModal(true)}
-                            className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition ${
-                              isOverDeposit ? 'bg-rose-600 hover:bg-rose-700' : 'bg-blue-600 hover:bg-blue-700'
-                            }`}
-                          >
-                            {isOverDeposit ? <Receipt size={15} /> : <CreditCard size={15} />}
-                            <span>
-                              {isOverDeposit
-                                ? `Thu Tiền Bồi Thường Tại Quầy (${customerPayableAmount.toLocaleString('vi-VN')}đ)`
-                                : `Thực Hiện Hoàn Tiền Cho Khách (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
-                            </span>
-                          </button>
+                        {/* Action: Thực hiện hoàn tiền cho khách (Chỉ hiển thị khi khách đã đồng ý & có thông tin ngân hàng) */}
+                        {!isOverDeposit && (
+                          (() => {
+                            const hasCustomerAgreed =
+                              currentCase.customerDecision === 'AGREED' ||
+                              currentCase.approvalStatus === 'CUSTOMER_AGREED' ||
+                              currentCase.refundStatus === 'PENDING_PAYOUT'
+                            const hasBankInfo = Boolean(currentCase.bankAccountNumber && currentCase.bankAccountNumber.trim())
+                            const isNotRefundedYet =
+                              currentCase.status !== 'REFUNDED' &&
+                              currentCase.refundStatus !== 'REFUNDED' &&
+                              currentCase.refundStatus !== 'COMPLETED'
+
+                            if (hasCustomerAgreed && hasBankInfo && isNotRefundedYet) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowRefundModal(true)}
+                                  className="px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition bg-blue-600 hover:bg-blue-700"
+                                >
+                                  <CreditCard size={15} />
+                                  <span>
+                                    {`Thực Hiện Hoàn Tiền Cho Khách (${netRefundAmount.toLocaleString('vi-VN')}đ)`}
+                                  </span>
+                                </button>
+                              )
+                            }
+                            return null
+                          })()
                         )}
+
+                        {/* Action: Thu tiền bồi thường tại quầy (khi vượt cọc) */}
+                        {isOverDeposit &&
+                          (currentCase.status === 'REFUND_APPROVED' || currentCase.customerDecision === 'AGREED') &&
+                          currentCase.additionalPaymentStatus !== 'PAID' && (
+                            <button
+                              type="button"
+                              onClick={() => setShowRefundModal(true)}
+                              className="px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition bg-rose-600 hover:bg-rose-700"
+                            >
+                              <Receipt size={15} />
+                              <span>
+                                {`Thu Tiền Bồi Thường Tại Quầy (${customerPayableAmount.toLocaleString('vi-VN')}đ)`}
+                              </span>
+                            </button>
+                          )}
 
                         {/* Final Action: Hoàn tất hồ sơ & Giải phóng kho */}
-                        {(currentCase.status === 'REFUNDED' || currentCase.status === 'REFUND_APPROVED') && (
+                        {(currentCase.status === 'REFUNDED' || currentCase.refundStatus === 'REFUNDED' || currentCase.refundStatus === 'COMPLETED' || (currentCase.status === 'REFUND_APPROVED' && netRefundAmount === 0 && customerPayableAmount === 0)) && (
                           <button
                             type="button"
                             onClick={handleCompleteHandoverAndRelease}
