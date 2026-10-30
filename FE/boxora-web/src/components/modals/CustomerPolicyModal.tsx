@@ -245,7 +245,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
               <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-xs space-y-2">
                 <span className="font-bold text-slate-900 dark:text-white uppercase block">Chu kỳ thanh toán</span>
                 <p className="leading-relaxed">
-                  Cước thuê được thanh toán theo kỳ (1, 3, 6 hoặc 12 tháng). Hệ thống sẽ gửi thông báo nhắc hạn trước khi kỳ thuê mới bắt đầu.
+                  Cước thuê được thanh toán linh hoạt theo các kỳ hạn chuẩn (1, 3, 6 hoặc 12 tháng) hoặc theo khoảng thời gian thuê tùy chỉnh do quý khách lựa chọn. Hệ thống sẽ gửi thông báo nhắc hạn trước khi kỳ thuê mới bắt đầu.
                 </p>
               </div>
             </div>
