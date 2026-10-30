@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -3662,13 +3662,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-cyan-50/50 border border-cyan-200/70 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center shrink-0">
-                  <span className="material-symbols-outlined text-[20px]">notifications_active</span>
+              <div className="p-3.5 rounded-xl bg-blue-50/50 border border-blue-200/70 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-[20px]">receipt_long</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-700/80 block">Thông báo trả kho</span>
-                  <span className="font-mono text-base font-extrabold text-cyan-900">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700/80 block">Hợp đồng và thanh toán</span>
+                  <span className="font-mono text-base font-extrabold text-blue-900">
                     {unitHistoryCounts.notification + unitHistoryCounts.support} tin
                   </span>
                 </div>
@@ -3682,7 +3682,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   { id: 'ALL', label: 'Tất cả', count: unitHistoryCounts.all, icon: 'apps' },
                   { id: 'ACCESS', label: 'Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
                   { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
-                  { id: 'NOTIFICATION', label: 'Thông báo trả kho', count: unitHistoryCounts.notification, icon: 'notifications' },
+                  { id: 'NOTIFICATION', label: 'Hợp đồng và thanh toán', count: unitHistoryCounts.notification, icon: 'receipt_long' },
                 ].map(tab => {
                   const isActive = unitHistoryCategory === tab.id
                   return (
