@@ -93,6 +93,7 @@ interface CustomerUnitActivityLog {
     | 'PIN_HIDE'
     | 'PIN_COPY'
     | 'PIN_CHANGE'
+    | 'PIN_ISSUED'
     | 'RENEWAL_REQUEST'
     | 'RENEWAL_APPROVED'
     | 'RENEWAL_COMPLETED'
@@ -1937,7 +1938,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
     })
 
-    // 3. Sự kiện kích hoạt hợp đồng & bàn giao mã PIN SmartLock IoT + cảnh báo quá hạn
+    // 3. Sự kiện kích hoạt hợp đồng & Bàn giao kho & Cấp mã PIN
     contracts.forEach(c => {
       if (c.status === 'ACTIVE' || c.status === 'OVERDUE' || c.status === 'EXPIRED' || c.status === 'TERMINATED') {
         const activatedTs =
@@ -1948,13 +1949,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           id: `CTR-ACT-${c.id}`,
           unitCode: c.unitCode,
           facilityName: c.facilityName,
-          category: 'CONTRACT',
-          actionType: 'CONTRACT_ACTIVATED',
-          title: `Kích hoạt kho #${c.unitCode} & Cấp mã PIN SmartLock IoT`,
-          description: `Hợp đồng #${c.contractCode} tại ${c.facilityName} đã được kích hoạt bàn giao kho và đồng bộ mã PIN 6 số (AES-256). Thời hạn thuê: ${formatDisplayDate(c.startDate)} → ${formatDisplayDate(c.endDate)}.`,
+          category: 'ACCESS',
+          actionType: 'PIN_ISSUED',
+          title: `Bàn giao kho #${c.unitCode} & Cấp mã PIN`,
+          description: `Hợp đồng #${c.contractCode} tại ${c.facilityName} đã hoàn tất bàn giao kho và cấp mã PIN truy cập buồng kho (AES-256). Thời hạn thuê: ${formatDisplayDate(c.startDate)} → ${formatDisplayDate(c.endDate)}.`,
           timestamp: activatedTs,
           actorName: 'Hệ thống Boxora IoT',
-          statusLabel: 'Đã kích hoạt kho & PIN',
+          statusLabel: 'Bàn giao kho & Cấp mã PIN',
           statusTone: 'emerald',
           meta: {
             oldEndDate: c.startDate,
@@ -1985,6 +1986,31 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             contractCode: c.contractCode,
           },
         })
+      }
+    })
+
+    // Bổ sung thông tin Bàn giao kho & Cấp mã PIN từ các đơn booking đã có mã PIN
+    customerBookings.forEach(b => {
+      if (b.unitCode && (b.accessPin || b.accessCode || b.status === 'ACTIVE' || b.status === 'CONFIRMED')) {
+        const exists = items.some(it => it.unitCode === b.unitCode && it.actionType === 'PIN_ISSUED')
+        if (!exists) {
+          items.push({
+            id: `BKG-PIN-${b.id}`,
+            unitCode: b.unitCode,
+            facilityName: b.facilityName,
+            category: 'ACCESS',
+            actionType: 'PIN_ISSUED',
+            title: `Bàn giao kho #${b.unitCode} & Cấp mã PIN`,
+            description: `Đơn đặt chỗ #${b.bookingCode || b.id.slice(0, 8)} tại ${b.facilityName || 'Boxora'} đã hoàn tất nhận bàn giao kho và cấp mã PIN truy cập buồng kho.`,
+            timestamp: b.checkInTime || b.createdAt || new Date().toISOString(),
+            actorName: 'Hệ thống Boxora IoT',
+            statusLabel: 'Bàn giao kho & Cấp mã PIN',
+            statusTone: 'emerald',
+            meta: {
+              bookingId: b.id,
+            },
+          })
+        }
       }
     })
 
@@ -3640,7 +3666,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <span className="material-symbols-outlined text-[20px]">lock_open_right</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 block">Đóng/Mở &amp; Mã PIN</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 block">Mã PIN</span>
                   <span className="font-mono text-base font-extrabold text-emerald-900">{unitHistoryCounts.access} thao tác</span>
                 </div>
               </div>
@@ -3660,7 +3686,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <span className="material-symbols-outlined text-[20px]">notifications_active</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-700/80 block">Thông báo &amp; Hợp đồng</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-700/80 block">Thông báo trả kho</span>
                   <span className="font-mono text-base font-extrabold text-cyan-900">
                     {unitHistoryCounts.notification + unitHistoryCounts.support} tin
                   </span>
@@ -3675,7 +3701,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   { id: 'ALL', label: 'Tất cả', count: unitHistoryCounts.all, icon: 'apps' },
                   { id: 'ACCESS', label: 'Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
                   { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
-                  { id: 'NOTIFICATION', label: 'Thông báo & Hợp đồng', count: unitHistoryCounts.notification, icon: 'notifications' },
+                  { id: 'NOTIFICATION', label: 'Thông báo trả kho', count: unitHistoryCounts.notification, icon: 'notifications' },
                 ].map(tab => {
                   const isActive = unitHistoryCategory === tab.id
                   return (
