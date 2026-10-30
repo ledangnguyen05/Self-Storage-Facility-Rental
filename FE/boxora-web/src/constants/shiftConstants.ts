@@ -91,8 +91,18 @@ export const getAssignmentWindow = (
   const sTime = startTime.length >= 5 ? startTime.slice(0, 5) : startTime
   const eTime = endTime.length >= 5 ? endTime.slice(0, 5) : endTime
 
-  const start = new Date(`${assignment.assignedDate}T${sTime}:00`)
-  const end = new Date(`${assignment.assignedDate}T${eTime}:00`)
+  let datePart = assignment.assignedDate.trim()
+  if (datePart.includes('/')) {
+    const parts = datePart.split('/')
+    if (parts.length === 3) {
+      datePart = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+    }
+  } else if (datePart.includes('T')) {
+    datePart = datePart.split('T')[0]
+  }
+
+  const start = new Date(`${datePart}T${sTime}:00`)
+  const end = new Date(`${datePart}T${eTime}:00`)
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null
 
@@ -148,11 +158,25 @@ export const canCheckOutShift = (
 
 export const formatShiftLabel = (shift?: string | null): string => {
   if (!shift) return 'Chưa phân ca'
-  if (shift === 'MORNING') return 'Ca Sáng'
-  if (shift === 'AFTERNOON') return 'Ca Chiều'
-  if (shift === 'NIGHT') return 'Ca Đêm'
-  if (shift === 'FULL_DAY') return 'Cả Ngày'
+  const norm = shift.trim().toUpperCase()
+  if (norm === 'MORNING') return 'Ca Sáng'
+  if (norm === 'AFTERNOON') return 'Ca Chiều'
+  if (norm === 'NIGHT') return 'Ca Đêm'
+  if (norm === 'FULL_DAY') return 'Cả Ngày'
   return shift
+}
+
+export const formatRoleInShift = (role?: string | null): string => {
+  if (!role) return 'Nhân sự trực'
+  const norm = role.trim().toUpperCase()
+  if (norm === 'FACILITY_LEAD') return 'Trực điều hành (Lead)'
+  if (norm === 'PRIMARY_STAFF') return 'Nhân sự trực chính'
+  if (norm === 'SECONDARY_STAFF') return 'Nhân sự phụ trách'
+  if (norm === 'CHECKIN_DESK') return 'Quầy tiếp nhận check-in'
+  if (norm === 'SECURITY_PATROL') return 'Tuần tra an ninh'
+  if (norm === 'STORAGE_INSPECTOR') return 'Kiểm tra kho bãi'
+  if (norm === 'CLEANING_SUPPORT') return 'Vệ sinh kho'
+  return role
 }
 
 export const formatShiftTimeRange = (

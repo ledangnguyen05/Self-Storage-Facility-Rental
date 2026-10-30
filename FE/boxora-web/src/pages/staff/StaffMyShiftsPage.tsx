@@ -12,7 +12,9 @@ import {
 } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
-import { canCheckInShift, BOXORA_SHIFTS } from '../../constants/shiftConstants'
+import { canCheckInShift,
+  formatShiftLabel,
+  formatRoleInShift, BOXORA_SHIFTS } from '../../constants/shiftConstants'
 import {
   Calendar,
   Clock,
@@ -892,7 +894,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                                   </button>
                                 )}
 
-                                {item.status === 'ASSIGNED' && !isAbsent && item.assignedDate >= todayStr && !isShiftStarted(item) && (
+                                {item.status === 'ASSIGNED' && !isAbsent && item.assignedDate >= todayStr && !isShiftStarted(item) && !canCheckInShift(item) && (
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -1194,7 +1196,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                   type="button"
                   id="btn-staff-xin-doi-ca"
                   onClick={() => {
-                    const upcoming = assignments.find(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr && !isShiftStarted(a))
+                    const upcoming = assignments.find(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr && !isShiftStarted(a) && !canCheckInShift(a))
                     setShiftForSwap(upcoming || null)
                     setShowSwapModal(true)
                   }}
@@ -1302,7 +1304,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                             </td>
 
                             <td className="py-3 px-4">
-                              <div className="font-semibold text-blue-700">{swap.assignmentShift || 'Ca trực'}</div>
+                              <div className="font-semibold text-blue-700">{formatShiftLabel(swap.assignmentShift)}</div>
                               <div className="font-mono text-slate-800 text-[11px] font-bold">{formatVN(swap.assignmentDate)}</div>
                               {swap.assignedZone && <div className="text-slate-400 text-[10px]">{swap.assignedZone}</div>}
                             </td>
@@ -1439,7 +1441,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                               {formatVN(swap.assignmentDate)}
                             </td>
                             <td className="py-3 px-4">
-                              <span className="font-semibold text-slate-800">{swap.assignmentShift || 'Ca trực'}</span>
+                              <span className="font-semibold text-slate-800">{formatShiftLabel(swap.assignmentShift)}</span>
                               {swap.assignedZone && <span className="text-slate-400 block text-[11px]">{swap.assignedZone}</span>}
                             </td>
                             <td className="py-3 px-4">

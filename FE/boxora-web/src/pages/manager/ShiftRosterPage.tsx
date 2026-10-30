@@ -19,7 +19,9 @@ import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { ShiftSwapModal } from './modals/ShiftSwapModal'
 import { ShiftHandoverModal } from './modals/ShiftHandoverModal'
 import { ShiftEditModal } from './modals/ShiftEditModal'
-import { canCheckInShift, formatShiftTimeRange, BOXORA_SHIFTS } from '../../constants/shiftConstants'
+import { canCheckInShift, formatShiftTimeRange,
+  formatShiftLabel,
+  formatRoleInShift, BOXORA_SHIFTS } from '../../constants/shiftConstants'
 
 const formatDateLocal = (d: Date): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -1498,7 +1500,7 @@ export const ShiftRosterPage: React.FC = () => {
                             )}
 
                             {/* Request Shift Swap ONLY for own upcoming valid shift (hidden if absent/past) */}
-                            {user?.id === assignment.staffId && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && !isShiftStarted(assignment) && (
+                            {user?.id === assignment.staffId && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && !isShiftStarted(assignment) && !canCheckInShift(assignment) && (
                               <button
                                 type="button"
                                 onClick={() => setSelectedAssignmentForSwap(assignment)}
@@ -1646,7 +1648,7 @@ export const ShiftRosterPage: React.FC = () => {
                         </td>
 
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-blue-700">{swap.assignmentShift}</div>
+                          <div className="font-semibold text-blue-700">{formatShiftLabel(swap.assignmentShift)}</div>
                           <div className="text-[11px] text-slate-500 font-mono">{swap.assignmentDate}</div>
                         </td>
 
@@ -2045,7 +2047,7 @@ export const ShiftRosterPage: React.FC = () => {
                     <span>Check-out kết thúc ca</span>
                   </button>
                 )}
-                {user?.id === selectedAssignmentForDetail.staffId && !isShiftAbsent(selectedAssignmentForDetail) && selectedAssignmentForDetail.status === 'ASSIGNED' && selectedAssignmentForDetail.assignedDate >= todayStr && !isShiftStarted(selectedAssignmentForDetail) && (
+                {user?.id === selectedAssignmentForDetail.staffId && !isShiftAbsent(selectedAssignmentForDetail) && selectedAssignmentForDetail.status === 'ASSIGNED' && selectedAssignmentForDetail.assignedDate >= todayStr && !isShiftStarted(selectedAssignmentForDetail) && !canCheckInShift(selectedAssignmentForDetail) && (
                   <button
                     type="button"
                     onClick={() => {

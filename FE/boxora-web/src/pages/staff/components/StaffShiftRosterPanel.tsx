@@ -17,7 +17,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { Facility, User } from '../../../types'
 import { ShiftSwapModal } from '../../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../../manager/modals/ShiftHandoverModal'
-import { canCheckInShift, formatShiftTimeRange } from '../../../constants/shiftConstants'
+import { canCheckInShift, formatShiftTimeRange, formatShiftLabel, formatRoleInShift } from '../../../constants/shiftConstants'
 
 export interface StaffShiftRosterPanelProps {
   facilityId?: string
@@ -1261,7 +1261,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                         <td className="py-3 px-4">
                           <div className="text-slate-800 font-medium">{assignment.assignedZone || 'Khu vực quầy tiếp tân'}</div>
                           <span className="inline-block px-2 py-0.5 mt-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold">
-                            {assignment.roleInShift || 'PRIMARY_STAFF'}
+                            {formatRoleInShift(assignment.roleInShift)}
                           </span>
                         </td>
 
@@ -1354,7 +1354,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                             )}
 
                             {/* Swap Shift: Quick button for caller's own upcoming valid shift */}
-                            {isMyShift && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && !isShiftStarted(assignment) && (
+                            {isMyShift && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && !isShiftStarted(assignment) && !canCheckInShift(assignment) && (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1539,7 +1539,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                         </td>
 
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-blue-700">{swap.assignmentShift}</div>
+                          <div className="font-semibold text-blue-700">{formatShiftLabel(swap.assignmentShift)}</div>
                           <div className="text-[11px] text-slate-500 font-mono">{formatVN(swap.assignmentDate)}</div>
                         </td>
 
@@ -1920,7 +1920,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-slate-500">Ca trực:</span>
                 <span className="font-bold text-blue-700">
-                  {respondSwapModal.swap.assignmentShift} ({formatVN(respondSwapModal.swap.assignmentDate)})
+                  {formatShiftLabel(respondSwapModal.swap.assignmentShift)} ({formatVN(respondSwapModal.swap.assignmentDate)})
                 </span>
               </div>
               <div className="flex items-center justify-between">
