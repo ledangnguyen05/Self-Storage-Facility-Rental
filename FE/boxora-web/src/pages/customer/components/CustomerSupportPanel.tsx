@@ -539,15 +539,35 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'OPEN':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Đã tiếp nhận</span>
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+            <span>Chờ tiếp nhận</span>
+          </span>
+        )
       case 'IN_PROGRESS':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">Đang xử lý</span>
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+            <span className="material-symbols-outlined text-[13px] text-blue-600">check_circle</span>
+            <span>Đã được chấp nhận</span>
+          </span>
+        )
       case 'RESOLVED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">Đã giải quyết</span>
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <span className="material-symbols-outlined text-[13px] text-emerald-600">verified</span>
+            <span>Đã giải quyết</span>
+          </span>
+        )
       case 'CLOSED':
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-300">Đã đóng</span>
       case 'REOPENED':
-        return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-300">Mở lại xử lý</span>
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+            <span className="material-symbols-outlined text-[13px] text-rose-600">replay</span>
+            <span>Mở lại xử lý</span>
+          </span>
+        )
       default:
         return <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">{status}</span>
     }
@@ -936,8 +956,8 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-medium"
               >
                 <option value="ALL">Tất cả trạng thái</option>
-                <option value="OPEN">Đã tiếp nhận (OPEN)</option>
-                <option value="IN_PROGRESS">Đang xử lý (IN_PROGRESS)</option>
+                <option value="OPEN">Chờ tiếp nhận (OPEN)</option>
+                <option value="IN_PROGRESS">Đã được chấp nhận (IN_PROGRESS)</option>
                 <option value="RESOLVED">Đã giải quyết (RESOLVED)</option>
                 <option value="CLOSED">Đã đóng (CLOSED)</option>
                 <option value="REOPENED">Mở lại (REOPENED)</option>
@@ -1234,16 +1254,31 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                 )}
               </div>
 
-              {/* IN_PROGRESS Notification Banner (Flow 7 Bước 5) */}
+              {/* OPEN Notification Banner */}
+              {selectedTicket.status === 'OPEN' && (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-3">
+                  <span className="material-symbols-outlined text-[22px] text-amber-600 shrink-0">hourglass_top</span>
+                  <div>
+                    <div className="font-bold text-xs text-amber-900">
+                      Yêu cầu đang chờ tiếp nhận
+                    </div>
+                    <p className="text-[11px] text-amber-700 mt-0.5 leading-relaxed">
+                      Yêu cầu của bạn đã được gửi đến ban quản lý cơ sở. Nhân viên và Quản lý cơ sở sẽ kiểm tra, xác nhận và lên lịch hẹn nghiệm thu / xử lý trong thời gian sớm nhất.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* IN_PROGRESS Notification Banner */}
               {selectedTicket.status === 'IN_PROGRESS' && (
                 <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 flex items-start gap-3">
-                  <span className="material-symbols-outlined text-[22px] text-blue-600 shrink-0">engineering</span>
+                  <span className="material-symbols-outlined text-[22px] text-blue-600 shrink-0">check_circle</span>
                   <div>
                     <div className="font-bold text-xs text-blue-900">
-                      Nhân viên {selectedTicket.assignedStaffName || 'phụ trách cơ sở'} đang trực tiếp xử lý yêu cầu của bạn
+                      Yêu cầu đã được chấp nhận — {selectedTicket.assignedStaffName ? `Nhân viên ${selectedTicket.assignedStaffName}` : 'Nhân viên cơ sở'} đang tiếp nhận &amp; xử lý
                     </div>
                     <p className="text-[11px] text-blue-700 mt-0.5 leading-relaxed">
-                      Đội ngũ kỹ thuật &amp; vận hành đang kiểm tra thực tế hiện trường. Nếu cần phối hợp khẩn cấp, vui lòng liên hệ hotline cơ sở: <strong>1900 6828</strong>.
+                      Cơ sở đã tiếp nhận yêu cầu và lên lịch nghiệm thu / xử lý hiện trường. Quý khách vui lòng theo dõi thông báo và liên hệ hotline <strong>1900 6828</strong> nếu cần hỗ trợ gấp.
                     </p>
                   </div>
                 </div>

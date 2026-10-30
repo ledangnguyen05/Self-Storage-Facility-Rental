@@ -341,6 +341,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [isUploadingPayoutProof, setIsUploadingPayoutProof] = useState(false)
   const payoutProofInputRef = useRef<HTMLInputElement>(null)
 
+  // Facility Manager Reopen Inspection Modal (Xử lý lại khi phát hiện lỗi 7 bước)
+  const [showReopenInspectionModal, setShowReopenInspectionModal] = useState(false)
+  const [reopenReasonInput, setReopenReasonInput] = useState('')
+  const [isSubmittingReopen, setIsSubmittingReopen] = useState(false)
+
   // Auto-scroll and focus with high-visibility visual highlight
   const focusAndScrollToField = (elementId: string) => {
     // Run after DOM updates
@@ -715,6 +720,46 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   const isStaffBlockedByDispute = isCaseDisputed && !isFacilityManager
   const isReadOnly = isBusinessManager || isStaffBlockedByDispute
+
+  // Khóa cứng 7 tiêu chí nghiệm thu hiện trường khi khách hàng đã xác nhận đồng ý hoặc tiền đã hoàn
+  const isInspectionLocked = useMemo(() => {
+    if (!currentCase) return false
+    return Boolean(
+      currentCase.customerDecision === 'AGREED' ||
+      currentCase.refundStatus === 'REFUNDED' ||
+      currentCase.refundStatus === 'COMPLETED' ||
+      currentCase.status === 'COMPLETED'
+    )
+  }, [currentCase])
+
+  // Chỉ Facility Manager (hoặc Admin) mới có thẩm quyền mở lại xử lý biên bản nghiệm thu khi phát hiện lỗi
+  const canReopenInspection = useMemo(() => {
+    if (!currentCase) return false
+    const hasRolePermission = isFacilityManager || isAdmin
+    const isNotFullyFinished = currentCase.status !== 'COMPLETED' && currentCase.refundStatus !== 'REFUNDED' && currentCase.refundStatus !== 'COMPLETED'
+    return hasRolePermission && isInspectionLocked && isNotFullyFinished
+  }, [currentCase, isFacilityManager, isAdmin, isInspectionLocked])
+
+  const handleConfirmReopenInspection = async () => {
+    if (!currentCase) return
+    setIsSubmittingReopen(true)
+    try {
+      const updated = await handoverService.reopenInspection(
+        currentCase.bookingId,
+        reopenReasonInput.trim() || undefined
+      )
+      toast.success(
+        `Đã mở lại hồ sơ nghiệm thu (Phiên bản V${updated.settlementVersion || (currentCase.settlementVersion || 1) + 1}) thành công! Bạn có thể chỉnh sửa lại 7 tiêu chí.`
+      )
+      setShowReopenInspectionModal(false)
+      setReopenReasonInput('')
+      await fetchReturnCases(false)
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể mở lại hồ sơ nghiệm thu')
+    } finally {
+      setIsSubmittingReopen(false)
+    }
+  }
 
   // Bộ lọc lịch sử: Chỉ hiển thị duy nhất lịch sử liên quan đến đơn đang được chọn để trả kho
   const returnHistoryNotes = useMemo(() => {
@@ -2484,6 +2529,53 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       </div>
                     )}
 
+                    {/* BANNER KHÓA CỨNG 7 TIÊU CHÍ KHI KHÁCH HÀNG ĐÃ ĐỒNG Ý QUYẾT TOÁN */}
+                    {isInspectionLocked && (
+                      <div className="p-4 rounded-xl bg-slate-900 text-white border border-slate-800 text-xs shadow-md space-y-2.5 animate-in fade-in">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                              <Lock size={18} />
+                            </div>
+                            <div>
+                              <div className="font-bold text-sm text-emerald-400 flex items-center gap-2 flex-wrap">
+                                <span>Biên Bản Nghiệm Thu Đã Khóa Cứng (Phiên Bản V{currentCase.settlementVersion || 1})</span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  ✓ Khách Hàng Đã Xác Nhận Đồng Ý
+                                </span>
+                              </div>
+                              <p className="text-slate-300 text-[11px] mt-0.5 leading-relaxed">
+                                Toàn bộ dữ liệu 7 tiêu chuẩn nghiệm thu hiện trường đã được khóa cố định theo biên bản mà khách hàng đã đồng ý quyết toán để phục vụ lệnh giải ngân hoàn tiền cọc.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Nút Xử Lý Lại: Dành riêng cho Facility Manager (và Admin) khi phát hiện lỗi */}
+                          {canReopenInspection && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReopenReasonInput('')
+                                setShowReopenInspectionModal(true)
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition shrink-0"
+                              title="Chỉ Quản lý cơ sở mới có quyền mở lại để chỉnh sửa 7 tiêu chí"
+                            >
+                              <RotateCcw size={14} />
+                              <span>Xử Lý Lại Nghiệm Thu</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {!canReopenInspection && !isFacilityManager && (
+                          <div className="text-[11px] text-slate-400 italic pt-1.5 border-t border-slate-800 flex items-center gap-1.5">
+                            <ShieldCheck size={14} className="text-slate-400 shrink-0" />
+                            <span>Nếu phát hiện thông tin hoặc chi phí bị sai sót, vui lòng báo <strong>Quản lý cơ sở (Facility Manager)</strong> để sử dụng chức năng <strong>Xử lý lại nghiệm thu</strong>.</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className={`space-y-3 ${isStaffBlockedByDispute ? 'pointer-events-none opacity-80 select-none' : ''}`}>
                       {/* 1. Cửa cuốn & Ray trượt */}
                       <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2.5 text-xs">
@@ -2494,7 +2586,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {doorPassed ? '✓ Đạt chuẩn' : '⚠️ Có vấn đề'}
                             </span>
                           </div>
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2532,14 +2624,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <input
                             id="inspection-door-notes"
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInspectionLocked}
                             value={doorNotes}
                             onChange={(e) => {
                               setDoorNotes(e.target.value)
                               updateCurrentCase({ doorNotes: e.target.value })
                             }}
                             className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
-                              !doorPassed && !doorNotes.trim()
+                              isInspectionLocked
+                                ? 'bg-slate-100 border border-slate-200 cursor-not-allowed text-slate-600'
+                                : !doorPassed && !doorNotes.trim()
                                 ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
                                 : 'bg-white border border-slate-200 focus:border-amber-400'
                             }`}
@@ -2549,7 +2643,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 : '* Bắt buộc: Mô tả cụ thể lỗi cửa cuốn (cong vênh, kẹt ray, móp méo...)'
                             }
                           />
-                          {!doorPassed && !doorNotes.trim() && (
+                          {!isInspectionLocked && !doorPassed && !doorNotes.trim() && (
                             <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
                               * Bắt buộc nhập mô tả chi tiết hư hại cửa cuốn khi Chưa đạt
                             </span>
@@ -2563,14 +2657,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
-                                disabled={isReadOnly}
+                                disabled={isReadOnly || isInspectionLocked}
                                 value={doorFeeInput}
                                 onChange={(e) => {
                                   const val = Number(e.target.value) || 0
                                   setDoorFeeInput(val)
                                   updateCurrentCase({ doorFeeInput: val, doorFee: val })
                                 }}
-                                className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                className={`w-32 p-1.5 text-xs border rounded-lg font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400 ${
+                                  isInspectionLocked
+                                    ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-600'
+                                    : 'border-rose-300 bg-white'
+                                }`}
                                 placeholder="300000"
                               />
                               <span className="font-bold text-rose-700">VNĐ</span>
@@ -2589,7 +2687,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {cleanlinessPassed ? '✓ Sạch sẽ' : '⚠️ Chưa dọn'}
                             </span>
                           </div>
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2627,14 +2725,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <input
                             id="inspection-cleanliness-notes"
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInspectionLocked}
                             value={cleanlinessNotes}
                             onChange={(e) => {
                               setCleanlinessNotes(e.target.value)
                               updateCurrentCase({ cleanlinessNotes: e.target.value })
                             }}
                             className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
-                              !cleanlinessPassed && !cleanlinessNotes.trim()
+                              isInspectionLocked
+                                ? 'bg-slate-100 border border-slate-200 cursor-not-allowed text-slate-600'
+                                : !cleanlinessPassed && !cleanlinessNotes.trim()
                                 ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
                                 : 'bg-white border border-slate-200 focus:border-amber-400'
                             }`}
@@ -2644,7 +2744,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 : '* Bắt buộc: Mô tả tình trạng vệ sinh (rác tồn đọng, vết dầu mỡ, ẩm mốc...)'
                             }
                           />
-                          {!cleanlinessPassed && !cleanlinessNotes.trim() && (
+                          {!isInspectionLocked && !cleanlinessPassed && !cleanlinessNotes.trim() && (
                             <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
                               * Bắt buộc nhập mô tả tình trạng vệ sinh khi Chưa đạt
                             </span>
@@ -2658,14 +2758,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
-                                disabled={isReadOnly}
+                                disabled={isReadOnly || isInspectionLocked}
                                 value={cleaningFeeInput}
                                 onChange={(e) => {
                                   const val = Number(e.target.value) || 0
                                   setCleaningFeeInput(val)
                                   updateCurrentCase({ cleaningFeeInput: val, cleaningFee: val })
                                 }}
-                                className="w-32 p-1.5 text-xs border border-amber-300 rounded-lg bg-white font-mono font-bold text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                className={`w-32 p-1.5 text-xs border rounded-lg font-mono font-bold text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-400 ${
+                                  isInspectionLocked
+                                    ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-600'
+                                    : 'border-amber-300 bg-white'
+                                }`}
                                 placeholder="150000"
                               />
                               <span className="font-bold text-amber-800">VNĐ</span>
@@ -2684,7 +2788,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {damagePassed ? '✓ Nguyên vẹn' : '⚠️ Có hư hỏng'}
                             </span>
                           </div>
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2722,14 +2826,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <input
                             id="inspection-damage-notes"
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInspectionLocked}
                             value={damageNotes}
                             onChange={(e) => {
                               setDamageNotes(e.target.value)
                               updateCurrentCase({ damageNotes: e.target.value })
                             }}
                             className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
-                              !damagePassed && !damageNotes.trim()
+                              isInspectionLocked
+                                ? 'bg-slate-100 border border-slate-200 cursor-not-allowed text-slate-600'
+                                : !damagePassed && !damageNotes.trim()
                                 ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
                                 : 'bg-white border border-slate-200 focus:border-amber-400'
                             }`}
@@ -2739,7 +2845,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 : '* Bắt buộc: Mô tả chi tiết hư hại vách/sàn/trần (khoan đục, móp méo, trầy xước...)'
                             }
                           />
-                          {!damagePassed && !damageNotes.trim() && (
+                          {!isInspectionLocked && !damagePassed && !damageNotes.trim() && (
                             <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
                               * Bắt buộc nhập mô tả hư hại tường vách / sàn trần khi Chưa đạt
                             </span>
@@ -2753,14 +2859,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <div className="flex items-center gap-1.5">
                               <input
                                 type="number"
-                                disabled={isReadOnly}
+                                disabled={isReadOnly || isInspectionLocked}
                                 value={damageFeeInput}
                                 onChange={(e) => {
                                   const val = Number(e.target.value) || 0
                                   setDamageFeeInput(val)
                                   updateCurrentCase({ damageFeeInput: val, damageFee: val })
                                 }}
-                                className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                className={`w-32 p-1.5 text-xs border rounded-lg font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400 ${
+                                  isInspectionLocked
+                                    ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-600'
+                                    : 'border-rose-300 bg-white'
+                                }`}
                                 placeholder="500000"
                               />
                               <span className="font-bold text-rose-700">VNĐ</span>
@@ -2779,7 +2889,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {smartLockPassed ? '✓ Pin 94% • Hoạt động tốt' : '⚠️ Báo lỗi / Sự cố'}
                             </span>
                           </div>
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2815,14 +2925,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <input
                             id="inspection-smartlock-notes"
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInspectionLocked}
                             value={smartLockNotes}
                             onChange={(e) => {
                               setSmartLockNotes(e.target.value)
                               updateCurrentCase({ smartLockNotes: e.target.value })
                             }}
                             className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
-                              !smartLockPassed && !smartLockNotes.trim()
+                              isInspectionLocked
+                                ? 'bg-slate-100 border border-slate-200 cursor-not-allowed text-slate-600'
+                                : !smartLockPassed && !smartLockNotes.trim()
                                 ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
                                 : 'bg-white border border-slate-200 focus:border-amber-400'
                             }`}
@@ -2832,7 +2944,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 : '* Bắt buộc: Mô tả sự cố khóa SmartLock (kẹt chốt, pin chai, cạy phá, lỗi kết nối...)'
                             }
                           />
-                          {!smartLockPassed && !smartLockNotes.trim() && (
+                          {!isInspectionLocked && !smartLockPassed && !smartLockNotes.trim() && (
                             <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
                               * Bắt buộc nhập mô tả sự cố khóa SmartLock khi Chưa đạt
                             </span>
@@ -2847,7 +2959,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 <span>Phân loại nguyên nhân sự cố SmartLock:</span>
                               </span>
                               <select
-                                disabled={isReadOnly}
+                                disabled={isReadOnly || isInspectionLocked}
                                 value={smartLockIssueType}
                                 onChange={(e) => {
                                   const val = e.target.value
@@ -2861,7 +2973,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                     updateCurrentCase({ smartLockIssueType: val, smartLockFeeInput: initialFee, smartLockFee: initialFee })
                                   }
                                 }}
-                                className="p-1.5 bg-white border border-amber-300 rounded-lg font-bold text-amber-900 text-xs focus:ring-1 focus:ring-amber-400"
+                                className={`p-1.5 border rounded-lg font-bold text-xs focus:ring-1 focus:ring-amber-400 ${
+                                  isInspectionLocked
+                                    ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-600'
+                                    : 'bg-white border-amber-300 text-amber-900'
+                                }`}
                               >
                                 <option value="NORMAL_WEAR">Hao mòn tự nhiên (Boxora chịu)</option>
                                 <option value="DEVICE_ERROR">Lỗi phần cứng / Hết pin (Bảo hành Boxora)</option>
@@ -2885,14 +3001,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 <div className="flex items-center gap-1.5">
                                   <input
                                     type="number"
-                                    disabled={isReadOnly}
+                                    disabled={isReadOnly || isInspectionLocked}
                                     value={smartLockFeeInput}
                                     onChange={(e) => {
                                       const val = Number(e.target.value) || 0
                                       setSmartLockFeeInput(val)
                                       updateCurrentCase({ smartLockFeeInput: val, smartLockFee: val })
                                     }}
-                                    className="w-32 p-1.5 text-xs border border-rose-300 rounded-lg bg-white font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400"
+                                    className={`w-32 p-1.5 text-xs border rounded-lg font-mono font-bold text-rose-900 focus:outline-none focus:ring-1 focus:ring-rose-400 ${
+                                      isInspectionLocked
+                                        ? 'bg-slate-100 border-slate-200 cursor-not-allowed text-slate-600'
+                                        : 'border-rose-300 bg-white'
+                                    }`}
                                     placeholder="4000000"
                                   />
                                   <span className="font-bold text-rose-700">VNĐ</span>
@@ -2913,7 +3033,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               {assetsClearedPassed ? '✓ Kho đã dọn trống' : '⚠️ Vẫn còn đồ của khách'}
                             </span>
                           </div>
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -2947,14 +3067,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <input
                             id="inspection-assets-notes"
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInspectionLocked}
                             value={assetsClearedNotes}
                             onChange={(e) => {
                               setAssetsClearedNotes(e.target.value)
                               updateCurrentCase({ assetsClearedNotes: e.target.value })
                             }}
                             className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
-                              !assetsClearedPassed && !assetsClearedNotes.trim()
+                              isInspectionLocked
+                                ? 'bg-slate-100 border border-slate-200 cursor-not-allowed text-slate-600'
+                                : !assetsClearedPassed && !assetsClearedNotes.trim()
                                 ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
                                 : 'bg-white border border-slate-200 focus:border-amber-400'
                             }`}
@@ -2964,7 +3086,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 : '* Bắt buộc: Ghi rõ tài sản/đồ đạc của khách còn để lại trong kho...'
                             }
                           />
-                          {!assetsClearedPassed && !assetsClearedNotes.trim() && (
+                          {!isInspectionLocked && !assetsClearedPassed && !assetsClearedNotes.trim() && (
                             <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
                               * Bắt buộc ghi rõ tài sản/đồ đạc còn để lại trong kho
                             </span>
@@ -2996,7 +3118,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             )}
                           </div>
 
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 flex-wrap">
                             <button
                               type="button"
@@ -3040,7 +3162,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         </div>
 
                         {photoUrls.length === 0 ? (
-                          isReadOnly ? (
+                          isReadOnly || isInspectionLocked ? (
                             <div className="p-6 border border-dashed border-slate-200 bg-slate-50 rounded-xl text-center flex flex-col items-center justify-center gap-2 text-slate-400">
                               <Camera size={24} />
                               <p className="font-medium text-xs">Chưa có ảnh bằng chứng hiện trường tải lên.</p>
@@ -3087,7 +3209,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                   <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-mono font-medium truncate max-w-[80%]">
                                     Ảnh {i + 1}
                                   </span>
-                                  {!isReadOnly && (
+                                  {!isReadOnly && !isInspectionLocked && (
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -3104,7 +3226,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               )
                             })}
 
-                            {!isReadOnly && (
+                            {!isReadOnly && !isInspectionLocked && (
                               <div
                                 onClick={() => fileInputRef.current?.click()}
                                 className="h-28 rounded-xl border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/20 hover:bg-blue-50/50 flex flex-col items-center justify-center cursor-pointer transition text-blue-600 hover:text-blue-700 gap-1"
@@ -3128,7 +3250,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             </span>
                           </div>
 
-                          {!isReadOnly && (
+                          {!isReadOnly && !isInspectionLocked && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
@@ -3163,14 +3285,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <input
                             id="inspection-env-notes"
                             type="text"
-                            disabled={isReadOnly}
+                            disabled={isReadOnly || isInspectionLocked}
                             value={envNotes}
                             onChange={(e) => {
                               setEnvNotes(e.target.value)
                               updateCurrentCase({ envNotes: e.target.value })
                             }}
                             className={`w-full text-xs rounded-lg p-2 text-slate-800 focus:outline-none transition ${
-                              !envPassed && !envNotes.trim()
+                              isInspectionLocked
+                                ? 'bg-slate-100 border border-slate-200 cursor-not-allowed text-slate-600'
+                                : !envPassed && !envNotes.trim()
                                 ? 'bg-rose-50/40 border-2 border-rose-400 focus:border-rose-500 ring-1 ring-rose-200'
                                 : 'bg-white border border-slate-200 focus:border-amber-400'
                             }`}
@@ -3180,7 +3304,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 : '* Bắt buộc: Ghi chú chỉ số bất thường hoặc sự cố cảm biến môi trường...'
                             }
                           />
-                          {!envPassed && !envNotes.trim() && (
+                          {!isInspectionLocked && !envPassed && !envNotes.trim() && (
                             <span className="text-[11px] text-rose-600 font-semibold flex items-center gap-1">
                               * Bắt buộc ghi nhận chỉ số hoặc sự cố cảm biến khi Chưa đạt
                             </span>
@@ -3190,7 +3314,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                     </div>
 
                     {/* Nút hành động Bước B */}
-                    {!isReadOnly && !isStaffBlockedByDispute && (
+                    {!isReadOnly && !isStaffBlockedByDispute && !isInspectionLocked && (
                       <div className="pt-3 flex items-center justify-end gap-2 flex-wrap border-t border-slate-100">
                         <button
                           type="button"
@@ -3529,6 +3653,22 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                                 ? 'Cập nhật & Gửi thông báo tính phí'
                                 : 'Xác nhận đã kiểm tra & tính phí'}
                             </span>
+                          </button>
+                        )}
+
+                        {/* Nút Xử lý lại dành riêng cho Facility Manager & Admin khi phát hiện lỗi ở 7 tiêu chí */}
+                        {canReopenInspection && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReopenReasonInput('')
+                              setShowReopenInspectionModal(true)
+                            }}
+                            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                            title="Mở khóa để chỉnh sửa lại 7 bước nghiệm thu và gửi thông báo mới cho khách"
+                          >
+                            <RotateCcw size={14} />
+                            <span>Xử Lý Lại Nghiệm Thu</span>
                           </button>
                         )}
 
@@ -4315,6 +4455,101 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               >
                 <CheckCircle2 size={15} />
                 <span>{isExecutingPayout ? 'Đang lưu...' : 'Xác Nhận Đã Chuyển Khoản'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL XỬ LÝ LẠI NGHIỆM THU HIỆN TRƯỜNG (REOPEN INSPECTION) DÀNH CHO FACILITY MANAGER */}
+      {showReopenInspectionModal && currentCase && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5 text-amber-600">
+                <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <RotateCcw size={18} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Mở Lại &amp; Xử Lý Lại Nghiệm Thu</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Buồng kho #{currentCase.unitCode} • Mã đơn #{currentCase.bookingCode}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReopenInspectionModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 space-y-2">
+                <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                  <AlertTriangle size={16} className="text-amber-700 shrink-0" />
+                  <span>Xác nhận mở khóa chỉnh sửa 7 tiêu chuẩn nghiệm thu</span>
+                </div>
+                <p className="leading-relaxed">
+                  Hồ sơ đơn kho này đang có quyết toán <strong>Phiên bản V{currentCase.settlementVersion || 1}</strong> đã được khách hàng <strong>{currentCase.customerName}</strong> xác nhận đồng ý.
+                </p>
+                <div className="bg-white/80 p-2.5 rounded-lg border border-amber-200 text-[11px] text-slate-700 space-y-1">
+                  <div className="font-semibold text-slate-800">Khi bạn xác nhận mở lại xử lý:</div>
+                  <div className="flex items-start gap-1">
+                    <span className="font-bold text-amber-600">•</span>
+                    <span>Biên bản sẽ được nâng lên <strong>Phiên bản V{(currentCase.settlementVersion || 1) + 1}</strong>.</span>
+                  </div>
+                  <div className="flex items-start gap-1">
+                    <span className="font-bold text-amber-600">•</span>
+                    <span>Toàn bộ 7 tiêu chuẩn nghiệm thu hiện trường sẽ được <strong>MỞ KHÓA</strong> để Quản lý cơ sở và Nhân viên điều chỉnh lại chi tiết lỗi, chi phí và ảnh minh chứng.</span>
+                  </div>
+                  <div className="flex items-start gap-1">
+                    <span className="font-bold text-amber-600">•</span>
+                    <span>Trạng thái đồng ý trước đó của khách hàng được thu hồi. Sau khi chỉnh sửa xong, bạn cần bấm <strong>'Cập nhật &amp; Gửi thông báo tính phí'</strong> để gửi phiên bản mới cho khách hàng xác nhận lại.</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Lý do mở lại xử lý nghiệm thu (ghi chú vào lịch sử đối soát):
+                </label>
+                <textarea
+                  rows={3}
+                  value={reopenReasonInput}
+                  onChange={(e) => setReopenReasonInput(e.target.value)}
+                  placeholder="Ví dụ: Phát hiện sai sót chi phí sửa cửa cuốn, cập nhật lại hình ảnh hiện trường buồng kho..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-amber-500 focus:outline-none transition"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowReopenInspectionModal(false)}
+                disabled={isSubmittingReopen}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50 disabled:opacity-50"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReopenInspection}
+                disabled={isSubmittingReopen}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+              >
+                {isSubmittingReopen ? (
+                  <>
+                    <RotateCcw size={14} className="animate-spin" />
+                    <span>Đang xử lý mở lại...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw size={14} />
+                    <span>Xác Nhận Mở Lại &amp; Chỉnh Sửa</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

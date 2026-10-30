@@ -487,4 +487,15 @@ public class HandoverController {
         return ResponseEntity.ok(ApiResponse.success("Xác nhận giải ngân hoàn tiền thành công",
                 handoverService.executePayout(bookingId, request)));
     }
-}
+
+    @PostMapping("/returns/{bookingId}/reopen-inspection")
+    @PreAuthorize("hasAuthority('HANDOVER_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')")
+    @Operation(summary = "Quản lý cơ sở (FACILITY_MANAGER) mở lại hồ sơ nghiệm thu hiện trường 7 bước để chỉnh sửa lại")
+    public ResponseEntity<ApiResponse<ReturnSettlementResponse>> reopenInspection(
+            @PathVariable UUID bookingId,
+            @RequestBody(required = false) com.boxora.dto.request.ReopenInspectionRequest request) {
+        String reason = request != null ? request.getReason() : null;
+        return ResponseEntity.ok(ApiResponse.success("Đã mở lại hồ sơ nghiệm thu thành công",
+                handoverService.reopenInspection(bookingId, reason)));
+    }
+}

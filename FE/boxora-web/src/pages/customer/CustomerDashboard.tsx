@@ -2027,9 +2027,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           (t.resolutionNote || (t as any).resolutionNotes) ? ` • Phản hồi xử lý: ${(t.resolutionNote || (t as any).resolutionNotes)}` : ''
         }`,
         timestamp: t.updatedAt || t.createdAt || new Date().toISOString(),
-        actorName: isResolved ? 'Nhân viên kỹ thuật Boxora' : user?.fullName || 'Khách hàng',
-        statusLabel: isResolved ? 'Đã xử lý xong' : t.status === 'IN_PROGRESS' ? 'Đang xử lý' : 'Đã tiếp nhận',
-        statusTone: isResolved ? 'emerald' : 'amber',
+        statusLabel: isResolved ? 'Đã xử lý xong' : t.status === 'IN_PROGRESS' ? 'Đã được chấp nhận' : 'Chờ tiếp nhận',
+        statusTone: isResolved ? 'emerald' : t.status === 'IN_PROGRESS' ? 'blue' : 'amber',
       })
     })
 

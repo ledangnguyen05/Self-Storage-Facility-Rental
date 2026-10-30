@@ -160,4 +160,7 @@ public interface HandoverService {
 
     /** Task 16.4: Kế toán / Quản lý kinh doanh (BUSINESS_MANAGER/ADMIN) thực hiện giải ngân tiền hoàn */
     ReturnSettlementResponse executePayout(UUID bookingId, com.boxora.dto.request.ReturnPayoutRequest request);
+
+    /** Quản lý cơ sở (FACILITY_MANAGER/ADMIN) mở lại hồ sơ nghiệm thu hiện trường 7 bước để chỉnh sửa lại */
+    ReturnSettlementResponse reopenInspection(UUID bookingId, String reason);
 }

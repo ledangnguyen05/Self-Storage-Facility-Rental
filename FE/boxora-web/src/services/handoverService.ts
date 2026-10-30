@@ -482,7 +482,13 @@ export const handoverService = {
     const response = await api.post(`/api/v1/handovers/returns/${bookingId}/payout`, payload)
     return response.data?.data as ReturnSettlementDetail
   },
+
+  async reopenInspection(bookingId: string, reason?: string): Promise<ReturnSettlementDetail> {
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/reopen-inspection`, { reason })
+    return response.data?.data as ReturnSettlementDetail
+  },
 }
+
 
 export interface ReturnCase {
   id: string

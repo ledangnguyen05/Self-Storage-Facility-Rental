@@ -2878,6 +2878,31 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
         bookingRepository.save(booking);
 
+        // Tự động chuyển trạng thái phiếu hỗ trợ liên quan (như phiếu yêu cầu trả kho) từ OPEN (Chờ tiếp nhận) sang IN_PROGRESS (Đã được chấp nhận)
+        if (supportTicketRepository != null) {
+            List<SupportTicket> linkedTickets = new ArrayList<>(supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(booking.getId()));
+            if (unit != null) {
+                List<SupportTicket> unitTickets = supportTicketRepository.findByStorageUnit_IdOrderByCreatedAtDesc(unit.getId());
+                for (SupportTicket ut : unitTickets) {
+                    if (linkedTickets.stream().noneMatch(lt -> lt.getId().equals(ut.getId()))) {
+                        linkedTickets.add(ut);
+                    }
+                }
+            }
+            for (SupportTicket t : linkedTickets) {
+                if (t.getStatus() == TicketStatus.OPEN) {
+                    t.setStatus(TicketStatus.IN_PROGRESS);
+                    if (t.getAssignedStaff() == null && staff != null) {
+                        t.setAssignedStaff(staff);
+                    }
+                    if (t.getBooking() == null) {
+                        t.setBooking(booking);
+                    }
+                    supportTicketRepository.save(t);
+                }
+            }
+        }
+
         activityLogService.record(
                 unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null,
                 ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
@@ -2926,6 +2951,31 @@ public class HandoverServiceImpl implements HandoverService {
                 LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName());
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
         bookingRepository.save(booking);
+
+        // Tự động chuyển trạng thái phiếu hỗ trợ liên quan sang IN_PROGRESS nếu còn đang OPEN
+        if (supportTicketRepository != null) {
+            List<SupportTicket> linkedTickets = new ArrayList<>(supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(booking.getId()));
+            if (unit != null) {
+                List<SupportTicket> unitTickets = supportTicketRepository.findByStorageUnit_IdOrderByCreatedAtDesc(unit.getId());
+                for (SupportTicket ut : unitTickets) {
+                    if (linkedTickets.stream().noneMatch(lt -> lt.getId().equals(ut.getId()))) {
+                        linkedTickets.add(ut);
+                    }
+                }
+            }
+            for (SupportTicket t : linkedTickets) {
+                if (t.getStatus() == TicketStatus.OPEN) {
+                    t.setStatus(TicketStatus.IN_PROGRESS);
+                    if (t.getAssignedStaff() == null && staff != null) {
+                        t.setAssignedStaff(staff);
+                    }
+                    if (t.getBooking() == null) {
+                        t.setBooking(booking);
+                    }
+                    supportTicketRepository.save(t);
+                }
+            }
+        }
 
         activityLogService.record(
                 unit != null && unit.getFacility() != null ? unit.getFacility().getId() : null,
@@ -3005,6 +3055,11 @@ public class HandoverServiceImpl implements HandoverService {
                         .recordType("INSPECTION")
                         .recordedAt(LocalDateTime.now())
                         .build());
+
+        if ("AGREED".equalsIgnoreCase(record.getCustomerDecision())) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Biên bản nghiệm thu đã được khách hàng xác nhận đồng ý. Quản lý cơ sở cần nhấn 'Xử lý lại' trước khi chỉnh sửa.");
+        }
 
         record.setDoorConditionPassed(request.getDoorConditionPassed());
         record.setDoorFee(request.getDoorFee() != null ? request.getDoorFee() : BigDecimal.ZERO);
@@ -3796,6 +3851,29 @@ public class HandoverServiceImpl implements HandoverService {
             }
         }
 
+        // Đóng toàn bộ phiếu hỗ trợ liên quan sau khi hoàn tất trả kho
+        if (supportTicketRepository != null) {
+            List<SupportTicket> linkedTickets = new ArrayList<>(supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(booking.getId()));
+            if (unit != null) {
+                List<SupportTicket> unitTickets = supportTicketRepository.findByStorageUnit_IdOrderByCreatedAtDesc(unit.getId());
+                for (SupportTicket ut : unitTickets) {
+                    if (linkedTickets.stream().noneMatch(lt -> lt.getId().equals(ut.getId()))) {
+                        linkedTickets.add(ut);
+                    }
+                }
+            }
+            for (SupportTicket t : linkedTickets) {
+                if (t.getStatus() != TicketStatus.CLOSED) {
+                    t.setStatus(TicketStatus.CLOSED);
+                    t.setClosedAt(LocalDateTime.now());
+                    if (t.getResolvedAt() == null) {
+                        t.setResolvedAt(LocalDateTime.now());
+                    }
+                    supportTicketRepository.save(t);
+                }
+            }
+        }
+
         activityLogService.record(
                 facility != null ? facility.getId() : null,
                 ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
@@ -4580,4 +4658,103 @@ public class HandoverServiceImpl implements HandoverService {
 
         return calculateSettlement(bookingId, null);
     }
-}
+
+    @Override
+    @Transactional
+    public ReturnSettlementResponse reopenInspection(UUID bookingId, String reason) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        StorageUnit unit = booking.getStorageUnit();
+        Facility facility = unit != null ? unit.getFacility() : null;
+        if (facility != null) {
+            facilityAccessGuard.checkFacilityAccess(facility.getId());
+        }
+
+        User operator = requireAuthorizedStaffOperator(null);
+        String roleName = operator.getRole() != null ? operator.getRole().getName() : "";
+        boolean isAuthorized = "FACILITY_MANAGER".equalsIgnoreCase(roleName)
+                || "ROLE_FACILITY_MANAGER".equalsIgnoreCase(roleName)
+                || "ADMIN".equalsIgnoreCase(roleName)
+                || "ROLE_ADMIN".equalsIgnoreCase(roleName);
+        if (!isAuthorized) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản lý cơ sở (FACILITY_MANAGER) hoặc Quản trị viên (ADMIN) mới có thẩm quyền mở lại hồ sơ nghiệm thu!");
+        }
+
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED) {
+            throw new AppException(ErrorCode.RETURN_ALREADY_COMPLETED, "Hồ sơ trả kho đã hoàn tất và đóng hợp đồng. Không thể mở lại.");
+        }
+
+        HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
+                .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
+
+        if ("REFUNDED".equalsIgnoreCase(record.getRefundStatus())) {
+            throw new AppException(ErrorCode.RETURN_ALREADY_REFUNDED, "Khoản tiền đã được giải ngân hoàn tất cho khách hàng. Không thể xử lý lại.");
+        }
+
+        // Reset customer decision & confirmation
+        record.setCustomerDecision("NONE");
+        record.setCustomerDecisionAt(null);
+        record.setSettlementConfirmed(false);
+        record.setSettlementConfirmedBy(null);
+        record.setSettlementConfirmedAt(null);
+        record.setApprovalStatus("DRAFT");
+        record.setInspectionStatus("COMPLETED");
+        record.setRefundStatus("NONE");
+
+        // Cancel previous pending RefundRequest if any
+        RefundRequest r = record.getRefundRequest();
+        if (r != null && r.getStatus() == RefundStatus.PENDING_REVIEW) {
+            r.setStatus(RefundStatus.REJECTED);
+            r.setProcessNotes("Quản lý cơ sở mở lại hồ sơ nghiệm thu để điều chỉnh");
+            refundRequestRepository.save(r);
+        }
+        record.setRefundRequest(null);
+
+        int nextVersion = (record.getSettlementVersion() != null ? record.getSettlementVersion() : 1) + 1;
+        record.setSettlementVersion(nextVersion);
+
+        String reopenReason = (reason != null && !reason.isBlank()) ? reason.trim() : "Quản lý cơ sở yêu cầu điều chỉnh lại thông tin 7 tiêu chuẩn nghiệm thu";
+        record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[XỬ LÝ LẠI V" + nextVersion + "] " + reopenReason);
+
+        String logMsg = String.format("[%s] Quản lý cơ sở %s đã MỞ LẠI XỬ LÝ (Reopen) biên bản nghiệm thu (Phiên bản V%d). Lý do: %s\n",
+                LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), nextVersion, reopenReason);
+        booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
+
+        // Notify customer in-app
+        if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+            String unitCode = unit != null ? unit.getUnitCode() : "N/A";
+            NotificationLog notif = NotificationLog.builder()
+                    .recipient(booking.getCustomer())
+                    .recipientEmail(booking.getCustomer().getEmail())
+                    .recipientName(booking.getCustomer().getFullName())
+                    .facility(facility)
+                    .channel(NotificationChannel.IN_APP)
+                    .notificationType(NotificationType.REFUND_STATUS)
+                    .referenceType("BOOKING")
+                    .referenceId(booking.getId())
+                    .title(String.format("Biên bản nghiệm thu buồng kho %s đang được điều chỉnh lại", unitCode))
+                    .content(String.format("Quản lý cơ sở đang tiến hành kiểm tra và điều chỉnh lại biên bản nghiệm thu (Phiên bản V%d) cho buồng kho %s. Lý do: %s. Quý khách vui lòng chờ thông báo quyết toán mới.",
+                            nextVersion, unitCode, reopenReason))
+                    .status("SENT")
+                    .build();
+            notificationLogRepository.save(notif);
+        }
+
+        record = handoverRecordRepository.save(record);
+        bookingRepository.save(booking);
+
+        activityLogService.record(
+                facility != null ? facility.getId() : null,
+                ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
+                "HandoverRecord",
+                record.getId(),
+                String.format("Quản lý cơ sở %s mở lại nghiệm thu đơn %s (Phiên bản V%d): %s",
+                        operator.getFullName(), booking.getBookingCode(), nextVersion, reopenReason),
+                booking.getStatus(),
+                booking.getStatus()
+        );
+
+        return calculateSettlement(bookingId, null);
+    }
+}
