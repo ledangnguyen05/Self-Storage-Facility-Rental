@@ -409,9 +409,18 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
                           </div>
                         )}
                         <div className="flex flex-col min-w-0">
-                          <span className="font-bold text-slate-900 truncate">
-                            {staff.fullName || staff.username}
-                          </span>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-bold text-slate-900 truncate">
+                              {staff.fullName || staff.username}
+                            </span>
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold border shrink-0 ${
+                              (staff.roleName || staff.role?.name || targetRole) === 'FACILITY_MANAGER'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}>
+                              {(staff.roleName || staff.role?.name || targetRole)}
+                            </span>
+                          </div>
                           <span className="text-[10px] text-slate-500 truncate">
                             {staff.email}
                           </span>

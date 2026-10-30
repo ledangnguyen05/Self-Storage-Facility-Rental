@@ -2505,9 +2505,33 @@ public class HandoverServiceImpl implements HandoverService {
         BigDecimal netRefund = depositAmount.subtract(effectiveDeductions).max(BigDecimal.ZERO);
         BigDecimal additionalDue = effectiveDeductions.subtract(depositAmount).max(BigDecimal.ZERO);
 
-        String inspStatus = inspectionRecord != null && inspectionRecord.getInspectionStatus() != null
-                ? inspectionRecord.getInspectionStatus()
-                : (booking.getStatus() == BookingStatus.INSPECTED ? "COMPLETED" : "PENDING");
+        boolean recordHasIssue = inspectionRecord != null && (
+                "INSPECTION_ISSUE".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || "ISSUE".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || Boolean.FALSE.equals(doorPassed)
+                || Boolean.FALSE.equals(cleanPassed)
+                || Boolean.FALSE.equals(wallPassed)
+                || Boolean.FALSE.equals(lockPassed)
+                || Boolean.FALSE.equals(assetsPassed)
+                || Boolean.FALSE.equals(sensorPassed)
+                || proposedDeductions.compareTo(BigDecimal.ZERO) > 0
+        );
+
+        String inspStatus;
+        if (inspectionRecord != null && "DRAFT".equalsIgnoreCase(inspectionRecord.getInspectionStatus())) {
+            inspStatus = "DRAFT";
+        } else if (recordHasIssue) {
+            inspStatus = "INSPECTION_ISSUE";
+        } else if (inspectionRecord != null && ("INSPECTION_PASSED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || "PASSED".equalsIgnoreCase(inspectionRecord.getInspectionStatus())
+                || (doorPassed != null && Boolean.TRUE.equals(doorPassed))
+                || booking.getStatus() == BookingStatus.INSPECTED)) {
+            inspStatus = "INSPECTION_PASSED";
+        } else if (inspectionRecord != null && inspectionRecord.getInspectionStatus() != null) {
+            inspStatus = inspectionRecord.getInspectionStatus();
+        } else {
+            inspStatus = (booking.getStatus() == BookingStatus.INSPECTED ? "INSPECTION_PASSED" : "PENDING");
+        }
 
         String approvalStatus = inspectionRecord != null && inspectionRecord.getApprovalStatus() != null
                 ? inspectionRecord.getApprovalStatus() : "NONE";
@@ -2609,9 +2633,9 @@ public class HandoverServiceImpl implements HandoverService {
                 || "PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)
                 || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)) {
             caseStatus = "REFUND_PENDING_APPROVAL";
-        } else if ("ISSUE".equalsIgnoreCase(inspStatus) || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus)) {
+        } else if (recordHasIssue || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus) || "ISSUE".equalsIgnoreCase(inspStatus)) {
             caseStatus = "INSPECTION_ISSUE";
-        } else if ("PASSED".equalsIgnoreCase(inspStatus) || "INSPECTION_PASSED".equalsIgnoreCase(inspStatus) || booking.getStatus() == BookingStatus.INSPECTED) {
+        } else if ("INSPECTION_PASSED".equalsIgnoreCase(inspStatus) || "PASSED".equalsIgnoreCase(inspStatus) || booking.getStatus() == BookingStatus.INSPECTED) {
             caseStatus = "INSPECTION_PASSED";
         } else if ("IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTION_IN_PROGRESS".equalsIgnoreCase(inspStatus) || "INSPECTING".equalsIgnoreCase(inspStatus)) {
             caseStatus = "INSPECTION_IN_PROGRESS";
@@ -2918,7 +2942,6 @@ public class HandoverServiceImpl implements HandoverService {
         record.setLostCardFee(request.getLostCardFee() != null ? request.getLostCardFee() : BigDecimal.ZERO);
         record.setEvidencePhotos(String.join(";", photos));
         record.setNotes(request.getNotes());
-        record.setInspectionStatus(isDraft ? "DRAFT" : "COMPLETED");
 
         BigDecimal cleanFee = Boolean.TRUE.equals(record.getCleanlinessPassed()) ? BigDecimal.ZERO : (record.getCleanlinessFee() != null ? record.getCleanlinessFee() : BigDecimal.ZERO);
         BigDecimal wallFee = Boolean.TRUE.equals(record.getWallStructurePassed()) ? BigDecimal.ZERO : (record.getWallStructureFee() != null ? record.getWallStructureFee() : BigDecimal.ZERO);
@@ -2926,7 +2949,36 @@ public class HandoverServiceImpl implements HandoverService {
         String lockIssue = record.getSmartLockIssueType() != null ? record.getSmartLockIssueType() : "PENDING_VERIFICATION";
         BigDecimal lockFee = Boolean.TRUE.equals(record.getSmartLockPassed()) ? BigDecimal.ZERO : ("CUSTOMER_FAULT".equalsIgnoreCase(lockIssue) ? (record.getSmartLockFee() != null ? record.getSmartLockFee() : BigDecimal.ZERO) : BigDecimal.ZERO);
         BigDecimal lostFee = record.getLostCardFee() != null ? record.getLostCardFee() : BigDecimal.ZERO;
-        record.setDeductionAmount(cleanFee.add(wallFee).add(doorFee).add(lockFee).add(lostFee));
+        BigDecimal calculatedDeduction = cleanFee.add(wallFee).add(doorFee).add(lockFee).add(lostFee);
+        record.setDeductionAmount(calculatedDeduction);
+
+        boolean hasIssue = Boolean.FALSE.equals(record.getDoorConditionPassed())
+                || Boolean.FALSE.equals(record.getCleanlinessPassed())
+                || Boolean.FALSE.equals(record.getWallStructurePassed())
+                || Boolean.FALSE.equals(record.getSmartLockPassed())
+                || Boolean.FALSE.equals(record.getAssetsClearedPassed())
+                || Boolean.FALSE.equals(record.getSensorPassed())
+                || calculatedDeduction.compareTo(BigDecimal.ZERO) > 0;
+
+        if (isDraft) {
+            record.setInspectionStatus("DRAFT");
+        } else if (hasIssue) {
+            record.setInspectionStatus("INSPECTION_ISSUE");
+            if (!"APPROVED".equalsIgnoreCase(record.getApprovalStatus())
+                    && !"REFUNDED".equalsIgnoreCase(record.getRefundStatus())
+                    && !"PROCESSING".equalsIgnoreCase(record.getRefundStatus())) {
+                record.setApprovalStatus("NONE");
+                record.setApprovedDeductions(BigDecimal.ZERO);
+            }
+        } else {
+            record.setInspectionStatus("INSPECTION_PASSED");
+            if (!"APPROVED".equalsIgnoreCase(record.getApprovalStatus())
+                    && !"REFUNDED".equalsIgnoreCase(record.getRefundStatus())
+                    && !"PROCESSING".equalsIgnoreCase(record.getRefundStatus())) {
+                record.setApprovalStatus("NONE");
+                record.setApprovedDeductions(BigDecimal.ZERO);
+            }
+        }
 
         String checklistSummary = String.format(
                 "Cửa cuốn: %s | Vệ sinh: %s | Tường vách: %s | SmartLock: %s | Dọn đồ: %s | Cảm biến: %s",
@@ -3553,7 +3605,10 @@ public class HandoverServiceImpl implements HandoverService {
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         // 1. Kiểm tra nghiệm thu hiện trường
-        if ("DRAFT".equalsIgnoreCase(record.getInspectionStatus()) || !"COMPLETED".equalsIgnoreCase(record.getInspectionStatus())) {
+        if ("DRAFT".equalsIgnoreCase(record.getInspectionStatus())
+                || (!"COMPLETED".equalsIgnoreCase(record.getInspectionStatus())
+                && !"INSPECTION_PASSED".equalsIgnoreCase(record.getInspectionStatus())
+                && !"INSPECTION_ISSUE".equalsIgnoreCase(record.getInspectionStatus()))) {
             throw new AppException(ErrorCode.RETURN_NOT_INSPECTED, "Biên bản nghiệm thu hiện trường chưa được hoàn tất và chốt");
         }
 
@@ -3681,7 +3736,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         if ("DRAFT".equalsIgnoreCase(record.getInspectionStatus())) {
-            throw new AppException(ErrorCode.RETURN_NOT_INSPECTED, "BiĂªn báº£n nghiá»‡m thu hiá»‡n trÆ°á»ng Ä‘ang á»Ÿ tráº¡ng thĂ¡i báº£n nhĂ¡p. Cáº§n chá»‘t biĂªn báº£n trÆ°á»›c khi xĂ¡c nháº­n tĂ­nh phĂ­.");
+            throw new AppException(ErrorCode.RETURN_NOT_INSPECTED, "Biên bản nghiệm thu hiện trường đang ở trạng thái bản nháp. Cần chốt biên bản trước khi xác nhận tính phí.");
         }
 
         // Validate no negative deductions
@@ -3694,13 +3749,13 @@ public class HandoverServiceImpl implements HandoverService {
         if (doorFee.compareTo(BigDecimal.ZERO) < 0 || cleanFee.compareTo(BigDecimal.ZERO) < 0
                 || wallFee.compareTo(BigDecimal.ZERO) < 0 || lockFee.compareTo(BigDecimal.ZERO) < 0
                 || lostCardFee.compareTo(BigDecimal.ZERO) < 0) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Khoáº£n kháº¥u trá»« chi phĂ­ khĂ´ng Ä‘Æ°á»£c Ă¢m!");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản khấu trừ chi phí không được âm!");
         }
 
         // Damage fee > 0 requires evidence / inspection notes
         if (wallFee.compareTo(BigDecimal.ZERO) > 0 && (record.getWallStructureNotes() == null || record.getWallStructureNotes().isBlank())) {
             if (record.getEvidencePhotos() == null || record.getEvidencePhotos().isBlank()) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Khoáº£n kháº¥u trá»« hÆ° háº¡i vĂ¡ch/sĂ n/tráº§n báº¯t buá»™c pháº£i cĂ³ ghi chĂº hiá»‡n trÆ°á»ng hoáº·c áº£nh báº±ng chá»©ng Ä‘á»‘i soĂ¡t!");
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản khấu trừ hư hại vách/sàn/trần bắt buộc phải có ghi chú hiện trường hoặc ảnh bằng chứng đối soát!");
             }
         }
 
@@ -3726,18 +3781,18 @@ public class HandoverServiceImpl implements HandoverService {
             record.setSettlementVersion(1);
         }
         if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[XĂC NHáº¬N TĂNH PHĂ] " + request.getNotes().trim());
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[XÁC NHẬN TÍNH PHÍ] " + request.getNotes().trim());
         }
 
         record = handoverRecordRepository.save(record);
 
         String resultMsg = netRefund.compareTo(BigDecimal.ZERO) > 0
-                ? String.format("HoĂ n tráº£ khĂ¡ch hĂ ng: %s VNÄ", netRefund)
+                ? String.format("Hoàn trả khách hàng: %s VNĐ", netRefund)
                 : (additionalDue.compareTo(BigDecimal.ZERO) > 0
-                    ? String.format("KhĂ¡ch hĂ ng cáº§n thanh toĂ¡n thĂªm: %s VNÄ", additionalDue)
-                    : "Quyáº¿t toĂ¡n hĂ²a vá»‘n (KhĂ´ng hoĂ n, khĂ´ng thu thĂªm)");
+                    ? String.format("Khách hàng cần thanh toán thêm: %s VNĐ", additionalDue)
+                    : "Quyết toán hòa vốn (Không hoàn, không thu thêm)");
 
-        String logMsg = String.format("[%s] NhĂ¢n viĂªn %s XĂC NHáº¬N ÄĂƒ KIá»‚M TRA & TĂNH PHĂ quyáº¿t toĂ¡n tráº£ kho (PhiĂªn báº£n V%d): Cá»c: %s VNÄ, Kháº¥u trá»«: %s VNÄ, CĂ´ng ná»£: %s VNÄ -> %s\n",
+        String logMsg = String.format("[%s] Nhân viên %s XÁC NHẬN ĐÃ KIỂM TRA & TÍNH PHÍ quyết toán trả kho (Phiên bản V%d): Cọc: %s VNĐ, Khấu trừ: %s VNĐ, Công nợ: %s VNĐ -> %s\n",
                 LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName(), record.getSettlementVersion(), depositPaid, totalProposedDeductions.subtract(overdueDebt), overdueDebt, resultMsg);
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
         bookingRepository.save(booking);
@@ -3754,8 +3809,8 @@ public class HandoverServiceImpl implements HandoverService {
                     .notificationType(NotificationType.REFUND_STATUS)
                     .referenceType("BOOKING")
                     .referenceId(booking.getId())
-                    .title(String.format("Káº¿t quáº£ quyáº¿t toĂ¡n tráº£ kho [%s] - Chá» báº¡n xĂ¡c nháº­n", unitCode))
-                    .content(String.format("NhĂ¢n viĂªn Boxora Ä‘Ă£ kiá»ƒm tra vĂ  gá»­i káº¿t quáº£ Ä‘á»‘i soĂ¡t quyáº¿t toĂ¡n cho Ä‘Æ¡n %s (Kho %s): Tiá»n cá»c: %sÄ‘, Kháº¥u trá»«: %sÄ‘ -> %s. Vui lĂ²ng vĂ o Customer Dashboard Ä‘á»ƒ xĂ¡c nháº­n hoáº·c khiáº¿u náº¡i.",
+                    .title(String.format("Kết quả quyết toán trả kho [%s] - Chờ bạn xác nhận", unitCode))
+                    .content(String.format("Nhân viên Boxora đã kiểm tra và gửi kết quả đối soát quyết toán cho đơn %s (Kho %s): Tiền cọc: %sđ, Khấu trừ: %sđ -> %s. Vui lòng vào Khách Hàng Dashboard để xác nhận hoặc khiếu nại.",
                             booking.getBookingCode(), unitCode, depositPaid, totalProposedDeductions, resultMsg))
                     .status("SENT")
                     .build();
@@ -3767,7 +3822,7 @@ public class HandoverServiceImpl implements HandoverService {
                 ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
                 "HandoverRecord",
                 record.getId(),
-                String.format("XĂ¡c nháº­n tĂ­nh phĂ­ quyáº¿t toĂ¡n V%d Ä‘Æ¡n %s: %s", record.getSettlementVersion(), booking.getBookingCode(), resultMsg),
+                String.format("Xác nhận tính phí quyết toán V%d đơn %s: %s", record.getSettlementVersion(), booking.getBookingCode(), resultMsg),
                 booking.getStatus(),
                 booking.getStatus()
         );
@@ -3785,7 +3840,7 @@ public class HandoverServiceImpl implements HandoverService {
         UUID currentUserId = requestContext.currentUserId();
         if (currentUserId != null && booking.getCustomer() != null && booking.getCustomer().getId() != null) {
             if ("CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole()) && !currentUserId.equals(booking.getCustomer().getId())) {
-                throw new AppException(ErrorCode.FORBIDDEN, "Báº¡n chá»‰ cĂ³ quyá»n Ä‘Æ°a ra quyáº¿t Ä‘á»‹nh Ä‘á»‘i vá»›i Ä‘Æ¡n Ä‘áº·t kho cá»§a chĂ­nh mĂ¬nh!");
+                throw new AppException(ErrorCode.FORBIDDEN, "Bạn chỉ có quyền đưa ra quyết định đối với đơn đặt kho của chính mình!");
             }
         }
 
@@ -3796,14 +3851,14 @@ public class HandoverServiceImpl implements HandoverService {
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         if (!Boolean.TRUE.equals(record.getSettlementConfirmed())) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ quyáº¿t toĂ¡n chÆ°a Ä‘Æ°á»£c nhĂ¢n viĂªn xĂ¡c nháº­n vĂ  chá»‘t tĂ­nh phĂ­.");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ quyết toán chưa được nhân viên xác nhận và chốt tính phí.");
         }
 
         String decision = request.getDecision() != null ? request.getDecision().trim().toUpperCase() : "";
 
         if ("DISPUTED".equals(decision)) {
             if (request.getDisputeReason() == null || request.getDisputeReason().isBlank()) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lĂ²ng nháº­p lĂ½ do khiáº¿u náº¡i chi tiáº¿t.");
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Vui lòng nhập lý do khiếu nại chi tiết.");
             }
             record.setCustomerDecision("DISPUTED");
             record.setCustomerDecisionAt(LocalDateTime.now());
@@ -3813,10 +3868,10 @@ public class HandoverServiceImpl implements HandoverService {
                 record.setDisputeEvidenceUrls(request.getDisputeEvidenceUrls().trim());
             }
 
-            String logMsg = String.format("[%s] KHĂCH HĂ€NG KHIáº¾U Náº I káº¿t quáº£ quyáº¿t toĂ¡n (V%d). LĂ½ do: %s\n",
+            String logMsg = String.format("[%s] KHÁCH HÀNG KHIẾU NẠI kết quả quyết toán (V%d). Lý do: %s\n",
                     LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, request.getDisputeReason().trim());
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHĂCH HĂ€NG KHIáº¾U Náº I] " + request.getDisputeReason().trim());
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHÁCH HÀNG KHIẾU NẠI] " + request.getDisputeReason().trim());
             record = handoverRecordRepository.save(record);
             bookingRepository.save(booking);
 
@@ -3825,7 +3880,7 @@ public class HandoverServiceImpl implements HandoverService {
                     ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
                     "HandoverRecord",
                     record.getId(),
-                    String.format("KhĂ¡ch hĂ ng khiáº¿u náº¡i quyáº¿t toĂ¡n Ä‘Æ¡n %s: %s", booking.getBookingCode(), request.getDisputeReason().trim()),
+                    String.format("Khách hàng khiếu nại quyết toán đơn %s: %s", booking.getBookingCode(), request.getDisputeReason().trim()),
                     booking.getStatus(),
                     booking.getStatus()
             );
@@ -3834,7 +3889,7 @@ public class HandoverServiceImpl implements HandoverService {
 
         } else if ("AGREED".equals(decision)) {
             if ("DISPUTED".equalsIgnoreCase(record.getApprovalStatus()) && record.getDisputeResolvedAt() == null) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ Ä‘ang trong quĂ¡ trĂ¬nh khiáº¿u náº¡i chÆ°a giáº£i quyáº¿t xong.");
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ đang trong quá trình khiếu nại chưa giải quyết xong.");
             }
 
             record.setCustomerDecision("AGREED");
@@ -3849,7 +3904,7 @@ public class HandoverServiceImpl implements HandoverService {
                 if (request.getBankName() == null || request.getBankName().isBlank()
                         || request.getBankAccountNumber() == null || request.getBankAccountNumber().isBlank()
                         || request.getBankAccountName() == null || request.getBankAccountName().isBlank()) {
-                    throw new AppException(ErrorCode.INVALID_REQUEST, "Khoáº£n hoĂ n tiá»n cá»c > 0. QuĂ½ khĂ¡ch vui lĂ²ng cung cáº¥p Ä‘áº§y Ä‘á»§ thĂ´ng tin ngĂ¢n hĂ ng Ä‘á»ƒ nháº­n tiá»n hoĂ n.");
+                    throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản hoàn tiền cọc > 0. Quý khách vui lòng cung cấp đầy đủ thông tin ngân hàng để nhận tiền hoàn.");
                 }
 
                 String bName = request.getBankName().trim();
@@ -3877,7 +3932,7 @@ public class HandoverServiceImpl implements HandoverService {
                             .bankName(bName)
                             .bankAccountNumber(bAccNum)
                             .bankAccountName(bAccName)
-                            .reason(String.format("Quyáº¿t toĂ¡n tráº£ kho V%d Ä‘Æ¡n %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()))
+                            .reason(String.format("Quyết toán trả kho V%d đơn %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()))
                             .status(RefundStatus.PENDING_REVIEW)
                             .requestedBy(booking.getCustomer())
                             .build();
@@ -3897,10 +3952,10 @@ public class HandoverServiceImpl implements HandoverService {
                 }
             }
 
-            String logMsg = String.format("[%s] KHĂCH HĂ€NG ÄĂƒ Äá»’NG Ă káº¿t quáº£ quyáº¿t toĂ¡n (V%d). Tiá»n hoĂ n: %sÄ‘, Tiá»n ná»£ thĂªm: %sÄ‘\n",
+            String logMsg = String.format("[%s] KHÁCH HÀNG ĐÃ ĐỒNG Ý kết quả quyết toán (V%d). Tiền hoàn: %sđ, Tiền nợ thêm: %sđ\n",
                     LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, netRefund, additionalDue);
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHĂCH HĂ€NG Äá»’NG Ă] " + logMsg.trim());
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHÁCH HÀNG ĐỒNG Ý] " + logMsg.trim());
             record = handoverRecordRepository.save(record);
             bookingRepository.save(booking);
 
@@ -3909,7 +3964,7 @@ public class HandoverServiceImpl implements HandoverService {
                     ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
                     "HandoverRecord",
                     record.getId(),
-                    String.format("KhĂ¡ch hĂ ng Ä‘á»“ng Ă½ quyáº¿t toĂ¡n V%d Ä‘Æ¡n %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()),
+                    String.format("Khách hàng đồng ý quyết toán V%d đơn %s", record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, booking.getBookingCode()),
                     booking.getStatus(),
                     booking.getStatus()
             );
@@ -3917,7 +3972,7 @@ public class HandoverServiceImpl implements HandoverService {
             return calculateSettlement(bookingId, null);
 
         } else {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Quyáº¿t Ä‘á»‹nh khĂ´ng há»£p lá»‡. Vui lĂ²ng chá»n AGREED hoáº·c DISPUTED.");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Quyết định không hợp lệ. Vui lòng chọn AGREED hoặc DISPUTED.");
         }
     }
 
@@ -3943,14 +3998,14 @@ public class HandoverServiceImpl implements HandoverService {
         // STAFF, BUSINESS_MANAGER, ADMIN are NOT allowed to resolve disputes!
         if (!"FACILITY_MANAGER".equalsIgnoreCase(roleName)) {
             throw new AppException(ErrorCode.RETURN_UNAUTHORIZED_APPROVAL,
-                    "Chá»‰ Quáº£n lĂ½ cÆ¡ sá»Ÿ (FACILITY_MANAGER) má»›i cĂ³ tháº©m quyá»n tiáº¿p nháº­n vĂ  giáº£i quyáº¿t khiáº¿u náº¡i nĂ y!");
+                    "Chỉ Quản lý cơ sở (FACILITY_MANAGER) mới có thẩm quyền tiếp nhận và giải quyết khiếu nại này!");
         }
 
         HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         if (!"DISPUTED".equalsIgnoreCase(record.getCustomerDecision()) && !"DISPUTED".equalsIgnoreCase(record.getApprovalStatus())) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ khĂ´ng á»Ÿ tráº¡ng thĂ¡i khiáº¿u náº¡i tranh cháº¥p!");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ không ở trạng thái khiếu nại tranh chấp!");
         }
 
         String action = request.getAction() != null ? request.getAction().trim().toUpperCase() : "";
@@ -3996,10 +4051,10 @@ public class HandoverServiceImpl implements HandoverService {
             record.setDisputeResolvedAt(LocalDateTime.now());
             record.setDisputeResolutionNote(request.getResolutionNote());
 
-            String logMsg = String.format("[%s] Quáº£n lĂ½ cÆ¡ sá»Ÿ %s ÄĂƒ ÄIá»€U CHá»ˆNH QUYáº¾T TOĂN sang phiĂªn báº£n V%d. Kháº¥u trá»« má»›i: %s VNÄ, HoĂ n: %s VNÄ, Ná»£ thĂªm: %s VNÄ. Ghi chĂº: %s\n",
+            String logMsg = String.format("[%s] Quản lý cơ sở %s ĐÃ ĐIỀU CHỈNH QUYẾT TOÁN sang phiên bản V%d. Khấu trừ mới: %s VNĐ, Hoàn: %s VNĐ, Nợ thêm: %s VNĐ. Ghi chú: %s\n",
                     LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), nextVersion, totalProposed, netRefund, additionalDue, request.getResolutionNote());
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[ÄIá»€U CHá»ˆNH QUYáº¾T TOĂN V" + nextVersion + "] " + request.getResolutionNote());
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[ĐIỀU CHỈNH QUYẾT TOÁN V" + nextVersion + "] " + request.getResolutionNote());
             record = handoverRecordRepository.save(record);
             bookingRepository.save(booking);
 
@@ -4014,9 +4069,9 @@ public class HandoverServiceImpl implements HandoverService {
                         .notificationType(NotificationType.REFUND_STATUS)
                         .referenceType("BOOKING")
                         .referenceId(booking.getId())
-                        .title(String.format("Boxora Ä‘Ă£ Ä‘iá»u chá»‰nh quyáº¿t toĂ¡n tráº£ kho V%d [%s]", nextVersion, unit != null ? unit.getUnitCode() : ""))
-                        .content(String.format("Quáº£n lĂ½ cÆ¡ sá»Ÿ Ä‘Ă£ xem xĂ©t khiáº¿u náº¡i vĂ  Ä‘iá»u chá»‰nh quyáº¿t toĂ¡n (V%d). Sá»‘ tiá»n kháº¥u trá»«: %sÄ‘ -> %s. Vui lĂ²ng xem láº¡i vĂ  xĂ¡c nháº­n táº¡i Customer Dashboard.",
-                                nextVersion, totalProposed, (netRefund.compareTo(BigDecimal.ZERO) > 0 ? "HoĂ n: " + netRefund + "Ä‘" : "Ná»™p thĂªm: " + additionalDue + "Ä‘")))
+                        .title(String.format("Boxora đã điều chỉnh quyết toán trả kho V%d [%s]", nextVersion, unit != null ? unit.getUnitCode() : ""))
+                        .content(String.format("Quản lý cơ sở đã xem xét khiếu nại và điều chỉnh quyết toán (V%d). Số tiền khấu trừ: %sđ -> %s. Vui lòng xem lại và xác nhận tại Khách Hàng Dashboard.",
+                                nextVersion, totalProposed, (netRefund.compareTo(BigDecimal.ZERO) > 0 ? "Hoàn: " + netRefund + "đ" : "Nộp thêm: " + additionalDue + "đ")))
                         .status("SENT")
                         .build();
                 notificationLogRepository.save(notif);
@@ -4031,10 +4086,10 @@ public class HandoverServiceImpl implements HandoverService {
             record.setCustomerDecision("PENDING"); // Customer reviews manager's explanation and responds
             record.setApprovalStatus("DISPUTE_UPHELD");
 
-            String logMsg = String.format("[%s] Quáº£n lĂ½ cÆ¡ sá»Ÿ %s Báº¢O LÆ¯U Káº¾T QUáº¢ QUYáº¾T TOĂN V%d. LĂ½ do: %s\n",
+            String logMsg = String.format("[%s] Quản lý cơ sở %s BẢO LƯU KẾT QUẢ QUYẾT TOÁN V%d. Lý do: %s\n",
                     LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1, request.getResolutionNote());
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[Báº¢O LÆ¯U QUYáº¾T TOĂN] " + request.getResolutionNote());
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[BẢO LƯU QUYẾT TOÁN] " + request.getResolutionNote());
             record = handoverRecordRepository.save(record);
             bookingRepository.save(booking);
 
@@ -4048,8 +4103,8 @@ public class HandoverServiceImpl implements HandoverService {
                         .notificationType(NotificationType.REFUND_STATUS)
                         .referenceType("BOOKING")
                         .referenceId(booking.getId())
-                        .title(String.format("Káº¿t quáº£ giáº£i quyáº¿t khiáº¿u náº¡i tráº£ kho [%s]", unit != null ? unit.getUnitCode() : ""))
-                        .content(String.format("Quáº£n lĂ½ cÆ¡ sá»Ÿ Ä‘Ă£ pháº£n há»“i khiáº¿u náº¡i quyáº¿t toĂ¡n Ä‘Æ¡n %s: %s. Vui lĂ²ng xem chi tiáº¿t táº¡i Customer Dashboard.",
+                        .title(String.format("Kết quả giải quyết khiếu nại trả kho [%s]", unit != null ? unit.getUnitCode() : ""))
+                        .content(String.format("Quản lý cơ sở đã phản hồi khiếu nại quyết toán đơn %s: %s. Vui lòng xem chi tiết tại Khách Hàng Dashboard.",
                                 booking.getBookingCode(), request.getResolutionNote()))
                         .status("SENT")
                         .build();
@@ -4059,7 +4114,7 @@ public class HandoverServiceImpl implements HandoverService {
             return calculateSettlement(bookingId, null);
 
         } else {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "HĂ nh Ä‘á»™ng giáº£i quyáº¿t khiáº¿u náº¡i khĂ´ng há»£p lá»‡ (ADJUST_SETTLEMENT hoáº·c UPHOLD_SETTLEMENT).");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hành động giải quyết khiếu nại không hợp lệ (ADJUST_SETTLEMENT hoặc UPHOLD_SETTLEMENT).");
         }
     }
 
@@ -4084,27 +4139,27 @@ public class HandoverServiceImpl implements HandoverService {
         // STRICT RBAC: Only BUSINESS_MANAGER or ADMIN can execute payout!
         if (!"BUSINESS_MANAGER".equalsIgnoreCase(roleName) && !"ADMIN".equalsIgnoreCase(roleName)) {
             throw new AppException(ErrorCode.RETURN_UNAUTHORIZED_APPROVAL,
-                    "Chá»‰ Quáº£n lĂ½ váº­n hĂ nh kinh doanh (BUSINESS_MANAGER) hoáº·c Quáº£n trá»‹ viĂªn (ADMIN) má»›i cĂ³ tháº©m quyá»n giáº£i ngĂ¢n hoĂ n tiá»n!");
+                    "Chỉ Quản lý vận hành kinh doanh (BUSINESS_MANAGER) hoặc Quản trị viên (ADMIN) mới có thẩm quyền giải ngân hoàn tiền!");
         }
 
         HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         if (!"AGREED".equalsIgnoreCase(record.getCustomerDecision())) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "KhĂ¡ch hĂ ng chÆ°a Ä‘á»“ng Ă½ vá»›i káº¿t quáº£ quyáº¿t toĂ¡n. KhĂ´ng thá»ƒ giáº£i ngĂ¢n.");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Khách hàng chưa đồng ý với kết quả quyết toán. Không thể giải ngân.");
         }
 
         if ("REFUNDED".equalsIgnoreCase(record.getRefundStatus())) {
-            throw new AppException(ErrorCode.RETURN_ALREADY_REFUNDED, "Khoáº£n tiá»n nĂ y Ä‘Ă£ Ä‘Æ°á»£c giáº£i ngĂ¢n hoĂ n táº¥t trÆ°á»›c Ä‘Ă³.");
+            throw new AppException(ErrorCode.RETURN_ALREADY_REFUNDED, "Khoản tiền này đã được giải ngân hoàn tất trước đó.");
         }
 
         BigDecimal refundAmount = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
         if (refundAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Sá»‘ tiá»n hoĂ n báº±ng 0 VNÄ. KhĂ´ng thá»ƒ thá»±c hiá»‡n giáº£i ngĂ¢n.");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Số tiền hoàn bằng 0 VNĐ. Không thể thực hiện giải ngân.");
         }
 
         if (record.getBankAccountNumber() == null || record.getBankAccountNumber().isBlank()) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Há»“ sÆ¡ chÆ°a cĂ³ thĂ´ng tin tĂ i khoáº£n ngĂ¢n hĂ ng cá»§a khĂ¡ch hĂ ng.");
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hồ sơ chưa có thông tin tài khoản ngân hàng của khách hàng.");
         }
 
         String txnRef = request.getTransactionReference().trim();
@@ -4131,7 +4186,7 @@ public class HandoverServiceImpl implements HandoverService {
         record.setRefundMethod("BANK_TRANSFER");
         record = handoverRecordRepository.save(record);
 
-        String logMsg = String.format("[%s] Quáº£n lĂ½ %s (%s) ÄĂƒ XĂC NHáº¬N GIáº¢I NGĂ‚N hoĂ n cá»c %s VNÄ vĂ o TK %s - %s (MĂ£ GD: %s)\n",
+        String logMsg = String.format("[%s] Quản lý %s (%s) ĐÃ XÁC NHẬN GIẢI NGÂN hoàn cọc %s VNĐ vào TK %s - %s (Mã GD: %s)\n",
                 LocalDateTime.now().format(CHECKIN_DT_FMT), operator.getFullName(), roleName, refundAmount,
                 record.getBankName(), record.getBankAccountNumber(), txnRef);
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
@@ -4148,8 +4203,8 @@ public class HandoverServiceImpl implements HandoverService {
                     .notificationType(NotificationType.REFUND_PAYOUT_COMPLETED)
                     .referenceType("BOOKING")
                     .referenceId(booking.getId())
-                    .title(String.format("Giáº£i ngĂ¢n hoĂ n tiá»n cá»c thĂ nh cĂ´ng [%s]", unit != null ? unit.getUnitCode() : ""))
-                    .content(String.format("Boxora Ä‘Ă£ hoĂ n táº¥t chuyá»ƒn khoáº£n sá»‘ tiá»n %s VNÄ vĂ o tĂ i khoáº£n ngĂ¢n hĂ ng %s (%s) cá»§a báº¡n. MĂ£ giao dá»‹ch ngĂ¢n hĂ ng: %s.",
+                    .title(String.format("Giải ngân hoàn tiền cọc thành công [%s]", unit != null ? unit.getUnitCode() : ""))
+                    .content(String.format("Boxora đã hoàn tất chuyển khoản số tiền %s VNĐ vào tài khoản ngân hàng %s (%s) của bạn. Mã giao dịch ngân hàng: %s.",
                             refundAmount, record.getBankName(), record.getBankAccountNumber(), txnRef))
                     .status("SENT")
                     .build();
@@ -4161,7 +4216,7 @@ public class HandoverServiceImpl implements HandoverService {
                 ActivityAction.REFUND_REQUEST_CREATE,
                 "HandoverRecord",
                 record.getId(),
-                String.format("Giáº£i ngĂ¢n hoĂ n tiá»n cá»c %s VNÄ cho Ä‘Æ¡n %s (MĂ£ GD: %s)", refundAmount, booking.getBookingCode(), txnRef),
+                String.format("Giải ngân hoàn tiền cọc %s VNĐ cho đơn %s (Mã GD: %s)", refundAmount, booking.getBookingCode(), txnRef),
                 null,
                 null
         );

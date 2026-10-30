@@ -36,6 +36,7 @@ import {
   Save
 } from 'lucide-react'
 import { toast } from '../../../utils/toast'
+import { getApiBaseUrl } from '../../../lib/axios'
 import { handoverService, ReturnCase, ReturnInspectionPayload } from '../../../services/handoverService'
 import type { Booking } from '../../../types'
 
@@ -205,6 +206,22 @@ const resolveInspectionNote = (passed: boolean, existingNotes: string | undefine
   return ''
 }
 
+const resolveImageUrl = (url: string | null | undefined): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  return base ? `${base}${cleanUrl}` : cleanUrl
+}
+
 export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = ({
   currentFacilityId,
   facilityName = 'Boxora Thủ Đức',
@@ -347,7 +364,36 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvedDeductions: item.approvedDeductions || 0,
           netRefundAmount: item.netRefundAmount || 0,
           additionalAmountDue: item.additionalAmountDue || 0,
-          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus),
+          status: (() => {
+            const itemHasIssue =
+              item.doorPassed === false ||
+              item.cleanlinessPassed === false ||
+              item.damagePassed === false ||
+              item.smartLockPassed === false ||
+              item.assetsClearedPassed === false ||
+              item.envPassed === false ||
+              (item.totalDeduction !== undefined && item.totalDeduction > 0) ||
+              item.status === 'INSPECTION_ISSUE' ||
+              item.inspectionStatus === 'INSPECTION_ISSUE' ||
+              item.inspectionStatus === 'ISSUE'
+
+            if (item.status === 'COMPLETED' || item.status === 'REFUNDED' || item.status === 'REFUND_PROCESSING' || item.status === 'DISPUTED') {
+              return normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus)
+            }
+            if (item.approvalStatus === 'APPROVED' || item.approvalStatus === 'REFUND_APPROVED') {
+              return 'REFUND_APPROVED'
+            }
+            if (item.approvalStatus === 'PENDING' || item.approvalStatus === 'PENDING_APPROVAL' || item.approvalStatus === 'REFUND_PENDING_APPROVAL') {
+              return 'REFUND_PENDING_APPROVAL'
+            }
+            if (itemHasIssue) {
+              return 'INSPECTION_ISSUE'
+            }
+            if (item.status === 'INSPECTION_PASSED' || item.inspectionStatus === 'INSPECTION_PASSED' || item.doorPassed !== undefined) {
+              return 'INSPECTION_PASSED'
+            }
+            return normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus)
+          })(),
           inspectionStatus: item.inspectionStatus,
           approvalStatus: item.approvalStatus,
           additionalPaymentStatus: item.additionalPaymentStatus,
@@ -1381,7 +1427,35 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
         await handoverService.saveReturnInspection(payload)
       }
-      toast.success(isDraft ? 'Đã lưu bản nháp nghiệm thu thành công!' : 'Đã lưu biên bản nghiệm thu hiện trường!')
+      const newStatus: ReturnStepStatus = isDraft
+        ? 'INSPECTION_IN_PROGRESS'
+        : (resultType === 'ISSUE' ? 'INSPECTION_ISSUE' : 'INSPECTION_PASSED')
+
+      updateCurrentCase({
+        status: newStatus,
+        inspectionStatus: newStatus,
+        approvalStatus: 'NONE',
+        doorPassed,
+        doorFee: doorPassed ? 0 : doorFeeInput,
+        cleanlinessPassed,
+        cleaningFee: cleanlinessPassed ? 0 : cleaningFeeInput,
+        damagePassed,
+        damageFee: damagePassed ? 0 : damageFeeInput,
+        smartLockPassed,
+        smartLockFee: smartLockPassed || smartLockIssueType !== 'CUSTOMER_FAULT' ? 0 : smartLockFeeInput,
+        smartLockIssueType,
+        assetsClearedPassed,
+        envPassed,
+        totalDeduction,
+        photoUrls
+      })
+
+      const successToast = isDraft
+        ? 'Đã lưu bản nháp nghiệm thu thành công!'
+        : (resultType === 'ISSUE'
+            ? 'Đã cập nhật biên bản: CÓ HƯ HẠI / KHẤU TRỪ thành công!'
+            : 'Đã cập nhật biên bản: NGHIỆM THU ĐẠT CHUẨN thành công!')
+      toast.success(successToast)
       await fetchReturnCases()
       setSavedSnapshot(createSnapshot())
       return true
@@ -2615,29 +2689,42 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           </div>
                         ) : (
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                            {photoUrls.map((url, i) => (
-                              <div
-                                key={i}
-                                className="group relative rounded-xl overflow-hidden h-28 bg-slate-100 border border-slate-200 shadow-2xs cursor-pointer"
-                                onClick={() => setPreviewImageModal(url)}
-                              >
-                                <img src={url} alt={`Hiện trường ${i + 1}`} className="w-full h-full object-cover transition-transform group-hover:scale-105" />
-                                <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-mono font-medium truncate max-w-[80%]">
-                                  Ảnh {i + 1}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleRemovePhoto(i)
-                                  }}
-                                  className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
-                                  title="Gỡ ảnh này"
+                            {photoUrls.map((url, i) => {
+                              const resolved = resolveImageUrl(url)
+                              return (
+                                <div
+                                  key={i}
+                                  className="group relative rounded-xl overflow-hidden h-28 bg-slate-100 border border-slate-200 shadow-2xs cursor-pointer hover:border-blue-400 transition"
+                                  onClick={() => setPreviewImageModal(resolved)}
                                 >
-                                  ✕ Xóa
-                                </button>
-                              </div>
-                            ))}
+                                  <img
+                                    src={resolved}
+                                    alt={`Hiện trường ${i + 1}`}
+                                    className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                                    loading="lazy"
+                                    onError={(e) => {
+                                      const target = e.currentTarget
+                                      target.onerror = null
+                                      target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80'
+                                    }}
+                                  />
+                                  <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 bg-slate-900/80 text-white text-[10px] rounded font-mono font-medium truncate max-w-[80%]">
+                                    Ảnh {i + 1}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleRemovePhoto(i)
+                                    }}
+                                    className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-md bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-bold shadow-xs transition cursor-pointer"
+                                    title="Gỡ ảnh này"
+                                  >
+                                    ✕ Xóa
+                                  </button>
+                                </div>
+                              )
+                            })}
 
                             <div
                               onClick={() => fileInputRef.current?.click()}
@@ -3008,11 +3095,19 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           <div className="space-y-1">
                             <div className="text-[11px] text-slate-500 font-semibold">Ảnh minh chứng đính kèm từ khách:</div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              {currentCase.disputeEvidenceUrls.map((url, idx) => (
-                                <a key={idx} href={url} target="_blank" rel="noreferrer" className="text-indigo-600 underline text-xs">
-                                  Minh chứng #{idx + 1}
-                                </a>
-                              ))}
+                              {currentCase.disputeEvidenceUrls.map((url, idx) => {
+                                const resolved = resolveImageUrl(url)
+                                return (
+                                  <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => setPreviewImageModal(resolved)}
+                                    className="text-indigo-600 hover:text-indigo-800 underline text-xs cursor-pointer font-medium"
+                                  >
+                                    Minh chứng #{idx + 1}
+                                  </button>
+                                )
+                              })}
                             </div>
                           </div>
                         )}
@@ -3719,7 +3814,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
               </button>
             </div>
             <div className="rounded-xl overflow-hidden max-h-[70vh] flex items-center justify-center bg-slate-900">
-              <img src={previewImageModal} alt="Preview" className="max-w-full max-h-[70vh] object-contain" />
+              <img
+                src={resolveImageUrl(previewImageModal)}
+                alt="Preview"
+                className="max-w-full max-h-[70vh] object-contain"
+                onError={(e) => {
+                  const target = e.currentTarget
+                  target.onerror = null
+                  target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=600&q=80'
+                }}
+              />
             </div>
           </div>
         </div>

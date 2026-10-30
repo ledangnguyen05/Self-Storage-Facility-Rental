@@ -2921,24 +2921,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200/60">
                             {activePendingRenewal.status === 'PENDING_SIGNATURE' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRenewalForDocModal(activePendingRenewal)}
-                                  className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">draw</span>
-                                  <span>Ký Phụ Lục Gia Hạn Ngay</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSwitchRenewalMethod(activePendingRenewal)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">storefront</span>
-                                  <span>Đổi sang tại quầy</span>
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRenewalForDocModal(activePendingRenewal)}
+                                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">draw</span>
+                                <span>Ký Phụ Lục Gia Hạn Ngay</span>
+                              </button>
                             )}
 
                             {activePendingRenewal.status === 'PENDING_PAYMENT' && (
@@ -2963,14 +2953,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 >
                                   <span className="material-symbols-outlined text-[14px]">description</span>
                                   <span>Xem phụ lục đã ký</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSwitchRenewalMethod(activePendingRenewal)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">swap_horiz</span>
-                                  <span>Đổi phương thức</span>
                                 </button>
                               </>
                             )}
@@ -4725,24 +4707,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex flex-wrap items-center justify-end gap-1.5">
                             {r.status === 'PENDING_SIGNATURE' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedRenewalForDocModal(r)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer"
-                                >
-                                  <span className="material-symbols-outlined text-[14px]">draw</span>
-                                  <span>Ký phụ lục</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSwitchRenewalMethod(r)}
-                                  className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer"
-                                  title="Đổi sang ký phụ lục và đóng phí tại quầy lễ tân"
-                                >
-                                  Tại quầy
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedRenewalForDocModal(r)}
+                                className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">draw</span>
+                                <span>Ký phụ lục</span>
+                              </button>
                             )}
                             {r.status === 'PENDING_PAYMENT' && (
                               <>
@@ -4762,13 +4734,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 >
                                   <span className="material-symbols-outlined text-[14px]">description</span>
                                   <span>Phụ lục</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenSwitchRenewalMethod(r)}
-                                  className="px-2 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold transition cursor-pointer"
-                                >
-                                  Tại quầy
                                 </button>
                               </>
                             )}

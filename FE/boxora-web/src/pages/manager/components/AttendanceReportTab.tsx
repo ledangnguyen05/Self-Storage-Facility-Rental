@@ -368,11 +368,14 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
               className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-800 font-medium text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
             >
               <option value="ALL">Tất cả nhân sự ({staffList.length})</option>
-              {staffList.map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.fullName || s.username} ({s.email})
-                </option>
-              ))}
+              {staffList.map(s => {
+                const role = (s.roleName || s.role?.name || 'STAFF').toUpperCase()
+                return (
+                  <option key={s.id} value={s.id}>
+                    {s.fullName || s.username} [{role}] ({s.email})
+                  </option>
+                )
+              })}
             </select>
           </div>
         </div>

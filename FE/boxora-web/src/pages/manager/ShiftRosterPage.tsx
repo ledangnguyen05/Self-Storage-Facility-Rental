@@ -71,6 +71,50 @@ const getWeekRange = (refDate: Date): { from: string; to: string } => {
   return { from: formatDateLocal(mon), to: formatDateLocal(sun) }
 }
 
+const getStaffRoleBadge = (roleName?: string) => {
+  const norm = (roleName || '').toUpperCase().trim()
+  switch (norm) {
+    case 'ADMIN':
+    case 'SYSTEM_ADMIN':
+      return {
+        label: 'ADMIN',
+        title: 'Quản trị viên hệ thống',
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200'
+      }
+    case 'BUSINESS_MANAGER':
+      return {
+        label: 'BUSINESS_MANAGER',
+        title: 'Quản lý kinh doanh',
+        badgeClass: 'bg-orange-50 text-orange-700 border-orange-200'
+      }
+    case 'FACILITY_MANAGER':
+      return {
+        label: 'FACILITY_MANAGER',
+        title: 'Quản lý cơ sở kho',
+        badgeClass: 'bg-blue-50 text-blue-700 border-blue-200'
+      }
+    case 'STAFF':
+      return {
+        label: 'STAFF',
+        title: 'Nhân viên trực ca',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      }
+    case 'CUSTOMER':
+      return {
+        label: 'CUSTOMER',
+        title: 'Khách hàng',
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
+      }
+    default:
+      return {
+        label: norm || 'STAFF',
+        title: norm ? `Vai trò ${norm}` : 'Nhân sự trực ca',
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
+      }
+  }
+}
+
+
 export const ShiftRosterPage: React.FC = () => {
   const { user } = useAuth()
   const { selectedFacility: contextFacilityId, setSelectedFacility: setContextFacilityId, facilities: contextFacilities } = useOutletContext<{
@@ -102,7 +146,7 @@ export const ShiftRosterPage: React.FC = () => {
   const [dateShortcut, setDateShortcut] = useState<'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH' | 'CUSTOM'>('THIS_WEEK')
   const [dateRangeError, setDateRangeError] = useState<string | null>(null)
 
-  const [activeTab, setActiveTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF' | 'ATTENDANCE'>('ROSTER')
+  const [activeTab, setActiveTab] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>('ROSTER')
 
   // Real Data States
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
@@ -1040,19 +1084,6 @@ export const ShiftRosterPage: React.FC = () => {
 
         <button
           type="button"
-          onClick={() => setActiveTab('HANDOVERS')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'HANDOVERS'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
-          <span>Biên Bản Bàn Giao Ca ({handovers.length})</span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveTab('STAFF')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'STAFF'
@@ -1149,7 +1180,7 @@ export const ShiftRosterPage: React.FC = () => {
                 <option value="ALL">Tất cả nhân sự ({staffList.length})</option>
                 {staffList.map(s => (
                   <option key={s.id} value={s.id}>
-                    {s.fullName || s.username} ({s.email})
+                    {s.fullName || s.username} [{getStaffRoleBadge(s.roleName || s.role?.name || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')).label}] ({s.email})
                   </option>
                 ))}
               </select>
@@ -1698,385 +1729,6 @@ export const ShiftRosterPage: React.FC = () => {
         </div>
       )}
 
-      {/* TAB 3: HANDOVERS (Biên bản bàn giao ca) */}
-      {activeTab === 'HANDOVERS' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Biên Bản Bàn Giao Ca Trực</h2>
-              <p className="text-xs text-slate-500">Đối soát trách nhiệm vận hành, sự cố chưa đóng, két quỹ quầy và điều phối nhân sự</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowHandoverModal(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer self-start sm:self-auto"
-            >
-              <span className="material-symbols-outlined text-[18px]">add_task</span>
-              <span>Lập biên bản bàn giao ca</span>
-            </button>
-          </div>
-
-          {handovers.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              Chưa có biên bản bàn giao ca nào tại cơ sở này trong khoảng thời gian đã chọn.
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                    <th className="py-3 px-4">Ngày &amp; Ca</th>
-                    <th className="py-3 px-4">Loại hình</th>
-                    <th className="py-3 px-4">Người giao &rarr; Người nhận</th>
-                    <th className="py-3 px-4">Việc tồn đọng &amp; Sự cố</th>
-                    <th className="py-3 px-4 text-right">Két quầy &amp; Chênh lệch</th>
-                    <th className="py-3 px-4 text-center">Trạng thái</th>
-                    <th className="py-3 px-4 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {handovers.map(h => {
-                    const isAck = h.status === 'ACKNOWLEDGED'
-                    const isPendingDispatch = h.status === 'PENDING_DISPATCH'
-                    const isDiscrepancy = h.status === 'DISCREPANCY'
-                    const isSubmitted = h.status === 'SUBMITTED'
-                    const isDraft = h.status === 'DRAFT'
-                    const isRejected = h.status === 'REJECTED'
-                    const isLoadingAction = actionLoadingId === h.id
-                    const isMyOwnHandover = h.outgoingStaffId === user?.id
-
-                    const handoverTypeLabel =
-                      h.handoverType === 'EMERGENCY' ? 'Bàn giao đột xuất' :
-                      h.handoverType === 'RESPONSIBILITY_TRANSFER' ? 'Chuyển giao trách nhiệm' :
-                      'Định kỳ đổi ca'
-
-                    const handoverTypeClass =
-                      h.handoverType === 'EMERGENCY' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                      h.handoverType === 'RESPONSIBILITY_TRANSFER' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                      'bg-blue-50 text-blue-700 border-blue-200'
-
-                    return (
-                      <tr key={h.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{h.shift}</div>
-                          {h.targetShift && h.targetShift !== h.shift && (
-                            <div className="text-[10px] text-blue-600 font-semibold">
-                              Ca nhận: {h.targetShift}
-                            </div>
-                          )}
-                          <div className="text-[11px] text-slate-500 font-mono">{h.handoverDate}</div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span className={`inline-block px-2 py-0.5 rounded-md font-bold text-[10px] border ${handoverTypeClass}`}>
-                            {handoverTypeLabel}
-                          </span>
-                          {h.emergencyReason && (
-                            <div className="text-[10px] text-rose-600 italic mt-1 max-w-xs truncate" title={h.emergencyReason}>
-                              Lý do: {h.emergencyReason}
-                            </div>
-                          )}
-                          {h.transferScope && (
-                            <div className="text-[10px] text-purple-600 font-mono mt-0.5">
-                              Phạm vi: {h.transferScope}
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <div className="font-medium text-slate-800">
-                            <strong>{h.outgoingStaffName || h.outgoingStaffUsername}</strong>
-                          </div>
-                          <div className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
-                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                            {h.incomingStaffName || h.incomingStaffUsername ? (
-                              <span className="font-semibold text-slate-800">
-                                {h.incomingStaffName || h.incomingStaffUsername}
-                              </span>
-                            ) : (
-                              <span className="text-amber-700 italic font-medium">
-                                (Chờ Quản lý điều phối)
-                              </span>
-                            )}
-                          </div>
-                          {h.dispatchedByName && (
-                            <div className="text-[10px] text-emerald-700 italic mt-0.5">
-                              ✓ QL {h.dispatchedByName} đã điều phối
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <div className="text-slate-800 max-w-xs truncate" title={h.pendingTasks || 'Không có việc tồn đọng'}>
-                            {h.pendingTasks || 'Không có việc tồn đọng'}
-                          </div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">
-                            Ticket: <strong className="text-rose-600">{h.pendingTicketsCount}</strong> • Đơn chờ: <strong className="text-blue-600">{h.unresolvedBookingsCount}</strong>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <div className="font-mono font-bold text-slate-900">
-                            {Number(h.cashInDrawer || 0).toLocaleString('vi-VN')} đ
-                          </div>
-                          {h.cashCounted !== undefined && h.cashCounted !== null && (
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              Thực đếm: {Number(h.cashCounted).toLocaleString('vi-VN')} đ
-                            </div>
-                          )}
-                          {Boolean(h.cashDiscrepancy && h.cashDiscrepancy !== 0) && (
-                            <div className="text-[10px] font-bold text-rose-600 font-mono mt-0.5" title={h.cashDiscrepancyReason || 'Chênh lệch tiền két quầy'}>
-                              Lệch: {(h.cashDiscrepancy ?? 0) > 0 ? `+${Number(h.cashDiscrepancy).toLocaleString('vi-VN')}` : Number(h.cashDiscrepancy).toLocaleString('vi-VN')} đ
-                            </div>
-                          )}
-                        </td>
-
-                        <td className="py-3 px-4 text-center">
-                          <span
-                            className={`inline-block px-2.5 py-0.5 rounded-full font-bold text-[11px] border ${
-                              isAck ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                              isPendingDispatch ? 'bg-amber-50 text-amber-800 border-amber-300 animate-pulse' :
-                              isDiscrepancy ? 'bg-rose-50 text-rose-700 border-rose-300' :
-                              isSubmitted ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                              isDraft ? 'bg-slate-100 text-slate-600 border-slate-200' :
-                              isRejected ? 'bg-rose-100 text-rose-800 border-rose-200' :
-                              'bg-slate-50 text-slate-600 border-slate-200'
-                            }`}
-                          >
-                            {isAck ? 'Đã nhận ca' :
-                             isPendingDispatch ? 'Chờ điều phối' :
-                             isDiscrepancy ? 'Có chênh lệch' :
-                             isSubmitted ? 'Chờ nhận ca' :
-                             isDraft ? 'Bản nháp' :
-                             isRejected ? 'Đã từ chối' : h.status}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Nút Điều phối dành cho Quản lý khi PENDING_DISPATCH */}
-                            {isPendingDispatch && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setDispatchHandoverTarget(h)
-                                  setDispatchStaffId('')
-                                  setDispatchNotes('')
-                                }}
-                                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">person_add</span>
-                                <span>Điều phối</span>
-                              </button>
-                            )}
-
-                            {/* Nút Tiếp nhận / Từ chối khi SUBMITTED hoặc DISCREPANCY */}
-                            {(isSubmitted || isDiscrepancy) && (
-                              isMyOwnHandover ? (
-                                <span className="text-[11px] text-slate-400 italic font-semibold">
-                                  Người giao ca
-                                </span>
-                              ) : (
-                                <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    disabled={isLoadingAction}
-                                    onClick={() => {
-                                      setRejectHandoverTarget(h)
-                                      setRejectHandoverReason('')
-                                    }}
-                                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
-                                  >
-                                    <span className="material-symbols-outlined text-[15px]">close</span>
-                                    <span>Từ chối</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={isLoadingAction}
-                                    onClick={() => handleAcknowledgeHandover(h.id)}
-                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
-                                  >
-                                    <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                                    <span>Tiếp nhận</span>
-                                  </button>
-                                </div>
-                              )
-                            )}
-
-                            {isAck && (
-                              <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-0.5">
-                                <span className="material-symbols-outlined text-[14px]">done_all</span>
-                                <span>Hoàn tất</span>
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* MODAL ĐIỀU PHỐI NHÂN SỰ TIẾP NHẬN BÀN GIAO CA (DÀNH CHO QUẢN LÝ) */}
-          {dispatchHandoverTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-              <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 text-left">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
-                      <span className="material-symbols-outlined text-[20px]">person_add</span>
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">Điều Phối Nhân Sự Tiếp Nhận</h3>
-                      <p className="text-xs text-slate-500">{dispatchHandoverTarget.shift} • {dispatchHandoverTarget.handoverDate}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDispatchHandoverTarget(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">close</span>
-                  </button>
-                </div>
-
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
-                  <div>Người bàn giao: <strong>{dispatchHandoverTarget.outgoingStaffName || dispatchHandoverTarget.outgoingStaffUsername}</strong></div>
-                  <div>Loại bàn giao: <strong className="text-rose-700">{dispatchHandoverTarget.handoverType}</strong></div>
-                  {dispatchHandoverTarget.emergencyReason && (
-                    <div className="text-rose-600 italic">Lý do khẩn cấp: {dispatchHandoverTarget.emergencyReason}</div>
-                  )}
-                </div>
-
-                <form onSubmit={handleDispatchSubmit} className="flex flex-col gap-3 text-xs">
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">
-                      Chỉ định nhân sự tiếp nhận bàn giao <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={dispatchStaffId}
-                      onChange={e => setDispatchStaffId(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 focus:bg-white"
-                    >
-                      <option value="">-- Chọn nhân sự tại chi nhánh --</option>
-                      {staffList
-                        .filter(s => s.id !== dispatchHandoverTarget.outgoingStaffId && s.isActive !== false)
-                        .map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.fullName || s.username} ({s.email}) — [{s.roleName || 'Nhân sự'}]
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">
-                      Ghi chú điều phối của Quản lý
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={dispatchNotes}
-                      onChange={e => setDispatchNotes(e.target.value)}
-                      placeholder="Ghi chú phân công nhiệm vụ, căn cứ điều phối..."
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-blue-500 focus:bg-white resize-none"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setDispatchHandoverTarget(null)}
-                      disabled={isDispatching}
-                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isDispatching || !dispatchStaffId}
-                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl flex items-center gap-1 shadow-xs disabled:opacity-50"
-                    >
-                      {isDispatching && <span className="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>}
-                      <span>Xác nhận điều phối</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* Modal Từ chối tiếp nhận bàn giao ca */}
-          {rejectHandoverTarget && (
-            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-              <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
-                <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-rose-50/60">
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-rose-600 text-[20px]">cancel</span>
-                    <h3 className="font-bold text-slate-900 text-sm">
-                      Từ Chối Nhận Bàn Giao Ca
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setRejectHandoverTarget(null)}
-                    className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">close</span>
-                  </button>
-                </div>
-
-                <form onSubmit={handleRejectHandoverSubmit} className="p-5 flex flex-col gap-3.5 text-xs">
-                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 space-y-1">
-                    <div>Người bàn giao: <strong>{rejectHandoverTarget.outgoingStaffName || rejectHandoverTarget.outgoingStaffUsername}</strong></div>
-                    <div>Ca trực: <strong>{rejectHandoverTarget.shift} • {rejectHandoverTarget.handoverDate}</strong></div>
-                    <div>Tiền sổ sách: <strong className="font-mono text-blue-700">{Number(rejectHandoverTarget.cashInDrawer || 0).toLocaleString('vi-VN')} đ</strong></div>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">
-                      Lý do từ chối nhận ca <span className="text-rose-500">*</span>
-                    </label>
-                    <textarea
-                      rows={3}
-                      required
-                      value={rejectHandoverReason}
-                      onChange={e => setRejectHandoverReason(e.target.value)}
-                      placeholder="Ghi rõ lý do từ chối (chênh lệch quỹ, thiếu trang thiết bị, hỏng hóc...)"
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-rose-500 focus:bg-white resize-none"
-                    />
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Lý do sẽ được cập nhật vào biên bản bàn giao để gửi lại người giao ca và Quản lý cơ sở.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setRejectHandoverTarget(null)}
-                      disabled={isRejectingHandover}
-                      className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl cursor-pointer"
-                    >
-                      Hủy
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isRejectingHandover || !rejectHandoverReason.trim()}
-                      className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl flex items-center gap-1 shadow-xs disabled:opacity-50 cursor-pointer"
-                    >
-                      {isRejectingHandover && <span className="material-symbols-outlined text-[15px] animate-spin">progress_activity</span>}
-                      <span>Xác nhận từ chối</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* TAB 4: STAFF DIRECTORY (Danh bạ nhân sự cơ sở) */}
       {activeTab === 'STAFF' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
@@ -2095,27 +1747,43 @@ export const ShiftRosterPage: React.FC = () => {
                   <th className="py-3 px-4">Họ và tên</th>
                   <th className="py-3 px-4">Email</th>
                   <th className="py-3 px-4">Số điện thoại</th>
+                  <th className="py-3 px-4">Vai trò</th>
                   <th className="py-3 px-4 text-center">Trạng thái tài khoản</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {staffList.map(s => (
-                  <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-blue-700" title={s.id}>
-                      {s.id || s.username}
-                    </td>
-                    <td className="py-3 px-4 font-semibold text-slate-900">
-                      {s.fullName || s.username}
-                    </td>
-                    <td className="py-3 px-4 text-slate-700">{s.email}</td>
-                    <td className="py-3 px-4 text-slate-500 font-mono">{s.phone || 'Chưa cập nhật'}</td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="inline-block px-2.5 py-0.5 rounded-full font-semibold text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        Đang hoạt động
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {staffList.map(s => {
+                  const roleObj = getStaffRoleBadge(s.roleName || s.role?.name || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF'))
+                  return (
+                    <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 font-mono font-bold text-blue-700" title={s.id}>
+                        {s.id || s.username}
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        {s.fullName || s.username}
+                      </td>
+                      <td className="py-3 px-4 text-slate-700">{s.email}</td>
+                      <td className="py-3 px-4 text-slate-500 font-mono">{s.phone || 'Chưa cập nhật'}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border w-fit ${roleObj.badgeClass}`}>
+                            {roleObj.label}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+                            {roleObj.title}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-full font-semibold text-[11px] ${
+                          s.isActive !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}>
+                          {s.isActive !== false ? 'Đang hoạt động' : 'Tạm khóa'}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

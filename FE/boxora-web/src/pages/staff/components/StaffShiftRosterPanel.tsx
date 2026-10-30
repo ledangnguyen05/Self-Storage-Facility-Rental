@@ -77,6 +77,50 @@ const getWeekRange = (refDate: Date): { from: string; to: string } => {
   return { from: formatDateLocal(mon), to: formatDateLocal(sun) }
 }
 
+const getStaffRoleBadge = (roleName?: string) => {
+  const norm = (roleName || '').toUpperCase().trim()
+  switch (norm) {
+    case 'ADMIN':
+    case 'SYSTEM_ADMIN':
+      return {
+        label: 'ADMIN',
+        title: 'Quản trị viên hệ thống',
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200'
+      }
+    case 'BUSINESS_MANAGER':
+      return {
+        label: 'BUSINESS_MANAGER',
+        title: 'Quản lý kinh doanh',
+        badgeClass: 'bg-orange-50 text-orange-700 border-orange-200'
+      }
+    case 'FACILITY_MANAGER':
+      return {
+        label: 'FACILITY_MANAGER',
+        title: 'Quản lý cơ sở kho',
+        badgeClass: 'bg-blue-50 text-blue-700 border-blue-200'
+      }
+    case 'STAFF':
+      return {
+        label: 'STAFF',
+        title: 'Nhân viên trực ca',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+      }
+    case 'CUSTOMER':
+      return {
+        label: 'CUSTOMER',
+        title: 'Khách hàng',
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
+      }
+    default:
+      return {
+        label: norm || 'STAFF',
+        title: norm ? `Vai trò ${norm}` : 'Nhân sự trực ca',
+        badgeClass: 'bg-slate-100 text-slate-700 border-slate-200'
+      }
+  }
+}
+
+
 export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   facilityId,
   facilityName,
@@ -108,7 +152,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   const initialTab = searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE' ? 'ATTENDANCE' : 'ROSTER'
 
   // Sub-tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'STAFF' | 'ATTENDANCE'>(initialTab)
+  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>(initialTab)
 
   useEffect(() => {
     if (searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE') {
@@ -964,19 +1008,6 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
 
         <button
           type="button"
-          onClick={() => setActiveSubTab('HANDOVERS')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            activeSubTab === 'HANDOVERS'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
-          }`}
-        >
-          <span className="material-symbols-outlined text-[18px]">assignment_turned_in</span>
-          <span>Biên Bản Bàn Giao Ca ({handovers.length})</span>
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveSubTab('STAFF')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
             activeSubTab === 'STAFF'
@@ -1083,10 +1114,10 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                   }}
                   className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                 >
-                  <option value="ALL">Tất cả nhân viên</option>
+                  <option value="ALL">Tất cả nhân viên ({staffList.length})</option>
                   {staffList.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.fullName || s.username}
+                      {s.fullName || s.username} [{getStaffRoleBadge(s.roleName || s.role?.name || 'STAFF').label}] ({s.email})
                     </option>
                   ))}
                 </select>
@@ -1635,125 +1666,6 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
         </div>
       )}
 
-      {/* SUB-TAB 3: HANDOVERS */}
-      {activeSubTab === 'HANDOVERS' && (
-        <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Biên Bản Bàn Giao Ca Trực Chi Nhánh</h2>
-              <p className="text-xs text-slate-500">Đối soát trách nhiệm vận hành, sự cố chưa đóng và két tiền mặt quầy giữa các ca làm việc</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowHandoverModal(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer self-start sm:self-auto"
-            >
-              <span className="material-symbols-outlined text-[18px]">add_task</span>
-              <span>Lập biên bản bàn giao ca</span>
-            </button>
-          </div>
-
-          {handovers.length === 0 ? (
-            <div className="py-12 text-center text-slate-400 text-xs">
-              Chưa có biên bản bàn giao ca nào tại cơ sở này trong khoảng thời gian đã chọn.
-            </div>
-          ) : (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                    <th className="py-3 px-4">Ngày &amp; Ca</th>
-                    <th className="py-3 px-4">Loại hình</th>
-                    <th className="py-3 px-4">Người giao &rarr; Người nhận</th>
-                    <th className="py-3 px-4">Việc tồn đọng &amp; Sự cố</th>
-                    <th className="py-3 px-4 text-right">Két quầy</th>
-                    <th className="py-3 px-4 text-center">Trạng thái</th>
-                    <th className="py-3 px-4 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {handovers.map(h => {
-                    const isAck = h.status === 'ACKNOWLEDGED'
-                    const isIncoming = h.incomingStaffId === user?.id
-                    const isSubmitted = h.status === 'SUBMITTED'
-                    const isLoadingAction = actionLoadingId === h.id
-
-                    return (
-                      <tr key={h.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900">{h.shift}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">{formatVN(h.handoverDate)}</div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <span className={`inline-block px-2 py-0.5 rounded-md font-bold text-[10px] border ${
-                            h.handoverType === 'EMERGENCY' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-blue-50 text-blue-700 border-blue-200'
-                          }`}>
-                            {h.handoverType === 'EMERGENCY' ? 'Bàn giao đột xuất' : 'Định kỳ đổi ca'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <div className="font-medium text-slate-800">
-                            <strong>{h.outgoingStaffName || h.outgoingStaffUsername}</strong>
-                          </div>
-                          <div className="text-slate-500 text-[11px] flex items-center gap-1 mt-0.5">
-                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                            <span>{h.incomingStaffName || h.incomingStaffUsername || '(Chờ nhận ca)'}</span>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4">
-                          <div className="text-slate-800 max-w-xs truncate" title={h.pendingTasks || 'Không có việc tồn đọng'}>
-                            {h.pendingTasks || 'Không có việc tồn đọng'}
-                          </div>
-                          <div className="text-[10px] text-slate-500 mt-0.5">
-                            Ticket: <strong className="text-rose-600">{h.pendingTicketsCount}</strong> • Đơn chờ: <strong className="text-blue-600">{h.unresolvedBookingsCount}</strong>
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          <div className="font-mono font-bold text-slate-900">
-                            {Number(h.cashInDrawer || 0).toLocaleString('vi-VN')} đ
-                          </div>
-                        </td>
-
-                        <td className="py-3 px-4 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[10px] border ${
-                            isAck
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border-amber-200'
-                          }`}>
-                            {isAck ? 'Đã nhận bàn giao' : 'Chờ xác nhận'}
-                          </span>
-                        </td>
-
-                        <td className="py-3 px-4 text-right">
-                          {isIncoming && isSubmitted && !isAck ? (
-                            <button
-                              type="button"
-                              disabled={isLoadingAction}
-                              onClick={() => handleAcknowledgeHandover(h.id)}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer"
-                            >
-                              Xác nhận tiếp nhận
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-slate-400">
-                              {isAck ? 'Hoàn tất' : 'Đang xử lý'}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* SUB-TAB 4: STAFF LIST */}
       {activeSubTab === 'STAFF' && (
         <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
@@ -1772,6 +1684,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                   <th className="py-3 px-4">Nhân viên</th>
+                  <th className="py-3 px-4">Mã nhân viên</th>
                   <th className="py-3 px-4">Email</th>
                   <th className="py-3 px-4">Số điện thoại</th>
                   <th className="py-3 px-4">Vai trò</th>
@@ -1782,13 +1695,14 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {staffList.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                    <td colSpan={7} className="py-12 text-center text-slate-400">
                       Không có nhân sự nào trong danh sách.
                     </td>
                   </tr>
                 ) : (
                   staffList.map(s => {
                     const isMe = s.id === user?.id
+                    const roleObj = getStaffRoleBadge(s.roleName || s.role?.name || 'STAFF')
                     return (
                       <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-4">
@@ -1805,16 +1719,23 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[10px] text-slate-400 font-mono">ID: {s.id.slice(0, 8)}...</div>
                             </div>
                           </div>
+                        </td>
+                        <td className="py-3 px-4 font-mono font-bold text-blue-700" title={s.id}>
+                          {s.id || s.username}
                         </td>
                         <td className="py-3 px-4 text-slate-600">{s.email || '—'}</td>
                         <td className="py-3 px-4 text-slate-600 font-mono">{s.phone || '—'}</td>
                         <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold">
-                            STAFF
-                          </span>
+                          <div className="flex flex-col">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold border w-fit ${roleObj.badgeClass}`}>
+                              {roleObj.label}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium mt-0.5">
+                              {roleObj.title}
+                            </span>
+                          </div>
                         </td>
                         <td className="py-3 px-4 text-center">
                           <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[10px] ${

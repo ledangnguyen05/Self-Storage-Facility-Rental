@@ -26,7 +26,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/handovers")
-@Tag(name = "Handover & Check-in", description = "API quáº£n lĂ½ bĂ n giao kho, kiá»ƒm tra 4 Ä‘iá»u kiá»‡n check-in (BR-RULE-005/006) vĂ  nghiá»‡m thu tráº£ kho, quyáº¿t toĂ¡n hoĂ n cá»c (BR-RULE-013/014/015)")
+@Tag(name = "Handover & Check-in", description = "API quản lý bàn giao kho, kiểm tra 4 điều kiện check-in (BR-RULE-005/006) và nghiệm thu trả kho, quyết toán hoàn cọc (BR-RULE-013/014/015)")
 @RequiredArgsConstructor
 public class HandoverController {
 
@@ -41,97 +41,97 @@ public class HandoverController {
 
     @PostMapping("/check-in")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_MANAGER', 'FACILITY_STAFF')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Thá»±c hiá»‡n check-in bĂ n giao kho váº­t lĂ½ vĂ  cáº¥p mĂ£ PIN SmartLock")
+    @Operation(summary = "Thực hiện check-in bàn giao kho vật lý và cấp mã PIN SmartLock")
     public ResponseEntity<ApiResponse<HandoverResponse>> checkIn(@Valid @RequestBody HandoverRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("BĂ n giao nháº­n kho vĂ  cáº¥p mĂ£ PIN truy cáº­p thĂ nh cĂ´ng", handoverService.checkIn(request)));
+                .body(ApiResponse.success("Bàn giao nhận kho và cấp mã PIN truy cập thành công", handoverService.checkIn(request)));
     }
 
     @GetMapping("/booking/{bookingId}/return-preview")
     @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'CUSTOMER')")
-    @Operation(summary = "Xem trÆ°á»›c quyáº¿t toĂ¡n tiá»n cá»c, háº¡n thuĂª vĂ  5 tiĂªu chĂ­ tháº©m Ä‘á»‹nh tráº£ kho (BR-RULE-013/014/015)")
+    @Operation(summary = "Xem trước quyết toán tiền cọc, hạn thuê và 5 tiêu chí thẩm định trả kho (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<ReturnSettlementPreviewResponse>> getReturnSettlementPreview(@PathVariable UUID bookingId) {
         ReturnSettlementPreviewResponse response = handoverService.getReturnSettlementPreview(bookingId);
-        return ResponseEntity.ok(ApiResponse.success("Xem trÆ°á»›c thĂ´ng tin quyáº¿t toĂ¡n cá»c vĂ  tháº©m Ä‘á»‹nh tráº£ kho thĂ nh cĂ´ng", response));
+        return ResponseEntity.ok(ApiResponse.success("Xem trước thông tin quyết toán cọc và thẩm định trả kho thành công", response));
     }
 
     @PostMapping("/checkout-request/{bookingId}")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasRole('CUSTOMER')")
-    @Operation(summary = "HĂ nh Ä‘á»™ng 1 Tráº£ kho: KhĂ¡ch hĂ ng yĂªu cáº§u tráº£ kho")
+    @Operation(summary = "Hành động 1 Trả kho: Khách hàng yêu cầu trả kho")
     public ResponseEntity<ApiResponse<HandoverResponse>> requestCheckout(
             @PathVariable UUID bookingId,
             @RequestParam(required = false) String notes) {
-        return ResponseEntity.ok(ApiResponse.success("YĂªu cáº§u tráº£ kho Ä‘Ă£ Ä‘Æ°á»£c tiáº¿p nháº­n thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Yêu cầu trả kho đã được tiếp nhận thành công",
                 handoverService.requestCheckout(bookingId, notes)));
     }
 
     @PostMapping("/inspection")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
-    @Operation(summary = "HĂ nh Ä‘á»™ng 2 Tráº£ kho: NhĂ¢n viĂªn kiá»ƒm tra hiá»‡n trÆ°á»ng, lÆ°u áº£nh & ghi nháº­n hÆ° há»ng")
+    @Operation(summary = "Hành động 2 Trả kho: Nhân viên kiểm tra hiện trường, lưu ảnh & ghi nhận hư hỏng")
     public ResponseEntity<ApiResponse<HandoverResponse>> performInspection(@Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("BiĂªn báº£n kiá»ƒm tra hiá»‡n trÆ°á»ng Ä‘Ă£ Ä‘Æ°á»£c ghi nháº­n thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Biên bản kiểm tra hiện trường đã được ghi nhận thành công",
                 handoverService.performInspection(request)));
     }
 
     @PostMapping("/return")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
-    @Operation(summary = "Xá»­ lĂ½ tráº£ kho vĂ  hoĂ n cá»c (BR-RULE-013/014/015)")
+    @Operation(summary = "Xử lý trả kho và hoàn cọc (BR-RULE-013/014/015)")
     public ResponseEntity<ApiResponse<HandoverResponse>> processReturn(@Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Nghiá»‡m thu hoĂ n tráº£ kho vĂ  quyáº¿t toĂ¡n cá»c thĂ nh cĂ´ng", handoverService.processReturn(request)));
+        return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hoàn trả kho và quyết toán cọc thành công", handoverService.processReturn(request)));
     }
 
     @PostMapping("/return-settlement")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE')")
-    @Operation(summary = "Nghiá»‡m thu hiá»‡n trÆ°á»ng tráº£ kho vĂ  quyáº¿t toĂ¡n hoĂ n cá»c chi tiáº¿t theo BR-RULE-013/014/015")
+    @Operation(summary = "Nghiệm thu hiện trường trả kho và quyết toán hoàn cọc chi tiết theo BR-RULE-013/014/015")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> processReturnSettlement(@Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Nghiá»‡m thu hiá»‡n trÆ°á»ng vĂ  quyáº¿t toĂ¡n cá»c chi tiáº¿t thĂ nh cĂ´ng", handoverService.processReturnSettlement(request)));
+        return ResponseEntity.ok(ApiResponse.success("Nghiệm thu hiện trường và quyết toán cọc chi tiết thành công", handoverService.processReturnSettlement(request)));
     }
 
     @GetMapping("/booking/{bookingId}")
     @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'CUSTOMER')")
-    @Operation(summary = "Láº¥y lá»‹ch sá»­ cĂ¡c biĂªn báº£n bĂ n giao cá»§a Ä‘Æ¡n Ä‘áº·t kho")
+    @Operation(summary = "Lấy lịch sử các biên bản bàn giao của đơn đặt kho")
     public ResponseEntity<ApiResponse<List<HandoverResponse>>> getByBookingId(@PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(handoverService.getByBookingId(bookingId)));
     }
 
     @PostMapping("/booking/{bookingId}/send-pin-email")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Gá»­i mĂ£ PIN vĂ  thĂ´ng tin bĂ n giao Ä‘áº¿n email khĂ¡ch hĂ ng")
+    @Operation(summary = "Gửi mã PIN và thông tin bàn giao đến email khách hàng")
     public ResponseEntity<ApiResponse<Void>> sendPinEmail(
             @PathVariable UUID bookingId,
             @RequestParam(required = false) String customEmail) {
         handoverService.sendHandoverPinEmail(bookingId, customEmail);
-        return ResponseEntity.ok(ApiResponse.success("ÄĂ£ gá»­i mĂ£ PIN vĂ  thĂ´ng tin bĂ n giao Ä‘áº¿n email khĂ¡ch hĂ ng thĂ nh cĂ´ng", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi mã PIN và thông tin bàn giao đến email khách hàng thành công", null));
     }
 
     @PostMapping("/booking/{bookingId}/send-web-notification")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Báº¯n thĂ´ng bĂ¡o web Ä‘áº¿n tĂ i khoáº£n khĂ¡ch hĂ ng")
+    @Operation(summary = "Bắn thông báo web đến tài khoản khách hàng")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.NotificationLogResponse>> sendWebNotification(
             @PathVariable UUID bookingId) {
-        return ResponseEntity.ok(ApiResponse.success("ÄĂ£ báº¯n thĂ´ng bĂ¡o web thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Đã bắn thông báo web thành công",
                 handoverService.sendHandoverWebNotification(bookingId)));
     }
 
     // =========================================================================
-    // QUY TRĂŒNH CHECK-IN Äá»I SOĂT 4 ÄIá»€U KIá»†N & NGHIá»†M THU HIá»†N TRÆ¯á»œNG
+    // QUY TRÌNH CHECK-IN ĐỐI SOÁT 4 ĐIỀU KIỆN & NGHIỆM THU HIỆN TRƯỜNG
     // =========================================================================
 
     @PostMapping(value = "/booking/{bookingId}/upload-document", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Táº£i lĂªn tá»‡p há»£p Ä‘á»“ng giáº¥y scan hoáº·c chá»©ng tá»« chuyá»ƒn khoáº£n (PDF, JPG, JPEG, PNG, WEBP, tá»‘i Ä‘a 10MB)")
+    @Operation(summary = "Tải lên tệp hợp đồng giấy scan hoặc chứng từ chuyển khoản (PDF, JPG, JPEG, PNG, WEBP, tối đa 10MB)")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.FileUploadResponse>> uploadHandoverDocument(
             @PathVariable UUID bookingId,
             @RequestParam("file") org.springframework.web.multipart.MultipartFile file,
             @RequestParam(value = "documentType", required = false, defaultValue = "PAPER_CONTRACT") String documentType) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Táº£i lĂªn tĂ i liá»‡u thĂ nh cĂ´ng",
+                .body(ApiResponse.success("Tải lên tài liệu thành công",
                         handoverService.uploadHandoverDocument(bookingId, file, documentType)));
     }
 
     @GetMapping("/booking/{bookingId}/documents/view")
     @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER') or hasRole('FACILITY_STAFF') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER') or hasRole('ADMIN')")
-    @Operation(summary = "Xem / táº£i tĂ i liá»‡u há»£p Ä‘á»“ng giáº¥y hoáº·c chá»©ng tá»« thanh toĂ¡n cĂ³ kiá»ƒm tra phĂ¢n quyá»n theo cÆ¡ sá»Ÿ vĂ  chá»§ sá»Ÿ há»¯u")
+    @Operation(summary = "Xem / tải tài liệu hợp đồng giấy hoặc chứng từ thanh toán có kiểm tra phân quyền theo cơ sở và chủ sở hữu")
     public ResponseEntity<?> viewAuthorizedDocument(
             @PathVariable UUID bookingId,
             @RequestParam("fileUrl") String fileUrl) {
@@ -164,89 +164,89 @@ public class HandoverController {
 
     @PostMapping("/contracts/paper")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAuthority('CONTRACT_CREATE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Äiá»u kiá»‡n 1: Khá»Ÿi táº¡o hoáº·c táº£i lĂªn há»“ sÆ¡ scan há»£p Ä‘á»“ng giáº¥y táº¡i kho")
+    @Operation(summary = "Điều kiện 1: Khởi tạo hoặc tải lên hồ sơ scan hợp đồng giấy tại kho")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> createOrUploadPaperContract(
             @Valid @RequestBody com.boxora.dto.request.PaperContractCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Khá»Ÿi táº¡o / Táº£i lĂªn há»£p Ä‘á»“ng giáº¥y thĂ nh cĂ´ng",
+                .body(ApiResponse.success("Khởi tạo / Tải lên hợp đồng giấy thành công",
                         handoverService.createOrUploadPaperContract(request)));
     }
 
     @PostMapping("/contracts/paper/verify")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAuthority('CONTRACT_CREATE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Äiá»u kiá»‡n 1: NhĂ¢n viĂªn Ä‘á»‘i chiáº¿u chá»¯ kĂ½ vĂ  xĂ¡c nháº­n há»£p Ä‘á»“ng giáº¥y")
+    @Operation(summary = "Điều kiện 1: Nhân viên đối chiếu chữ ký và xác nhận hợp đồng giấy")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.RentalContractResponse>> verifyPaperContract(
             @RequestParam UUID bookingId,
             @RequestParam(required = false) String notes) {
-        return ResponseEntity.ok(ApiResponse.success("XĂ¡c minh há»£p Ä‘á»“ng giáº¥y thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Xác minh hợp đồng giấy thành công",
                 handoverService.verifyPaperContract(bookingId, notes)));
     }
 
     @PostMapping("/payments/manual")
     @PreAuthorize("hasAuthority('PAYMENT_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Äiá»u kiá»‡n 2 & 3: Ghi nháº­n thu tiá»n máº·t (phiáº¿u thu) hoáº·c thĂ´ng tin chuyá»ƒn khoáº£n ngĂ¢n hĂ ng")
+    @Operation(summary = "Điều kiện 2 & 3: Ghi nhận thu tiền mặt (phiếu thu) hoặc thông tin chuyển khoản ngân hàng")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> recordManualPayment(
             @Valid @RequestBody com.boxora.dto.request.ManualPaymentRecordRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Ghi nháº­n giao dá»‹ch thanh toĂ¡n thĂ nh cĂ´ng",
+                .body(ApiResponse.success("Ghi nhận giao dịch thanh toán thành công",
                         handoverService.recordManualPayment(request)));
     }
 
     @PostMapping("/payments/{paymentId}/confirm-bank-transfer")
     @PreAuthorize("hasAuthority('PAYMENT_CREATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Äiá»u kiá»‡n 2 & 3: NhĂ¢n viĂªn cĂ³ tháº©m quyá»n xĂ¡c nháº­n tiá»n chuyá»ƒn khoáº£n Ä‘Ă£ vĂ o tĂ i khoáº£n")
+    @Operation(summary = "Điều kiện 2 & 3: Nhân viên có thẩm quyền xác nhận tiền chuyển khoản đã vào tài khoản")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.PaymentResponse>> confirmBankTransferPayment(
             @PathVariable UUID paymentId,
             @RequestParam(required = false) String notes) {
-        return ResponseEntity.ok(ApiResponse.success("XĂ¡c nháº­n tiá»n chuyá»ƒn khoáº£n Ä‘Ă£ vĂ o tĂ i khoáº£n thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận tiền chuyển khoản đã vào tài khoản thành công",
                 handoverService.confirmBankTransferPayment(paymentId, notes)));
     }
 
     @PostMapping("/booking/{bookingId}/verify-identity")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "Äiá»u kiá»‡n 4: NhĂ¢n viĂªn táº¡i quáº§y xĂ¡c nháº­n Ä‘Ă£ Ä‘á»‘i chiáº¿u giáº¥y tá» tĂ¹y thĂ¢n CCCD/Passport gá»‘c")
+    @Operation(summary = "Điều kiện 4: Nhân viên tại quầy xác nhận đã đối chiếu giấy tờ tùy thân CCCD/Passport gốc")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> verifyIdentity(
             @PathVariable UUID bookingId,
             @Valid @RequestBody com.boxora.dto.request.IdentityVerifyRequest request) {
         request.setBookingId(bookingId);
-        return ResponseEntity.ok(ApiResponse.success("XĂ¡c minh giáº¥y tá» tĂ¹y thĂ¢n gá»‘c thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Xác minh giấy tờ tùy thân gốc thành công",
                 handoverService.verifyIdentity(request)));
     }
 
     @PostMapping("/booking/{bookingId}/assign-unit")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "BÆ°á»›c 2: Chá»n vĂ  gĂ¡n vá»‹ trĂ­ Ă´ kho váº­t lĂ½ cho Ä‘Æ¡n Ä‘áº·t kho")
+    @Operation(summary = "Bước 2: Chọn và gán vị trí ô kho vật lý cho đơn đặt kho")
     public ResponseEntity<ApiResponse<HandoverPrerequisitesResponse>> assignUnit(
             @PathVariable UUID bookingId,
             @RequestParam String unitCode) {
-        return ResponseEntity.ok(ApiResponse.success("GĂ¡n Ă´ kho váº­t lĂ½ thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Gán ô kho vật lý thành công",
                 handoverService.assignUnitToBooking(bookingId, unitCode)));
     }
 
     @PostMapping("/booking/{bookingId}/complete-step-1")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "HoĂ n táº¥t BÆ°á»›c 1: Kiá»ƒm tra Ä‘á»§ 4 Ä‘iá»u kiá»‡n Ä‘á»‘i soĂ¡t vĂ  chuyá»ƒn sang BÆ°á»›c 2 Nghiá»‡m thu hiá»‡n trÆ°á»ng")
+    @Operation(summary = "Hoàn tất Bước 1: Kiểm tra đủ 4 điều kiện đối soát và chuyển sang Bước 2 Nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<Void>> completeCheckInStep1(@PathVariable UUID bookingId) {
         handoverService.completeCheckInStep1(bookingId);
-        return ResponseEntity.ok(ApiResponse.success("ÄĂ£ hoĂ n táº¥t BÆ°á»›c 1 Ä‘á»‘i soĂ¡t, chuyá»ƒn sang Nghiá»‡m thu hiá»‡n trÆ°á»ng thĂ nh cĂ´ng", null));
+        return ResponseEntity.ok(ApiResponse.success("Đã hoàn tất Bước 1 đối soát, chuyển sang Nghiệm thu hiện trường thành công", null));
     }
 
     @PostMapping("/check-in-inspection")
     @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
-    @Operation(summary = "BÆ°á»›c 2: LÆ°u biĂªn báº£n nghiá»‡m thu 5 tiĂªu chuáº©n hiá»‡n trÆ°á»ng vĂ  áº£nh kiá»ƒm Ä‘á»‹nh")
+    @Operation(summary = "Bước 2: Lưu biên bản nghiệm thu 5 tiêu chuẩn hiện trường và ảnh kiểm định")
     public ResponseEntity<ApiResponse<HandoverResponse>> recordCheckInInspection(
             @Valid @RequestBody com.boxora.dto.request.CheckInInspectionRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Ghi nháº­n biĂªn báº£n nghiá»‡m thu hiá»‡n trÆ°á»ng thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Ghi nhận biên bản nghiệm thu hiện trường thành công",
                 handoverService.recordCheckInInspection(request)));
     }
 
     // =========================================================================
-    // QUY TRĂŒNH TOĂ€N DIá»†N: NGHIá»†M THU HIá»†N TRÆ¯á»œNG & TRáº¢ KHO (WAREHOUSE RETURN)
+    // QUY TRÌNH TOÀN DIỆN: NGHIỆM THU HIỆN TRƯỜNG & TRẢ KHO (WAREHOUSE RETURN)
     // =========================================================================
 
     @GetMapping("/returns")
     @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Danh sĂ¡ch há»“ sÆ¡ tráº£ kho vá»›i tĂ¬m kiáº¿m vĂ  lá»c Ä‘a tiĂªu chĂ­")
+    @Operation(summary = "Danh sách hồ sơ trả kho với tìm kiếm và lọc đa tiêu chí")
     public ResponseEntity<ApiResponse<List<ReturnCaseResponse>>> getReturnCases(
             @RequestParam(required = false) String facilityId,
             @RequestParam(required = false) String search,
@@ -266,7 +266,7 @@ public class HandoverController {
 
     @GetMapping("/returns/{bookingId}")
     @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Chi tiáº¿t há»“ sÆ¡ tráº£ kho vĂ  lá»‹ch sá»­ xá»­ lĂ½")
+    @Operation(summary = "Chi tiết hồ sơ trả kho và lịch sử xử lý")
     public ResponseEntity<ApiResponse<ReturnCaseResponse>> getReturnCaseDetail(
             @PathVariable UUID bookingId) {
         return ResponseEntity.ok(ApiResponse.success(
@@ -275,13 +275,13 @@ public class HandoverController {
 
     @PostMapping("/returns/{bookingId}/schedule")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "XĂ¡c nháº­n hoáº·c Ä‘á»•i lá»‹ch háº¹n nghiá»‡m thu hiá»‡n trÆ°á»ng")
+    @Operation(summary = "Xác nhận hoặc đổi lịch hẹn nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<HandoverResponse>> scheduleInspection(
             @PathVariable UUID bookingId,
             @RequestParam(required = false) String scheduledAt,
             @RequestParam(required = false) String notes) {
         LocalDateTime parsedDateTime = parseFlexibleDateTime(scheduledAt);
-        return ResponseEntity.ok(ApiResponse.success("XĂ¡c nháº­n lá»‹ch nghiá»‡m thu hiá»‡n trÆ°á»ng thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận lịch nghiệm thu hiện trường thành công",
                 handoverService.scheduleInspection(bookingId, parsedDateTime, notes)));
     }
 
@@ -315,107 +315,107 @@ public class HandoverController {
 
     @PostMapping("/returns/{bookingId}/start-inspection")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "Báº¯t Ä‘áº§u nghiá»‡m thu hiá»‡n trÆ°á»ng")
+    @Operation(summary = "Bắt đầu nghiệm thu hiện trường")
     public ResponseEntity<ApiResponse<HandoverResponse>> startInspection(
             @PathVariable UUID bookingId) {
-        return ResponseEntity.ok(ApiResponse.success("Báº¯t Ä‘áº§u nghiá»‡m thu hiá»‡n trÆ°á»ng thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Bắt đầu nghiệm thu hiện trường thành công",
                 handoverService.startInspection(bookingId)));
     }
 
     @PostMapping("/returns/inspection")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "LÆ°u biĂªn báº£n kiá»ƒm Ä‘á»‹nh 7 tiĂªu chĂ­ hiá»‡n trÆ°á»ng (há»— trá»£ lÆ°u nhĂ¡p hoáº·c chá»‘t biĂªn báº£n)")
+    @Operation(summary = "Lưu biên bản kiểm định 7 tiêu chí hiện trường (hỗ trợ lưu nháp hoặc chốt biên bản)")
     public ResponseEntity<ApiResponse<HandoverResponse>> saveInspection(
             @Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("LÆ°u biĂªn báº£n kiá»ƒm Ä‘á»‹nh hiá»‡n trÆ°á»ng thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Lưu biên bản kiểm định hiện trường thành công",
                 handoverService.saveInspection(request)));
     }
 
     @PostMapping("/returns/{bookingId}/calculate-settlement")
     @PreAuthorize("hasAuthority('HANDOVER_VIEW') or hasRole('CUSTOMER') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "TĂ­nh toĂ¡n Ä‘á»‘i soĂ¡t quyáº¿t toĂ¡n tiá»n cá»c, cĂ´ng ná»£ vĂ  chi phĂ­ hÆ° háº¡i")
+    @Operation(summary = "Tính toán đối soát quyết toán tiền cọc, công nợ và chi phí hư hại")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> calculateSettlement(
             @PathVariable UUID bookingId,
             @RequestBody(required = false) HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("TĂ­nh toĂ¡n quyáº¿t toĂ¡n cá»c thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Tính toán quyết toán cọc thành công",
                 handoverService.calculateSettlement(bookingId, request)));
     }
 
     @PostMapping("/returns/{bookingId}/submit-approval")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "TrĂ¬nh cáº¥p quáº£n lĂ½ phĂª duyá»‡t cĂ¡c khoáº£n kháº¥u trá»« bá»“i thÆ°á»ng")
+    @Operation(summary = "Trình cấp quản lý phê duyệt các khoản khấu trừ bồi thường")
     public ResponseEntity<ApiResponse<HandoverResponse>> submitDeductionsForApproval(
             @PathVariable UUID bookingId,
             @RequestParam(required = false) String notes) {
-        return ResponseEntity.ok(ApiResponse.success("TrĂ¬nh phĂª duyá»‡t quyáº¿t toĂ¡n kháº¥u trá»« thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Trình phê duyệt quyết toán khấu trừ thành công",
                 handoverService.submitDeductionsForApproval(bookingId, notes)));
     }
 
     @PostMapping("/returns/{bookingId}/approve-settlement")
     @PreAuthorize("hasAuthority('HANDOVER_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
-    @Operation(summary = "Quáº£n lĂ½ cÆ¡ sá»Ÿ / Ban quáº£n lĂ½ phĂª duyá»‡t hoáº·c tá»« chá»‘i quyáº¿t toĂ¡n kháº¥u trá»«")
+    @Operation(summary = "Quản lý cơ sở / Ban quản lý phê duyệt hoặc từ chối quyết toán khấu trừ")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> approveSettlement(
             @PathVariable UUID bookingId,
             @Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Xá»­ lĂ½ phĂª duyá»‡t quyáº¿t toĂ¡n kháº¥u trá»« thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Xử lý phê duyệt quyết toán khấu trừ thành công",
                 handoverService.approveSettlement(bookingId, request)));
     }
 
     @PostMapping("/returns/{bookingId}/dispute")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasRole('CUSTOMER') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "Ghi nháº­n khiáº¿u náº¡i / tranh cháº¥p tá»« khĂ¡ch hĂ ng Ä‘á»‘i vá»›i sá»‘ tiá»n bá»“i thÆ°á»ng")
+    @Operation(summary = "Ghi nhận khiếu nại / tranh chấp từ khách hàng đối với số tiền bồi thường")
     public ResponseEntity<ApiResponse<HandoverResponse>> recordCustomerDispute(
             @PathVariable UUID bookingId,
             @RequestParam String disputeReason) {
-        return ResponseEntity.ok(ApiResponse.success("Ghi nháº­n khiáº¿u náº¡i tranh cháº¥p thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Ghi nhận khiếu nại tranh chấp thành công",
                 handoverService.recordCustomerDispute(bookingId, disputeReason)));
     }
 
     @PostMapping("/returns/{bookingId}/collect-additional-payment")
     @PreAuthorize("hasAuthority('PAYMENT_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "Thu khoáº£n bá»“i thÆ°á»ng bá»• sung khi chi phĂ­ vÆ°á»£t quĂ¡ tiá»n cá»c")
+    @Operation(summary = "Thu khoản bồi thường bổ sung khi chi phí vượt quá tiền cọc")
     public ResponseEntity<ApiResponse<PaymentResponse>> collectAdditionalPayment(
             @PathVariable UUID bookingId,
             @Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Thu khoáº£n bá»“i thÆ°á»ng bá»• sung thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Thu khoản bồi thường bổ sung thành công",
                 handoverService.collectAdditionalPayment(bookingId, request)));
     }
 
     @PostMapping("/returns/{bookingId}/execute-refund")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN', 'STAFF', 'FACILITY_STAFF')")
-    @Operation(summary = "Thá»±c hiá»‡n lá»‡nh hoĂ n tráº£ tiá»n cá»c cho khĂ¡ch hĂ ng")
+    @Operation(summary = "Thực hiện lệnh hoàn trả tiền cọc cho khách hàng")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> executeRefund(
             @PathVariable UUID bookingId,
             @Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("Lá»‡nh hoĂ n tráº£ tiá»n cá»c Ä‘Ă£ Ä‘Æ°á»£c thá»±c hiá»‡n thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Lệnh hoàn trả tiền cọc đã được thực hiện thành công",
                 handoverService.executeRefund(bookingId, request)));
     }
 
     @PostMapping("/returns/{bookingId}/confirm-physical-return")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "XĂ¡c nháº­n nháº­n láº¡i kho váº­t lĂ½ & Ä‘á»“ Ä‘áº¡c Ä‘Ă£ dá»n sáº¡ch")
+    @Operation(summary = "Xác nhận nhận lại kho vật lý & đồ đạc đã dọn sạch")
     public ResponseEntity<ApiResponse<HandoverResponse>> confirmPhysicalReturn(
             @PathVariable UUID bookingId,
             @Valid @RequestBody HandoverRequest request) {
-        return ResponseEntity.ok(ApiResponse.success("XĂ¡c nháº­n nháº­n láº¡i kho váº­t lĂ½ thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận nhận lại kho vật lý thành công",
                 handoverService.confirmPhysicalReturn(bookingId, request)));
     }
 
     @PostMapping("/returns/{bookingId}/revoke-access")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
-    @Operation(summary = "Thu há»“i mĂ£ PIN SmartLock vĂ  quyá»n truy cáº­p kho cá»§a khĂ¡ch hĂ ng")
+    @Operation(summary = "Thu hồi mã PIN SmartLock và quyền truy cập kho của khách hàng")
     public ResponseEntity<ApiResponse<HandoverResponse>> revokeAccess(
             @PathVariable UUID bookingId) {
-        return ResponseEntity.ok(ApiResponse.success("Thu há»“i quyá»n truy cáº­p kho thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Thu hồi quyền truy cập kho thành công",
                 handoverService.revokeAccess(bookingId)));
     }
 
     @PostMapping("/returns/{bookingId}/complete")
     @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN', 'STAFF', 'FACILITY_STAFF')")
-    @Operation(summary = "HoĂ n táº¥t toĂ n bá»™ há»“ sÆ¡ tráº£ kho, thanh lĂ½ há»£p Ä‘á»“ng vĂ  chuyá»ƒn tráº¡ng thĂ¡i kho")
+    @Operation(summary = "Hoàn tất toàn bộ hồ sơ trả kho, thanh lý hợp đồng và chuyển trạng thái kho")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> completeReturn(
             @PathVariable UUID bookingId) {
-        return ResponseEntity.ok(ApiResponse.success("HoĂ n táº¥t toĂ n bá»™ há»“ sÆ¡ tráº£ kho thĂ nh cĂ´ng",
+        return ResponseEntity.ok(ApiResponse.success("Hoàn tất toàn bộ hồ sơ trả kho thành công",
                 handoverService.completeReturn(bookingId)));
     }
 

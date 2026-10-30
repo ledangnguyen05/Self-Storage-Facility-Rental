@@ -664,7 +664,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       type="text"
                       value={ticketTitle}
                       onChange={(e) => setTicketTitle(e.target.value)}
-                      placeholder="Ví dụ: Cửa cuốn kẹt ray, Cần hướng dẫn thủ tục hoàn cọc..."
+                      placeholder=""
                       className="h-10 px-3 bg-white border border-slate-300 text-slate-900 text-xs rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>

@@ -108,7 +108,7 @@ export const StaffMyShiftsPage: React.FC = () => {
   const [dateError, setDateError] = useState<string | null>(null)
 
   // View state
-  const [mainTab, setMainTab] = useState<'ROSTER' | 'SWAPS' | 'HANDOVERS' | 'ATTENDANCE'>('ROSTER')
+  const [mainTab, setMainTab] = useState<'ROSTER' | 'SWAPS' | 'ATTENDANCE'>('ROSTER')
   const [rosterView, setRosterView] = useState<'LIST' | 'WEEK' | 'MONTH'>('LIST')
   const [weekRefDate, setWeekRefDate] = useState<Date>(new Date())
   const [monthRefDate, setMonthRefDate] = useState<Date>(new Date())
@@ -718,7 +718,6 @@ export const StaffMyShiftsPage: React.FC = () => {
           {[
             { id: 'ROSTER', label: 'Lịch Ca Làm Việc', count: assignments.length, icon: Calendar },
             { id: 'SWAPS', label: 'Yêu Cầu Đổi Ca', count: mySwaps.length, icon: Send },
-            { id: 'HANDOVERS', label: 'Biên Bản Bàn Giao', count: handovers.length, icon: FileText },
             { id: 'ATTENDANCE', label: 'Lịch Sử Chấm Công', count: assignments.filter(a => a.checkedInAt).length, icon: CheckCircle }
           ].map(tab => {
             const Icon = tab.icon
@@ -1503,190 +1502,6 @@ export const StaffMyShiftsPage: React.FC = () => {
                   </table>
                 </div>
               )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ==================== TAB 3: HANDOVERS ==================== */}
-      {mainTab === 'HANDOVERS' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 flex flex-col gap-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Biên bản bàn giao ca trực</h2>
-              <p className="text-xs text-slate-500">
-                Lịch sử bàn giao trang thiết bị, đối soát tồn quỹ và công việc ca giao – nhận
-              </p>
-            </div>
-            {assignments.some(a => a.status === 'CHECKED_IN' || a.status === 'COMPLETED') && (
-              <button
-                type="button"
-                onClick={() => {
-                  const currentOrCompleted = assignments.find(a => a.status === 'CHECKED_IN' || a.status === 'COMPLETED')
-                  if (currentOrCompleted) {
-                    setShiftForHandover(currentOrCompleted)
-                    setShowHandoverModal(true)
-                  }
-                }}
-                className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>+ Lập biên bản bàn giao ca</span>
-              </button>
-            )}
-          </div>
-
-          {handovers.length === 0 ? (
-            <div className="py-12 text-center text-slate-500">
-              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-              <p className="font-semibold text-slate-700">Chưa có biên bản bàn giao ca nào</p>
-              <p className="text-xs text-slate-400 mt-1">
-                Biên bản bàn giao ca sẽ được ghi nhận tại đây khi nhân viên hoàn tất phiên trực.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {handovers.map(h => {
-                const isIncoming = user?.id === h.incomingStaffId
-                const isMyOwn = user?.id === h.outgoingStaffId
-                const isAck = h.status === 'ACKNOWLEDGED'
-                const isPendingDispatch = h.status === 'PENDING_DISPATCH'
-                const isDiscrepancy = h.status === 'DISCREPANCY'
-                const isSubmitted = h.status === 'SUBMITTED'
-                const isRejected = h.status === 'REJECTED'
-
-                const handoverTypeLabel =
-                  h.handoverType === 'EMERGENCY' ? 'Bàn giao đột xuất' :
-                  h.handoverType === 'RESPONSIBILITY_TRANSFER' ? 'Chuyển giao trách nhiệm' :
-                  'Định kỳ đổi ca'
-
-                const handoverTypeClass =
-                  h.handoverType === 'EMERGENCY' ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                  h.handoverType === 'RESPONSIBILITY_TRANSFER' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                  'bg-blue-50 text-blue-700 border-blue-200'
-
-                return (
-                  <div key={h.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5 flex-wrap gap-2">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-slate-900">
-                              {SHIFT_LABELS[h.shift]?.label || h.shift} · {formatVN(h.handoverDate)}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] border ${handoverTypeClass}`}>
-                              {handoverTypeLabel}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5">{h.facilityName}</p>
-                        </div>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                          isAck ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                          isPendingDispatch ? 'bg-amber-50 text-amber-800 border-amber-300 animate-pulse' :
-                          isDiscrepancy ? 'bg-rose-50 text-rose-700 border-rose-300' :
-                          isSubmitted ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          isRejected ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                          'bg-slate-100 text-slate-700 border-slate-200'
-                        }`}>
-                          {isAck ? 'Đã tiếp nhận' :
-                           isPendingDispatch ? 'Chờ điều phối' :
-                           isDiscrepancy ? 'Có chênh lệch' :
-                           isSubmitted ? 'Chờ tiếp nhận' :
-                           isRejected ? 'Đã từ chối nhận' : h.status}
-                        </span>
-                      </div>
-
-                      {h.emergencyReason && (
-                        <div className="mt-2.5 p-2 rounded-lg bg-rose-50/70 border border-rose-200 text-xs text-rose-800">
-                          <span className="font-bold block text-[10px] uppercase text-rose-600">Lý do khẩn cấp:</span>
-                          <p>{h.emergencyReason}</p>
-                        </div>
-                      )}
-
-                      {h.transferScope && (
-                        <div className="mt-2 text-[11px] text-purple-700 font-medium">
-                          Phạm vi chuyển giao: <strong className="font-mono">{h.transferScope}</strong>
-                        </div>
-                      )}
-
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase">Người bàn giao</span>
-                          <strong className="text-slate-800">{h.outgoingStaffName || h.outgoingStaffUsername}</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase">Người nhận ca</span>
-                          <strong className="text-slate-800">
-                            {h.incomingStaffName || h.incomingStaffUsername || (
-                              <span className="text-amber-700 italic">Chờ Quản lý điều phối</span>
-                            )}
-                          </strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase">Tiền sổ sách</span>
-                          <strong className="text-blue-700 font-mono">{Number(h.cashInDrawer || 0).toLocaleString('vi-VN')} ₫</strong>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase">Tiền thực đếm</span>
-                          <strong className="text-slate-800 font-mono">
-                            {h.cashCounted !== undefined && h.cashCounted !== null ? `${Number(h.cashCounted).toLocaleString('vi-VN')} ₫` : 'Chưa đối soát'}
-                          </strong>
-                        </div>
-                      </div>
-
-                      {Boolean(h.cashDiscrepancy && h.cashDiscrepancy !== 0) && (
-                        <div className="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800">
-                          <span className="font-bold text-[10px] uppercase block text-rose-600">Cảnh báo chênh lệch két quầy:</span>
-                          <span className="font-mono font-bold">
-                            {(h.cashDiscrepancy ?? 0) > 0 ? `+${Number(h.cashDiscrepancy).toLocaleString('vi-VN')} ₫ (Thừa)` : `${Number(h.cashDiscrepancy).toLocaleString('vi-VN')} ₫ (Thiếu)`}
-                          </span>
-                          {h.cashDiscrepancyReason && (
-                            <p className="mt-0.5 italic text-[11px] text-rose-700">Giải trình: {h.cashDiscrepancyReason}</p>
-                          )}
-                        </div>
-                      )}
-
-                      {h.pendingTasks && (
-                        <div className="mt-3 p-2.5 rounded-lg bg-white border border-slate-200 text-xs">
-                          <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Công việc tồn đọng</span>
-                          <p className="text-slate-700">{h.pendingTasks}</p>
-                        </div>
-                      )}
-
-                      {h.notes && (
-                        <p className="text-xs text-slate-500 italic mt-2">
-                          Ghi chú: {h.notes}
-                        </p>
-                      )}
-                    </div>
-
-                    {(isIncoming || (!h.incomingStaffId && !isMyOwn)) && (isSubmitted || isDiscrepancy) && (
-                      <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRejectHandoverTarget(h)
-                            setRejectHandoverReason('')
-                          }}
-                          className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs inline-flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          <span>Từ chối nhận</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleAcknowledgeHandover(h.id)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Xác nhận tiếp nhận ca</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
             </div>
           )}
         </div>
