@@ -1269,8 +1269,8 @@ export const ShiftRosterPage: React.FC = () => {
                   <th className="py-3 px-4">Ngày làm việc</th>
                   <th className="py-3 px-4">Ca &amp; Khung giờ làm</th>
                   <th className="py-3 px-4">Phân khu &amp; Vai trò</th>
-                  <th className="py-3 px-4 text-center">Trạng thái chấm công</th>
-                  <th className="py-3 px-4 text-center">Giờ thực tế</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">Trạng thái chấm công</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">Giờ thực tế</th>
                   <th className="py-3 px-4 text-right">Tác vụ điều phối</th>
                 </tr>
               </thead>
@@ -1390,7 +1390,7 @@ export const ShiftRosterPage: React.FC = () => {
                           )}
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-bold text-slate-800">
                             {assignment.shift === 'MORNING'
                               ? 'Ca Sáng'
@@ -1401,11 +1401,6 @@ export const ShiftRosterPage: React.FC = () => {
                               : 'Cả Ngày'}
                           </div>
                           <div className="text-[11px] text-blue-600 font-mono font-semibold">{shiftTimeStr}</div>
-                          {assignment.notes && (
-                            <div className="text-[10px] text-slate-500 italic mt-0.5 max-w-xs truncate" title={assignment.notes}>
-                              {assignment.notes}
-                            </div>
-                          )}
                         </td>
 
                         <td className="py-3 px-4">
@@ -1444,22 +1439,22 @@ export const ShiftRosterPage: React.FC = () => {
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
                           {assignment.checkedInAt ? (
-                            <div className="text-[11px] font-mono text-emerald-700 font-semibold">
+                            <div className="text-[11px] font-mono text-emerald-700 font-semibold whitespace-nowrap">
                               Vào: {new Date(assignment.checkedInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           ) : (
-                            <div className={`text-[11px] font-mono ${isAbsent ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
+                            <div className={`text-[11px] font-mono whitespace-nowrap ${isAbsent ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
                               {isAbsent ? 'Chưa vào' : 'Chưa vào'}
                             </div>
                           )}
                           {assignment.checkedOutAt ? (
-                            <div className="text-[11px] font-mono text-slate-600">
+                            <div className="text-[11px] font-mono text-slate-600 whitespace-nowrap">
                               Ra: {new Date(assignment.checkedOutAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           ) : isCheckedIn ? (
-                            <div className="text-[10px] text-emerald-500 font-semibold">Đang trực...</div>
+                            <div className="text-[10px] text-emerald-500 font-semibold whitespace-nowrap">Đang trực...</div>
                           ) : null}
                         </td>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
@@ -3638,23 +3638,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </span>
                   <span>Làm mới</span>
                 </button>
-                {unitActivityLogs.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setUnitActivityLogs([])
-                      try {
-                        localStorage.removeItem(activityStorageKey)
-                      } catch {}
-                      toast.info('Đã làm sạch nhật ký thiết bị', 'Các thao tác đóng/mở mới sẽ tiếp tục được ghi nhận tự động.')
-                    }}
-                    className="px-3 py-2 rounded-xl bg-white hover:bg-rose-50 text-slate-500 hover:text-rose-700 border border-slate-200 hover:border-rose-200 text-xs font-medium flex items-center gap-1 transition-all cursor-pointer"
-                    title="Xóa nhật ký thao tác lưu tạm trên trình duyệt này"
-                  >
-                    <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
-                    <span>Xóa log thiết bị</span>
-                  </button>
-                )}
               </div>
             </div>
 

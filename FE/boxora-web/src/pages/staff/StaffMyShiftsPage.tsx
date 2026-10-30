@@ -863,9 +863,9 @@ export const StaffMyShiftsPage: React.FC = () => {
                               </span>
                             </td>
 
-                            <td className="py-3.5 px-4 text-[11px] font-mono">
-                              <div>Vào: <strong className="text-slate-800">{item.checkedInAt ? formatDateTime(item.checkedInAt) : (isAbsent ? 'Không điểm danh' : 'Chưa điểm danh')}</strong></div>
-                              <div className="mt-0.5">Ra: <strong className="text-slate-800">{item.checkedOutAt ? formatDateTime(item.checkedOutAt) : (isAbsent ? 'Không điểm danh' : 'Chưa kết thúc')}</strong></div>
+                            <td className="py-3.5 px-4 text-[11px] font-mono whitespace-nowrap">
+                              <div className="whitespace-nowrap">Vào: <strong className="text-slate-800">{item.checkedInAt ? formatDateTime(item.checkedInAt) : (isAbsent ? 'Không điểm danh' : 'Chưa điểm danh')}</strong></div>
+                              <div className="mt-0.5 whitespace-nowrap">Ra: <strong className="text-slate-800">{item.checkedOutAt ? formatDateTime(item.checkedOutAt) : (isAbsent ? 'Không điểm danh' : 'Chưa kết thúc')}</strong></div>
                             </td>
 
                             <td className="py-3.5 px-4 text-right">

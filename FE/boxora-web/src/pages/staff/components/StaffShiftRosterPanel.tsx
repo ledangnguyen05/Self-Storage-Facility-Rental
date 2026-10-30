@@ -1161,8 +1161,8 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                   <th className="py-3 px-4">Ngày trực</th>
                   <th className="py-3 px-4">Ca trực &amp; Khung giờ</th>
                   <th className="py-3 px-4">Khu vực &amp; Vai trò</th>
-                  <th className="py-3 px-4 text-center">Trạng thái</th>
-                  <th className="py-3 px-4 text-center">Chấm công</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">Trạng thái</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">Chấm công</th>
                   <th className="py-3 px-4 text-right">Thao tác</th>
                 </tr>
               </thead>
@@ -1240,7 +1240,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                           )}
                         </td>
 
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-bold text-slate-800">
                             {assignment.shift === 'MORNING'
                               ? 'Ca Sáng'
@@ -1251,11 +1251,6 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                               : 'Cả Ngày'}
                           </div>
                           <div className="text-[11px] text-blue-600 font-mono font-semibold">{shiftTimeStr}</div>
-                          {assignment.notes && (
-                            <div className="text-[10px] text-slate-500 italic mt-0.5 max-w-xs truncate" title={assignment.notes}>
-                              {assignment.notes}
-                            </div>
-                          )}
                         </td>
 
                         <td className="py-3 px-4">
@@ -1294,22 +1289,22 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                           )}
                         </td>
 
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
                           {assignment.checkedInAt ? (
-                            <div className="text-[11px] font-mono text-emerald-700 font-semibold">
+                            <div className="text-[11px] font-mono text-emerald-700 font-semibold whitespace-nowrap">
                               Vào: {new Date(assignment.checkedInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           ) : (
-                            <div className={`text-[11px] font-mono ${isAbsent ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
+                            <div className={`text-[11px] font-mono whitespace-nowrap ${isAbsent ? 'text-rose-500 font-semibold' : 'text-slate-400'}`}>
                               {isAbsent ? 'Vắng mặt' : 'Chưa vào'}
                             </div>
                           )}
                           {assignment.checkedOutAt ? (
-                            <div className="text-[11px] font-mono text-slate-600">
+                            <div className="text-[11px] font-mono text-slate-600 whitespace-nowrap">
                               Ra: {new Date(assignment.checkedOutAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           ) : isCheckedIn ? (
-                            <div className="text-[10px] text-emerald-500 font-semibold">Đang trực...</div>
+                            <div className="text-[10px] text-emerald-500 font-semibold whitespace-nowrap">Đang trực...</div>
                           ) : null}
                         </td>
 
