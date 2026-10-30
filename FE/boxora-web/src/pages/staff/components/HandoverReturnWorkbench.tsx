@@ -247,13 +247,14 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     authRole === 'BUSINESS_MANAGER' ||
     effectiveRole === 'BUSINESS_MANAGER'
   const isAdmin = !isBusinessManager && (effectiveRole === 'ADMIN' || effectiveRole === 'SYSTEM_ADMIN')
-  const canViewFullBankAccount = isBusinessManager || isAdmin
   const isFacilityManager =
     !isBusinessManager &&
     (userRole === 'FACILITY_MANAGER' ||
       userRole === 'ADMIN' ||
       effectiveRole === 'FACILITY_MANAGER' ||
       effectiveRole === 'ADMIN')
+  const canViewFullBankAccount = isFacilityManager || isBusinessManager || isAdmin
+  const canExecutePayout = isFacilityManager || isBusinessManager || isAdmin
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>([])
@@ -1777,8 +1778,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   // Task 16.4: Execute Payout to Customer (Manual Bank Transfer recorded)
   const handleExecutePayout = async () => {
-    if (isReadOnly) {
-      toast.warning('Tài khoản Business Manager chỉ có quyền xem trong luồng tiếp đón trả kho.')
+    if (!canExecutePayout) {
+      toast.warning('Chỉ Quản lý cơ sở (Facility Manager) hoặc Quản lý kinh doanh (Business Manager) mới có quyền ghi nhận chuyển khoản hoàn tiền.')
       return
     }
     if (!currentCase) return
@@ -3453,7 +3454,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         )}
 
                         {/* Nút hoàn tiền cho khách (Task 16.4) khi khách đồng ý và có tiền hoàn */}
-                        {!isReadOnly && netRefundAmount > 0 && currentCase.customerDecision === 'AGREED' && currentCase.refundStatus !== 'COMPLETED' && (
+                        {canExecutePayout && netRefundAmount > 0 && currentCase.customerDecision === 'AGREED' && currentCase.refundStatus !== 'COMPLETED' && currentCase.refundStatus !== 'REFUNDED' && (
                           <button
                             type="button"
                             onClick={() => setShowPayoutModal(true)}

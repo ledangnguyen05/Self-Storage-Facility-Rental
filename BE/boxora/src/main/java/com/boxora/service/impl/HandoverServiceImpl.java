@@ -4451,10 +4451,16 @@ public class HandoverServiceImpl implements HandoverService {
         }
         String roleName = operator.getRole() != null ? operator.getRole().getName() : "";
 
-        // STRICT RBAC: Only BUSINESS_MANAGER or ADMIN can execute payout!
-        if (!"BUSINESS_MANAGER".equalsIgnoreCase(roleName) && !"ADMIN".equalsIgnoreCase(roleName)) {
+        // RBAC: Only FACILITY_MANAGER, BUSINESS_MANAGER or ADMIN can execute payout!
+        boolean isAuthorized = "FACILITY_MANAGER".equalsIgnoreCase(roleName)
+                || "ROLE_FACILITY_MANAGER".equalsIgnoreCase(roleName)
+                || "BUSINESS_MANAGER".equalsIgnoreCase(roleName)
+                || "ROLE_BUSINESS_MANAGER".equalsIgnoreCase(roleName)
+                || "ADMIN".equalsIgnoreCase(roleName)
+                || "ROLE_ADMIN".equalsIgnoreCase(roleName);
+        if (!isAuthorized) {
             throw new AppException(ErrorCode.RETURN_UNAUTHORIZED_APPROVAL,
-                    "Chỉ Quản lý vận hành kinh doanh (BUSINESS_MANAGER) hoặc Quản trị viên (ADMIN) mới có thẩm quyền giải ngân hoàn tiền!");
+                    "Chỉ Quản lý cơ sở (FACILITY_MANAGER) hoặc Quản lý kinh doanh (BUSINESS_MANAGER) mới có thẩm quyền giải ngân hoàn tiền!");
         }
 
         HandoverRecord record = handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(booking.getId())
