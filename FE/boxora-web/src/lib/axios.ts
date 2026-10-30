@@ -1,20 +1,29 @@
-import axios from 'axios'
+﻿import axios from 'axios'
 
 export const getApiBaseUrl = (): string => {
   const envUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
   if (typeof window !== 'undefined') {
+    // Priority 1: ?api= query param (highest, always trusted — set by demo bat file)
     const params = new URLSearchParams(window.location.search)
     const queryApi = params.get('api')
     if (queryApi) {
       const cleanUrl = queryApi.replace(/\/+$/, '')
+      // Only persist to localStorage if it differs (avoids repeated writes)
       if (localStorage.getItem('boxora_api_url') !== cleanUrl) {
         localStorage.setItem('boxora_api_url', cleanUrl)
       }
       return cleanUrl
     }
+
+    // Priority 2: VITE_API_BASE_URL from build-time env (baked into bundle by Vite)
+    // When this is set, it means the bundle was built for a specific backend — use it.
+    // Do NOT fall through to localStorage in this case, because the saved URL may be
+    // a stale Cloudflare tunnel from a previous session that is now dead.
     if (envUrl) {
       return envUrl
     }
+
+    // Priority 3: localStorage — only used when env is empty (local dev without .env)
     const saved = localStorage.getItem('boxora_api_url')
     if (saved) return saved.replace(/\/+$/, '')
   }

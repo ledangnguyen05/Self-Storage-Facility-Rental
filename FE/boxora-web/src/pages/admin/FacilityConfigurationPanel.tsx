@@ -680,16 +680,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                               {t('Tự sinh mã', 'Auto generate')}
                             </button>
                           )}
-                          {canManage && editingFacility && editingFacility.status !== 'INACTIVE' && (
-                            <button
-                              type="button"
-                              onClick={() => setDeleteFacilityConfirm(editingFacility)}
-                              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/40 cursor-pointer"
-                            >
-                              <span className="material-symbols-outlined text-[15px]">delete</span>
-                              {t('Vo hieu hoa', 'Deactivate')}
-                            </button>
-                          )}
+
                         </div>
                         <input
                           required
@@ -1340,6 +1331,17 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                             >
                               <span className="material-symbols-outlined text-[15px]">edit</span>
                               {t('Sửa', 'Edit')}
+                            </button>
+                          )}
+                          {canManage && facility.status !== 'INACTIVE' && (
+                            <button
+                              type="button"
+                              onClick={() => setDeleteFacilityConfirm(facility)}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-400 dark:hover:bg-rose-950/40 cursor-pointer"
+                              title={t('Vo hieu hoa chi nhanh', 'Deactivate branch')}
+                            >
+                              <span className="material-symbols-outlined text-[15px]">delete</span>
+                              {t('Xoa', 'Delete')}
                             </button>
                           )}
                         </div>
