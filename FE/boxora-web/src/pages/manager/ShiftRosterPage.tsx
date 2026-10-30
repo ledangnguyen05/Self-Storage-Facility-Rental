@@ -19,6 +19,7 @@ import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { ShiftSwapModal } from './modals/ShiftSwapModal'
 import { ShiftHandoverModal } from './modals/ShiftHandoverModal'
 import { ShiftEditModal } from './modals/ShiftEditModal'
+import { ShiftDeleteConfirmModal } from './modals/ShiftDeleteConfirmModal'
 import { canCheckInShift, formatShiftTimeRange,
   formatShiftLabel,
   formatRoleInShift, BOXORA_SHIFTS } from '../../constants/shiftConstants'
@@ -193,6 +194,7 @@ export const ShiftRosterPage: React.FC = () => {
   const [selectedAssignmentForSwap, setSelectedAssignmentForSwap] = useState<StaffAssignmentResponse | null>(null)
   const [selectedAssignmentForDetail, setSelectedAssignmentForDetail] = useState<StaffAssignmentResponse | null>(null)
   const [selectedAssignmentForEdit, setSelectedAssignmentForEdit] = useState<StaffAssignmentResponse | null>(null)
+  const [selectedAssignmentForDelete, setSelectedAssignmentForDelete] = useState<StaffAssignmentResponse | null>(null)
   const [showHandoverModal, setShowHandoverModal] = useState(false)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -459,19 +461,21 @@ export const ShiftRosterPage: React.FC = () => {
     }
   }
 
-  const handleDeleteAssignment = async (id: string) => {
+  const handleConfirmDeleteAssignment = async (assignment: StaffAssignmentResponse) => {
     if (isAdmin) {
       showToast('Tài khoản Quản trị viên chỉ có quyền xem, giám sát ca trực toàn hệ thống.')
       return
     }
-    if (!window.confirm('Bạn có chắc chắn muốn hủy phân công ca trực này?')) return
-    setActionLoadingId(id)
+    setActionLoadingId(assignment.id)
     try {
-      await staffAssignmentService.deleteAssignment(id)
-      showToast('Đã hủy phân công ca trực thành công.')
+      await staffAssignmentService.deleteAssignment(assignment.id)
+      const staffName = assignment.staffFullName || assignment.staffUsername || 'nhân viên'
+      showToast(`Đã hủy phân công ca trực của ${staffName} thành công.`)
       await fetchData()
     } catch (err: any) {
-      showToast(err?.response?.data?.message || 'Không thể hủy ca trực.')
+      const msg = err?.response?.data?.message || 'Không thể hủy ca trực.'
+      showToast(msg)
+      throw err
     } finally {
       setActionLoadingId(null)
     }
@@ -1528,7 +1532,7 @@ export const ShiftRosterPage: React.FC = () => {
                               <button
                                 type="button"
                                 disabled={isLoadingAction}
-                                onClick={() => handleDeleteAssignment(assignment.id)}
+                                onClick={() => setSelectedAssignmentForDelete(assignment)}
                                 className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
                                 title="Hủy phân công ca này"
                               >
@@ -2060,6 +2064,20 @@ export const ShiftRosterPage: React.FC = () => {
                     Đổi ca làm
                   </button>
                 )}
+                {canManagerEditOrDelete(selectedAssignmentForDetail) && selectedAssignmentForDetail.status === 'ASSIGNED' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const a = selectedAssignmentForDetail
+                      setSelectedAssignmentForDetail(null)
+                      setSelectedAssignmentForDelete(a)
+                    }}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                    <span>Hủy phân công</span>
+                  </button>
+                )}
               </div>
 
               <button
@@ -2114,6 +2132,16 @@ export const ShiftRosterPage: React.FC = () => {
             showToast(msg)
             void fetchData()
           }}
+        />
+      )}
+
+      {/* MODAL: SHIFT DELETE CONFIRM MODAL */}
+      {selectedAssignmentForDelete && (
+        <ShiftDeleteConfirmModal
+          isOpen={Boolean(selectedAssignmentForDelete)}
+          assignment={selectedAssignmentForDelete}
+          onClose={() => setSelectedAssignmentForDelete(null)}
+          onConfirm={handleConfirmDeleteAssignment}
         />
       )}
     </div>
