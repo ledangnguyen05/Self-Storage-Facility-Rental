@@ -4035,6 +4035,9 @@ public class HandoverServiceImpl implements HandoverService {
 
                 // Notify Customer about submission to Business Manager
                 if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                    String bName = record.getBankName() != null ? record.getBankName() : "";
+                    String bAccNum = record.getBankAccountNumber() != null ? record.getBankAccountNumber() : "";
+                    String bAccName = record.getBankAccountName() != null ? record.getBankAccountName() : "";
                     NotificationLog custNotif = NotificationLog.builder()
                             .recipient(booking.getCustomer())
                             .recipientEmail(booking.getCustomer().getEmail())
