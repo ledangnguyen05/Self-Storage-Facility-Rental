@@ -28,7 +28,8 @@ export const SmartLockerDynamicHero: React.FC<SmartLockerDynamicHeroProps> = ({ 
         return
       }
 
-      gsap.from('[data-hero-copy]', { autoAlpha: 0, y: 18, duration: 0.75, stagger: 0.08, ease: 'power3.out', delay: 0.05 })
+      gsap.set('[data-hero-copy]', { autoAlpha: 0, y: 18 })
+      gsap.to('[data-hero-copy]', { autoAlpha: 1, y: 0, duration: 0.75, stagger: 0.08, ease: 'power3.out', delay: 0.05 })
       gsap.to('[data-bg-cloud="a"]', {
         x: 34,
         y: -18,
