@@ -2879,7 +2879,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               { id: 'bookings', label: 'Đơn đặt giữ chỗ', icon: 'pending_actions', badge: customerBookings.length },
               { id: 'contracts', label: 'Hợp đồng & Hóa đơn', icon: 'receipt_long', badge: visibleContracts.length },
               { id: 'explore', label: 'Tìm & Thuê kho mới', icon: 'travel_explore' },
-              { id: 'support', label: 'Trung tâm hỗ trợ', icon: 'support_agent' },
+              { id: 'support', label: 'Trung tâm hỗ trợ', icon: 'support_agent', badge: customerTickets.length },
               { id: 'returns', label: 'Trả kho', icon: 'assignment_return', badge: returnActivityLogs.length },
             ].map(tabItem => {
               const isTabActive = activeTab === tabItem.id
