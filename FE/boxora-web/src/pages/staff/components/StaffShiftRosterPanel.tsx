@@ -10,6 +10,7 @@ import {
   ShiftHandover,
   isShiftAbsent,
   isShiftForgottenCheckout,
+  isShiftStarted,
   calculateShiftWorkHours
 } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
@@ -1353,7 +1354,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                             )}
 
                             {/* Swap Shift: Quick button for caller's own upcoming valid shift */}
-                            {isMyShift && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && (
+                            {isMyShift && !isAbsent && assignment.status === 'ASSIGNED' && assignment.assignedDate >= todayStr && !isShiftStarted(assignment) && (
                               <button
                                 type="button"
                                 onClick={() => {

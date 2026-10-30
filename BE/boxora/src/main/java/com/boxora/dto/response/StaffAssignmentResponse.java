@@ -26,6 +26,7 @@ public class StaffAssignmentResponse {
     private String staffUsername;
     private String staffFullName;
     private String staffEmail;
+    private String staffRole;
 
     // Facility details
     private UUID facilityId;

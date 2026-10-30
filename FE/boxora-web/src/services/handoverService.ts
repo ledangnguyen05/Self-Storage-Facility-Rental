@@ -373,7 +373,7 @@ export const handoverService = {
     bookingId: string,
     data: { approvalAction: 'APPROVE' | 'REJECT'; approvedDeductionAmount?: number; notes?: string }
   ): Promise<ReturnSettlementDetail> {
-    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/approve-settlement`, data)
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/approve-settlement`, { bookingId, ...data })
     return response.data?.data as ReturnSettlementDetail
   },
 
@@ -396,12 +396,12 @@ export const handoverService = {
     bookingId: string,
     data: { refundMethod?: string; notes?: string }
   ): Promise<ReturnSettlementDetail> {
-    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/execute-refund`, data)
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/execute-refund`, { bookingId, ...data })
     return response.data?.data as ReturnSettlementDetail
   },
 
   async confirmPhysicalReturn(bookingId: string, data?: { notes?: string }): Promise<HandoverRecord> {
-    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/confirm-physical-return`, data || {})
+    const response = await api.post(`/api/v1/handovers/returns/${bookingId}/confirm-physical-return`, { bookingId, ...(data || {}) })
     return response.data?.data as HandoverRecord
   },
 

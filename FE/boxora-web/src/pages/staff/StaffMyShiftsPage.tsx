@@ -7,6 +7,7 @@ import {
   ShiftHandover,
   isShiftAbsent,
   isShiftForgottenCheckout,
+  isShiftStarted,
   calculateShiftWorkHours
 } from '../../services/staffAssignmentService'
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
@@ -891,7 +892,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                                   </button>
                                 )}
 
-                                {item.status === 'ASSIGNED' && !isAbsent && item.assignedDate >= todayStr && (
+                                {item.status === 'ASSIGNED' && !isAbsent && item.assignedDate >= todayStr && !isShiftStarted(item) && (
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -1193,7 +1194,7 @@ export const StaffMyShiftsPage: React.FC = () => {
                   type="button"
                   id="btn-staff-xin-doi-ca"
                   onClick={() => {
-                    const upcoming = assignments.find(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr)
+                    const upcoming = assignments.find(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr && !isShiftStarted(a))
                     setShiftForSwap(upcoming || null)
                     setShowSwapModal(true)
                   }}

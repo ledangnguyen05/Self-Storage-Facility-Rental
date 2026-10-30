@@ -12,6 +12,7 @@ public interface StaffAssignmentMapper {
     @Mapping(source = "staff.username", target = "staffUsername")
     @Mapping(source = "staff.fullName", target = "staffFullName")
     @Mapping(source = "staff.email", target = "staffEmail")
+    @Mapping(source = "staff.role.name", target = "staffRole")
     @Mapping(source = "facility.id", target = "facilityId")
     @Mapping(source = "facility.name", target = "facilityName")
     @Mapping(source = "facility.code", target = "facilityCode")

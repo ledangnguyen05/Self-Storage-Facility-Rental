@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { userService } from '../../../services/userService'
-import { staffAssignmentService, StaffAssignmentResponse } from '../../../services/staffAssignmentService'
+import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent, isShiftStarted } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
 import { User } from '../../../types'
 
@@ -45,7 +45,7 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
   // Filter swappable assignments (only upcoming / active assignments)
   const validAssignments = useMemo(() => {
     const list = assignment ? [assignment] : availableAssignments
-    return list.filter(a => a.status !== 'COMPLETED' && a.status !== 'CANCELLED')
+    return list.filter(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftStarted(a))
   }, [assignment, availableAssignments])
 
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('')
@@ -103,7 +103,7 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
         facilityId: effFacility,
         size: 50
       })
-      const list = (res?.content || []).filter((a: StaffAssignmentResponse) => a.status !== 'COMPLETED' && a.status !== 'CANCELLED')
+      const list = (res?.content || []).filter((a: StaffAssignmentResponse) => a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftStarted(a))
       setFetchedUserAssignments(list)
       if (list.length > 0) {
         setSelectedAssignmentId(list[0].id)

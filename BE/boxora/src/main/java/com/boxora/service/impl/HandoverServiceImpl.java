@@ -443,6 +443,9 @@ public class HandoverServiceImpl implements HandoverService {
 
     @Override
     public HandoverResponse checkIn(HandoverRequest request) {
+        if (request == null || request.getBookingId() == null) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Mã đơn đặt kho không được để trống");
+        }
         Booking booking = bookingRepository.findByIdForUpdate(request.getBookingId())
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
