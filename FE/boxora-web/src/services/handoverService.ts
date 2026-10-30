@@ -665,6 +665,8 @@ export interface ReturnSettlementDetail {
   returnedAt?: string
   accessRevoked?: boolean
   accessRevokedAt?: string
+  evidencePhotoCount?: number
+  evidencePhotos?: string[]
 }
 
 export interface ReturnInspectionPayload {

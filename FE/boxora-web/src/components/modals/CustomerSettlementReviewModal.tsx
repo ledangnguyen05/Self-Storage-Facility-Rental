@@ -11,7 +11,10 @@ import {
   Send,
   RefreshCw,
   Info,
-  Undo2
+  Undo2,
+  Camera,
+  Image as ImageIcon,
+  ZoomIn
 } from 'lucide-react'
 import { handoverService, ReturnSettlementDetail, SettlementSnapshot } from '../../services/handoverService'
 import { paymentService } from '../../services/paymentService'
@@ -276,10 +279,10 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95 my-8">
-        {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-hidden">
+      <div className="bg-white rounded-2xl max-w-xl sm:max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 animate-in zoom-in-95 my-auto overflow-hidden">
+        {/* Header cố định */}
+        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 shrink-0 bg-white">
           <div className="flex items-center gap-2.5 text-indigo-700">
             <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
               <ShieldCheck size={22} />
@@ -306,6 +309,9 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
             <X size={18} />
           </button>
         </div>
+
+        {/* Vùng body cuộn mượt mà chống tràn khi zoom in / zoom out */}
+        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-5 min-h-0">
 
         {loading ? (
           <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
@@ -476,6 +482,52 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     </p>
                   </div>
                 )}
+                {/* 3.1. HÌNH ẢNH BẰNG CHỨNG NGHIỆM THU HIỆN TRƯỜNG (BƯỚC 6) */}
+                {settlement.evidencePhotos && settlement.evidencePhotos.length > 0 && (
+                  <div className="space-y-2.5 p-4 rounded-xl bg-slate-50 border border-slate-200/90 text-xs shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <div className="font-bold flex items-center gap-1.5 text-indigo-950">
+                        <Camera size={16} className="text-indigo-600" />
+                        <span>Hình ảnh kiểm tra &amp; nghiệm thu hiện trường ({settlement.evidencePhotos.length} ảnh)</span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium">Nhân viên tải lên ở Bước 6</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                      {settlement.evidencePhotos.map((photoUrl, pIdx) => {
+                        const resolvedUrl = resolveReceiptUrl(photoUrl)
+                        return (
+                          <div
+                            key={pIdx}
+                            onClick={() => setPreviewProofModal(resolvedUrl)}
+                            className="group relative aspect-4/3 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-2xs hover:shadow-md transition-all cursor-pointer"
+                          >
+                            <img
+                              src={resolvedUrl}
+                              alt={`Bằng chứng hiện trường ${pIdx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none'
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/40 flex items-center justify-center transition-colors">
+                              <span className="material-symbols-outlined text-white text-[22px] opacity-0 group-hover:opacity-100 transition-opacity drop-shadow">
+                                zoom_in
+                              </span>
+                            </div>
+                            <div className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded bg-black/70 text-white font-mono text-[9px] font-bold">
+                              Ảnh #{pIdx + 1}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    <p className="text-[11px] text-slate-500 italic">
+                      * Nhấp vào từng ảnh để phóng to xem chi tiết hiện trạng buồng kho khi nghiệm thu trả kho.
+                    </p>
+                  </div>
+                )}
+
 
                 {/* Tình trạng phản hồi của khách hàng */}
                 {settlement.customerDecision === 'AGREED' && (
@@ -576,6 +628,25 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     <div className="bg-white p-2.5 rounded-lg border border-rose-200 space-y-1 text-slate-700">
                       <span className="text-slate-500 font-semibold text-[11px]">Nội dung khiếu nại đã gửi:</span>
                       <p className="italic font-medium">"{settlement.disputeReason || 'Khách hàng không đồng ý với khoản chi phí khấu trừ hiện tại.'}"</p>
+                      {settlement.disputeEvidenceUrls && settlement.disputeEvidenceUrls.length > 0 && (
+                        <div className="pt-1.5 border-t border-rose-100 space-y-1 text-[11px]">
+                          <span className="text-slate-500 font-semibold">Minh chứng đính kèm:</span>
+                          <div className="flex flex-col gap-1">
+                            {settlement.disputeEvidenceUrls.map((url, uIdx) => (
+                              <a
+                                key={uIdx}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-indigo-600 hover:text-indigo-700 underline font-mono font-medium truncate max-w-sm flex items-center gap-1"
+                              >
+                                <span>{url}</span>
+                                <ExternalLink size={11} />
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     {settlement.disputeResolutionNote && (
                       <div className="bg-emerald-50 p-2.5 rounded-lg border border-emerald-200 space-y-1 text-emerald-950">
@@ -854,6 +925,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* MODAL XÁC NHẬN LẠI THÔNG TIN TÀI KHOẢN NGÂN HÀNG & MIỄN TRỪ TRÁCH NHIỆM */}
@@ -963,8 +1035,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
           >
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
-                <CheckCircle2 size={15} className="text-emerald-600" />
-                <span>Biên Lai Chuyển Khoản Hoàn Tiền Cọc Boxora</span>
+                <Camera size={15} className="text-indigo-600" />
+                <span>Xem Phóng To Hình Ảnh / Bằng Chứng Đối Soát Boxora</span>
               </span>
               <button
                 type="button"
