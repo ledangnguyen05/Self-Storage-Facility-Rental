@@ -2786,7 +2786,14 @@ public class HandoverServiceImpl implements HandoverService {
             caseStatus = "REFUND_APPROVED";
         } else if ("PENDING".equalsIgnoreCase(approvalStatus)
                 || "PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)
-                || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)) {
+                || "REFUND_PENDING_APPROVAL".equalsIgnoreCase(approvalStatus)
+                || "PENDING_CUSTOMER_REVIEW".equalsIgnoreCase(approvalStatus)
+                || "SETTLEMENT_ADJUSTED".equalsIgnoreCase(approvalStatus)
+                || "DISPUTE_UPHELD".equalsIgnoreCase(approvalStatus)
+                || "DISPUTED".equalsIgnoreCase(inspectionRecord != null ? inspectionRecord.getCustomerDecision() : null)
+                || Boolean.TRUE.equals(inspectionRecord != null ? inspectionRecord.getSettlementConfirmed() : null)
+                || ("PENDING".equalsIgnoreCase(inspectionRecord != null ? inspectionRecord.getCustomerDecision() : null)
+                    && inspectionRecord != null && Boolean.TRUE.equals(inspectionRecord.getSettlementConfirmed()))) {
             caseStatus = "REFUND_PENDING_APPROVAL";
         } else if (inspectionRecord != null && (recordHasIssue || "INSPECTION_ISSUE".equalsIgnoreCase(inspStatus) || "ISSUE".equalsIgnoreCase(inspStatus))) {
             caseStatus = "INSPECTION_ISSUE";
@@ -3286,6 +3293,10 @@ public class HandoverServiceImpl implements HandoverService {
                 : null;
         int slaDays = policy != null && policy.getDepositRefundSlaDays() != null ? policy.getDepositRefundSlaDays() : 7;
 
+        List<String> evidencePhotosList = (record != null && record.getEvidencePhotos() != null && !record.getEvidencePhotos().isBlank())
+                ? Arrays.stream(record.getEvidencePhotos().split(";")).map(String::trim).filter(s -> !s.isBlank()).collect(Collectors.toList())
+                : List.of();
+
         return ReturnSettlementResponse.builder()
                 .handoverRecordId(record != null ? record.getId() : null)
                 .bookingId(booking.getId())
@@ -3344,6 +3355,8 @@ public class HandoverServiceImpl implements HandoverService {
                 .bankAccountName(record != null ? record.getBankAccountName() : null)
                 .refundRequestId(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getId() : null)
                 .transferProofUrl(record != null && record.getRefundRequest() != null ? record.getRefundRequest().getTransferProofUrl() : null)
+                .evidencePhotoCount(evidencePhotosList.size())
+                .evidencePhotos(evidencePhotosList)
                 .snapshots(getSnapshotsForRecord(record != null ? record.getId() : null))
                 .build();
     }
@@ -5009,7 +5022,7 @@ public class HandoverServiceImpl implements HandoverService {
         record.setSettlementConfirmed(false);
         record.setSettlementConfirmedBy(null);
         record.setSettlementConfirmedAt(null);
-        record.setApprovalStatus("DRAFT");
+        record.setApprovalStatus("SETTLEMENT_ADJUSTED");
         record.setInspectionStatus("COMPLETED");
         record.setRefundStatus("NONE");
 

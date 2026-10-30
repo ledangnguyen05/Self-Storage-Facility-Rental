@@ -660,33 +660,41 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         st === 'REFUND_APPROVED' ||
         st === 'REFUND_PENDING_APPROVAL'
 
+      const isSettlementStage =
+        st === 'REFUND_PENDING_APPROVAL' ||
+        st === 'REFUND_APPROVED' ||
+        st === 'REFUND_PROCESSING' ||
+        st === 'REFUNDED' ||
+        st === 'DISPUTED' ||
+        c.approvalStatus === 'PENDING_APPROVAL' ||
+        c.approvalStatus === 'PENDING_CUSTOMER_REVIEW' ||
+        c.approvalStatus === 'SETTLEMENT_ADJUSTED' ||
+        c.approvalStatus === 'DISPUTE_UPHELD' ||
+        c.approvalStatus === 'DISPUTED' ||
+        c.approvalStatus === 'CUSTOMER_AGREED' ||
+        c.customerDecision === 'AGREED' ||
+        c.customerDecision === 'PENDING' ||
+        c.customerDecision === 'DISPUTED' ||
+        c.refundStatus === 'PENDING_PAYOUT' ||
+        Boolean(c.settlementConfirmed)
+
       if (statusTabFilter !== 'ALL') {
         if (statusTabFilter === 'PENDING' && !(st === 'RETURN_REQUESTED' || st === 'PENDING')) return false
         if (
           statusTabFilter === 'INSPECTING' &&
-          (!(
-            st === 'INSPECTION_IN_PROGRESS' ||
-            st === 'INSPECTION_SCHEDULED' ||
-            st === 'INSPECTION_ISSUE' ||
-            st === 'INSPECTION_PASSED' ||
-            st === 'INSPECTING'
-          ) || isCustomerAgreed)
+          (isSettlementStage ||
+            !(
+              st === 'INSPECTION_IN_PROGRESS' ||
+              st === 'INSPECTION_SCHEDULED' ||
+              st === 'INSPECTION_ISSUE' ||
+              st === 'INSPECTION_PASSED' ||
+              st === 'INSPECTING'
+            ) || isCustomerAgreed)
         )
           return false
         if (
           statusTabFilter === 'REFUNDING' &&
-          !(
-            st === 'REFUND_PENDING_APPROVAL' ||
-            st === 'REFUND_APPROVED' ||
-            st === 'REFUND_PROCESSING' ||
-            st === 'REFUNDED' ||
-            st === 'DISPUTED' ||
-            c.approvalStatus === 'PENDING_APPROVAL' ||
-            c.approvalStatus === 'DISPUTED' ||
-            c.approvalStatus === 'CUSTOMER_AGREED' ||
-            c.customerDecision === 'AGREED' ||
-            c.refundStatus === 'PENDING_PAYOUT'
-          )
+          !isSettlementStage
         )
           return false
         if (statusTabFilter === 'COMPLETED' && st !== 'COMPLETED') return false
@@ -1517,16 +1525,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     let completed = 0
     returnCases.forEach((c) => {
       const st = String(c.status || '').toUpperCase()
-      const isCustomerAgreed =
-        c.customerDecision === 'AGREED' ||
-        c.approvalStatus === 'CUSTOMER_AGREED' ||
-        c.refundStatus === 'PENDING_PAYOUT' ||
-        st === 'REFUND_APPROVED' ||
-        st === 'REFUND_PENDING_APPROVAL'
-
-      if (st === 'COMPLETED' || st === 'RESOLVED') {
-        completed++
-      } else if (
+      const isSettlementStage =
         st === 'REFUND_PENDING_APPROVAL' ||
         st === 'REFUND_APPROVED' ||
         st === 'REFUND_PROCESSING' ||
@@ -1534,9 +1533,20 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         st === 'REFUNDING' ||
         st === 'DISPUTED' ||
         c.approvalStatus === 'PENDING_APPROVAL' ||
+        c.approvalStatus === 'PENDING_CUSTOMER_REVIEW' ||
+        c.approvalStatus === 'SETTLEMENT_ADJUSTED' ||
+        c.approvalStatus === 'DISPUTE_UPHELD' ||
         c.approvalStatus === 'DISPUTED' ||
-        isCustomerAgreed
-      ) {
+        c.approvalStatus === 'CUSTOMER_AGREED' ||
+        c.customerDecision === 'AGREED' ||
+        c.customerDecision === 'PENDING' ||
+        c.customerDecision === 'DISPUTED' ||
+        c.refundStatus === 'PENDING_PAYOUT' ||
+        Boolean(c.settlementConfirmed)
+
+      if (st === 'COMPLETED' || st === 'RESOLVED') {
+        completed++
+      } else if (isSettlementStage) {
         refunding++
       } else if (
         st === 'INSPECTION_IN_PROGRESS' ||
@@ -1857,6 +1867,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       toast.success('Đã chốt quyết toán và gửi thông báo xác nhận cho khách hàng!')
       setShowConfirmSettlementModal(false)
       setSettlementNotesInput('')
+      setStatusTabFilter('REFUNDING')
       await fetchReturnCases()
     } catch (err: any) {
       toast.error(`Lỗi xác nhận quyết toán: ${err.response?.data?.message || err.message}`)
@@ -1893,6 +1904,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       toast.success('Đã xử lý khiếu nại quyết toán thành công!')
       setShowDisputeResolveModal(false)
       setDisputeResolutionNote('')
+      setStatusTabFilter('REFUNDING')
       await fetchReturnCases()
     } catch (err: any) {
       toast.error(`Lỗi xử lý khiếu nại: ${err.response?.data?.message || err.message}`)
