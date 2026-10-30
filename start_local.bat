@@ -22,28 +22,32 @@ echo.
 :: ==============================================================================
 :: BUOC 0: TIM KIEM JDK PHU HOP (17 hoac 21)
 :: ==============================================================================
-set "FOUND_JDK="
+set "JAVA_EXE=java"
 if exist "C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot\bin\java.exe" (
-    set "FOUND_JDK=C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
-) else (
-    for /d %%D in (
-        "C:\Program Files\Eclipse Adoptium\jdk-21*"
-        "C:\Program Files\Eclipse Adoptium\jdk-17*"
-        "C:\Program Files\Java\jdk-21*"
-        "C:\Program Files\Java\jdk-17*"
-        "C:\Program Files\Microsoft\jdk-21*"
-        "C:\Program Files\Microsoft\jdk-17*"
-    ) do (
-        if exist "%%~D\bin\java.exe" set "FOUND_JDK=%%~D"
+    set "JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot"
+    set "JAVA_EXE=C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot\bin\java.exe"
+    set "PATH=C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot\bin;%PATH%"
+    echo [OK] JDK phat hien: C:\Program Files\Eclipse Adoptium\jdk-21.0.8.9-hotspot
+    goto JAVA_FOUND
+)
+for /d %%D in (
+    "C:\Program Files\Eclipse Adoptium\jdk-21*"
+    "C:\Program Files\Eclipse Adoptium\jdk-17*"
+    "C:\Program Files\Java\jdk-21*"
+    "C:\Program Files\Java\jdk-17*"
+    "C:\Program Files\Microsoft\jdk-21*"
+    "C:\Program Files\Microsoft\jdk-17*"
+) do (
+    if exist "%%~D\bin\java.exe" (
+        set "JAVA_HOME=%%~D"
+        set "JAVA_EXE=%%~D\bin\java.exe"
+        set "PATH=%%~D\bin;%PATH%"
+        echo [OK] JDK phat hien: %%~D
+        goto JAVA_FOUND
     )
 )
-if defined FOUND_JDK (
-    set "JAVA_HOME=!FOUND_JDK!"
-    set "PATH=!FOUND_JDK!\bin;!PATH!"
-    echo [OK] JDK phat hien: !FOUND_JDK!
-) else (
-    echo [OK] Su dung Java co san trong PATH he thong.
-)
+echo [OK] Su dung Java co san trong PATH he thong.
+:JAVA_FOUND
 echo.
 
 :: ==============================================================================
@@ -75,17 +79,12 @@ if %errorlevel% equ 0 (
     goto CHECK_FRONTEND
 )
 
-:: Khoi dong Backend
 set "JAR_FILE=%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar"
 if exist "!JAR_FILE!" (
-    echo   - Tim thay JAR, khoi dong truc tiep (khong build lai)...
-    if defined FOUND_JDK (
-        start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA BACKEND (8080) && \"!FOUND_JDK!\bin\java.exe\" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
-    ) else (
-        start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA BACKEND (8080) && java -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
-    )
+    echo   - Tim thay JAR, khoi dong truc tiep ^(khong build lai^)...
+    start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA BACKEND (8080) && "!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
 ) else (
-    echo   - Chua co file JAR, dang build va chay Backend (lan dau co the mat vai phut)...
+    echo   - Chua co file JAR, dang build va chay Backend ^(lan dau co the mat vai phut^)...
     start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA BACKEND (8080) && call setup_and_run_backend.bat 1"
 )
 
@@ -113,7 +112,6 @@ goto CHECK_BACKEND_LOOP
 echo.
 echo [3/4] Cau hinh moi truong Frontend (ket noi Local Backend)...
 
-:: Ghi .env tro ve localhost:8080 cho local dev
 (
     echo VITE_API_BASE_URL=http://localhost:8080
     echo VITE_GOOGLE_CLIENT_ID=564968487479-aooibm2esqg9bic2iuu1a729ci4qfo3q.apps.googleusercontent.com
@@ -145,7 +143,7 @@ if %errorlevel% equ 0 (
     goto LAUNCH_BROWSER
 )
 if !FE_RETRY! GEQ 15 (
-    echo [WARNING] Frontend chua san sang - van mo trinh duyet (Vite co the dang khoi dong)...
+    echo [WARNING] Frontend chua san sang - van mo trinh duyet...
     goto LAUNCH_BROWSER
 )
 echo     ... lan !FE_RETRY!/15 - dang cho Vite khoi dong...
@@ -174,5 +172,7 @@ echo ===========================================================================
 echo.
 echo  Dang mo trinh duyet tai http://localhost:5173 ...
 start "" "http://localhost:5173"
+echo.
+echo  Giu cua so nay de theo doi. Nhan phim bat ky de dong.
 echo.
 pause
