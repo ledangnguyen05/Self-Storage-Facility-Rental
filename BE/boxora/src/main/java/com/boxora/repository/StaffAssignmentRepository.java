@@ -41,7 +41,13 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
 
     boolean existsByStaff_IdAndAssignedDateAndShift(UUID staffId, LocalDate assignedDate, StaffShift shift);
 
+    boolean existsByStaff_IdAndAssignedDateAndShiftAndStatusNot(UUID staffId, LocalDate assignedDate, StaffShift shift, StaffAssignmentStatus status);
+
     boolean existsByStaff_IdAndAssignedDateAndShiftAndIdNot(UUID staffId, LocalDate assignedDate, StaffShift shift, UUID id);
+
+    boolean existsByStaff_IdAndAssignedDateAndShiftAndIdNotAndStatusNot(UUID staffId, LocalDate assignedDate, StaffShift shift, UUID id, StaffAssignmentStatus status);
+
+    Optional<StaffAssignment> findFirstByStaff_IdAndAssignedDateAndShiftAndStatus(UUID staffId, LocalDate assignedDate, StaffShift shift, StaffAssignmentStatus status);
 
     boolean existsByStaff_IdAndFacility_IdAndAssignedDateAndStatusNotIn(UUID staffId, UUID facilityId, LocalDate assignedDate, List<StaffAssignmentStatus> statuses);
 

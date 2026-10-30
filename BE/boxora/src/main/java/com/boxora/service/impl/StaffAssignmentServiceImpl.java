@@ -38,6 +38,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -114,9 +115,9 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền tạo phân công ca trực");
         }
 
-        // 4. Kiểm tra trùng ca trực trong ngày của nhân viên
-        boolean alreadyAssigned = staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(
-                staff.getId(), request.getAssignedDate(), request.getShift()
+        // 4. Kiểm tra trùng ca trực trong ngày của nhân viên (loại trừ các ca đã hủy)
+        boolean alreadyAssigned = staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShiftAndStatusNot(
+                staff.getId(), request.getAssignedDate(), request.getShift(), StaffAssignmentStatus.CANCELLED
         );
         if (alreadyAssigned) {
             throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
@@ -148,21 +149,42 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         validateShiftNotInPast(request.getAssignedDate(), startTime, endTime, request.getShift());
         ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
 
-        // 7. Tạo thực thể phân công ca
-        StaffAssignment assignment = StaffAssignment.builder()
-                .staff(staff)
-                .facility(facility)
-                .assignedDate(request.getAssignedDate())
-                .shift(request.getShift())
-                .startTime(startTime)
-                .endTime(endTime)
-                .assignedZone(request.getAssignedZone())
-                .roleInShift(request.getRoleInShift() != null && !request.getRoleInShift().isBlank()
-                        ? request.getRoleInShift() : "PRIMARY_STAFF")
-                .status(StaffAssignmentStatus.ASSIGNED)
-                .assignedBy(assignedBy)
-                .notes(request.getNotes())
-                .build();
+        // 7. Tạo thực thể phân công ca (tái sử dụng bản ghi đã hủy nếu có)
+        Optional<StaffAssignment> cancelledRecord = staffAssignmentRepository.findFirstByStaff_IdAndAssignedDateAndShiftAndStatus(
+                staff.getId(), request.getAssignedDate(), request.getShift(), StaffAssignmentStatus.CANCELLED
+        );
+        StaffAssignment assignment;
+        if (cancelledRecord.isPresent()) {
+            assignment = cancelledRecord.get();
+            assignment.setFacility(facility);
+            assignment.setAssignedZone(request.getAssignedZone());
+            assignment.setRoleInShift(request.getRoleInShift() != null && !request.getRoleInShift().isBlank()
+                    ? request.getRoleInShift() : "PRIMARY_STAFF");
+            assignment.setStatus(StaffAssignmentStatus.ASSIGNED);
+            assignment.setAssignedBy(assignedBy);
+            assignment.setNotes(request.getNotes());
+            assignment.setStartTime(startTime);
+            assignment.setEndTime(endTime);
+            assignment.setCheckedInAt(null);
+            assignment.setCheckedOutAt(null);
+            assignment.setCheckInNote(null);
+            assignment.setCheckOutNote(null);
+        } else {
+            assignment = StaffAssignment.builder()
+                    .staff(staff)
+                    .facility(facility)
+                    .assignedDate(request.getAssignedDate())
+                    .shift(request.getShift())
+                    .startTime(startTime)
+                    .endTime(endTime)
+                    .assignedZone(request.getAssignedZone())
+                    .roleInShift(request.getRoleInShift() != null && !request.getRoleInShift().isBlank()
+                            ? request.getRoleInShift() : "PRIMARY_STAFF")
+                    .status(StaffAssignmentStatus.ASSIGNED)
+                    .assignedBy(assignedBy)
+                    .notes(request.getNotes())
+                    .build();
+        }
 
         StaffAssignment saved = staffAssignmentRepository.save(assignment);
 
@@ -242,13 +264,14 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 assignment.getStaff().getId(), assignment.getAssignedDate(),
                 effectiveStartTime, effectiveEndTime, assignment.getId());
 
-        // Kiểm tra trùng ca nếu có thay đổi shift
+        // Kiểm tra trùng ca nếu có thay đổi shift (loại trừ các ca đã hủy)
         if (request.getShift() != null && request.getShift() != assignment.getShift()) {
-            boolean duplicate = staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShiftAndIdNot(
+            boolean duplicate = staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShiftAndIdNotAndStatusNot(
                     assignment.getStaff().getId(),
                     assignment.getAssignedDate(),
                     request.getShift(),
-                    assignment.getId()
+                    assignment.getId(),
+                    StaffAssignmentStatus.CANCELLED
             );
             if (duplicate) {
                 throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);

@@ -31,7 +31,8 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
   const isBusinessManager = userRole === 'BUSINESS_MANAGER'
   const activeTargetRole: 'STAFF' | 'FACILITY_MANAGER' = targetRole || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')
 
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(facilityId || '')
+  const initialFacilityId = facilityId || user?.facilityId || (facilities.length > 0 ? facilities[0].id : '')
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(initialFacilityId)
   const [staffList, setStaffList] = useState<User[]>([])
   const [isLoadingStaff, setIsLoadingStaff] = useState(false)
   const [selectedStaffId, setSelectedStaffId] = useState<string>('')
@@ -54,10 +55,12 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
   useEffect(() => {
     if (facilityId) {
       setSelectedFacilityId(facilityId)
+    } else if (user?.facilityId) {
+      setSelectedFacilityId(user.facilityId)
     } else if (facilities.length > 0 && !selectedFacilityId) {
       setSelectedFacilityId(facilities[0].id)
     }
-  }, [facilityId, facilities])
+  }, [facilityId, facilities, user?.facilityId])
 
   useEffect(() => {
     if (isOpen) {
@@ -125,7 +128,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
         size: 100
       })
       const list = res?.content || (Array.isArray(res) ? res : [])
-      setFacilityDayAssignments(list.filter((a: StaffAssignmentResponse) => a.status !== 'CANCELLED'))
+      setFacilityDayAssignments(list)
     } catch (err) {
       console.warn('Failed to load facility day assignments:', err)
       setFacilityDayAssignments([])
@@ -146,7 +149,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
         size: 50
       })
       const list = res?.content || (Array.isArray(res) ? res : [])
-      setStaffAssignedShifts(list.filter((a: StaffAssignmentResponse) => a.status !== 'CANCELLED'))
+      setStaffAssignedShifts(list)
     } catch (err) {
       console.warn('Failed to load staff assigned shifts:', err)
       setStaffAssignedShifts([])
@@ -171,19 +174,57 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
     }
   }, [isOpen, selectedStaffId, assignmentDate, loadSelectedStaffShifts])
 
-  // Tổng hợp các ca mà nhân viên đã được phân công trên ngày này (bao gồm cả cùng cơ sở hoặc cơ sở khác)
+  // Tổng hợp các ca đang hiệu lực của nhân viên được chọn (Active: ASSIGNED, CHECKED_IN, COMPLETED, ABSENT)
   const assignedShiftTypes = useMemo(() => {
     const set = new Set<string>()
-    staffAssignedShifts.forEach(a => {
-      if (a.shift) set.add(a.shift)
-    })
+    staffAssignedShifts
+      .filter(a => a.status !== 'CANCELLED')
+      .forEach(a => {
+        if (a.shift) set.add(a.shift)
+      })
     facilityDayAssignments
-      .filter(a => a.staffId === selectedStaffId)
+      .filter(a => a.staffId === selectedStaffId && a.status !== 'CANCELLED')
       .forEach(a => {
         if (a.shift) set.add(a.shift)
       })
     return set
   }, [staffAssignedShifts, facilityDayAssignments, selectedStaffId])
+
+  // Tổng hợp các ca đã hủy của nhân viên được chọn (CANCELLED)
+  const cancelledShiftTypes = useMemo(() => {
+    const set = new Set<string>()
+    staffAssignedShifts
+      .filter(a => a.status === 'CANCELLED')
+      .forEach(a => {
+        if (a.shift) set.add(a.shift)
+      })
+    facilityDayAssignments
+      .filter(a => a.staffId === selectedStaffId && a.status === 'CANCELLED')
+      .forEach(a => {
+        if (a.shift) set.add(a.shift)
+      })
+    return set
+  }, [staffAssignedShifts, facilityDayAssignments, selectedStaffId])
+
+  // Chuyển chọn nhân viên và tự động nhảy ca nếu ca hiện tại bị trùng
+  const handleSelectStaff = (staffId: string) => {
+    setSelectedStaffId(staffId)
+    const busyShifts = new Set<string>()
+    facilityDayAssignments
+      .filter(a => a.staffId === staffId && a.status !== 'CANCELLED')
+      .forEach(a => {
+        if (a.shift) busyShifts.add(a.shift)
+      })
+
+    if (busyShifts.has(shiftType) || isShiftInPast(assignmentDate, shiftType)) {
+      const nextAvailable = STANDARD_SHIFTS_LIST.find(
+        s => !isShiftInPast(assignmentDate, s.type) && !busyShifts.has(s.type)
+      )
+      if (nextAvailable) {
+        setShiftType(nextAvailable.type as 'MORNING' | 'AFTERNOON' | 'NIGHT')
+      }
+    }
+  }
 
   // Kiểm tra xem tất cả các ca trong ngày đã kín hoặc đã qua giờ chưa
   const isAllShiftsUnavailable = useMemo(() => {
@@ -383,13 +424,15 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
                 {staffList.map(staff => {
-                  const staffDayShifts = facilityDayAssignments.filter(a => a.staffId === staff.id)
+                  const staffAssignments = facilityDayAssignments.filter(a => a.staffId === staff.id)
+                  const staffActiveShifts = staffAssignments.filter(a => a.status !== 'CANCELLED')
+                  const staffCancelledShifts = staffAssignments.filter(a => a.status === 'CANCELLED')
                   const isSelected = selectedStaffId === staff.id
 
                   return (
                     <div
                       key={staff.id}
-                      onClick={() => setSelectedStaffId(staff.id)}
+                      onClick={() => handleSelectStaff(staff.id)}
                       className={`p-2.5 rounded-xl border flex items-center justify-between gap-2.5 cursor-pointer transition-all ${
                         isSelected
                           ? 'border-slate-900 bg-slate-50 ring-2 ring-slate-900/10 shadow-xs'
@@ -424,11 +467,18 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
                           <span className="text-[10px] text-slate-500 truncate">
                             {staff.email}
                           </span>
-                          {staffDayShifts.length > 0 ? (
+                          {staffActiveShifts.length > 0 ? (
                             <span className="text-[10px] font-semibold text-amber-700 mt-0.5 truncate flex items-center gap-0.5">
                               <span className="material-symbols-outlined text-[12px] text-amber-600">event_busy</span>
                               <span>
-                                Đã có ca: {staffDayShifts.map(s => s.shift === 'MORNING' ? 'Sáng' : s.shift === 'AFTERNOON' ? 'Chiều' : 'Đêm').join(', ')}
+                                Đã có ca: {staffActiveShifts.map(s => s.shift === 'MORNING' ? 'Sáng' : s.shift === 'AFTERNOON' ? 'Chiều' : 'Đêm').join(', ')}
+                              </span>
+                            </span>
+                          ) : staffCancelledShifts.length > 0 ? (
+                            <span className="text-[10px] font-semibold text-slate-500 mt-0.5 truncate flex items-center gap-0.5" title="Ca trực đã hủy trước đó, có thể phân công lại">
+                              <span className="material-symbols-outlined text-[12px] text-slate-400">event_busy</span>
+                              <span>
+                                Đã hủy: {staffCancelledShifts.map(s => s.shift === 'MORNING' ? 'Sáng' : s.shift === 'AFTERNOON' ? 'Chiều' : 'Đêm').join(', ')} (Có thể phân lại)
                               </span>
                             </span>
                           ) : (
@@ -467,6 +517,7 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
               {STANDARD_SHIFTS_LIST.map(s => {
                 const isPastShift = isShiftInPast(assignmentDate, s.type)
                 const isAlreadyAssigned = assignedShiftTypes.has(s.type)
+                const isCancelledShift = cancelledShiftTypes.has(s.type) && !isAlreadyAssigned
                 const isCurrentSelected = shiftType === s.type
                 const isDisabled = isPastShift || isAlreadyAssigned
 
@@ -485,6 +536,8 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
                         ? 'Nhân viên đã được phân công ca trực vào thời gian này'
                         : isPastShift
                         ? 'Khung giờ ca này đã trôi qua, không thể phân công'
+                        : isCancelledShift
+                        ? 'Ca này từng bị hủy, bạn có thể phân công lại'
                         : s.label
                     }
                     className={`p-2.5 rounded-xl border text-center transition-all relative ${
@@ -494,6 +547,8 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
                         ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-60'
                         : isCurrentSelected
                         ? 'bg-slate-900 text-white border-slate-900 shadow-sm cursor-pointer ring-2 ring-slate-900/15'
+                        : isCancelledShift
+                        ? 'bg-white text-slate-800 border-slate-300 hover:border-slate-400 cursor-pointer hover:bg-slate-50'
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 cursor-pointer hover:border-slate-300'
                     }`}
                   >
@@ -514,6 +569,8 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
                           ? 'text-rose-500 font-semibold'
                           : isCurrentSelected
                           ? 'text-slate-300'
+                          : isCancelledShift
+                          ? 'text-slate-600 font-medium'
                           : 'text-slate-500'
                       }`}
                     >
@@ -521,6 +578,8 @@ export const ShiftAssignmentModal: React.FC<ShiftAssignmentModalProps> = ({
                         ? 'Đã phân ca'
                         : isPastShift
                         ? `${s.timeRange} (Đã qua)`
+                        : isCancelledShift
+                        ? `${s.timeRange} (Tái phân ca)`
                         : s.timeRange}
                     </span>
                   </button>

@@ -1832,7 +1832,7 @@ export const ShiftRosterPage: React.FC = () => {
         <ShiftAssignmentModal
           isOpen={showShiftModal}
           onClose={() => setShowShiftModal(false)}
-          facilityId={selectedFacilityId === 'ALL' ? undefined : selectedFacilityId}
+          facilityId={selectedFacilityId === 'ALL' ? user?.facilityId : (selectedFacilityId || user?.facilityId)}
           facilities={facilities}
           targetRole={isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF'}
           onSaveShift={summary => {
