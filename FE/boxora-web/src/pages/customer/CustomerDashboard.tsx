@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { contractService, RentalContract } from '../../services/contractService'
 import { bookingService } from '../../services/bookingService'
-import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
+import { supportTicketService, SupportTicketRecord, SupportTicketCategory } from '../../services/supportTicketService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
@@ -608,6 +608,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Support Ticket Form State
   const [ticketUnit, setTicketUnit] = useState('')
+  const [selectedSupportUnit, setSelectedSupportUnit] = useState<string>('')
+  const [selectedSupportCategory, setSelectedSupportCategory] = useState<SupportTicketCategory>('LOCK_ISSUE')
+  const [selectedSupportContent, setSelectedSupportContent] = useState<string>('')
+  const [selectedSupportTitle, setSelectedSupportTitle] = useState<string>('')
 
   useEffect(() => {
     if (activeContracts.length > 0 && !ticketUnit) {
@@ -2879,6 +2883,112 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   )
                 )
 
+                // Kiểm tra xem kho này đã có yêu cầu trả kho / hồ sơ nghiệm thu quyết toán hay chưa
+                const activeReturnRequest = (() => {
+                  // 1. Kiểm tra trong danh sách support tickets
+                  const returnTicket = customerTickets.find(t => {
+                    const isUnitMatch = (t.unitCode && c.unitCode && t.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
+                      (t.bookingId && c.bookingId && t.bookingId === c.bookingId) ||
+                      (t.title && c.unitCode && t.title.toUpperCase().includes(c.unitCode.toUpperCase())) ||
+                      (t.description && c.unitCode && t.description.toUpperCase().includes(c.unitCode.toUpperCase()))
+                    const isReturnCategory = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' ||
+                      t.title?.toLowerCase().includes('trả kho') ||
+                      t.description?.toLowerCase().includes('trả kho') ||
+                      t.title?.toLowerCase().includes('hoàn cọc') ||
+                      t.description?.toLowerCase().includes('hoàn cọc')
+                    const isNotCancelled = t.status !== 'CANCELLED' && t.status !== 'REJECTED'
+                    return isUnitMatch && isReturnCategory && isNotCancelled
+                  })
+                  if (returnTicket) {
+                    const isCompleted = returnTicket.status === 'RESOLVED' || returnTicket.status === 'CLOSED'
+                    return {
+                      id: returnTicket.id,
+                      title: returnTicket.title || `Yêu cầu trả kho #${c.unitCode}`,
+                      description: returnTicket.description || 'Đang tiến hành thủ tục trả kho.',
+                      status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
+                      isSettlement: returnTicket.title?.toLowerCase().includes('quyết toán') || returnTicket.description?.toLowerCase().includes('quyết toán')
+                    }
+                  }
+
+                  // 2. Kiểm tra trong returnActivityLogs (thông báo nghiệm thu, quyết toán, hoàn cọc)
+                  const returnLog = returnActivityLogs.find(log => {
+                    const isUnitMatch = (log.unitCode && c.unitCode && log.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
+                      (log.meta?.bookingId && c.bookingId && log.meta.bookingId === c.bookingId) ||
+                      (log.title && c.unitCode && log.title.toUpperCase().includes(c.unitCode.toUpperCase())) ||
+                      (log.description && c.unitCode && log.description.toUpperCase().includes(c.unitCode.toUpperCase()))
+                    return isUnitMatch
+                  })
+                  if (returnLog) {
+                    const isCompleted = returnLog.title?.toLowerCase().includes('hoàn tất') || returnLog.description?.toLowerCase().includes('đã hoàn tất')
+                    return {
+                      id: returnLog.id,
+                      title: returnLog.title || `Hồ sơ nghiệm thu & trả kho #${c.unitCode}`,
+                      description: returnLog.description || 'Đang tiến hành quyết toán và xử lý hoàn cọc.',
+                      status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
+                      isSettlement: true
+                    }
+                  }
+
+                  // 3. Kiểm tra localStorage (boxora_checkout_return_cases_v4 hoặc boxora_return_requests)
+                  try {
+                    const rawV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
+                    if (rawV4) {
+                      const list = JSON.parse(rawV4)
+                      if (Array.isArray(list)) {
+                        const item = list.find((it: any) =>
+                          (it.unitCode && c.unitCode && it.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
+                          (it.bookingId && c.bookingId && it.bookingId === c.bookingId)
+                        )
+                        if (item) {
+                          return {
+                            id: item.id,
+                            title: 'Hồ sơ trả kho đã tiếp nhận',
+                            description: item.reason || 'Đang tiến hành thủ tục nghiệm thu & trả kho.',
+                            status: item.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+                            isSettlement: true
+                          }
+                        }
+                      }
+                    }
+                    const rawOld = localStorage.getItem('boxora_return_requests')
+                    if (rawOld) {
+                      const listOld = JSON.parse(rawOld)
+                      if (Array.isArray(listOld)) {
+                        const itemOld = listOld.find((it: any) =>
+                          (it.unitCode && c.unitCode && it.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
+                          (it.bookingId && c.bookingId && it.bookingId === c.bookingId)
+                        )
+                        if (itemOld) {
+                          return {
+                            id: itemOld.id,
+                            title: 'Hồ sơ trả kho đã tiếp nhận',
+                            description: itemOld.reason || 'Đang tiến hành thủ tục nghiệm thu & trả kho.',
+                            status: itemOld.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+                            isSettlement: true
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {}
+
+                  // 4. Kiểm tra customerBookings trạng thái trả kho
+                  const b = customerBookings.find(bk =>
+                    (bk.id === c.bookingId || (bk.unitCode && c.unitCode && bk.unitCode.toUpperCase() === c.unitCode.toUpperCase())) &&
+                    (bk.status === 'CHECKOUT_REQUESTED' || bk.status === 'INSPECTED' || (bk as any).returnStatus)
+                  )
+                  if (b) {
+                    return {
+                      id: b.id,
+                      title: 'Yêu cầu trả kho theo đơn đặt chỗ',
+                      description: (b as any).cancellationReason || 'Kho đang trong tiến trình bàn giao và trả kho.',
+                      status: b.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+                      isSettlement: b.status === 'INSPECTED'
+                    }
+                  }
+
+                  return null
+                })()
+
                 return (
                   <div
                     key={c.id}
@@ -2976,6 +3086,44 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           </span>
                         </div>
                       </div>
+
+                      {/* BANNER TRẠNG THÁI TRẢ KHO & NGHIỆM THU TRÊN THẺ KHO */}
+                      {activeReturnRequest && (
+                        <div className="p-3.5 rounded-xl border bg-gradient-to-r from-amber-50 via-orange-50/50 to-amber-50 border-amber-300 flex flex-col gap-2 shadow-2xs">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0">
+                                assignment_return
+                              </span>
+                              <div>
+                                <span className="text-xs font-extrabold text-slate-900 block">
+                                  {activeReturnRequest.status === 'COMPLETED'
+                                    ? 'Hồ sơ trả kho đã hoàn tất'
+                                    : activeReturnRequest.isSettlement
+                                    ? 'Đang tiến hành đối soát & quyết toán hoàn cọc'
+                                    : 'Đang xử lý yêu cầu trả kho & nghiệm thu'}
+                                </span>
+                                <span className="text-[11px] text-slate-600 line-clamp-2">
+                                  {activeReturnRequest.description || activeReturnRequest.title || 'Hệ thống đang tiến hành thủ tục kiểm tra kho và hoàn trả tiền cọc lưu ký.'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 pt-1 border-t border-amber-200/60">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReturnUnitFilter(c.unitCode)
+                                handleTabChange('returns')
+                              }}
+                              className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">visibility</span>
+                              <span>Theo dõi tiến độ trả kho</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* BANNER TRẠNG THÁI GIA HẠN & KÝ PHỤ LỤC HỢP ĐỒNG TRÊN THẺ KHO */}
                       {activePendingRenewal && (
@@ -3227,7 +3375,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <span>Lịch sử kho</span>
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
+                          setSelectedSupportUnit(c.unitCode)
+                          setSelectedSupportCategory('LOCK_ISSUE')
+                          setSelectedSupportTitle(`Báo sự cố kho #${c.unitCode}`)
+                          setSelectedSupportContent(`Tôi gặp sự cố tại kho #${c.unitCode} (${c.facilityName || ''}). Nhờ nhân viên hỗ trợ kiểm tra.`)
                           setTicketUnit(c.unitCode)
                           setTicketType('lock')
                           handleTabChange('support')
@@ -3237,10 +3390,27 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <span className="material-symbols-outlined text-[16px]">report</span>
                         <span>Báo Sự Cố</span>
                       </button>
-                      {c.status === 'ACTIVE' && (
+                      {activeReturnRequest ? (
                         <button
                           type="button"
                           onClick={() => {
+                            setReturnUnitFilter(c.unitCode)
+                            handleTabChange('returns')
+                          }}
+                          className="px-3.5 h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                          title="Kho đã có yêu cầu trả kho. Nhấn để theo dõi tiến độ và đối soát quyết toán."
+                        >
+                          <span className="material-symbols-outlined text-[16px] text-amber-700">assignment_return</span>
+                          <span>{activeReturnRequest.status === 'COMPLETED' ? 'Đã hoàn tất trả kho' : 'Đang xử lý trả kho'}</span>
+                        </button>
+                      ) : c.status === 'ACTIVE' ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSupportUnit(c.unitCode)
+                            setSelectedSupportCategory('RETURN_REFUND')
+                            setSelectedSupportTitle(`Yêu cầu trả kho trước hạn & hoàn tiền #${c.unitCode}`)
+                            setSelectedSupportContent(`Tôi muốn yêu cầu trả kho #${c.unitCode} (${c.facilityName || ''}). Vui lòng hướng dẫn thủ tục kiểm tra kho và quyết toán hoàn cọc.`)
                             setTicketUnit(c.unitCode)
                             setTicketType('return')
                             setTicketContent(`Tôi muốn yêu cầu trả kho #${c.unitCode}. Vui lòng hướng dẫn thủ tục.`)
@@ -3251,7 +3421,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <span className="material-symbols-outlined text-[16px]">assignment_return</span>
                           <span>Yêu cầu trả kho</span>
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 )
@@ -5025,6 +5195,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           user={user}
           activeContracts={activeContracts}
           contracts={contracts}
+          initialUnit={selectedSupportUnit}
+          initialCategory={selectedSupportCategory}
+          initialContent={selectedSupportContent}
+          initialTitle={selectedSupportTitle}
         />
       )}
 

@@ -13,6 +13,10 @@ export interface CustomerSupportPanelProps {
   user: User | null
   activeContracts: any[]
   contracts: any[]
+  initialUnit?: string
+  initialCategory?: SupportTicketCategory
+  initialContent?: string
+  initialTitle?: string
 }
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string; color: string }> = {
@@ -47,15 +51,52 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   user,
   activeContracts,
   contracts,
+  initialUnit,
+  initialCategory,
+  initialContent,
+  initialTitle,
 }) => {
   // Navigation sub-tab: 'form' (Tạo mới) | 'history' (Lịch sử)
   const [subTab, setSubTab] = useState<'form' | 'history'>('form')
 
   // Support Form State
-  const [ticketUnit, setTicketUnit] = useState<string>('')
-  const [ticketCategory, setTicketCategory] = useState<SupportTicketCategory>('LOCK_ISSUE')
-  const [ticketTitle, setTicketTitle] = useState<string>('')
-  const [ticketContent, setTicketContent] = useState<string>('')
+  const [ticketUnit, setTicketUnit] = useState<string>(initialUnit || '')
+  const [ticketCategory, setTicketCategory] = useState<SupportTicketCategory>(initialCategory || 'LOCK_ISSUE')
+  const [ticketTitle, setTicketTitle] = useState<string>(initialTitle || '')
+  const [ticketContent, setTicketContent] = useState<string>(initialContent || '')
+
+  // Keep state synced when props change (e.g. user clicks "Yêu cầu trả kho" on a specific unit)
+  useEffect(() => {
+    if (initialUnit) {
+      setTicketUnit(initialUnit)
+    } else if (activeContracts.length > 0 && !ticketUnit) {
+      setTicketUnit(activeContracts[0].unitCode)
+    }
+  }, [initialUnit, activeContracts])
+
+  useEffect(() => {
+    if (initialCategory) {
+      setTicketCategory(initialCategory)
+    }
+  }, [initialCategory])
+
+  useEffect(() => {
+    if (initialContent !== undefined && initialContent !== '') {
+      setTicketContent(initialContent)
+    }
+  }, [initialContent])
+
+  useEffect(() => {
+    if (initialTitle !== undefined && initialTitle !== '') {
+      setTicketTitle(initialTitle)
+    }
+  }, [initialTitle])
+
+  useEffect(() => {
+    if (initialUnit || initialCategory) {
+      setSubTab('form')
+    }
+  }, [initialUnit, initialCategory])
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
   const [evidencePreviewUrl, setEvidencePreviewUrl] = useState<string | null>(null)
   const [isSubmittingTicket, setIsSubmittingTicket] = useState<boolean>(false)
@@ -654,16 +695,26 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       onChange={(e) => setTicketUnit(e.target.value)}
                       className="h-10 px-3 bg-white border border-slate-300 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      {activeContracts.length > 0 ? (
-                        activeContracts.map(c => (
-                          <option key={c.unitCode} value={c.unitCode}>
-                            Kho #{c.unitCode} ({c.facilityName})
-                          </option>
-                        ))
-                      ) : (
-                        <option value="general">Chưa có kho hoạt động</option>
-                      )}
-                      <option value="general">Khác / Thắc mắc chung</option>
+                      {(() => {
+                        const contractsList = activeContracts.length > 0 ? activeContracts : contracts
+                        return (
+                          <>
+                            {contractsList.length > 0 ? (
+                              contractsList.map(c => (
+                                <option key={c.unitCode} value={c.unitCode}>
+                                  Kho #{c.unitCode} ({c.facilityName || 'Boxora'})
+                                </option>
+                              ))
+                            ) : (
+                              <option value="general">Chưa có kho hoạt động</option>
+                            )}
+                            {ticketUnit && !contractsList.some(c => c.unitCode === ticketUnit) && ticketUnit !== 'general' && (
+                              <option value={ticketUnit}>Kho #{ticketUnit}</option>
+                            )}
+                            <option value="general">Khác / Thắc mắc chung</option>
+                          </>
+                        )
+                      })()}
                     </select>
                   </div>
 
