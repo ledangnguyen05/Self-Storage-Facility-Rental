@@ -980,7 +980,37 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
       return true
     })
-  }, [bookings, searchTerm, facilityFilter, statusFilter])
+  // Relevant facilities that the customer currently has bookings with
+  const relevantFacilities = useMemo(() => {
+    const map = new Map<string, string>()
+    bookings.forEach((b) => {
+      const facId = b.facilityId
+      const facName = b.facilityName
+      if (facId && facName) {
+        map.set(facId, facName)
+      } else if (facId) {
+        const found = facilities.find((f) => f.id === facId)
+        map.set(facId, found ? found.name : facId)
+      } else if (facName) {
+        const found = facilities.find((f) => f.name === facName)
+        map.set(found ? found.id : facName, facName)
+      }
+    })
+
+    const result: { id: string; name: string }[] = []
+    map.forEach((name, id) => {
+      const official = facilities.find((f) => f.id === id || f.name === name)
+      if (official) {
+        if (!result.some((r) => r.id === official.id)) {
+          result.push({ id: official.id, name: official.name })
+        }
+      } else {
+        result.push({ id, name })
+      }
+    })
+
+    return result
+  }, [bookings, facilities])
 
   // Metric counts
   const totalCount = bookings.length
@@ -1138,62 +1168,6 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
         </div>
 
         {/* ============================================================== */}
-        {/* 3. SUMMARY STATS METRICS CARDS                                 */}
-        {/* ============================================================== */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Tổng đơn đặt</span>
-              <Box size={20} className="text-blue-600" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
-                {totalCount}
-              </span>
-              <span className="text-xs text-slate-400">đơn</span>
-            </div>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Chờ xếp buồng kho</span>
-              <Clock size={20} className="text-indigo-600" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
-                {pendingAssignmentCount}
-              </span>
-              <span className="text-xs text-slate-400">đã ký &amp; cọc</span>
-            </div>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Chờ tư vấn</span>
-              <PhoneCall size={20} className="text-amber-500" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
-                {pendingContactCount}
-              </span>
-            </div>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-semibold uppercase tracking-wider">Sẵn sàng / Đang thuê</span>
-              <ShieldCheck size={20} className="text-emerald-500" />
-            </div>
-            <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
-                {confirmedCount + activeCount}
-              </span>
-              <span className="text-xs text-slate-400">đã gán ô kho</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ============================================================== */}
         {/* 4. SEARCH & FILTER CONTROLS                                    */}
         {/* ============================================================== */}
         <div id="bookings-list" className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-4 sm:p-5 shadow-xs space-y-4">
@@ -1230,7 +1204,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   className="bg-transparent font-semibold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer max-w-[180px] truncate"
                 >
                   <option value="ALL">Tất cả chi nhánh</option>
-                  {facilities.map((f) => (
+                  {relevantFacilities.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.name}
                     </option>
@@ -1255,8 +1229,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
           <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-1">
             {[
               { key: 'ALL', label: 'Tất cả', count: totalCount },
-              { key: 'PENDING_ASSIGNMENT', label: 'Chờ xếp kho', count: pendingAssignmentCount },
               { key: 'PENDING_CONTACT', label: 'Chờ tư vấn', count: pendingContactCount },
+              { key: 'PENDING_ASSIGNMENT', label: 'Chờ xếp kho', count: pendingAssignmentCount },
               { key: 'CONFIRMED', label: 'Sẵn sàng nhận', count: confirmedCount },
               { key: 'ACTIVE', label: 'Đang thuê', count: activeCount },
               { key: 'CANCELLED', label: 'Đã hủy', count: cancelledCount },
@@ -1285,6 +1259,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
             ))}
           </div>
         </div>
+
 
         {/* ============================================================== */}
         {/* 5. BOOKINGS LIST GRID (REORGANIZED DISPLAY)                     */}
