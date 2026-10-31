@@ -266,7 +266,7 @@ INSERT INTO sealing_records (
     total_debt_amount, inventory_summary, request_status
 )
 VALUES (
-    's0000000-0004-0000-0000-000000000005',
+    'a0000000-0004-0000-0000-000000000005',
     NOW(), NOW(),
     'd0000000-0004-0000-0000-000000000005',
     'c0000000-0004-0000-0000-000000000005',
@@ -287,9 +287,9 @@ ON CONFLICT (seal_tag_number) DO NOTHING;
 
 INSERT INTO asset_inventory_items (id, created_at, updated_at, sealing_record_id, item_name, quantity, condition_status, estimated_value, notes)
 VALUES
-    (gen_random_uuid(), NOW(), NOW(), 's0000000-0004-0000-0000-000000000005', 'Máy khoan búa cầm tay Bosch GSB 550', 1, 'Tốt, còn hộp bảo vệ', 1200000.00, 'Niêm phong cùng phụ kiện mũi khoan'),
-    (gen_random_uuid(), NOW(), NOW(), 's0000000-0004-0000-0000-000000000005', 'Bộ vali đồ nghề cơ khí Stanley 110 món', 1, 'Đã qua sử dụng, hoạt động bình thường', 1800000.00, 'Khóa chốt vali còn nguyên vẹn'),
-    (gen_random_uuid(), NOW(), NOW(), 's0000000-0004-0000-0000-000000000005', 'Thùng carton niêm phong chứa hồ sơ kế toán 2024', 3, 'Khô ráo, dán băng dính niêm phong Boxora', 300000.00, 'Tài liệu lưu trữ công ty')
+    (gen_random_uuid(), NOW(), NOW(), 'a0000000-0004-0000-0000-000000000005', 'Máy khoan búa cầm tay Bosch GSB 550', 1, 'Tốt, còn hộp bảo vệ', 1200000.00, 'Niêm phong cùng phụ kiện mũi khoan'),
+    (gen_random_uuid(), NOW(), NOW(), 'a0000000-0004-0000-0000-000000000005', 'Bộ vali đồ nghề cơ khí Stanley 110 món', 1, 'Đã qua sử dụng, hoạt động bình thường', 1800000.00, 'Khóa chốt vali còn nguyên vẹn'),
+    (gen_random_uuid(), NOW(), NOW(), 'a0000000-0004-0000-0000-000000000005', 'Thùng carton niêm phong chứa hồ sơ kế toán 2024', 3, 'Khô ráo, dán băng dính niêm phong Boxora', 300000.00, 'Tài liệu lưu trữ công ty')
 ON CONFLICT DO NOTHING;
 
 -- -------------------------------------------------------------------------

@@ -110,21 +110,26 @@ export const getBookingScheduleInfo = (
 
   let relativeText = ''
   let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200'
-  if (diffDays === 0) {
-    if (diffMs > 0) {
-      const hoursLeft = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)))
-      relativeText = `Hôm nay (sau ${hoursLeft} giờ)`
-      badgeClass = 'bg-amber-100 text-amber-900 border-amber-300'
+  const statusUpper = String(booking.status || '').toUpperCase()
+  const isFinishedOrCancelled = ['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(statusUpper)
+
+  if (!isFinishedOrCancelled) {
+    if (diffDays === 0) {
+      if (diffMs > 0) {
+        const hoursLeft = Math.max(1, Math.round(diffMs / (1000 * 60 * 60)))
+        relativeText = `Hôm nay (sau ${hoursLeft} giờ)`
+        badgeClass = 'bg-amber-100 text-amber-900 border-amber-300'
+      } else {
+        relativeText = 'Hôm nay'
+        badgeClass = 'bg-emerald-100 text-emerald-900 border-emerald-300'
+      }
+    } else if (diffDays > 0) {
+      relativeText = `${diffDays} ngày tới`
+      badgeClass = 'bg-blue-50 text-blue-800 border-blue-200'
     } else {
-      relativeText = 'Hôm nay'
-      badgeClass = 'bg-emerald-100 text-emerald-900 border-emerald-300'
+      relativeText = `Quá ${Math.abs(diffDays)} ngày`
+      badgeClass = 'bg-rose-50 text-rose-800 border-rose-200'
     }
-  } else if (diffDays > 0) {
-    relativeText = `${diffDays} ngày tới`
-    badgeClass = 'bg-blue-50 text-blue-800 border-blue-200'
-  } else {
-    relativeText = `Quá ${Math.abs(diffDays)} ngày`
-    badgeClass = 'bg-rose-50 text-rose-800 border-rose-200'
   }
 
   const fullAppointmentText = `${timeFormatted} - ${dateFormatted}${relativeText ? ` (${relativeText})` : ''}`

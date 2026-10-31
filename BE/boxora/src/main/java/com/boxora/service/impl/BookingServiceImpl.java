@@ -2005,27 +2005,39 @@ public class BookingServiceImpl implements BookingService {
         String paymentStatus = b.getPaymentStatus();
         String refCode = null;
         String refStatus = null;
+        boolean isLatestRefundRejected = false;
         try {
             Optional<RefundRequest> refOpt = refundRequestRepository.findFirstByBooking_IdOrderByCreatedAtDesc(b.getId());
             if (refOpt.isPresent()) {
                 RefundRequest rr = refOpt.get();
-                refCode = rr.getRequestCode();
-                refStatus = rr.getStatus() != null ? rr.getStatus().name() : null;
                 RefundStatus rSt = rr.getStatus();
                 if (rSt == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION || rSt == RefundStatus.PROCESSED || rSt == RefundStatus.COMPLETED || rSt == RefundStatus.RECONCILED) {
+                    refCode = rr.getRequestCode();
+                    refStatus = rSt.name();
                     paymentStatus = "REFUNDED";
                 } else if (rSt == RefundStatus.PENDING_REVIEW || rSt == RefundStatus.APPROVED || rSt == RefundStatus.PROCESSING_TRANSFER) {
+                    refCode = rr.getRequestCode();
+                    refStatus = rSt.name();
                     paymentStatus = "REFUND_PENDING";
+                } else if (rSt == RefundStatus.REJECTED) {
+                    isLatestRefundRejected = true;
+                    refCode = null;
+                    refStatus = null;
+                    if ("REFUND_PENDING".equalsIgnoreCase(paymentStatus)) {
+                        paymentStatus = "PAID";
+                    }
                 }
             }
         } catch (Exception ignored) {
         }
-        if ("REFUNDED".equalsIgnoreCase(paymentStatus) || "REFUND_PENDING".equalsIgnoreCase(paymentStatus)) {
+        if (!isLatestRefundRejected && ("REFUNDED".equalsIgnoreCase(paymentStatus) || "REFUND_PENDING".equalsIgnoreCase(paymentStatus))) {
             // Keep refund statuses intact
-        } else if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus)) {
+        } else if (paymentStatus == null || paymentStatus.isBlank() || "UNPAID".equalsIgnoreCase(paymentStatus) || "PENDING_PAYMENT".equalsIgnoreCase(paymentStatus) || isLatestRefundRejected) {
             String reconciled = resolveReconciledPaymentStatus(b);
             if (!"UNPAID".equalsIgnoreCase(reconciled)) {
                 paymentStatus = reconciled;
+            } else if (isLatestRefundRejected) {
+                paymentStatus = "PAID";
             }
         }
         if (paymentStatus == null || paymentStatus.isBlank()) {
@@ -2039,7 +2051,15 @@ public class BookingServiceImpl implements BookingService {
         }
 
         BookingStatus effectiveStatus = b.getStatus() != null ? b.getStatus() : BookingStatus.PENDING_PAYMENT;
-        if ("PAID".equalsIgnoreCase(paymentStatus) && effectiveStatus == BookingStatus.PENDING_PAYMENT) {
+        if (isLatestRefundRejected && effectiveStatus == BookingStatus.CANCELLED) {
+            if (b.getStorageUnit() != null) {
+                effectiveStatus = BookingStatus.CONFIRMED;
+            } else if ("PAID".equalsIgnoreCase(paymentStatus) || (b.getDepositPaid() != null && b.getDepositPaid().compareTo(BigDecimal.ZERO) > 0)) {
+                effectiveStatus = BookingStatus.PAID_AND_SIGNED;
+            } else {
+                effectiveStatus = BookingStatus.PENDING_CONTACT;
+            }
+        } else if ("PAID".equalsIgnoreCase(paymentStatus) && effectiveStatus == BookingStatus.PENDING_PAYMENT) {
             effectiveStatus = BookingStatus.CONFIRMED;
         }
 
@@ -2088,8 +2108,15 @@ public class BookingServiceImpl implements BookingService {
         String cancelReason = b.getCancellationReason();
         User cancelledBy = b.getCancelledBy();
         String cancelledByRole = (cancelledBy != null && cancelledBy.getRole() != null) ? cancelledBy.getRole().getName() : null;
-        boolean isStaffReject = cancelledByRole != null && ("STAFF".equalsIgnoreCase(cancelledByRole) || "FACILITY_MANAGER".equalsIgnoreCase(cancelledByRole) || "ADMIN".equalsIgnoreCase(cancelledByRole));
-        String rejectionReason = (isStaffReject || (cancelReason != null && !cancelReason.equalsIgnoreCase("Khách hàng yêu cầu hủy") && !cancelReason.toLowerCase().contains("quá hạn thanh toán") && !cancelReason.toLowerCase().contains("tự động hủy"))) ? cancelReason : null;
+        if (isLatestRefundRejected) {
+            cancelReason = null;
+            cancelledBy = null;
+            cancelledByRole = null;
+        }
+        boolean isStaffReject = !isLatestRefundRejected && (cancelledByRole != null
+                ? ("STAFF".equalsIgnoreCase(cancelledByRole) || "FACILITY_MANAGER".equalsIgnoreCase(cancelledByRole) || "ADMIN".equalsIgnoreCase(cancelledByRole))
+                : (cancelReason != null && !cancelReason.equalsIgnoreCase("Khách hàng yêu cầu hủy") && !cancelReason.toLowerCase().contains("quá hạn thanh toán") && !cancelReason.toLowerCase().contains("tự động hủy")));
+        String rejectionReason = isStaffReject ? cancelReason : null;
 
         return BookingResponse.builder()
                 .id(b.getId())
@@ -2144,7 +2171,7 @@ public class BookingServiceImpl implements BookingService {
                 .cancellationReason(cancelReason)
                 .rejectionReason(rejectionReason)
                 .isRejectedByStaff(isStaffReject)
-                .cancelledAt(b.getCancelledAt())
+                .cancelledAt(isLatestRefundRejected ? null : b.getCancelledAt())
                 .cancelledById(cancelledBy != null ? cancelledBy.getId() : null)
                 .cancelledByName(cancelledBy != null ? (cancelledBy.getFullName() != null && !cancelledBy.getFullName().isBlank() ? cancelledBy.getFullName() : cancelledBy.getUsername()) : null)
                 .cancelledByRole(cancelledByRole)

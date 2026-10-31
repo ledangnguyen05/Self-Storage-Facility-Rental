@@ -103,6 +103,9 @@ interface CustomerUnitActivityLog {
     | 'PAYMENT_COMPLETED'
     | 'SUPPORT_REQUEST'
     | 'RETURN_SETTLEMENT'
+    | 'REFUND_STATUS'
+    | 'REFUND_REJECTED'
+    | 'REFUND_APPROVED'
     | 'SYSTEM_NOTIFICATION'
   title: string
   description: string
@@ -2414,20 +2417,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     customerNotifications.forEach(n => {
       const cleanContent = (n.content || '').replace(/\[\[[\s\S]*?\]\]/g, '').trim()
       const detectedUnit = extractUnitFromText(n.title) || extractUnitFromText(cleanContent)
-      const isSettlementNotif = Boolean(
-        n.notificationType === 'REFUND_STATUS' ||
-          n.notificationType === 'REFUND_PAYOUT_COMPLETED' ||
-          n.title?.toLowerCase().includes('quyết toán') ||
-          n.title?.toLowerCase().includes('tính toán chi phí') ||
-          cleanContent.toLowerCase().includes('quyết toán') ||
-          cleanContent.toLowerCase().includes('khấu trừ')
+
+      const isRefundRequestNotif = Boolean(
+        n.referenceType === 'RefundRequest' ||
+          n.referenceType === 'REFUND' ||
+          n.title?.toLowerCase().includes('yêu cầu hoàn tiền') ||
+          cleanContent.toLowerCase().includes('yêu cầu hoàn tiền') ||
+          cleanContent.toLowerCase().includes('ref-')
       )
-      const isRenewalNotif = !isSettlementNotif && Boolean(
+
+      const isSettlementNotif = !isRefundRequestNotif && Boolean(
+        n.referenceType === 'HANDOVER' ||
+          n.referenceType === 'HandoverRecord' ||
+          (n.referenceType === 'BOOKING' && (
+            n.title?.toLowerCase().includes('quyết toán') ||
+            n.title?.toLowerCase().includes('nghiệm thu') ||
+            cleanContent.toLowerCase().includes('quyết toán')
+          )) ||
+          n.title?.toLowerCase().includes('biên bản quyết toán') ||
+          n.title?.toLowerCase().includes('nghiệm thu trả kho') ||
+          cleanContent.toLowerCase().includes('biên bản quyết toán') ||
+          (cleanContent.toLowerCase().includes('quyết toán') &&
+            (cleanContent.toLowerCase().includes('buồng kho') ||
+              cleanContent.toLowerCase().includes('khấu trừ') ||
+              cleanContent.toLowerCase().includes('hiện trường')))
+      )
+
+      const isRenewalNotif = !isSettlementNotif && !isRefundRequestNotif && Boolean(
         n.notificationType?.includes('RENEWAL') ||
           n.title?.toLowerCase().includes('gia hạn') ||
           cleanContent.toLowerCase().includes('gia hạn')
       )
-      const isAccessNotif = !isSettlementNotif && Boolean(
+      const isAccessNotif = !isSettlementNotif && !isRefundRequestNotif && Boolean(
         n.notificationType?.includes('PIN') ||
           n.notificationType?.includes('SEAL') ||
           n.title?.toLowerCase().includes('mã pin') ||
@@ -2435,67 +2456,82 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           n.title?.toLowerCase().includes('mở khóa')
       )
       const isContractOrPayNotif = !isSettlementNotif && Boolean(
-        n.notificationType?.includes('PAYMENT') ||
+        isRefundRequestNotif ||
+          n.notificationType?.includes('PAYMENT') ||
           n.notificationType?.includes('CONTRACT') ||
+          n.notificationType === 'REFUND_PAYOUT_COMPLETED' ||
           n.title?.toLowerCase().includes('hợp đồng') ||
           n.title?.toLowerCase().includes('thanh toán') ||
           n.title?.toLowerCase().includes('hóa đơn') ||
           n.title?.toLowerCase().includes('cọc') ||
+          n.title?.toLowerCase().includes('hoàn tiền') ||
           cleanContent.toLowerCase().includes('thanh toán') ||
           cleanContent.toLowerCase().includes('hợp đồng') ||
           cleanContent.toLowerCase().includes('chuyển khoản') ||
-          cleanContent.toLowerCase().includes('vnpay')
+          cleanContent.toLowerCase().includes('vnpay') ||
+          cleanContent.toLowerCase().includes('hoàn tiền')
       )
 
       const matchedBooking =
         (n.referenceId ? customerBookings.find(b => b.id === n.referenceId) : undefined) ||
         (detectedUnit ? customerBookings.find(b => b.unitCode === detectedUnit) : undefined)
-      const targetBookingId = n.referenceId || matchedBooking?.id
+      // Nếu là RefundRequest thì targetBookingId lấy từ matchedBooking nếu có, không gán refundRequestId vào bookingId
+      const targetBookingId = isRefundRequestNotif ? matchedBooking?.id : (n.referenceId || matchedBooking?.id)
+
+      let notifCategory: CustomerUnitActivityLog['category'] = 'NOTIFICATION'
+      let notifActionType: CustomerUnitActivityLog['actionType'] = 'SYSTEM_NOTIFICATION'
+      let notifStatusLabel = 'Thông báo hệ thống'
+      let notifStatusTone: CustomerUnitActivityLog['statusTone'] = 'cyan'
+
+      if (isSettlementNotif) {
+        notifCategory = 'SUPPORT'
+        notifActionType = 'RETURN_SETTLEMENT'
+        notifStatusLabel = 'Nghiệm thu & Quyết toán kho'
+        notifStatusTone = 'amber'
+      } else if (isRefundRequestNotif) {
+        notifCategory = 'CONTRACT'
+        const isRejected = n.title?.toLowerCase().includes('từ chối') || cleanContent.toLowerCase().includes('từ chối')
+        const isApproved = n.title?.toLowerCase().includes('phê duyệt') || cleanContent.toLowerCase().includes('phê duyệt') || cleanContent.toLowerCase().includes('đã duyệt')
+        const isCompleted = n.title?.toLowerCase().includes('hoàn tất') || cleanContent.toLowerCase().includes('hoàn tất') || n.notificationType === 'REFUND_PAYOUT_COMPLETED'
+
+        notifActionType = isRejected ? 'REFUND_REJECTED' : isApproved ? 'REFUND_APPROVED' : 'REFUND_STATUS'
+        notifStatusLabel = isRejected
+          ? 'Từ chối hoàn tiền'
+          : isCompleted
+          ? 'Đã hoàn tiền'
+          : isApproved
+          ? 'Đã duyệt hoàn tiền'
+          : 'Cập nhật hoàn tiền'
+        notifStatusTone = isRejected ? 'rose' : isApproved || isCompleted ? 'emerald' : 'amber'
+      } else if (isRenewalNotif) {
+        notifCategory = 'RENEWAL'
+        notifActionType = n.notificationType === 'RENEWAL_REJECTED' ? 'RENEWAL_REJECTED' : 'RENEWAL_COMPLETED'
+        notifStatusLabel = 'Thông báo gia hạn'
+        notifStatusTone = n.notificationType === 'RENEWAL_REJECTED' ? 'rose' : 'emerald'
+      } else if (isAccessNotif) {
+        notifCategory = 'ACCESS'
+        notifActionType = 'SYSTEM_NOTIFICATION'
+        notifStatusLabel = 'Mã PIN & Khóa kho'
+        notifStatusTone = n.notificationType === 'SEALING_NOTICE' ? 'rose' : 'cyan'
+      } else if (isContractOrPayNotif) {
+        notifCategory = 'CONTRACT'
+        notifActionType = 'PAYMENT_COMPLETED'
+        notifStatusLabel = 'Hợp đồng & Thanh toán'
+        notifStatusTone = 'blue'
+      }
 
       items.push({
         id: `NOTIF-${n.id}`,
         unitCode: (detectedUnit || matchedBooking?.unitCode) ?? undefined,
         facilityName: (n.facilityName || matchedBooking?.facilityName) ?? undefined,
-        category: isSettlementNotif
-          ? 'SUPPORT'
-          : isRenewalNotif
-          ? 'RENEWAL'
-          : isAccessNotif
-          ? 'ACCESS'
-          : isContractOrPayNotif
-          ? 'CONTRACT'
-          : 'NOTIFICATION',
-        actionType: isSettlementNotif
-          ? 'RETURN_SETTLEMENT'
-          : isRenewalNotif
-          ? n.notificationType === 'RENEWAL_REJECTED'
-            ? 'RENEWAL_REJECTED'
-            : 'RENEWAL_COMPLETED'
-          : isContractOrPayNotif
-          ? 'PAYMENT_COMPLETED'
-          : 'SYSTEM_NOTIFICATION',
+        category: notifCategory,
+        actionType: notifActionType,
         title: n.title || 'Thông báo từ hệ thống Boxora',
         description: cleanContent || 'Thông báo cập nhật trạng thái vận hành kho lưu trữ.',
         timestamp: n.createdAt || new Date().toISOString(),
         actorName: n.facilityName || 'Hệ thống Boxora',
-        statusLabel: isSettlementNotif
-          ? 'Nghiệm thu & Quyết toán kho'
-          : isRenewalNotif
-          ? 'Thông báo gia hạn'
-          : isAccessNotif
-          ? 'Mã PIN & Khóa kho'
-          : isContractOrPayNotif
-          ? 'Hợp đồng & Thanh toán'
-          : 'Thông báo hệ thống',
-        statusTone: isSettlementNotif
-          ? 'amber'
-          : n.notificationType === 'RENEWAL_REJECTED' || n.notificationType === 'SEALING_NOTICE'
-          ? 'rose'
-          : isRenewalNotif
-          ? 'emerald'
-          : isContractOrPayNotif
-          ? 'blue'
-          : 'cyan',
+        statusLabel: notifStatusLabel,
+        statusTone: notifStatusTone,
         meta: {
           bookingId: targetBookingId,
           notificationId: n.id
@@ -2544,7 +2580,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             item.category !== 'CONTRACT' &&
             item.actionType !== 'PAYMENT_COMPLETED' &&
             item.actionType !== 'CONTRACT_ACTIVATED' &&
-            item.actionType !== 'CONTRACT_OVERDUE'
+            item.actionType !== 'CONTRACT_OVERDUE' &&
+            item.actionType !== 'REFUND_STATUS' &&
+            item.actionType !== 'REFUND_REJECTED' &&
+            item.actionType !== 'REFUND_APPROVED'
           ) {
             return false
           }
@@ -2585,7 +2624,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           i.category === 'CONTRACT' ||
           i.actionType === 'PAYMENT_COMPLETED' ||
           i.actionType === 'CONTRACT_ACTIVATED' ||
-          i.actionType === 'CONTRACT_OVERDUE'
+          i.actionType === 'CONTRACT_OVERDUE' ||
+          i.actionType === 'REFUND_STATUS' ||
+          i.actionType === 'REFUND_REJECTED' ||
+          i.actionType === 'REFUND_APPROVED'
       ).length,
       support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT' || i.actionType === 'RETURN_SETTLEMENT').length,
     }
@@ -2596,12 +2638,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return combinedUnitActivityHistory.filter(item => {
       const isReturnAction = item.actionType === 'RETURN_SETTLEMENT'
       const text = `${item.title} ${item.description}`.toLowerCase()
+      const isRefundRequest =
+        text.includes('yêu cầu hoàn tiền') ||
+        text.includes('ref-') ||
+        item.actionType === 'REFUND_STATUS' ||
+        item.actionType === 'REFUND_REJECTED' ||
+        item.actionType === 'REFUND_APPROVED'
+      if (isRefundRequest) return false
+
       const isReturnKeyword =
         text.includes('trả kho') ||
         text.includes('quyết toán') ||
         text.includes('nghiệm thu') ||
         text.includes('khiếu nại') ||
-        text.includes('hoàn cọc') ||
+        (text.includes('hoàn cọc') && (text.includes('trả kho') || text.includes('nghiệm thu') || text.includes('quyết toán'))) ||
         text.includes('khấu trừ')
       return isReturnAction || ((item.category === 'SUPPORT' || item.category === 'NOTIFICATION') && isReturnKeyword)
     })
@@ -2644,8 +2694,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         t.category === 'RETURN_EXPIRED' ||
         t.title?.toLowerCase().includes('trả kho') ||
         t.description?.toLowerCase().includes('trả kho') ||
-        t.title?.toLowerCase().includes('hoàn cọc') ||
-        t.description?.toLowerCase().includes('hoàn cọc')
+        (t.title?.toLowerCase().includes('hoàn cọc') && (t.title?.toLowerCase().includes('trả kho') || t.title?.toLowerCase().includes('nghiệm thu'))) ||
+        (t.description?.toLowerCase().includes('hoàn cọc') && (t.description?.toLowerCase().includes('trả kho') || t.description?.toLowerCase().includes('nghiệm thu')))
       const isNotCancelled = t.status !== 'CANCELLED' && t.status !== 'REJECTED'
       if (!isReturnCategory || !isNotCancelled) return
 
@@ -3880,14 +3930,26 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-200/60">
                             {activePendingRenewal.status === 'PENDING_SIGNATURE' && (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedRenewalForDocModal(activePendingRenewal)}
-                                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">draw</span>
-                                <span>Ký Phụ Lục Gia Hạn Ngay</span>
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRenewalForDocModal(activePendingRenewal)}
+                                  className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">draw</span>
+                                  <span>Ký Phụ Lục Gia Hạn Ngay</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={cancellingRenewalId === activePendingRenewal.id}
+                                  onClick={() => handleCancelRenewal(activePendingRenewal)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ml-auto"
+                                  title="Hủy bỏ yêu cầu gia hạn đã được duyệt"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">close</span>
+                                  <span>{cancellingRenewalId === activePendingRenewal.id ? 'Đang hủy...' : 'Hủy yêu cầu'}</span>
+                                </button>
+                              </>
                             )}
 
                             {activePendingRenewal.status === 'PENDING_PAYMENT' && (
@@ -3909,10 +3971,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   type="button"
                                   onClick={() => setSelectedRenewalForDocModal(activePendingRenewal)}
                                   className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
-                                  title="Xem dự thảo phụ lục gia hạn (phụ lục và biên lai chỉ chính thức được tạo sau khi thanh toán thành công)"
+                                  title="Xem phụ lục gia hạn đã ký"
                                 >
                                   <span className="material-symbols-outlined text-[14px]">description</span>
-                                  <span>Xem dự thảo phụ lục</span>
+                                  <span>Xem phụ lục đã ký</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={cancellingRenewalId === activePendingRenewal.id}
+                                  onClick={() => handleCancelRenewal(activePendingRenewal)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ml-auto"
+                                  title="Hủy bỏ yêu cầu gia hạn"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">close</span>
+                                  <span>{cancellingRenewalId === activePendingRenewal.id ? 'Đang hủy...' : 'Hủy yêu cầu'}</span>
                                 </button>
                               </>
                             )}
@@ -4145,7 +4217,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <span className="material-symbols-outlined text-[16px] text-amber-700">assignment_return</span>
                           <span>{activeReturnRequest.status === 'COMPLETED' ? 'Đã hoàn tất trả kho' : 'Đang xử lý trả kho'}</span>
                         </button>
-                      ) : (c.status === 'ACTIVE' && !isReturnCompleted) ? (
+                      ) : (c.status === 'ACTIVE' && !isReturnCompleted && !activePendingRenewal) ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -4572,6 +4644,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               >
                                 <span className="material-symbols-outlined text-[15px]">assignment_turned_in</span>
                                 <span>Xem chi tiết &amp; Phản hồi quyết toán</span>
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Chi tiết Thông báo hoàn tiền & Button Xem đơn đặt giữ chỗ */}
+                          {(item.actionType === 'REFUND_STATUS' || item.actionType === 'REFUND_REJECTED' || item.actionType === 'REFUND_APPROVED') && (
+                            <div className="mt-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                              <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
+                                <span className="material-symbols-outlined text-[18px] text-amber-600">info</span>
+                                <span>Tra cứu tiến độ và chi tiết hoàn cọc tương ứng tại danh sách Đơn đặt giữ chỗ.</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => navigate('/portal/customer?tab=bookings')}
+                                className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">bookmarks</span>
+                                <span>Xem đơn đặt giữ chỗ</span>
                               </button>
                             </div>
                           )}
@@ -5867,14 +5957,25 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex flex-wrap items-center justify-end gap-1.5">
                             {r.status === 'PENDING_SIGNATURE' && (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedRenewalForDocModal(r)}
-                                className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">draw</span>
-                                <span>Ký phụ lục</span>
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedRenewalForDocModal(r)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">draw</span>
+                                  <span>Ký phụ lục</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={cancellingRenewalId === r.id}
+                                  onClick={() => handleCancelRenewal(r)}
+                                  className="px-2 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-semibold transition cursor-pointer"
+                                  title="Hủy yêu cầu gia hạn đã duyệt"
+                                >
+                                  {cancellingRenewalId === r.id ? '...' : 'Hủy'}
+                                </button>
+                              </>
                             )}
                             {r.status === 'PENDING_PAYMENT' && (
                               <>
@@ -5891,10 +5992,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   type="button"
                                   onClick={() => setSelectedRenewalForDocModal(r)}
                                   className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
-                                  title="Xem dự thảo phụ lục gia hạn"
+                                  title="Xem phụ lục gia hạn đã ký"
                                 >
                                   <span className="material-symbols-outlined text-[14px]">description</span>
-                                  <span>Dự thảo</span>
+                                  <span>Phụ lục đã ký</span>
                                 </button>
                               </>
                             )}

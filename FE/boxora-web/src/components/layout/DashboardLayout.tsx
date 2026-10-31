@@ -280,9 +280,6 @@ export const DashboardLayout: React.FC = () => {
               <span className="font-mono text-[9px] uppercase font-bold text-slate-400">
                 Phiên Đăng Nhập
               </span>
-              <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold border ${roleBadge.bg}`}>
-                {role || 'ANONYMOUS'}
-              </span>
             </div>
             <div className="text-xs font-bold text-slate-900 truncate">
               {user?.fullName || 'Khách vãng lai'}

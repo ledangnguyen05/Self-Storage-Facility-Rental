@@ -207,12 +207,55 @@ public class RefundServiceImpl implements RefundService {
 
         refund = refundRequestRepository.save(refund);
 
-        if (!isApprove && refund.getBooking() != null) {
-            Booking b = refund.getBooking();
-            if ("REFUND_PENDING".equalsIgnoreCase(b.getPaymentStatus())) {
-                boolean hasPaid = paymentRepository.existsByBooking_IdAndStatus(b.getId(), PaymentStatus.PAID);
-                b.setPaymentStatus(hasPaid ? "PAID" : "UNPAID");
-                bookingRepository.save(b);
+        Booking b = refund.getBooking();
+        if (b == null && refund.getContract() != null) {
+            b = refund.getContract().getBooking();
+        }
+
+        if (!isApprove && b != null) {
+            b.setCancellationReason(null);
+            b.setCancelledAt(null);
+            b.setCancelledBy(null);
+
+            boolean hasPaid = paymentRepository.existsByBooking_IdAndStatus(b.getId(), PaymentStatus.PAID);
+            b.setPaymentStatus(hasPaid ? "PAID" : "UNPAID");
+
+            if (b.getStatus() == BookingStatus.CANCELLED) {
+                StorageUnit unit = b.getStorageUnit();
+                if (unit != null) {
+                    if (unit.getStatus() == UnitStatus.AVAILABLE) {
+                        unit.setStatus(UnitStatus.RESERVED);
+                        storageUnitRepository.save(unit);
+                        b.setStatus(BookingStatus.CONFIRMED);
+                    } else {
+                        b.setStorageUnit(null);
+                        b.setStatus(BookingStatus.PAID_PENDING_ASSIGNMENT);
+                    }
+                } else {
+                    boolean hasDeposit = b.getDepositPaid() != null && b.getDepositPaid().compareTo(BigDecimal.ZERO) > 0;
+                    if (hasDeposit || hasPaid) {
+                        b.setStatus(BookingStatus.PAID_AND_SIGNED);
+                    } else {
+                        b.setStatus(BookingStatus.PENDING_CONTACT);
+                    }
+                }
+            } else if (b.getStatus() == BookingStatus.PENDING_PAYMENT && hasPaid) {
+                b.setStatus(BookingStatus.CONFIRMED);
+            }
+
+            if ("REVOKED_CANCELLED".equals(b.getQrAccessToken()) || b.getQrAccessToken() == null) {
+                b.setQrAccessToken(UUID.randomUUID().toString());
+            }
+
+            bookingRepository.save(b);
+
+            if (rentalContractRepository != null) {
+                rentalContractRepository.findByBookingId(b.getId()).ifPresent(linkedContract -> {
+                    if (linkedContract.getStatus() == RentalContractStatus.CANCELLED) {
+                        linkedContract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
+                        rentalContractRepository.save(linkedContract);
+                    }
+                });
             }
         }
 

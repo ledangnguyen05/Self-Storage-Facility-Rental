@@ -354,12 +354,14 @@ export function getBookingStage(b: Booking): BookingStageInfo {
   const status = (b.status || '').toUpperCase()
 
   // 1. Kiểm tra trường hợp đang chờ Quản lý cơ sở xử lý hoàn tiền cọc & hủy đơn
+  const refundStatus = (b as any).refundStatus
   const isAwaitingRefundPayout =
-    b.paymentStatus === 'REFUND_PENDING' ||
-    (b as any).refundStatus === 'PENDING_REVIEW' ||
-    (b as any).refundStatus === 'APPROVED' ||
-    (b as any).refundStatus === 'PROCESSING_TRANSFER' ||
-    Boolean(b.cancellationReason && (b as any).refundRequestCode && status !== 'CANCELLED')
+    refundStatus !== 'REJECTED' &&
+    (b.paymentStatus === 'REFUND_PENDING' ||
+      refundStatus === 'PENDING_REVIEW' ||
+      refundStatus === 'APPROVED' ||
+      refundStatus === 'PROCESSING_TRANSFER' ||
+      Boolean(b.cancellationReason && (b as any).refundRequestCode && refundStatus !== 'REJECTED' && status !== 'CANCELLED'))
 
   if (isAwaitingRefundPayout) {
     return {
@@ -381,12 +383,17 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       (b as any).refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ||
       (b as any).refundStatus === 'COMPLETED' ||
       (b as any).refundStatus === 'RECONCILED'
+    const hasRefund =
+      (b as any).refundStatus !== 'REJECTED' &&
+      (b.paymentStatus === 'REFUND_PENDING' ||
+        (b as any).refundStatus === 'PENDING_REVIEW' ||
+        (b as any).refundStatus === 'APPROVED' ||
+        (b as any).refundStatus === 'PROCESSING_TRANSFER' ||
+        Boolean((b as any).refundRequestCode))
 
-    const hasRefund = Number(b.depositPaid || 0) > 0 || Boolean((b as any).refundStatus) || Boolean((b as any).refundRequestCode) || b.paymentStatus === 'REFUND_PENDING'
-
-    const rejectReason = (b as any).rejectionReason || b.cancellationReason
-    const isStaffReject = Boolean(
-      (b as any).rejectionReason ||
+    const isCustomerCancel = (b as any).cancelledByRole === 'CUSTOMER'
+    const rejectReason = (b as any).rejectionReason
+    const isStaffReject = !isCustomerCancel && Boolean(
       (b as any).isRejectedByStaff ||
       ((b as any).cancelledByRole && (b as any).cancelledByRole !== 'CUSTOMER') ||
       (rejectReason && !rejectReason.toLowerCase().includes('khách hàng yêu cầu hủy') && !rejectReason.toLowerCase().includes('quá hạn thanh toán') && !rejectReason.toLowerCase().includes('hệ thống tự động hủy'))
@@ -442,10 +449,10 @@ export function getBookingStage(b: Booking): BookingStageInfo {
     if (hasRefund) {
       return {
         stage: 'CANCELLED',
-        label: 'Hủy đơn hoàn tiền chờ xác nhận',
+        label: 'Chờ hoàn tiền & hủy đơn',
         badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
         dotClass: 'bg-amber-500 animate-pulse',
-        description: 'Đã gửi yêu cầu hủy đơn & hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát và giải ngân qua chuyển khoản.',
+        description: 'Đã gửi yêu cầu hủy đơn & hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát và chuyển khoản.',
         step: 0,
         stepLabel: 'Chờ duyệt hoàn tiền',
       }
@@ -1338,16 +1345,18 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
               const isHighlighted = highlightedBookingCode === b.bookingCode
 
+              const refundStatus = (b as any).refundStatus
               const isPendingReturn =
-                b.paymentStatus === 'REFUND_PENDING' ||
-                (b as any).refundStatus === 'PENDING_REVIEW' ||
-                (b as any).refundStatus === 'APPROVED' ||
-                (b as any).refundStatus === 'PROCESSING_TRANSFER' ||
-                (stageInfo.stage === 'CANCELLED' &&
-                  (stageInfo.label.toLowerCase().includes('chờ') ||
-                    b.paymentStatus === 'REFUND_PENDING' ||
-                    Boolean((b as any).refundStatus) ||
-                    Boolean((b as any).refundRequestCode)))
+                refundStatus !== 'REJECTED' &&
+                (b.paymentStatus === 'REFUND_PENDING' ||
+                  refundStatus === 'PENDING_REVIEW' ||
+                  refundStatus === 'APPROVED' ||
+                  refundStatus === 'PROCESSING_TRANSFER' ||
+                  (stageInfo.stage === 'CANCELLED' &&
+                    (stageInfo.label.toLowerCase().includes('chờ') ||
+                      b.paymentStatus === 'REFUND_PENDING' ||
+                      (Boolean(refundStatus) && refundStatus !== 'REJECTED') ||
+                      Boolean((b as any).refundRequestCode))))
 
               const showActionsBar = stageInfo.stage !== 'CANCELLED' || isPendingReturn
 
@@ -1587,7 +1596,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           : stageInfo.stage === 'CANCELLED'
                           ? (b.paymentStatus === 'REFUNDED'
                               ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/60 text-emerald-950 dark:text-emerald-200'
-                              : stageInfo.label.includes('chờ')
+                              : isPendingReturn || stageInfo.label.toLowerCase().includes('chờ')
                               ? 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60 text-amber-950 dark:text-amber-200'
                               : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60 text-rose-950 dark:text-rose-200')
                           : 'bg-amber-50/80 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60 text-amber-950 dark:text-amber-200'
@@ -1601,7 +1610,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                         {stageInfo.stage === 'CANCELLED' && (
                           b.paymentStatus === 'REFUNDED'
                             ? <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
-                            : stageInfo.label.includes('chờ')
+                            : isPendingReturn || stageInfo.label.toLowerCase().includes('chờ')
                             ? <Clock size={14} className="text-amber-600 shrink-0" />
                             : <AlertCircle size={14} className="text-rose-600 shrink-0" />
                         )}
@@ -1613,10 +1622,10 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           {stageInfo.stage === 'CANCELLED' && (
                             b.paymentStatus === 'REFUNDED'
                               ? 'Đã hoàn tất chuyển khoản tiền hoàn vào tài khoản ngân hàng'
-                              : stageInfo.label.includes('từ chối') || Boolean((b as any).rejectionReason) || Boolean((b as any).isRejectedByStaff)
-                              ? 'Đơn đặt chỗ đã bị từ chối'
-                              : stageInfo.label.includes('chờ')
+                              : isPendingReturn || stageInfo.label.toLowerCase().includes('chờ')
                               ? 'Đã gửi yêu cầu hủy — Đang chờ đối soát hoàn tiền'
+                              : stageInfo.label.toLowerCase().includes('từ chối') || Boolean((b as any).isRejectedByStaff)
+                              ? 'Đơn đặt chỗ đã bị từ chối'
                               : 'Đơn đặt giữ chỗ đã hủy'
                           )}
                         </span>
@@ -1759,8 +1768,52 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
             {/* Rejection / Cancellation Callout Banner */}
             {(selectedBookingForDetail.status === 'CANCELLED' || selectedBookingForDetail.status === 'OVERDUE') && (() => {
+              const isRefunded =
+                selectedBookingForDetail.paymentStatus === 'REFUNDED' ||
+                (selectedBookingForDetail as any).refundStatus === 'PROCESSED' ||
+                (selectedBookingForDetail as any).refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ||
+                (selectedBookingForDetail as any).refundStatus === 'COMPLETED' ||
+                (selectedBookingForDetail as any).refundStatus === 'RECONCILED'
+
+              if (isRefunded) {
+                return (
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300">
+                      <CheckCircle2 size={15} className="shrink-0" />
+                      <span>Đã hoàn tất hoàn tiền cọc</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      Quản lý cơ sở đã hoàn tất chuyển khoản hoàn tiền vào tài khoản ngân hàng của quý khách.
+                    </p>
+                  </div>
+                )
+              }
+
+              const isRefundPending =
+                (selectedBookingForDetail as any).refundStatus !== 'REJECTED' &&
+                (selectedBookingForDetail.paymentStatus === 'REFUND_PENDING' ||
+                  (selectedBookingForDetail as any).refundStatus === 'PENDING_REVIEW' ||
+                  (selectedBookingForDetail as any).refundStatus === 'APPROVED' ||
+                  (selectedBookingForDetail as any).refundStatus === 'PROCESSING_TRANSFER' ||
+                  Boolean((selectedBookingForDetail as any).refundRequestCode))
+
+              if (isRefundPending) {
+                return (
+                  <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-900/60 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300">
+                      <Clock size={15} className="shrink-0" />
+                      <span>Đang chờ đối soát &amp; hoàn tiền cọc</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      Đã gửi yêu cầu hủy đơn &amp; hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát và chuyển khoản.
+                    </p>
+                  </div>
+                )
+              }
+
+              const isCustomerCancel = (selectedBookingForDetail as any).cancelledByRole === 'CUSTOMER'
               const rReason = selectedBookingForDetail.rejectionReason || (selectedBookingForDetail as any).cancellationReason
-              const isReject = Boolean(
+              const isReject = !isCustomerCancel && Boolean(
                 selectedBookingForDetail.rejectionReason ||
                 (selectedBookingForDetail as any).isRejectedByStaff ||
                 ((selectedBookingForDetail as any).cancelledByRole && (selectedBookingForDetail as any).cancelledByRole !== 'CUSTOMER') ||
@@ -1880,11 +1933,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               {(() => {
                 const b = selectedBookingForDetail
                 const st = getBookingStage(b)
+                const refundStatus = (b as any).refundStatus
                 const isPendingReturn =
                   st.stage === 'CANCELLED' &&
+                  refundStatus !== 'REJECTED' &&
                   (st.label.includes('chờ') ||
                     b.paymentStatus === 'REFUND_PENDING' ||
-                    Boolean((b as any).refundStatus) ||
+                    (Boolean(refundStatus) && refundStatus !== 'REJECTED') ||
                     Boolean((b as any).refundRequestCode))
                 if (isPendingReturn) {
                   return (

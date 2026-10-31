@@ -641,7 +641,9 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           {(() => {
+                            if (isCancelled || isActiveOrCompleted) return null
                             const sched = getBookingScheduleInfo(b)
+                            if (!sched.relativeText) return null
                             return (
                               <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
                                 {sched.relativeText}
@@ -714,12 +716,12 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                               <span className="material-symbols-outlined text-[12px]">person</span>
                               <span>Tiếp nhận: <strong>{b.assignedStaffName}</strong></span>
                             </span>
-                          ) : (
+                          ) : !isCancelled ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Đơn chưa có nhân sự tiếp nhận">
                               <span className="material-symbols-outlined text-[12px]">person_off</span>
                               <span>Chưa tiếp nhận</span>
                             </span>
-                          )}
+                          ) : null}
 
                           {isInPerson && !isActiveOrCompleted && !isCancelled && (
                             isOverdue48h ? (
@@ -1241,9 +1243,11 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/60 space-y-2">
                   <div className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center justify-between">
                     <span>2. Lịch Hẹn &amp; Tiếp Đón</span>
-                    <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold border ${sched.badgeClass}`}>
-                      {sched.relativeText}
-                    </span>
+                    {sched.relativeText && !['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(s) && (
+                      <span className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded text-[10px] font-bold border ${sched.badgeClass}`}>
+                        {sched.relativeText}
+                      </span>
+                    )}
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
                     <div>Cơ sở: <strong className="text-slate-900 dark:text-white">{reviewDetailBooking.facilityName}</strong></div>

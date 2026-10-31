@@ -135,9 +135,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
           <span className="text-xs font-bold text-slate-900 leading-tight max-w-[130px] truncate">
             {user?.fullName || user?.username || t('Tài khoản')}
           </span>
-          <span className="text-[10px] text-slate-500 font-mono leading-tight">
-            {role || 'USER'}
-          </span>
         </div>
 
         <span
@@ -165,13 +162,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                 {user?.email || t('Chưa cập nhật email')}
               </span>
               <div className="flex items-center gap-1.5 mt-1">
-                <span
-                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold border ${getRoleStyle(
-                    role
-                  )}`}
-                >
-                  {role || 'USER'}
-                </span>
                 {user?.phone && (
                   <span className="text-[10px] text-slate-400 font-mono truncate">
                     {user.phone}

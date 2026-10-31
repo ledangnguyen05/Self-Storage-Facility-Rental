@@ -128,7 +128,7 @@ export const OverdueManagementPage: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-6 w-full text-left">
+    <div className="flex flex-col gap-6 w-full text-left pb-12">
       
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -141,9 +141,6 @@ export const OverdueManagementPage: React.FC = () => {
               <h1 className="text-xl font-bold text-slate-900">
                 Xử Lý Nợ Cước Quá Hạn &amp; Thu Hồi PIN/QR
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                BR-RULE-012 Enforcement
-              </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
               Theo dõi chu kỳ quá hạn (+1 ngày ân hạn, +3 ngày thu hồi PIN SmartLock, +7 ngày xem xét niêm phong kho &amp; kiểm kê)
@@ -170,32 +167,6 @@ export const OverdueManagementPage: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {/* Policy Warning Banner if Group 5 items exist */}
-      {summary && summary.policyUnconfiguredCount > 0 && (
-        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs text-amber-950">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
-              <span className="material-symbols-outlined text-[24px]">notification_important</span>
-            </div>
-            <div>
-              <p className="font-bold text-sm">
-                Phát hiện {summary.policyUnconfiguredCount} hợp đồng thuộc cơ sở thiếu chính sách quá hạn hợp lệ (Nhóm 5)
-              </p>
-              <p className="text-amber-800/90 mt-0.5">
-                Hệ thống tuân thủ nguyên tắc không tự ý áp đặt chính sách ngầm định. Cần Business Manager cấu hình chính sách trước khi kích hoạt phạt hoặc thu hồi PIN.
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/portal/facility-policy')}
-            className="px-4 py-2 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 shadow-xs whitespace-nowrap cursor-pointer"
-          >
-            Quản Lý Chính Sách Cơ Sở
-          </button>
-        </div>
-      )}
 
       {/* KPI Dashboard Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -333,7 +304,7 @@ export const OverdueManagementPage: React.FC = () => {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Nhóm 1: Ân hạn (1 ngày) ({summary?.graceCount ?? 0})
+            Ân hạn (1 ngày) ({summary?.graceCount ?? 0})
           </button>
 
           <button
@@ -346,7 +317,7 @@ export const OverdueManagementPage: React.FC = () => {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            Nhóm 2: Cảnh báo (2 ngày) ({summary?.warningCount ?? 0})
+            Cảnh báo (2 ngày) ({summary?.warningCount ?? 0})
           </button>
 
           <button
@@ -359,7 +330,7 @@ export const OverdueManagementPage: React.FC = () => {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-            Nhóm 3: Thu hồi PIN (3-6 ngày) ({summary?.pinThresholdCount ?? 0})
+            Thu hồi PIN (3-6 ngày) ({summary?.pinThresholdCount ?? 0})
           </button>
 
           <button
@@ -372,20 +343,7 @@ export const OverdueManagementPage: React.FC = () => {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-            Nhóm 4: Đủ ĐK Niêm phong (&gt;= 7 ngày) ({summary?.sealingThresholdCount ?? 0})
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setFilterStage('POLICY_UNCONFIGURED'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              filterStage === 'POLICY_UNCONFIGURED'
-                ? 'bg-slate-700 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
-            }`}
-          >
-            <span className="material-symbols-outlined text-[16px]">help</span>
-            Nhóm 5: Thiếu chính sách ({summary?.policyUnconfiguredCount ?? 0})
+            Đủ ĐK Niêm phong (&gt;= 7 ngày) ({summary?.sealingThresholdCount ?? 0})
           </button>
         </div>
 
@@ -456,23 +414,6 @@ export const OverdueManagementPage: React.FC = () => {
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white transition-all"
               />
             </div>
-
-            {/* Demo Filter Toggle */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsDemoFilter(prev => prev === true ? undefined : true)
-                setCurrentPage(0)
-              }}
-              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                isDemoFilter === true
-                  ? 'bg-purple-600 text-white shadow-xs'
-                  : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">science</span>
-              25 Ca Demo
-            </button>
           </div>
 
         </div>
@@ -641,31 +582,35 @@ export const OverdueManagementPage: React.FC = () => {
         </div>
 
         {/* Pagination Footer */}
-        <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <div>
-            Hiển thị <span className="font-bold text-slate-800">{contracts.length}</span> trên tổng số <span className="font-bold text-slate-800">{totalElements}</span> hợp đồng
+        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 relative">
+          <div className="text-center md:text-left">
+            Hiển thị <span className="font-bold text-slate-800 dark:text-slate-200">{contracts.length}</span> trên tổng số <span className="font-bold text-slate-800 dark:text-slate-200">{totalElements}</span> hợp đồng
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
             <button
               type="button"
               disabled={currentPage === 0}
               onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+              title="Trang trước"
             >
               <span className="material-symbols-outlined text-[18px]">chevron_left</span>
             </button>
-            <span className="px-2 font-semibold">
+            <span className="px-3 font-semibold text-slate-700 dark:text-slate-300 select-none">
               Trang {currentPage + 1} / {Math.max(1, totalPages)}
             </span>
             <button
               type="button"
               disabled={currentPage >= totalPages - 1}
               onClick={() => setCurrentPage(p => p + 1)}
-              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
+              title="Trang sau"
             >
               <span className="material-symbols-outlined text-[18px]">chevron_right</span>
             </button>
           </div>
+          {/* Empty right spacer to keep right edge clear of floating AI chat button */}
+          <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
         </div>
 
       </div>

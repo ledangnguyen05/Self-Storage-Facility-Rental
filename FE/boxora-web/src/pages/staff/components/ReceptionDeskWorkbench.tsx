@@ -803,7 +803,10 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           {(() => {
+                            const statusUpper = String(b.status || '').toUpperCase()
+                            if (['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(statusUpper)) return null
                             const sched = getBookingScheduleInfo(b)
+                            if (!sched.relativeText) return null
                             return (
                               <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
                                 {sched.relativeText}
@@ -862,7 +865,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                               <span className="material-symbols-outlined text-[12px]">person</span>
                               <span>Tiếp nhận: <strong>{b.assignedStaffName}</strong></span>
                             </span>
-                          ) : b.status !== 'ACTIVE' && b.status !== 'COMPLETED' ? (
+                          ) : b.status !== 'ACTIVE' && b.status !== 'COMPLETED' && b.status !== 'CANCELLED' && b.status !== 'REJECTED' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200" title="Đơn chưa có nhân viên tiếp nhận">
                               <span className="material-symbols-outlined text-[12px]">person_off</span>
                               <span>Chưa tiếp nhận</span>
@@ -1098,7 +1101,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                           ? `${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleDateString('vi-VN')} ${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
                           : `${(reviewDetailBooking as any).checkInDate || reviewDetailBooking.startDate} (${(reviewDetailBooking as any).checkInTime || 'Giờ tiếp đón'})`}
                       </strong>
-                      {sched.relativeText && (
+                      {sched.relativeText && !['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(s) && (
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
                           {sched.relativeText}
                         </span>
@@ -1114,6 +1117,11 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                     <div className="flex items-center gap-1.5 mt-0.5 text-blue-700 font-bold text-xs">
                       <span className="material-symbols-outlined text-[16px]">person</span>
                       <span>{reviewDetailBooking.assignedStaffName}</span>
+                    </div>
+                  ) : s === 'CANCELLED' || s === 'REJECTED' ? (
+                    <div className="flex items-center gap-1.5 mt-0.5 text-rose-600 font-medium text-xs">
+                      <span className="material-symbols-outlined text-[16px]">cancel</span>
+                      <span>Đơn đã bị hủy</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5 mt-0.5 text-slate-500 font-medium text-xs">
