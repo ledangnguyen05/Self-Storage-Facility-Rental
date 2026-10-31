@@ -28,5 +28,16 @@ public interface BookingCancellationService {
      * Kích hoạt quét tự động hủy các booking PENDING_PAYMENT quá hạn thanh toán (mặc định 15 phút).
      */
     AutoCancelResult triggerAutoCancel(Integer timeoutMinutes);
+
+    /**
+     * Hủy yêu cầu trả kho / rút lại yêu cầu hủy đơn và hoàn tiền cọc, khôi phục đơn đặt chỗ.
+     */
+    BookingCancelResponse revokeCancellation(UUID bookingId);
+
+    /**
+     * Hủy yêu cầu trả kho / rút lại yêu cầu hủy đơn và hoàn tiền cọc theo mã đặt chỗ.
+     */
+    BookingCancelResponse revokeCancellationByCode(String bookingCode);
 }
+
 

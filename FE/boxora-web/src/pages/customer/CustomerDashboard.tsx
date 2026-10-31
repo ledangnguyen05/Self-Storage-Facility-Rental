@@ -1805,6 +1805,75 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return d
   }
 
+  // Hàm kiểm tra xem kho thuê đã quá ngày kết thúc hay chưa (có tính đến các hợp đồng gia hạn)
+  const isRentalPeriodExpired = (endDateStr?: string | null, renewals?: ContractRenewal[]): boolean => {
+    if (!endDateStr) return false
+
+    const parseToEndOfDay = (str: string): Date | null => {
+      if (!str) return null
+      const clean = str.split('T')[0].trim()
+      if (clean.includes('/')) {
+        const parts = clean.split('/')
+        if (parts.length === 3) {
+          const day = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const year = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day, 23, 59, 59, 999)
+          }
+        }
+      } else if (clean.includes('-')) {
+        const parts = clean.split('-')
+        if (parts.length === 3) {
+          if (parts[0].length === 4) {
+            const year = parseInt(parts[0], 10)
+            const month = parseInt(parts[1], 10) - 1
+            const day = parseInt(parts[2], 10)
+            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+              return new Date(year, month, day, 23, 59, 59, 999)
+            }
+          } else {
+            const day = parseInt(parts[0], 10)
+            const month = parseInt(parts[1], 10) - 1
+            const year = parseInt(parts[2], 10)
+            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+              return new Date(year, month, day, 23, 59, 59, 999)
+            }
+          }
+        }
+      }
+      const d = new Date(str)
+      if (!isNaN(d.getTime())) {
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+      }
+      return null
+    }
+
+    let latestEnd = parseToEndOfDay(endDateStr)
+
+    // Nếu đơn có hợp đồng gia hạn (đã hoàn tất hoặc đang xử lý có ngày mới), lấy ngày kết thúc xa nhất
+    if (renewals && renewals.length > 0) {
+      for (const r of renewals) {
+        const isEffectiveRenewal =
+          r.status === 'COMPLETED' ||
+          (r.status as string) === 'ACTIVE' ||
+          r.paymentStatus === 'PAID' ||
+          r.status === 'PENDING_PAYMENT' ||
+          r.status === 'PENDING_SIGNATURE' ||
+          r.status === 'PENDING_REVIEW'
+        if (isEffectiveRenewal && r.newEndDate) {
+          const rEnd = parseToEndOfDay(r.newEndDate)
+          if (rEnd && (!latestEnd || rEnd.getTime() > latestEnd.getTime())) {
+            latestEnd = rEnd
+          }
+        }
+      }
+    }
+
+    if (!latestEnd) return false
+    return Date.now() > latestEnd.getTime()
+  }
+
   const totalRenewEstimate = useMemo(() => {
     const base = (renewMonthlyPrice || 0) * (renewMonths || 1)
     const discountAmt = base * ((renewDiscountPercent || 0) / 100)
@@ -1950,16 +2019,32 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       const isTerminated = c.status === 'TERMINATED'
       const isOverdue = c.status === 'OVERDUE'
       const isExpired = c.status === 'EXPIRED'
+      const isCancelled = c.status === 'CANCELLED'
+
+      // Nếu hợp đồng đã bị hủy/từ chối: không hiển thị như hợp đồng có hiệu lực
+      if (isCancelled) {
+        return
+      }
+
+      // Đối với trường hợp khách ký hợp đồng giấy và thanh toán tại cơ sở (IN_PERSON):
+      // Chỉ khi hoàn thành 4 bước tiếp nhận kho và staff/facility manager bấm "Xác nhận & Cấp mã PIN"
+      // (hợp đồng chuyển sang ACTIVE hoặc các trạng thái sau ACTIVE: OVERDUE, EXPIRED, TERMINATED)
+      // thì mới gửi/hiển thị thông báo về Hợp đồng và thanh toán!
+      const isInPerson = c.signingMethod === 'IN_PERSON'
+      if (isInPerson && c.status !== 'ACTIVE' && !isOverdue && !isExpired && !isTerminated) {
+        return
+      }
 
       // Bản ghi Ký kết & Hiệu lực hợp đồng thuê kho
+      const unitDisplay = c.unitCode ? `buồng kho #${c.unitCode}` : (c.unitTypeName || 'buồng kho chọn khi check-in')
       items.push({
         id: `CTR-MAIN-${c.id}`,
         unitCode: c.unitCode,
         facilityName: c.facilityName,
         category: 'CONTRACT',
         actionType: 'CONTRACT_ACTIVATED',
-        title: `Hợp đồng thuê kho #${c.unitCode || 'Boxora'} (Mã HĐ #${c.contractCode})`,
-        description: `Hợp đồng thuê buồng kho #${c.unitCode} tại ${c.facilityName || 'Boxora'} có hiệu lực từ ngày ${formatDisplayDate(c.startDate)} đến ${formatDisplayDate(c.endDate)}. Cước phí: ${Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫/tháng, tiền ký quỹ cọc: ${getContractDepositHeld(c).toLocaleString('vi-VN')} ₫.${c.paperContractUrl ? ' (Hợp đồng giấy đã tiếp nhận tại cơ sở)' : ''}`,
+        title: `Hợp đồng thuê kho ${c.unitCode ? `#${c.unitCode}` : ''} (Mã HĐ #${c.contractCode})`.trim(),
+        description: `Hợp đồng thuê ${unitDisplay} tại ${c.facilityName || 'Boxora'} có hiệu lực từ ngày ${formatDisplayDate(c.startDate)} đến ${formatDisplayDate(c.endDate)}. Cước phí: ${Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫/tháng, tiền ký quỹ cọc: ${getContractDepositHeld(c).toLocaleString('vi-VN')} ₫.${c.paperContractUrl ? ' (Hợp đồng giấy đã tiếp nhận tại cơ sở)' : ''}`,
         timestamp: contractTs,
         actorName: c.signingMethod === 'IN_PERSON' ? 'Nhân viên quầy Boxora' : 'Hệ thống Ký số Boxora Sign',
         statusLabel: isTerminated
@@ -1994,7 +2079,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           facilityName: c.facilityName,
           category: 'ACCESS',
           actionType: 'PIN_ISSUED',
-          title: `Bàn giao kho #${c.unitCode} & Cấp mã PIN`,
+          title: `Bàn giao kho ${c.unitCode ? `#${c.unitCode}` : ''} & Cấp mã PIN`.trim(),
           description: `Hợp đồng #${c.contractCode} tại ${c.facilityName} đã hoàn tất bàn giao kho và cấp mã PIN truy cập buồng kho (AES-256). Thời hạn thuê: ${formatDisplayDate(c.startDate)} → ${formatDisplayDate(c.endDate)}.`,
           timestamp: activatedTs,
           actorName: 'Hệ thống Boxora IoT',
@@ -2034,9 +2119,40 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
     })
 
-    // Bổ sung thông tin Bàn giao kho & Cấp mã PIN từ các đơn booking đã có mã PIN
+    // Bổ sung thông tin Bàn giao kho & Cấp mã PIN hoặc Thông báo từ chối từ các đơn booking
     customerBookings.forEach(b => {
-      if (b.unitCode && (b.accessPin || b.accessCode || b.status === 'ACTIVE' || b.status === 'CONFIRMED')) {
+      const s = String(b.status || '').toUpperCase()
+      if (s === 'CANCELLED' || s === 'REJECTED') {
+        const rejectReason = (b as any).rejectionReason || b.cancellationReason
+        const isStaffReject = Boolean(
+          (b as any).rejectionReason ||
+          (b as any).isRejectedByStaff ||
+          ((b as any).cancelledByRole && (b as any).cancelledByRole !== 'CUSTOMER') ||
+          (rejectReason && !rejectReason.toLowerCase().includes('khách hàng yêu cầu hủy') && !rejectReason.toLowerCase().includes('quá hạn thanh toán') && !rejectReason.toLowerCase().includes('hệ thống tự động hủy'))
+        )
+        if (isStaffReject && rejectReason) {
+          const cancelTs = (b as any).cancelledAt || b.updatedAt || b.createdAt || new Date().toISOString()
+          items.push({
+            id: `BKG-REJ-${b.id}`,
+            unitCode: b.unitCode || undefined,
+            facilityName: b.facilityName || 'Boxora',
+            category: 'CONTRACT',
+            actionType: 'SYSTEM_NOTIFICATION',
+            title: `Đơn đặt chỗ #${b.bookingCode || b.id.slice(0, 8)} đã bị từ chối`,
+            description: `Đơn đặt giữ chỗ buồng kho tại ${b.facilityName || 'Boxora'} đã bị từ chối với lý do: ${rejectReason}.`,
+            timestamp: cancelTs,
+            actorName: (b as any).cancelledByName || 'Quản lý cơ sở Boxora',
+            statusLabel: 'Đã từ chối',
+            statusTone: 'rose',
+            meta: {
+              bookingId: b.id,
+            },
+          })
+        }
+        return
+      }
+
+      if (b.unitCode && (b.accessPin || b.status === 'ACTIVE' || b.status === 'CONFIRMED')) {
         const exists = items.some(it => it.unitCode === b.unitCode && it.actionType === 'PIN_ISSUED')
         if (!exists) {
           items.push({
@@ -2061,6 +2177,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
     // 4. Lịch sử giao dịch thanh toán & biên lai điện tử (customerPayments)
     customerPayments.forEach(p => {
+      // Bỏ qua giao dịch đã bị hủy hoặc thất bại
+      if (p.status === 'CANCELLED' || p.status === 'FAILED') return
+
       const payTs = p.paymentTime || p.createdAt || new Date().toISOString()
       const isDeposit = p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT'
       const isRenewalFee = p.paymentType === 'RENEWAL' || p.paymentType === 'RENEWAL_FEE'
@@ -2089,6 +2208,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           (p.contractCode && c.contractCode === p.contractCode) ||
           (p.unitCode && c.unitCode === p.unitCode)
       )
+
+      // Đối với thanh toán tại quầy (IN_PERSON): chỉ khi hoàn tất tiếp nhận 4 bước và cấp mã PIN (hợp đồng ACTIVE)
+      // thì mới hiển thị biên lai / thông báo thanh toán
+      if (
+        (p.paymentMethod === 'CASH' || matchedContract?.signingMethod === 'IN_PERSON') &&
+        matchedContract &&
+        matchedContract.status !== 'ACTIVE' &&
+        matchedContract.status !== 'OVERDUE' &&
+        matchedContract.status !== 'EXPIRED' &&
+        matchedContract.status !== 'TERMINATED'
+      ) {
+        return
+      }
       const uCode = p.unitCode || matchedContract?.unitCode
       const facName = p.facilityName || matchedContract?.facilityName
 
@@ -2422,7 +2554,86 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }))
   }
 
+  // Kiểm tra xem kho / hợp đồng này đã hoàn tất thủ tục trả kho hay chưa
+  const isContractReturnCompleted = useCallback((targetContract: RentalContract | null | undefined): boolean => {
+    if (!targetContract) return false
+    if ((targetContract.status as string) === 'TERMINATED' || (targetContract.status as string) === 'COMPLETED' || targetContract.status === 'CANCELLED') {
+      return true
+    }
+    const cleanCode = (targetContract.unitCode || '').toUpperCase().trim()
+    const bId = targetContract.bookingId
+
+    // 1. Quét từ activeReturnOrders
+    const foundInOrders = activeReturnOrders.find(ro => {
+      const matchUnit = cleanCode && ro.unitCode && ro.unitCode.toUpperCase().trim() === cleanCode
+      const matchBooking = bId && ro.bookingId && ro.bookingId === bId
+      return (matchUnit || matchBooking) && ro.status === 'COMPLETED'
+    })
+    if (foundInOrders) return true
+
+    // 2. Quét từ customerTickets
+    const foundInTickets = customerTickets.find(t => {
+      const isUnitMatch = (cleanCode && t.unitCode && t.unitCode.toUpperCase().trim() === cleanCode) ||
+        (bId && t.bookingId && t.bookingId === bId) ||
+        (cleanCode && t.title && t.title.toUpperCase().includes(cleanCode)) ||
+        (cleanCode && t.description && t.description.toUpperCase().includes(cleanCode))
+      const isReturnCategory = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' ||
+        t.title?.toLowerCase().includes('trả kho') ||
+        t.description?.toLowerCase().includes('trả kho') ||
+        t.title?.toLowerCase().includes('hoàn cọc') ||
+        t.description?.toLowerCase().includes('hoàn cọc')
+      const isCompleted = t.status === 'RESOLVED' || t.status === 'CLOSED'
+      return isUnitMatch && isReturnCategory && isCompleted
+    })
+    if (foundInTickets) return true
+
+    // 3. Quét từ returnActivityLogs
+    const foundInLogs = returnActivityLogs.find(log => {
+      const isUnitMatch = (cleanCode && log.unitCode && log.unitCode.toUpperCase().trim() === cleanCode) ||
+        (bId && log.meta?.bookingId && log.meta.bookingId === bId) ||
+        (cleanCode && log.title && log.title.toUpperCase().includes(cleanCode)) ||
+        (cleanCode && log.description && log.description.toUpperCase().includes(cleanCode))
+      const isCompleted = log.title?.toLowerCase().includes('hoàn tất') || log.description?.toLowerCase().includes('đã hoàn tất')
+      return isUnitMatch && isCompleted
+    })
+    if (foundInLogs) return true
+
+    // 4. Quét từ localStorage
+    try {
+      const rawV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
+      if (rawV4) {
+        const list = JSON.parse(rawV4)
+        if (Array.isArray(list)) {
+          const item = list.find((it: any) =>
+            (cleanCode && it.unitCode && it.unitCode.toUpperCase().trim() === cleanCode) ||
+            (bId && it.bookingId && it.bookingId === bId)
+          )
+          if (item && item.status === 'COMPLETED') return true
+        }
+      }
+      const rawOld = localStorage.getItem('boxora_return_requests')
+      if (rawOld) {
+        const listOld = JSON.parse(rawOld)
+        if (Array.isArray(listOld)) {
+          const itemOld = listOld.find((it: any) =>
+            (cleanCode && it.unitCode && it.unitCode.toUpperCase().trim() === cleanCode) ||
+            (bId && it.bookingId && it.bookingId === bId)
+          )
+          if (itemOld && itemOld.status === 'COMPLETED') return true
+        }
+      }
+    } catch (e) {}
+
+    return false
+  }, [activeReturnOrders, customerTickets, returnActivityLogs])
+
   const openRenewModal = (c: RentalContract) => {
+    // Nếu kho này đã hoàn tất trả kho thì chặn gia hạn
+    if (isContractReturnCompleted(c)) {
+      toast.error('Không thể gia hạn kho', `Kho #${c.unitCode} đã hoàn tất thủ tục trả kho nên không thể tạo yêu cầu gia hạn.`)
+      return
+    }
+
     // Nếu kho này đang có yêu cầu gia hạn chờ ký hoặc chờ thanh toán, mở ngay Phụ lục gia hạn cho khách thao tác tiếp
     const existingActiveRenewal = myRenewals.find(
       r =>
@@ -3286,6 +3497,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   return null
                 })()
 
+                // Kiểm tra xem kho này đã hoàn tất thủ tục trả kho hay chưa
+                const isReturnCompleted = Boolean(
+                  activeReturnRequest?.status === 'COMPLETED' ||
+                  (c.status as string) === 'TERMINATED' ||
+                  (c.status as string) === 'COMPLETED' ||
+                  (c as any).returnStatus === 'COMPLETED' ||
+                  isContractReturnCompleted(c)
+                )
+
+                // Kiểm tra xem kho đã quá ngày kết thúc thuê (tính cả các hợp đồng/phụ lục gia hạn) hay chưa
+                const isRentalExpired = isRentalPeriodExpired(c.endDate, unitRenewals)
+
                 return (
                   <div
                     key={c.id}
@@ -3416,7 +3639,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       )}
 
                       {/* BANNER TRẠNG THÁI GIA HẠN & KÝ PHỤ LỤC HỢP ĐỒNG TRÊN THẺ KHO */}
-                      {activePendingRenewal && (
+                      {activePendingRenewal && !isReturnCompleted && (
                         <div
                           className={`p-3.5 rounded-xl border flex flex-col gap-2.5 shadow-2xs ${
                             activePendingRenewal.status === 'PENDING_SIGNATURE'
@@ -3633,25 +3856,27 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => openRenewModal(c)}
-                        className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          {activePendingRenewal?.status === 'PENDING_SIGNATURE'
-                            ? 'draw'
-                            : activePendingRenewal?.status === 'PENDING_PAYMENT'
-                            ? 'payments'
-                            : 'autorenew'}
-                        </span>
-                        <span>
-                          {activePendingRenewal?.status === 'PENDING_SIGNATURE'
-                            ? 'Ký Phụ Lục Gia Hạn'
-                            : activePendingRenewal?.status === 'PENDING_PAYMENT'
-                            ? 'Thanh Toán Gia Hạn'
-                            : 'Yêu Cầu Gia Hạn'}
-                        </span>
-                      </button>
+                      {!isReturnCompleted && (
+                        <button
+                          onClick={() => openRenewModal(c)}
+                          className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            {activePendingRenewal?.status === 'PENDING_SIGNATURE'
+                              ? 'draw'
+                              : activePendingRenewal?.status === 'PENDING_PAYMENT'
+                              ? 'payments'
+                              : 'autorenew'}
+                          </span>
+                          <span>
+                            {activePendingRenewal?.status === 'PENDING_SIGNATURE'
+                              ? 'Ký Phụ Lục Gia Hạn'
+                              : activePendingRenewal?.status === 'PENDING_PAYMENT'
+                              ? 'Thanh Toán Gia Hạn'
+                              : 'Yêu Cầu Gia Hạn'}
+                          </span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -3664,22 +3889,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         <span className="material-symbols-outlined text-[16px]">history</span>
                         <span>Lịch sử kho</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedSupportUnit(c.unitCode)
-                          setSelectedSupportCategory('LOCK_ISSUE')
-                          setSelectedSupportTitle(`Báo sự cố kho #${c.unitCode}`)
-                          setSelectedSupportContent(`Tôi gặp sự cố tại kho #${c.unitCode} (${c.facilityName || ''}). Nhờ nhân viên hỗ trợ kiểm tra.`)
-                          setTicketUnit(c.unitCode)
-                          setTicketType('lock')
-                          handleTabChange('support')
-                        }}
-                        className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">report</span>
-                        <span>Báo Sự Cố</span>
-                      </button>
+                      {!isRentalExpired && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedSupportUnit(c.unitCode)
+                            setSelectedSupportCategory('LOCK_ISSUE')
+                            setSelectedSupportTitle(`Báo sự cố kho #${c.unitCode}`)
+                            setSelectedSupportContent(`Tôi gặp sự cố tại kho #${c.unitCode} (${c.facilityName || ''}). Nhờ nhân viên hỗ trợ kiểm tra.`)
+                            setTicketUnit(c.unitCode)
+                            setTicketType('lock')
+                            handleTabChange('support')
+                          }}
+                          className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">report</span>
+                          <span>Báo Sự Cố</span>
+                        </button>
+                      )}
                       {activeReturnRequest ? (
                         <button
                           type="button"
@@ -3693,13 +3920,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               }
                             }, 150)
                           }}
-                          className="px-3.5 h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/15 hover:shadow-lg hover:shadow-amber-500/25 active:scale-98"
+                          className={`${
+                            isReturnCompleted ? 'flex-1 min-w-[140px]' : 'px-3.5'
+                          } h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/15 hover:shadow-lg hover:shadow-amber-500/25 active:scale-98`}
                           title="Kho đã có yêu cầu trả kho. Nhấn để theo dõi tiến độ và đối soát quyết toán."
                         >
                           <span className="material-symbols-outlined text-[16px] text-amber-700">assignment_return</span>
                           <span>{activeReturnRequest.status === 'COMPLETED' ? 'Đã hoàn tất trả kho' : 'Đang xử lý trả kho'}</span>
                         </button>
-                      ) : c.status === 'ACTIVE' ? (
+                      ) : (c.status === 'ACTIVE' && !isReturnCompleted) ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -4183,7 +4412,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                         <span>Phụ lục ({completedCRenewals.length})</span>
                                       </button>
                                     )}
-                                    {matchedContract.status === 'ACTIVE' && (
+                                    {matchedContract.status === 'ACTIVE' && !isContractReturnCompleted(matchedContract) && (
                                       <button
                                         type="button"
                                         onClick={() => openRenewModal(matchedContract)}
@@ -5275,7 +5504,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                         <span>Phụ lục ({completedCRenewals.length})</span>
                                       </button>
                                     )}
-                                    {c.status === 'ACTIVE' && (
+                                    {c.status === 'ACTIVE' && !isContractReturnCompleted(c) && (
                                       <button
                                         type="button"
                                         onClick={() => openRenewModal(c)}
@@ -7605,7 +7834,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       <BookingCancelModal
         isOpen={Boolean(cancellingBookingTarget)}
         booking={cancellingBookingTarget}
-        onClose={() => setCancellingBookingTarget(null)}
+        onClose={() => {
+          setCancellingBookingTarget(null)
+          handleTabChange('bookings')
+        }}
         onSuccess={async () => {
           await Promise.all([
             fetchCustomerBookings(),

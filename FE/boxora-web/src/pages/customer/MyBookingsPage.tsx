@@ -25,7 +25,9 @@ import {
   AlertCircle,
   AlertTriangle,
   QrCode,
+  RotateCcw,
 } from 'lucide-react'
+import { toast } from '../../utils/toast'
 import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
@@ -359,6 +361,51 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       (b as any).refundStatus === 'COMPLETED' ||
       (b as any).refundStatus === 'RECONCILED'
 
+    const hasRefund = Number(b.depositPaid || 0) > 0 || Boolean((b as any).refundStatus) || Boolean((b as any).refundRequestCode) || b.paymentStatus === 'REFUND_PENDING'
+
+    const rejectReason = (b as any).rejectionReason || b.cancellationReason
+    const isStaffReject = Boolean(
+      (b as any).rejectionReason ||
+      (b as any).isRejectedByStaff ||
+      ((b as any).cancelledByRole && (b as any).cancelledByRole !== 'CUSTOMER') ||
+      (rejectReason && !rejectReason.toLowerCase().includes('khách hàng yêu cầu hủy') && !rejectReason.toLowerCase().includes('quá hạn thanh toán') && !rejectReason.toLowerCase().includes('hệ thống tự động hủy'))
+    )
+
+    if (isStaffReject) {
+      const reasonText = rejectReason ? `Đơn đặt chỗ đã bị từ chối với lý do: ${rejectReason}` : 'Đơn đặt chỗ đã bị từ chối bởi cơ sở.'
+      if (isRefunded) {
+        return {
+          stage: 'CANCELLED',
+          label: 'Đã từ chối • Đã hoàn tiền',
+          badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-800',
+          dotClass: 'bg-emerald-500',
+          description: `${reasonText} (Tiền hoàn cọc đã được chuyển khoản thành công vào tài khoản ngân hàng của quý khách).`,
+          step: 0,
+          stepLabel: 'Đã từ chối',
+        }
+      }
+      if (hasRefund) {
+        return {
+          stage: 'CANCELLED',
+          label: 'Đã từ chối • Chờ hoàn tiền',
+          badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
+          dotClass: 'bg-amber-500 animate-pulse',
+          description: `${reasonText} (Hệ thống đã tự động gửi yêu cầu hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát).`,
+          step: 0,
+          stepLabel: 'Đã từ chối',
+        }
+      }
+      return {
+        stage: 'CANCELLED',
+        label: 'Đã từ chối',
+        badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800',
+        dotClass: 'bg-rose-500',
+        description: reasonText,
+        step: 0,
+        stepLabel: 'Đã từ chối',
+      }
+    }
+
     if (isRefunded) {
       return {
         stage: 'CANCELLED',
@@ -371,7 +418,6 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       }
     }
 
-    const hasRefund = Number(b.depositPaid || 0) > 0 || Boolean((b as any).refundStatus) || Boolean((b as any).refundRequestCode) || b.paymentStatus === 'REFUND_PENDING'
     if (hasRefund) {
       return {
         stage: 'CANCELLED',
@@ -388,7 +434,9 @@ export function getBookingStage(b: Booking): BookingStageInfo {
       label: 'Đã hủy',
       badgeClass: 'bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-950/80 dark:text-rose-300 dark:border-rose-800',
       dotClass: 'bg-rose-500',
-      description: 'Đơn đặt giữ chỗ đã được hủy theo yêu cầu hoặc quá thời hạn giữ chỗ.',
+      description: b.cancellationReason && b.cancellationReason.trim() !== 'Khách hàng yêu cầu hủy'
+        ? `Đơn đặt giữ chỗ đã hủy. Lý do: ${b.cancellationReason}`
+        : 'Đơn đặt giữ chỗ đã được hủy theo yêu cầu hoặc quá thời hạn giữ chỗ.',
       step: 0,
       stepLabel: 'Đã hủy',
     }
@@ -489,7 +537,7 @@ export interface MyBookingsPageProps {
 
 export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false, onGoToMyUnit }) => {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const targetBookingCodeParam = searchParams.get('bookingCode') || searchParams.get('code')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
 
@@ -542,6 +590,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   const [selectedBookingForCancel, setSelectedBookingForCancel] = useState<Booking | null>(null)
   const [selectedBookingForReschedule, setSelectedBookingForReschedule] = useState<Booking | null>(null)
   const [selectedBookingForDetail, setSelectedBookingForDetail] = useState<Booking | null>(null)
+  const [selectedBookingForRevoke, setSelectedBookingForRevoke] = useState<Booking | null>(null)
+  const [isRevoking, setIsRevoking] = useState(false)
   const [detailQrCodeUrl, setDetailQrCodeUrl] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now())
@@ -774,6 +824,80 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
     }
   }, [fetchBookings])
 
+  // Handler hủy yêu cầu trả kho / rút lại yêu cầu hủy đơn
+  const handleConfirmRevokeCancellation = async () => {
+    if (!selectedBookingForRevoke) return
+    const b = selectedBookingForRevoke
+    setIsRevoking(true)
+    try {
+      try {
+        await bookingService.revokeCancellation(b.id || b.bookingCode)
+      } catch (err: any) {
+        console.warn('API revokeCancellation warning, applying local fallback:', err)
+      }
+
+      // Đồng bộ localStorage
+      try {
+        const rawRes = localStorage.getItem('boxora_guest_reservations')
+        if (rawRes) {
+          const list = JSON.parse(rawRes)
+          if (Array.isArray(list)) {
+            const updated = list.map((item: any) => {
+              if (item.bookingCode === b.bookingCode || item.id === b.id || item.backendBookingId === b.id) {
+                const restoredStatus = (item.storageUnitId || item.unitCode) ? 'CONFIRMED' : 'PAID_AND_SIGNED'
+                const clone = { ...item, status: restoredStatus }
+                delete clone.cancellationReason
+                delete clone.refundStatus
+                delete clone.refundRequestCode
+                delete clone.cancelledAt
+                delete clone.cancelledBy
+                return clone
+              }
+              return item
+            })
+            localStorage.setItem('boxora_guest_reservations', JSON.stringify(updated))
+          }
+        }
+
+        const rawReturnV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
+        if (rawReturnV4) {
+          const list = JSON.parse(rawReturnV4)
+          if (Array.isArray(list)) {
+            const next = list.filter((it: any) => it.id !== b.id && it.bookingId !== b.id && it.bookingCode !== b.bookingCode && (!b.unitCode || it.unitCode !== b.unitCode))
+            localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(next))
+          }
+        }
+
+        const rawOldReturn = localStorage.getItem('boxora_return_requests')
+        if (rawOldReturn) {
+          const list = JSON.parse(rawOldReturn)
+          if (Array.isArray(list)) {
+            const next = list.filter((it: any) => it.id !== b.id && it.bookingId !== b.id && it.bookingCode !== b.bookingCode && (!b.unitCode || it.unitCode !== b.unitCode))
+            localStorage.setItem('boxora_return_requests', JSON.stringify(next))
+          }
+        }
+      } catch (e) {
+        console.warn('Local storage sync error:', e)
+      }
+
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { bookingCode: b.bookingCode, status: 'CONFIRMED' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
+      toast.success('Đã hủy yêu cầu trả kho thành công! Đơn đặt chỗ đã được khôi phục.')
+      setSelectedBookingForRevoke(null)
+      await fetchBookings()
+    } catch (error: any) {
+      console.error('Revoke cancellation error:', error)
+      toast.error(error?.response?.data?.message || error?.message || 'Không thể hủy yêu cầu trả kho lúc này.')
+    } finally {
+      setIsRevoking(false)
+    }
+  }
+
   // Handle bookingCode from URL searchParams to navigate, highlight card, and view details
   useEffect(() => {
     if (!targetBookingCodeParam || bookings.length === 0) return
@@ -790,8 +914,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
       setStatusFilter('ALL') // ensure it's not hidden by status filter tabs
       setSearchTerm('')     // ensure it's not hidden by search text
 
-      // Automatically open detail modal so customer gets instant access to their QR check-in & booking voucher
-      setSelectedBookingForDetail(match)
+      // Automatically open detail modal only for non-cancelled bookings
+      const stage = getBookingStage(match).stage
+      if (match.status !== 'CANCELLED' && stage !== 'CANCELLED') {
+        setSelectedBookingForDetail(match)
+      } else {
+        setSelectedBookingForDetail(null)
+      }
 
       // Smooth scroll to the booking card
       setTimeout(() => {
@@ -1199,6 +1328,15 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
               const isHighlighted = highlightedBookingCode === b.bookingCode
 
+              const isPendingReturn =
+                stageInfo.stage === 'CANCELLED' &&
+                (stageInfo.label.includes('chờ') ||
+                  b.paymentStatus === 'REFUND_PENDING' ||
+                  Boolean((b as any).refundStatus) ||
+                  Boolean((b as any).refundRequestCode))
+
+              const showActionsBar = stageInfo.stage !== 'CANCELLED' || isPendingReturn
+
               return (
                 <div
                   key={b.id}
@@ -1419,13 +1557,6 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           <span className="text-[10px] text-rose-700 dark:text-rose-400 italic">
                             * Vui lòng mang CCCD gốc đến cơ sở nhận kho sớm nhất hoặc đổi lịch hẹn.
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBookingForReschedule(b)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition shrink-0 cursor-pointer shadow-xs"
-                          >
-                            Đổi lịch hẹn
-                          </button>
                         </div>
                       </div>
                     )}
@@ -1468,6 +1599,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           {stageInfo.stage === 'CANCELLED' && (
                             b.paymentStatus === 'REFUNDED'
                               ? 'Đã hoàn tất chuyển khoản tiền hoàn vào tài khoản ngân hàng'
+                              : stageInfo.label.includes('từ chối') || Boolean((b as any).rejectionReason) || Boolean((b as any).isRejectedByStaff)
+                              ? 'Đơn đặt chỗ đã bị từ chối'
                               : stageInfo.label.includes('chờ')
                               ? 'Đã gửi yêu cầu hủy — Đang chờ đối soát hoàn tiền'
                               : 'Đơn đặt giữ chỗ đã hủy'
@@ -1481,81 +1614,98 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   </div>
 
                   {/* Actions Footer Bar */}
-                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-                    {/* Primary Workflow CTA */}
-                    {stageInfo.stage === 'ACTIVE' ? (
-                      <button
-                        type="button"
-                        onClick={() => handleNavigateToUnitPortal(b.unitCode)}
-                        className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[17px]">dashboard</span>
-                        <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
-                      </button>
-                    ) : (stageInfo.stage === 'PENDING_ASSIGNMENT' || (stageInfo.stage === 'CONFIRMED' && (b.contractSigned || isPaid))) ? (
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)}
-                        className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                      >
-                        <FileText size={15} />
-                        <span>Xem hợp đồng điện tử đã ký</span>
-                      </button>
-                    ) : stageInfo.stage === 'PENDING_CONTACT' ? (
-                      <div className="space-y-1.5">
+                  {showActionsBar && (
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                      {/* Primary Workflow CTA */}
+                      {stageInfo.stage === 'ACTIVE' ? (
                         <button
                           type="button"
-                          onClick={() => setSelectedBookingForDetail(b)}
+                          onClick={() => handleNavigateToUnitPortal(b.unitCode)}
+                          className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[17px]">dashboard</span>
+                          <span>Vào Portal Quản Lý Kho (Khóa IoT)</span>
+                        </button>
+                      ) : (stageInfo.stage === 'PENDING_ASSIGNMENT' || (stageInfo.stage === 'CONFIRMED' && (b.contractSigned || isPaid))) ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}`)}
                           className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                         >
-                          <QrCode size={15} />
-                          <span>Xem phiếu hẹn &amp; Mã QR</span>
+                          <FileText size={15} />
+                          <span>Xem hợp đồng điện tử đã ký</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
-                          className="w-full py-1.5 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer border border-blue-100 dark:border-blue-900/50"
-                        >
-                          <span>Chuyển sang Ký HĐ &amp; Thanh toán online</span>
-                          <ArrowRight size={12} />
-                        </button>
+                      ) : stageInfo.stage === 'PENDING_CONTACT' ? (
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBookingForDetail(b)}
+                            className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          >
+                            <QrCode size={15} />
+                            <span>Xem phiếu hẹn &amp; Mã QR</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
+                            className="w-full py-1.5 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer border border-blue-100 dark:border-blue-900/50"
+                          >
+                            <span>Chuyển sang Ký HĐ &amp; Thanh toán online</span>
+                            <ArrowRight size={12} />
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {/* Secondary Utility Actions */}
+                      <div className="flex items-center gap-2">
+                        {stageInfo.stage !== 'PENDING_CONTACT' &&
+                          stageInfo.stage !== 'CANCELLED' &&
+                          b.status !== 'CANCELLED' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedBookingForDetail(b)}
+                            className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
+                          >
+                            Xem phiếu hẹn &amp; QR
+                          </button>
+                        )}
+
+                        {/* Button Hủy yêu cầu trả kho */}
+                        {isPendingReturn && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBookingForRevoke(b)}
+                              className="flex-1 py-2 px-3 rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer text-center"
+                              title="Hủy yêu cầu trả kho / hoàn tiền và giữ lại đơn đặt chỗ"
+                            >
+                              <RotateCcw size={14} className="text-amber-700 dark:text-amber-400 shrink-0" />
+                              <span>Hủy yêu cầu trả kho</span>
+                            </button>
+                          )}
+
+                        {stageInfo.stage !== 'CANCELLED' && stageInfo.stage !== 'ACTIVE' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBookingForReschedule(b)}
+                              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-blue-50 text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
+                              title="Đổi lịch hẹn tiếp đón"
+                            >
+                              <Calendar size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedBookingForCancel(b)}
+                              className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-rose-50 text-slate-600 hover:text-rose-600 transition-colors cursor-pointer"
+                              title="Hủy đơn đặt chỗ"
+                            >
+                              <X size={15} />
+                            </button>
+                          </>
+                        )}
                       </div>
-                    ) : null}
-
-                    {/* Secondary Utility Actions */}
-                    <div className="flex items-center gap-2">
-                      {stageInfo.stage !== 'PENDING_CONTACT' && (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBookingForDetail(b)}
-                          className="flex-1 py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
-                        >
-                          Xem phiếu hẹn &amp; QR
-                        </button>
-                      )}
-
-                      {stageInfo.stage !== 'CANCELLED' && stageInfo.stage !== 'ACTIVE' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBookingForReschedule(b)}
-                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-blue-50 text-slate-600 hover:text-blue-600 transition-colors cursor-pointer"
-                            title="Đổi lịch hẹn tiếp đón"
-                          >
-                            <Calendar size={15} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBookingForCancel(b)}
-                            className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-rose-50 text-slate-600 hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Hủy đơn đặt chỗ"
-                          >
-                            <X size={15} />
-                          </button>
-                        </>
-                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               )
             })}
@@ -1567,7 +1717,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   const modalsContent = (
     <>
       {/* Detail & QR Ticket Modal */}
-      {selectedBookingForDetail && (
+      {selectedBookingForDetail &&
+        selectedBookingForDetail.status !== 'CANCELLED' &&
+        getBookingStage(selectedBookingForDetail).stage !== 'CANCELLED' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-5 animate-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -1590,6 +1742,32 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 ✕
               </button>
             </div>
+
+            {/* Rejection / Cancellation Callout Banner */}
+            {(selectedBookingForDetail.status === 'CANCELLED' || selectedBookingForDetail.status === 'OVERDUE') && (() => {
+              const rReason = selectedBookingForDetail.rejectionReason || (selectedBookingForDetail as any).cancellationReason
+              const isReject = Boolean(
+                selectedBookingForDetail.rejectionReason ||
+                (selectedBookingForDetail as any).isRejectedByStaff ||
+                ((selectedBookingForDetail as any).cancelledByRole && (selectedBookingForDetail as any).cancelledByRole !== 'CUSTOMER') ||
+                (rReason && !rReason.toLowerCase().includes('khách hàng yêu cầu hủy') && !rReason.toLowerCase().includes('quá hạn thanh toán') && !rReason.toLowerCase().includes('hệ thống tự động hủy'))
+              )
+              return (
+                <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900/60 text-xs text-rose-900 dark:text-rose-200 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-rose-700 dark:text-rose-300">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{isReject ? 'Đơn đặt chỗ đã bị từ chối' : 'Đơn đặt giữ chỗ đã hủy'}</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    {isReject
+                      ? (rReason ? `Đơn đặt chỗ đã bị từ chối với lý do: ${rReason}` : 'Đơn đặt chỗ đã bị từ chối bởi nhân viên cơ sở.')
+                      : (rReason && rReason !== 'Khách hàng yêu cầu hủy'
+                        ? `Lý do hủy đơn: ${rReason}`
+                        : 'Đơn đặt giữ chỗ đã được hủy theo yêu cầu hoặc quá thời hạn giữ chỗ.')}
+                  </p>
+                </div>
+              )
+            })()}
 
             {/* QR Code and Check-in Info */}
             <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
@@ -1685,6 +1863,32 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               >
                 Đóng
               </button>
+              {(() => {
+                const b = selectedBookingForDetail
+                const st = getBookingStage(b)
+                const isPendingReturn =
+                  st.stage === 'CANCELLED' &&
+                  (st.label.includes('chờ') ||
+                    b.paymentStatus === 'REFUND_PENDING' ||
+                    Boolean((b as any).refundStatus) ||
+                    Boolean((b as any).refundRequestCode))
+                if (isPendingReturn) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedBookingForDetail(null)
+                        setSelectedBookingForRevoke(b)
+                      }}
+                      className="px-4 py-2.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                    >
+                      <RotateCcw size={14} className="text-amber-700 dark:text-amber-400" />
+                      <span>Hủy yêu cầu trả kho</span>
+                    </button>
+                  )
+                }
+                return null
+              })()}
               {(selectedBookingForDetail.status === 'ACTIVE' || selectedBookingForDetail.status === 'COMPLETED') && (
                 <button
                   type="button"
@@ -1704,13 +1908,152 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
         </div>
       )}
 
+      {/* Modal xác nhận Hủy yêu cầu trả kho */}
+      {selectedBookingForRevoke && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-md rounded-3xl bg-white dark:bg-slate-900 shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden text-left animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="p-5 border-b border-amber-100 dark:border-amber-900/40 bg-amber-50/80 dark:bg-amber-950/30 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-100 dark:bg-amber-900/60 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 shadow-2xs">
+                  <RotateCcw size={20} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-amber-950 dark:text-amber-200">
+                    Xác Nhận Hủy Yêu Cầu Trả Kho
+                  </h3>
+                  <span className="text-[11px] font-mono text-amber-700/90 dark:text-amber-400">
+                    Mã đơn: #{selectedBookingForRevoke.bookingCode}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedBookingForRevoke(null)}
+                disabled={isRevoking}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body Modal */}
+            <div className="p-6 space-y-4 text-xs text-slate-700 dark:text-slate-300">
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Cơ sở lưu trữ:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {selectedBookingForRevoke.facilityName || 'Boxora Facility'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Loại buồng kho:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {formatUnitTypeName(selectedBookingForRevoke)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 dark:text-slate-400 font-medium">Tiền thuê &amp; cọc đã thanh toán:</span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    {Number(selectedBookingForRevoke.depositPaid || selectedBookingForRevoke.totalRentalFee || 0).toLocaleString('vi-VN')} ₫
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-blue-950 dark:text-blue-200 space-y-1.5 leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5 text-blue-900 dark:text-blue-300">
+                  <span className="material-symbols-outlined text-[16px] text-blue-700 dark:text-blue-400">info</span>
+                  <span>Quyền lợi của bạn:</span>
+                </div>
+                <p className="text-[11px] text-blue-800 dark:text-blue-300">
+                  Sau khi hủy yêu cầu, đơn đặt giữ chỗ của quý khách sẽ được <strong>khôi phục lại</strong>. Quý khách vẫn có thể đến cơ sở nhận kho theo lịch hẹn đã đăng ký.
+                </p>
+                <p className="text-[11px] text-blue-700 dark:text-blue-400/90 italic">
+                  * Yêu cầu đối soát hoàn cọc tương ứng sẽ được tự động thu hồi và không chuyển khoản đến tài khoản ngân hàng.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  disabled={isRevoking}
+                  onClick={() => setSelectedBookingForRevoke(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold cursor-pointer transition disabled:opacity-50"
+                >
+                  Giữ Lại Yêu Cầu Hủy
+                </button>
+                <button
+                  type="button"
+                  disabled={isRevoking}
+                  onClick={handleConfirmRevokeCancellation}
+                  className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-md shadow-amber-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isRevoking ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Đang xử lý...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw size={14} />
+                      <span>Xác Nhận Hủy Yêu Cầu Trả Kho</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Booking Cancel Modal */}
       <BookingCancelModal
         isOpen={Boolean(selectedBookingForCancel)}
         booking={selectedBookingForCancel}
-        onClose={() => setSelectedBookingForCancel(null)}
-        onSuccess={() => {
+        onClose={() => {
           setSelectedBookingForCancel(null)
+          setSelectedBookingForDetail(null)
+          const newParams = new URLSearchParams(searchParams)
+          let changed = false
+          if (newParams.has('bookingCode')) {
+            newParams.delete('bookingCode')
+            changed = true
+          }
+          if (newParams.has('code')) {
+            newParams.delete('code')
+            changed = true
+          }
+          if (newParams.get('tab') !== 'bookings') {
+            newParams.set('tab', 'bookings')
+            changed = true
+          }
+          if (changed) {
+            setSearchParams(newParams, { replace: true })
+          }
+        }}
+        onSuccess={() => {
+          setSelectedBookingForDetail(null)
+          const newParams = new URLSearchParams(searchParams)
+          let changed = false
+          if (newParams.has('bookingCode')) {
+            newParams.delete('bookingCode')
+            changed = true
+          }
+          if (newParams.has('code')) {
+            newParams.delete('code')
+            changed = true
+          }
+          if (newParams.get('tab') !== 'bookings') {
+            newParams.set('tab', 'bookings')
+            changed = true
+          }
+          if (changed) {
+            setSearchParams(newParams, { replace: true })
+          }
           fetchBookings()
           window.dispatchEvent(new Event('boxora:storage-units-refresh'))
         }}

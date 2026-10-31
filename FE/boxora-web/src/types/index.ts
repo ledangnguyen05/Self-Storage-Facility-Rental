@@ -291,6 +291,11 @@ export interface Booking {
   checkinOverdueReminderSentAt?: string | null
   rejectionReason?: string | null
   cancellationReason?: string | null
+  isRejectedByStaff?: boolean | null
+  cancelledAt?: string | null
+  cancelledById?: string | null
+  cancelledByName?: string | null
+  cancelledByRole?: string | null
   createdAt?: string
   updatedAt?: string
 }

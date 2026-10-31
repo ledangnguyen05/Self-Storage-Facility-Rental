@@ -63,6 +63,13 @@ public class BookingResponse {
     private String contractStatus;
     private Boolean contractSigned;
     private LocalDateTime checkinOverdueReminderSentAt;
+    private String cancellationReason;
+    private String rejectionReason;
+    private Boolean isRejectedByStaff;
+    private LocalDateTime cancelledAt;
+    private UUID cancelledById;
+    private String cancelledByName;
+    private String cancelledByRole;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

@@ -321,8 +321,8 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .bankName(bankName)
                     .bankAccountNumber(bankAccountNumber)
                     .bankAccountName(bankAccountName)
-                    .reason(String.format("Hoàn tiền khi hủy đơn %s (%s). Tiền thuê hoàn: %s đ, Cọc: %s đ (Khấu trừ: %s đ). Lý do: %s",
-                            booking.getBookingCode(), preview.getMilestoneStage(), rentPaid, depPaid.subtract(penalty), penalty, reason))
+                    .reason(String.format("Hoàn tiền khi hủy đơn %s. Tiền thuê hoàn: %s đ, Cọc: %s đ (Khấu trừ: %s đ). Lý do: %s",
+                            booking.getBookingCode(), rentPaid, depPaid.subtract(penalty), penalty, reason))
                     .status(RefundStatus.PENDING_REVIEW)
                     .requestedBy(cancelledByUser != null ? cancelledByUser : booking.getCustomer())
                     .build();
@@ -452,7 +452,121 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         return cancelBooking(booking.getId(), request);
     }
 
+    @Override
+    @Transactional
+    public BookingCancelResponse revokeCancellation(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (booking.getStatus() != BookingStatus.CANCELLED) {
+            throw new AppException(ErrorCode.BOOKING_CANNOT_REVOKE_CANCEL);
+        }
+
+        UUID currentUserId = requestContext.currentUserId();
+        String currentRole = requestContext.currentUserRole();
+        if ("CUSTOMER".equalsIgnoreCase(currentRole) && booking.getCustomer() != null
+                && currentUserId != null && !booking.getCustomer().getId().equals(currentUserId)) {
+            throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        List<RefundRequest> refunds = refundRequestRepository.findByBookingId(booking.getId());
+        for (RefundRequest refund : refunds) {
+            if (refund.getStatus() == RefundStatus.PROCESSED
+                    || refund.getStatus() == RefundStatus.COMPLETED
+                    || refund.getStatus() == RefundStatus.RECONCILED
+                    || refund.getStatus() == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                    || refund.getStatus() == RefundStatus.PROCESSING_TRANSFER) {
+                throw new AppException(ErrorCode.BOOKING_REFUND_ALREADY_PROCESSED);
+            }
+        }
+
+        if (!refunds.isEmpty()) {
+            refundRequestRepository.deleteAll(refunds);
+        }
+
+        BookingStatus oldStatus = booking.getStatus();
+        StorageUnit unit = booking.getStorageUnit();
+        boolean unitReassigned = false;
+
+        if (unit != null) {
+            if (unit.getStatus() == UnitStatus.AVAILABLE) {
+                unit.setStatus(UnitStatus.RESERVED);
+                storageUnitRepository.save(unit);
+                booking.setStatus(BookingStatus.CONFIRMED);
+                unitReassigned = true;
+            } else {
+                booking.setStorageUnit(null);
+                booking.setStatus(BookingStatus.PAID_PENDING_ASSIGNMENT);
+            }
+        } else {
+            boolean hasDeposit = booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0;
+            if (hasDeposit || "PAID".equalsIgnoreCase(booking.getPaymentStatus())) {
+                booking.setStatus(BookingStatus.PAID_AND_SIGNED);
+            } else {
+                booking.setStatus(BookingStatus.PENDING_CONTACT);
+            }
+        }
+
+        booking.setCancellationReason(null);
+        booking.setCancelledAt(null);
+        booking.setCancelledBy(null);
+        if ("REVOKED_CANCELLED".equals(booking.getQrAccessToken()) || booking.getQrAccessToken() == null) {
+            booking.setQrAccessToken(UUID.randomUUID().toString());
+        }
+        if ("REFUND_PENDING".equalsIgnoreCase(booking.getPaymentStatus())) {
+            booking.setPaymentStatus("PAID");
+        }
+        bookingRepository.save(booking);
+
+        RentalContract linkedContract = rentalContractRepository.findByBookingId(booking.getId()).orElse(null);
+        if (linkedContract != null && linkedContract.getStatus() == RentalContractStatus.CANCELLED) {
+            linkedContract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
+            rentalContractRepository.save(linkedContract);
+        }
+
+        UUID facilityId = (unit != null && unit.getFacility() != null)
+                ? unit.getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
+
+        activityLogService.record(
+                facilityId,
+                ActivityAction.RESERVATION_UPDATE,
+                "Booking",
+                booking.getId(),
+                String.format("Khách hàng đã hủy yêu cầu trả kho / rút lại đơn hủy cho mã đặt chỗ %s. Trạng thái đã khôi phục về %s.",
+                        booking.getBookingCode(), booking.getStatus()),
+                oldStatus,
+                booking.getStatus()
+        );
+
+        return BookingCancelResponse.builder()
+                .bookingId(booking.getId())
+                .bookingCode(booking.getBookingCode())
+                .status(booking.getStatus())
+                .milestoneStage("REVOKED")
+                .refundPercentage(0.0)
+                .refundAmount(BigDecimal.ZERO)
+                .penaltyAmount(BigDecimal.ZERO)
+                .unitReleased(!unitReassigned)
+                .cancelledAt(null)
+                .cancellationReason(null)
+                .message("Đã hủy yêu cầu trả kho thành công! Đơn đặt chỗ đã được khôi phục.")
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public BookingCancelResponse revokeCancellationByCode(String bookingCode) {
+        if (bookingCode == null || bookingCode.isBlank()) {
+            throw new AppException(ErrorCode.BOOKING_NOT_FOUND);
+        }
+        Booking booking = bookingRepository.findByBookingCodeForUpdate(bookingCode.trim())
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        return revokeCancellation(booking.getId());
+    }
+
     /**
+
      * Kích hoạt quét tự động hủy các booking PENDING_PAYMENT quá hạn thanh toán.
      */
     @Override

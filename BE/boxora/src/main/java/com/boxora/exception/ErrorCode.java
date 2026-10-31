@@ -82,6 +82,9 @@ public enum ErrorCode {
     HANDOVER_BEFORE_CHECKIN_TIME(732, "Đúng ngày nhưng chưa đến giờ check-in hẹn trước. Vui lòng chờ đến giờ hợp lệ.", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_BEFORE_CHECKIN_DATE(733, "Chưa đến ngày hẹn check-in tiếp đón gia hạn hợp đồng tại cơ sở.", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_BEFORE_CHECKIN_TIME(734, "Đúng ngày nhưng chưa đến giờ hẹn tiếp đón gia hạn hợp đồng. Vui lòng chờ đến giờ hợp lệ.", HttpStatus.BAD_REQUEST),
+    BOOKING_CANNOT_REVOKE_CANCEL(735, "Không thể hủy yêu cầu trả kho ở trạng thái hiện tại", HttpStatus.BAD_REQUEST),
+    BOOKING_REFUND_ALREADY_PROCESSED(736, "Yêu cầu hoàn tiền đã được xử lý hoặc giải ngân, không thể thu hồi", HttpStatus.BAD_REQUEST),
+
 
     // ========================= PAYMENT (750 - 799) =========================
     PAYMENT_NOT_FOUND(750, "Không tìm thấy giao dịch thanh toán", HttpStatus.NOT_FOUND),

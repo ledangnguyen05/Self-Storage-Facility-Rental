@@ -247,6 +247,16 @@ export const bookingService = {
     return response.data?.data as BookingCancelResponse
   },
 
+  async revokeCancellation(idOrCode: string) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
+    const url = isUuid
+      ? `/api/v1/bookings/${idOrCode}/revoke-cancel`
+      : `/api/v1/bookings/code/${encodeURIComponent(idOrCode)}/revoke-cancel`
+    const response = await api.post(url)
+    window.dispatchEvent(new Event('boxora:notifications-refresh'))
+    return response.data?.data as BookingCancelResponse
+  },
+
   async confirmBooking(idOrCode: string, notes?: string) {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idOrCode)
     const url = isUuid

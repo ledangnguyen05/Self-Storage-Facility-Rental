@@ -673,6 +673,18 @@ public class BookingServiceImpl implements BookingService {
             if (notes != null && !notes.isBlank()) {
                 booking.setCancellationReason(notes.trim());
             }
+            booking.setCancelledAt(LocalDateTime.now());
+            try {
+                org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                if (auth != null && auth.getName() != null) {
+                    userRepository.findByUsername(auth.getName()).ifPresent(booking::setCancelledBy);
+                }
+            } catch (Exception ignored) {}
+            RentalContract linkedContract = rentalContractRepository.findByBookingId(booking.getId()).orElse(null);
+            if (linkedContract != null) {
+                linkedContract.setStatus(RentalContractStatus.CANCELLED);
+                rentalContractRepository.save(linkedContract);
+            }
             if (unit != null) {
                 unit.setStatus(UnitStatus.AVAILABLE);
                 storageUnitRepository.save(unit);
@@ -2045,6 +2057,12 @@ public class BookingServiceImpl implements BookingService {
             }
         }
 
+        String cancelReason = b.getCancellationReason();
+        User cancelledBy = b.getCancelledBy();
+        String cancelledByRole = (cancelledBy != null && cancelledBy.getRole() != null) ? cancelledBy.getRole().getName() : null;
+        boolean isStaffReject = cancelledByRole != null && ("STAFF".equalsIgnoreCase(cancelledByRole) || "FACILITY_MANAGER".equalsIgnoreCase(cancelledByRole) || "ADMIN".equalsIgnoreCase(cancelledByRole));
+        String rejectionReason = (isStaffReject || (cancelReason != null && !cancelReason.equalsIgnoreCase("Khách hàng yêu cầu hủy") && !cancelReason.toLowerCase().contains("quá hạn thanh toán") && !cancelReason.toLowerCase().contains("tự động hủy"))) ? cancelReason : null;
+
         return BookingResponse.builder()
                 .id(b.getId())
                 .bookingCode(b.getBookingCode())
@@ -2095,6 +2113,13 @@ public class BookingServiceImpl implements BookingService {
                 .contractStatus(contractStatus)
                 .contractSigned(contractSigned)
                 .checkinOverdueReminderSentAt(b.getCheckinOverdueReminderSentAt())
+                .cancellationReason(cancelReason)
+                .rejectionReason(rejectionReason)
+                .isRejectedByStaff(isStaffReject)
+                .cancelledAt(b.getCancelledAt())
+                .cancelledById(cancelledBy != null ? cancelledBy.getId() : null)
+                .cancelledByName(cancelledBy != null ? (cancelledBy.getFullName() != null && !cancelledBy.getFullName().isBlank() ? cancelledBy.getFullName() : cancelledBy.getUsername()) : null)
+                .cancelledByRole(cancelledByRole)
                 .createdAt(b.getCreatedAt())
                 .updatedAt(b.getUpdatedAt())
                 .build();
