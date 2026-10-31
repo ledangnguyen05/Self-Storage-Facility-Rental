@@ -197,7 +197,24 @@ public class RefundServiceImpl implements RefundService {
             refund.setRejectionReason(request.getRejectionReason() != null ? request.getRejectionReason() : request.getReviewNote());
         }
 
+        if (refund.getFacility() == null) {
+            if (refund.getBooking() != null && refund.getBooking().getFacility() != null) {
+                refund.setFacility(refund.getBooking().getFacility());
+            } else if (refund.getContract() != null && refund.getContract().getFacility() != null) {
+                refund.setFacility(refund.getContract().getFacility());
+            }
+        }
+
         refund = refundRequestRepository.save(refund);
+
+        if (!isApprove && refund.getBooking() != null) {
+            Booking b = refund.getBooking();
+            if ("REFUND_PENDING".equalsIgnoreCase(b.getPaymentStatus())) {
+                boolean hasPaid = paymentRepository.existsByBooking_IdAndStatus(b.getId(), PaymentStatus.PAID);
+                b.setPaymentStatus(hasPaid ? "PAID" : "UNPAID");
+                bookingRepository.save(b);
+            }
+        }
 
         User customer = refund.getCustomer();
         if (customer != null && customer.getEmail() != null) {
@@ -622,7 +639,11 @@ public class RefundServiceImpl implements RefundService {
         Specification<RefundRequest> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (queryFacilityId != null) {
-                predicates.add(cb.equal(root.get("facility").get("id"), queryFacilityId));
+                predicates.add(cb.or(
+                        cb.equal(root.get("facility").get("id"), queryFacilityId),
+                        cb.and(cb.isNull(root.get("facility")), cb.equal(root.get("booking").get("facility").get("id"), queryFacilityId)),
+                        cb.and(cb.isNull(root.get("facility")), cb.equal(root.get("contract").get("facility").get("id"), queryFacilityId))
+                ));
             }
             if (queryCustomerId != null) {
                 predicates.add(cb.equal(root.get("customer").get("id"), queryCustomerId));

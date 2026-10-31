@@ -40,7 +40,8 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
     try {
       setLoading(true)
       const data = await refundService.getAll({
-        facilityId: facilityId && facilityId !== 'ALL' ? facilityId : undefined
+        facilityId: facilityId && facilityId !== 'ALL' ? facilityId : undefined,
+        size: 200
       })
       if (data && Array.isArray(data.content)) {
         setRefunds(data.content)
@@ -232,6 +233,16 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
       }))
       window.dispatchEvent(new Event('boxora:notifications-refresh'))
 
+      // Cập nhật optimistic ngay lập tức để đơn chuyển sang trạng thái REJECTED trong state
+      setRefunds(prev => prev.map(r => r.id === selectedRefund.id ? {
+        ...r,
+        status: 'REJECTED' as RefundStatusType,
+        rejectionReason: rejectionReason.trim(),
+        reviewNotes: rejectionReason.trim(),
+        reviewedByName: 'Quản lý cơ sở',
+        reviewedAt: new Date().toISOString()
+      } : r))
+
       toast.info(`Đã từ chối yêu cầu hoàn tiền #${selectedRefund.requestCode}`)
       setIsRejectModalOpen(false)
       setSelectedRefund(null)
@@ -333,6 +344,10 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
           r.status === 'RECONCILED'
       )
       .reduce((sum, r) => sum + (r.finalRefundAmount || 0), 0)
+  }, [refunds])
+
+  const kpiRejectedCount = useMemo(() => {
+    return refunds.filter(r => r.status === 'REJECTED').length
   }, [refunds])
 
   const getStatusBadge = (status: RefundStatusType) => {
@@ -490,13 +505,14 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
           </button>
           <button
             onClick={() => setStatusFilter('REJECTED')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1 ${
               statusFilter === 'REJECTED'
                 ? 'bg-rose-600 text-white'
                 : 'text-rose-800 bg-rose-50 hover:bg-rose-100'
             }`}
           >
-            Đã Từ Chối
+            <span>Đã Từ Chối</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/30 font-black">{kpiRejectedCount}</span>
           </button>
         </div>
 
@@ -647,6 +663,21 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
                             Bởi: {refund.processedByName}
                           </div>
                         )}
+                        {refund.status === 'REJECTED' && refund.rejectionReason && (
+                          <div className="mt-1.5 text-[11px] text-rose-700 bg-rose-50 rounded-lg p-2 border border-rose-200 max-w-xs shadow-2xs">
+                            <span className="font-bold flex items-center gap-1 text-rose-800 mb-0.5">
+                              <span className="material-symbols-outlined text-[13px]">info</span>
+                              Lý do từ chối:
+                            </span>
+                            <span className="italic">"{refund.rejectionReason}"</span>
+                          </div>
+                        )}
+                        {refund.reviewedByName && refund.status === 'REJECTED' && (
+                          <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[12px] text-slate-400">person</span>
+                            <span>Từ chối bởi: {refund.reviewedByName}</span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Actions */}
@@ -680,6 +711,13 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
                               <span className="material-symbols-outlined text-[16px]">visibility</span>
                               <span>Xem chứng từ UNC</span>
                             </button>
+                          )}
+
+                          {refund.status === 'REJECTED' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200">
+                              <span className="material-symbols-outlined text-[14px]">block</span>
+                              <span>Đã từ chối hoàn tiền</span>
+                            </span>
                           )}
                         </div>
                       </td>
