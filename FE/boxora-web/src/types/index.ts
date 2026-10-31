@@ -296,6 +296,8 @@ export interface Booking {
   cancelledById?: string | null
   cancelledByName?: string | null
   cancelledByRole?: string | null
+  refundRequestCode?: string | null
+  refundStatus?: string | null
   createdAt?: string
   updatedAt?: string
 }

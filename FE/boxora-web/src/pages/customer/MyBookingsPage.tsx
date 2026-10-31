@@ -352,6 +352,27 @@ export interface BookingStageInfo {
 
 export function getBookingStage(b: Booking): BookingStageInfo {
   const status = (b.status || '').toUpperCase()
+
+  // 1. Kiểm tra trường hợp đang chờ Quản lý cơ sở xử lý hoàn tiền cọc & hủy đơn
+  const isAwaitingRefundPayout =
+    b.paymentStatus === 'REFUND_PENDING' ||
+    (b as any).refundStatus === 'PENDING_REVIEW' ||
+    (b as any).refundStatus === 'APPROVED' ||
+    (b as any).refundStatus === 'PROCESSING_TRANSFER' ||
+    Boolean(b.cancellationReason && (b as any).refundRequestCode && status !== 'CANCELLED')
+
+  if (isAwaitingRefundPayout) {
+    return {
+      stage: 'CANCELLED',
+      label: 'Chờ hoàn tiền & hủy đơn',
+      badgeClass: 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/80 dark:text-amber-300 dark:border-amber-800',
+      dotClass: 'bg-amber-500 animate-pulse',
+      description: 'Đã gửi yêu cầu hủy đơn & hoàn tiền cọc đến Quản lý cơ sở để xử lý đối soát và chuyển khoản.',
+      step: 0,
+      stepLabel: 'Chờ duyệt hoàn tiền',
+    }
+  }
+
   const isCancelled = status === 'CANCELLED' || status === 'OVERDUE'
   if (isCancelled) {
     const isRefunded =
@@ -887,7 +908,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
       }))
       window.dispatchEvent(new Event('boxora:notifications-refresh'))
 
-      toast.success('Đã hủy yêu cầu trả kho thành công! Đơn đặt chỗ đã được khôi phục.')
+      toast.success(b.status === 'ACTIVE' || b.status === 'COMPLETED'
+        ? 'Đã hủy yêu cầu trả kho thành công! Đơn đặt chỗ đã được khôi phục.'
+        : 'Đã hủy yêu cầu hoàn cọc thành công! Đơn đặt chỗ đã được giữ lại.')
       setSelectedBookingForRevoke(null)
       await fetchBookings()
     } catch (error: any) {
@@ -1304,11 +1327,15 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               const isHighlighted = highlightedBookingCode === b.bookingCode
 
               const isPendingReturn =
-                stageInfo.stage === 'CANCELLED' &&
-                (stageInfo.label.includes('chờ') ||
-                  b.paymentStatus === 'REFUND_PENDING' ||
-                  Boolean((b as any).refundStatus) ||
-                  Boolean((b as any).refundRequestCode))
+                b.paymentStatus === 'REFUND_PENDING' ||
+                (b as any).refundStatus === 'PENDING_REVIEW' ||
+                (b as any).refundStatus === 'APPROVED' ||
+                (b as any).refundStatus === 'PROCESSING_TRANSFER' ||
+                (stageInfo.stage === 'CANCELLED' &&
+                  (stageInfo.label.toLowerCase().includes('chờ') ||
+                    b.paymentStatus === 'REFUND_PENDING' ||
+                    Boolean((b as any).refundStatus) ||
+                    Boolean((b as any).refundRequestCode)))
 
               const showActionsBar = stageInfo.stage !== 'CANCELLED' || isPendingReturn
 
@@ -1491,7 +1518,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                       <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                         <span className="text-slate-400 block text-[10px]">TIỀN THUÊ &amp; CỌC</span>
                         <div className="font-bold text-slate-900 dark:text-white mt-0.5 font-mono">
-                          {Number(b.totalRentalFee || 0).toLocaleString('vi-VN')} ₫
+                          {Number((b.totalRentalFee || 0) + (b.depositPaid ?? b.depositAmount ?? 0)).toLocaleString('vi-VN')} ₫
                         </div>
                         <span className={`text-[10px] font-semibold block mt-0.5 ${
                           b.paymentStatus === 'REFUNDED'
@@ -1645,16 +1672,16 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           </button>
                         )}
 
-                        {/* Button Hủy yêu cầu trả kho */}
+                        {/* Button Hủy yêu cầu trả kho / hoàn cọc */}
                         {isPendingReturn && (
                             <button
                               type="button"
                               onClick={() => setSelectedBookingForRevoke(b)}
                               className="flex-1 py-2 px-3 rounded-xl border border-amber-300 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer text-center"
-                              title="Hủy yêu cầu trả kho / hoàn tiền và giữ lại đơn đặt chỗ"
+                              title="Hủy yêu cầu hoàn cọc và giữ lại đơn đặt chỗ"
                             >
                               <RotateCcw size={14} className="text-amber-700 dark:text-amber-400 shrink-0" />
-                              <span>Hủy yêu cầu trả kho</span>
+                              <span>{b.status === 'ACTIVE' || b.status === 'COMPLETED' ? 'Hủy yêu cầu trả kho' : 'Hủy yêu cầu hoàn cọc'}</span>
                             </button>
                           )}
 
@@ -1858,7 +1885,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                       className="px-4 py-2.5 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-bold text-xs cursor-pointer flex items-center gap-1.5"
                     >
                       <RotateCcw size={14} className="text-amber-700 dark:text-amber-400" />
-                      <span>Hủy yêu cầu trả kho</span>
+                      <span>{b.status === 'ACTIVE' || b.status === 'COMPLETED' ? 'Hủy yêu cầu trả kho' : 'Hủy yêu cầu hoàn cọc'}</span>
                     </button>
                   )
                 }
@@ -1898,7 +1925,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-amber-950 dark:text-amber-200">
-                    Xác Nhận Hủy Yêu Cầu Trả Kho
+                    {selectedBookingForRevoke.status === 'ACTIVE' || selectedBookingForRevoke.status === 'COMPLETED'
+                      ? 'Xác Nhận Hủy Yêu Cầu Trả Kho'
+                      : 'Xác Nhận Hủy Yêu Cầu Hoàn Cọc & Giữ Đơn'}
                   </h3>
                   <span className="text-[11px] font-mono text-amber-700/90 dark:text-amber-400">
                     Mã đơn: #{selectedBookingForRevoke.bookingCode}
@@ -1933,7 +1962,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500 dark:text-slate-400 font-medium">Tiền thuê &amp; cọc đã thanh toán:</span>
                   <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
-                    {Number(selectedBookingForRevoke.depositPaid || selectedBookingForRevoke.totalRentalFee || 0).toLocaleString('vi-VN')} ₫
+                    {Number((selectedBookingForRevoke.totalRentalFee || 0) + (selectedBookingForRevoke.depositPaid ?? selectedBookingForRevoke.depositAmount ?? 0)).toLocaleString('vi-VN')} ₫
                   </span>
                 </div>
               </div>
@@ -1975,7 +2004,11 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   ) : (
                     <>
                       <RotateCcw size={14} />
-                      <span>Xác Nhận Hủy Yêu Cầu Trả Kho</span>
+                      <span>
+                        {selectedBookingForRevoke.status === 'ACTIVE' || selectedBookingForRevoke.status === 'COMPLETED'
+                          ? 'Xác Nhận Hủy Yêu Cầu Trả Kho'
+                          : 'Xác Nhận Hủy Yêu Cầu Hoàn Cọc'}
+                      </span>
                     </>
                   )}
                 </button>

@@ -243,7 +243,14 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
           if (Array.isArray(list)) {
             const updated = list.map((item: any) => {
               if (item.bookingCode === booking.bookingCode || item.id === booking.id || item.backendBookingId === booking.id) {
-                return { ...item, status: 'CANCELLED', cancellationReason: finalReason }
+                return {
+                  ...item,
+                  status: res?.refundRequestId ? (item.status || booking.status || 'PAID_PENDING_ASSIGNMENT') : 'CANCELLED',
+                  paymentStatus: res?.refundRequestId ? 'REFUND_PENDING' : item.paymentStatus,
+                  refundRequestCode: res?.refundRequestCode,
+                  refundStatus: res?.refundRequestId ? 'PENDING_REVIEW' : undefined,
+                  cancellationReason: finalReason
+                }
               }
               return item
             })
@@ -257,7 +264,12 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
       window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
       window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
       window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
-        detail: { bookingCode: booking.bookingCode, status: 'CANCELLED' }
+        detail: {
+          bookingCode: booking.bookingCode,
+          status: res?.refundRequestId ? (booking.status || 'PAID_PENDING_ASSIGNMENT') : 'CANCELLED',
+          paymentStatus: res?.refundRequestId ? 'REFUND_PENDING' : booking.paymentStatus,
+          refundRequestCode: res?.refundRequestCode
+        }
       }))
       window.dispatchEvent(new Event('boxora:notifications-refresh'))
 

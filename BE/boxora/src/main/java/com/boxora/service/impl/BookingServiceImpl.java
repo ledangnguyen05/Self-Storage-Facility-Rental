@@ -1990,19 +1990,22 @@ public class BookingServiceImpl implements BookingService {
         }
 
         String paymentStatus = b.getPaymentStatus();
-        if (b.getStatus() == BookingStatus.CANCELLED) {
-            try {
-                Optional<RefundRequest> refOpt = refundRequestRepository.findFirstByBooking_IdOrderByCreatedAtDesc(b.getId());
-                if (refOpt.isPresent()) {
-                    RefundStatus rSt = refOpt.get().getStatus();
-                    if (rSt == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION || rSt == RefundStatus.PROCESSED || rSt == RefundStatus.COMPLETED || rSt == RefundStatus.RECONCILED) {
-                        paymentStatus = "REFUNDED";
-                    } else if (rSt == RefundStatus.PENDING_REVIEW || rSt == RefundStatus.APPROVED || rSt == RefundStatus.PROCESSING_TRANSFER) {
-                        paymentStatus = "REFUND_PENDING";
-                    }
+        String refCode = null;
+        String refStatus = null;
+        try {
+            Optional<RefundRequest> refOpt = refundRequestRepository.findFirstByBooking_IdOrderByCreatedAtDesc(b.getId());
+            if (refOpt.isPresent()) {
+                RefundRequest rr = refOpt.get();
+                refCode = rr.getRequestCode();
+                refStatus = rr.getStatus() != null ? rr.getStatus().name() : null;
+                RefundStatus rSt = rr.getStatus();
+                if (rSt == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION || rSt == RefundStatus.PROCESSED || rSt == RefundStatus.COMPLETED || rSt == RefundStatus.RECONCILED) {
+                    paymentStatus = "REFUNDED";
+                } else if (rSt == RefundStatus.PENDING_REVIEW || rSt == RefundStatus.APPROVED || rSt == RefundStatus.PROCESSING_TRANSFER) {
+                    paymentStatus = "REFUND_PENDING";
                 }
-            } catch (Exception ignored) {
             }
+        } catch (Exception ignored) {
         }
         if ("REFUNDED".equalsIgnoreCase(paymentStatus) || "REFUND_PENDING".equalsIgnoreCase(paymentStatus)) {
             // Keep refund statuses intact
@@ -2126,6 +2129,8 @@ public class BookingServiceImpl implements BookingService {
                 .cancelledById(cancelledBy != null ? cancelledBy.getId() : null)
                 .cancelledByName(cancelledBy != null ? (cancelledBy.getFullName() != null && !cancelledBy.getFullName().isBlank() ? cancelledBy.getFullName() : cancelledBy.getUsername()) : null)
                 .cancelledByRole(cancelledByRole)
+                .refundRequestCode(refCode)
+                .refundStatus(refStatus)
                 .createdAt(b.getCreatedAt())
                 .updatedAt(b.getUpdatedAt())
                 .build();

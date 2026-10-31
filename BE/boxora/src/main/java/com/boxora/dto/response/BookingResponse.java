@@ -70,6 +70,8 @@ public class BookingResponse {
     private UUID cancelledById;
     private String cancelledByName;
     private String cancelledByRole;
+    private String refundRequestCode;
+    private String refundStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
