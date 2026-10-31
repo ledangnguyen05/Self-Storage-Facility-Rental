@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
 import {
   MessageSquare,
@@ -40,6 +40,41 @@ export const BoxoraChatWidget: React.FC = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const navigate = useNavigate()
+  const location = useLocation()
+
+  // Tab 6: Remove AI assistant button completely from internal dashboards
+  // (Staff, Facility Manager, Business Manager, and Admin dashboards)
+  // Retains AI assistant for Customer Dashboard and Public landing pages.
+  const isInternalDashboard = useMemo(() => {
+    const path = location.pathname.toLowerCase()
+    if (
+      path.startsWith('/portal/staff') ||
+      path.startsWith('/portal/facility-manager') ||
+      path.startsWith('/portal/business-manager') ||
+      path.startsWith('/portal/admin') ||
+      path.startsWith('/portal/facilities') ||
+      path.startsWith('/portal/cashier') ||
+      path.startsWith('/portal/tickets') ||
+      path.startsWith('/portal/overdue') ||
+      path.startsWith('/portal/shifts') ||
+      path.startsWith('/staff') ||
+      path.startsWith('/facility-manager') ||
+      path.startsWith('/manager') ||
+      path.startsWith('/operations') ||
+      path.startsWith('/business') ||
+      path.startsWith('/admin') ||
+      path.startsWith('/cashier') ||
+      path.startsWith('/tickets') ||
+      path.startsWith('/overdue') ||
+      path.startsWith('/shifts')
+    ) {
+      return true
+    }
+    if (path.startsWith('/portal') && !path.startsWith('/portal/customer')) {
+      return true
+    }
+    return false
+  }, [location.pathname])
   const { t } = useLanguage()
 
   // Save history on change
@@ -246,6 +281,10 @@ export const BoxoraChatWidget: React.FC = () => {
         {blocks}
       </div>
     )
+  }
+
+  if (isInternalDashboard) {
+    return null
   }
 
   return (

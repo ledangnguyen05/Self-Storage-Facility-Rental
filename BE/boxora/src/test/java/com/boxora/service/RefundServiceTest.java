@@ -63,6 +63,9 @@ class RefundServiceTest {
     @Mock
     private RequestContext requestContext;
 
+    @Mock
+    private HandoverRecordRepository handoverRecordRepository;
+
     @InjectMocks
     private RefundServiceImpl refundService;
 
@@ -230,7 +233,7 @@ class RefundServiceTest {
 
         assertThat(response.getStatus()).isEqualTo(RefundStatus.AWAITING_CUSTOMER_CONFIRMATION);
         assertThat(response.getTransactionReference()).isEqualTo("FT261008000123");
-        verify(emailService).sendRefundStatusEmail(anyString(), anyString(), anyString(), eq("AWAITING_CUSTOMER_CONFIRMATION"), any(), anyString(), anyString(), eq("FT261008000123"), anyString());
+        verify(emailService).sendBookingCancellationRefundSuccessEmail(eq("c.le@example.com"), anyString(), eq("BK-REF-100"), eq("REF-12345"), anyString(), any(), anyString(), anyString(), anyString(), eq("FT261008000123"), any(), anyString());
     }
 
     @Test
@@ -288,15 +291,17 @@ class RefundServiceTest {
     }
 
     @Test
-    @DisplayName("processRefund should throw REFUND_NOT_APPROVED when request is still PENDING_REVIEW")
+    @DisplayName("processRefund should throw REFUND_NOT_APPROVED when request is still in an invalid status like REJECTED")
     void testProcessRefundThrowsIfNotApproved() {
         UUID refundId = UUID.randomUUID();
         RefundRequest refund = RefundRequest.builder()
-                .status(RefundStatus.PENDING_REVIEW)
+                .status(RefundStatus.REJECTED)
                 .build();
         refund.setId(refundId);
 
         when(refundRequestRepository.findById(refundId)).thenReturn(Optional.of(refund));
+        when(requestContext.currentUserId()).thenReturn(staffId);
+        when(userRepository.findById(staffId)).thenReturn(Optional.of(mockStaff));
 
         RefundProcessRequest processRequest = RefundProcessRequest.builder()
                 .transactionReference("FT123456")

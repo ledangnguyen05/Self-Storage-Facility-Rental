@@ -21,6 +21,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
   const { user: currentUser } = useAuth()
   const [detail, setDetail] = useState<OverdueContractDetail | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'debt' | 'smartlock' | 'sealing' | 'notices' | 'payments' | 'audit'>('debt')
 
   // Action state
@@ -59,11 +60,22 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
   const fetchDetail = useCallback(async () => {
     if (!contractId) return
     setIsLoading(true)
+    setLoadError(null)
     try {
       const data = await overdueService.getContractDetail(contractId)
       setDetail(data)
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Không thể tải chi tiết hợp đồng quá hạn')
+      const serverMsg = err?.response?.data?.message || ''
+      const isSqlError = serverMsg.toLowerCase().includes('column') || 
+                         serverMsg.toLowerCase().includes('sql') || 
+                         serverMsg.toLowerCase().includes('jdbc') || 
+                         serverMsg.toLowerCase().includes('relation') ||
+                         serverMsg.toLowerCase().includes('hibernate')
+      const userMsg = isSqlError
+        ? 'Không thể nạp hồ sơ nợ cước do hệ thống đang cập nhật dữ liệu. Vui lòng thử lại.'
+        : serverMsg || 'Không thể tải chi tiết hợp đồng quá hạn'
+      setLoadError(userMsg)
+      toast.error(userMsg)
     } finally {
       setIsLoading(false)
     }
@@ -232,7 +244,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900">
-                  Hồ Sơ Nợ Cước: {detail?.contractCode || 'Đang tải...'}
+                  Hồ Sơ Nợ Cước: {detail?.contractCode || (loadError ? 'Lỗi kết nối' : 'Đang tải...')}
                 </h2>
                 {detail?.isDemo && (
                   <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-100 text-purple-700 border border-purple-200">
@@ -359,6 +371,22 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
             <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-400">
               <span className="material-symbols-outlined animate-spin text-[36px]">sync</span>
               <p className="text-xs font-semibold">Đang tải hồ sơ hợp đồng quá hạn...</p>
+            </div>
+          ) : loadError && !detail ? (
+            <div className="py-16 flex flex-col items-center justify-center gap-3 text-center px-4">
+              <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 border border-rose-200 flex items-center justify-center">
+                <span className="material-symbols-outlined text-2xl">error_outline</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-800">{loadError}</p>
+              <p className="text-xs text-slate-500 max-w-md">Không thể tải thông tin hồ sơ nợ cước từ máy chủ. Vui lòng thử lại hoặc liên hệ quản trị viên.</p>
+              <button
+                type="button"
+                onClick={fetchDetail}
+                className="mt-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                <span className="material-symbols-outlined text-[16px]">refresh</span>
+                <span>Thử lại</span>
+              </button>
             </div>
           ) : detail ? (
             <>

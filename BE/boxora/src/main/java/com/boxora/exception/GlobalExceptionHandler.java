@@ -1,15 +1,19 @@
 package com.boxora.exception;
 
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     // =========================
@@ -116,12 +120,34 @@ public class GlobalExceptionHandler {
 
 
     // =========================
+    // Database & SQL Exceptions (Protect against exposing raw JDBC/SQL table/column details)
+    // =========================
+
+    @ExceptionHandler({DataAccessException.class, SQLException.class})
+    public ResponseEntity<Map<String, Object>> handleDatabaseException(Exception ex) {
+        log.error("Database or SQL operation failed: ", ex);
+
+        ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("timestamp", LocalDateTime.now());
+        response.put("status", errorCode.getHttpStatus().value());
+        response.put("code", errorCode.getCode());
+        response.put("error", errorCode.getHttpStatus().getReasonPhrase());
+        response.put("message", "Hệ thống đang gặp sự cố khi xử lý dữ liệu. Vui lòng liên hệ quản trị viên hoặc thử lại sau.");
+
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(response);
+    }
+
+    // =========================
     // Unexpected Exception
     // =========================
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleException(Exception ex) {
-        ex.printStackTrace();
+        log.error("Unhandled server exception: ", ex);
 
         ErrorCode errorCode = ErrorCode.INTERNAL_SERVER_ERROR;
 
@@ -131,7 +157,15 @@ public class GlobalExceptionHandler {
         response.put("status", errorCode.getHttpStatus().value());
         response.put("code", errorCode.getCode());
         response.put("error", errorCode.getHttpStatus().getReasonPhrase());
-        response.put("message", ex.getMessage() != null ? ex.getMessage() : errorCode.getMessage());
+
+        // Sanitize any underlying SQL/database error messages that might leak table/column details
+        String rawMsg = ex.getMessage() != null ? ex.getMessage() : errorCode.getMessage();
+        String lowerMsg = rawMsg.toLowerCase();
+        if (lowerMsg.contains("sql") || lowerMsg.contains("column") || lowerMsg.contains("relation") || lowerMsg.contains("jdbc") || lowerMsg.contains("hibernate")) {
+            response.put("message", "Hệ thống đang gặp sự cố khi xử lý dữ liệu. Vui lòng liên hệ quản trị viên hoặc thử lại sau.");
+        } else {
+            response.put("message", rawMsg);
+        }
 
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
