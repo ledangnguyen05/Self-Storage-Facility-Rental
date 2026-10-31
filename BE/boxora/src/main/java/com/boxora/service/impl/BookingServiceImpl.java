@@ -1282,7 +1282,9 @@ public class BookingServiceImpl implements BookingService {
         validateBookingAccess(booking, currentUser);
 
         StorageUnit unit = booking.getStorageUnit();
-        Facility facility = (unit != null) ? unit.getFacility() : null;
+        Facility facility = (unit != null && unit.getFacility() != null)
+                ? unit.getFacility()
+                : booking.getFacility();
         FacilityPolicy policy = (facility != null)
                 ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null)
                 : null;
@@ -1343,7 +1345,7 @@ public class BookingServiceImpl implements BookingService {
         return BookingRescheduleEligibilityResponse.builder()
                 .bookingId(booking.getId())
                 .bookingCode(booking.getBookingCode())
-                .unitCode(unit != null ? unit.getUnitCode() : null)
+                .unitCode(unit != null ? unit.getUnitCode() : (booking.getUnitType() != null ? booking.getUnitType().getTypeName() : null))
                 .facilityName(facility != null ? facility.getName() : null)
                 .eligible(eligible)
                 .reasonIfNotEligible(reasonIfNotEligible)
@@ -1399,7 +1401,9 @@ public class BookingServiceImpl implements BookingService {
         }
 
         StorageUnit unit = booking.getStorageUnit();
-        Facility facility = (unit != null) ? unit.getFacility() : null;
+        Facility facility = (unit != null && unit.getFacility() != null)
+                ? unit.getFacility()
+                : booking.getFacility();
         FacilityPolicy policy = (facility != null)
                 ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null)
                 : null;
@@ -1527,7 +1531,9 @@ public class BookingServiceImpl implements BookingService {
             }
         }
 
-        UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
+        UUID facilityId = (unit != null && unit.getFacility() != null)
+                ? unit.getFacility().getId()
+                : (booking.getFacility() != null ? booking.getFacility().getId() : null);
         String previousAppointmentText = prevAppt == null
                 ? "not recorded"
                 : prevAppt.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
