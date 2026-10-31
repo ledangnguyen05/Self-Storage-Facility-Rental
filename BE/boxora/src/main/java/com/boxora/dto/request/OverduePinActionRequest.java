@@ -11,3 +11,4 @@ public class OverduePinActionRequest {
     private String reason;
     private Boolean simulateOffline; // For testing OFFLINE device failure
 }
+

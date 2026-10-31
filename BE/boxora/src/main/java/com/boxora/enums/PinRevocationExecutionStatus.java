@@ -7,3 +7,4 @@ public enum PinRevocationExecutionStatus {
     FAILED_OFFLINE,
     FAILED_ERROR
 }
+

@@ -30,3 +30,4 @@ public class OverdueSummaryResponse {
     private long pendingPinRevocationsCount;
     private long pendingSealingApprovalsCount;
 }
+

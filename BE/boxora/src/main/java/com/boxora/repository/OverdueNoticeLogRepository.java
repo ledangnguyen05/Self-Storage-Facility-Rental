@@ -12,3 +12,4 @@ public interface OverdueNoticeLogRepository extends JpaRepository<OverdueNoticeL
     List<OverdueNoticeLog> findByContract_IdOrderBySentAtDesc(UUID contractId);
     long countByContract_Id(UUID contractId);
 }
+

@@ -15,3 +15,4 @@ public interface PinRevocationRequestRepository extends JpaRepository<PinRevocat
     Optional<PinRevocationRequest> findTopByContract_IdOrderByCreatedAtDesc(UUID contractId);
     long countByStatus(PinRevocationExecutionStatus status);
 }
+

@@ -25,3 +25,4 @@ public interface SmartLockAdapter {
             String message
     ) {}
 }
+

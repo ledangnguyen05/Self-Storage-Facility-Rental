@@ -40,3 +40,4 @@ public class OverdueAuditLog extends BaseEntity {
     @Column(name = "details", columnDefinition = "TEXT")
     private String details;
 }
+

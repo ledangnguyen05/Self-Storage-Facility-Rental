@@ -56,3 +56,4 @@ public class PinRevocationRequest extends BaseEntity {
     @Column(name = "executed_at")
     private LocalDateTime executedAt;
 }
+

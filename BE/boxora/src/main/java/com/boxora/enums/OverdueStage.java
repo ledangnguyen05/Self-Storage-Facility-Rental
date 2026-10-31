@@ -7,3 +7,4 @@ public enum OverdueStage {
     SEALING_ELIGIBLE,      // Nhóm 4: Đủ điều kiện niêm phong & xử lý tài sản (overdueDays >= 7)
     POLICY_UNCONFIGURED    // Nhóm 5: Thiếu chính sách hoặc chính sách không hợp lệ
 }
+

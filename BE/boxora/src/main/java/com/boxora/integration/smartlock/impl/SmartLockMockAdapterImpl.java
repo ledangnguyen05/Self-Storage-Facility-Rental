@@ -56,3 +56,4 @@ public class SmartLockMockAdapterImpl implements SmartLockAdapter {
         return true;
     }
 }
+

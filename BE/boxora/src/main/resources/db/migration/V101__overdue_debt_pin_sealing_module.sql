@@ -315,3 +315,4 @@ VALUES
     ('c0000000-0003-0000-0000-000000000001', 'PIN_REVOCATION_EXECUTED', 'Hệ thống tự động (MOCK)', 'SYSTEM', 'PIN_ACTIVE', 'PIN_REVOKED', 'Hợp đồng quá hạn 3 ngày. Thu hồi PIN/QR trên hệ thống SmartLock Mock thành công.'),
     ('c0000000-0003-0000-0000-000000000003', 'PIN_REVOCATION_FAILED', 'Hệ thống tự động (MOCK)', 'SYSTEM', 'PIN_ACTIVE', 'PIN_REVOCATION_FAILED', 'SmartLock IoT Gateway phản hồi thiết bị OFFLINE. Thu hồi PIN thất bại cần nhân viên kiểm tra trực tiếp.'),
     ('c0000000-0004-0000-0000-000000000005', 'SEALING_COMPLETED', 'Nguyễn Văn Quản Lý', 'FACILITY_MANAGER', 'SEALING_IN_PROGRESS', 'SEALING_COMPLETED', 'Đã hoàn tất dán tem niêm phong SEAL-TD-2026-9905 và lập danh mục kiểm kê 03 mục tài sản.');
+

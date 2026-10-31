@@ -52,3 +52,4 @@ public class OverdueContractItemResponse {
     private LocalDateTime lastReminderSentAt;
     private long reminderCount;
 }
+

@@ -11,3 +11,4 @@ import java.util.UUID;
 public interface AssetInventoryItemRepository extends JpaRepository<AssetInventoryItem, UUID> {
     List<AssetInventoryItem> findBySealingRecord_Id(UUID sealingRecordId);
 }
+
