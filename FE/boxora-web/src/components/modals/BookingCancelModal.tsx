@@ -56,6 +56,8 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
   const [customBankName, setCustomBankName] = useState('')
   const [bankAccountNumber, setBankAccountNumber] = useState('')
   const [bankAccountName, setBankAccountName] = useState('')
+  const [bankAccountNameTouched, setBankAccountNameTouched] = useState(false)
+  const [bankAccountNumberTouched, setBankAccountNumberTouched] = useState(false)
   const [contactEmail, setContactEmail] = useState('')
 
   // Xác định đơn hàng là Phương thức 1 (Thanh toán online qua VNPay, có cọc/tiền thuê cần hoàn) hay Phương thức 2 (Trả sau tại cơ sở, 0đ)
@@ -95,6 +97,8 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
       setCustomBankName('')
       setBankAccountNumber('')
       setBankAccountName('')
+      setBankAccountNameTouched(false)
+      setBankAccountNumberTouched(false)
       return
     }
 
@@ -106,7 +110,9 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
     setBankCode('VCB')
     setCustomBankName('')
     setBankAccountNumber('')
-    setBankAccountName(booking.customerName ? booking.customerName.toUpperCase() : '')
+    setBankAccountName('')
+    setBankAccountNameTouched(false)
+    setBankAccountNumberTouched(false)
     setContactEmail(booking.customerEmail || '')
 
     // CHỈ gọi API tính toán hoàn tiền nếu là đơn đã thanh toán online cọc (Phương thức 1)
@@ -168,10 +174,12 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
         return
       }
       if (!bankAccountNumber.trim()) {
+        setBankAccountNumberTouched(true)
         setSubmitError('Vui lòng nhập số tài khoản ngân hàng nhận tiền hoàn.')
         return
       }
       if (!bankAccountName.trim()) {
+        setBankAccountNameTouched(true)
         setSubmitError('Vui lòng nhập tên chủ tài khoản ngân hàng.')
         return
       }
@@ -528,10 +536,23 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                           <input
                             type="text"
                             value={bankAccountNumber}
-                            onChange={(e) => setBankAccountNumber(e.target.value.replace(/[^0-9]/g, ''))}
+                            onChange={(e) => {
+                              setBankAccountNumber(e.target.value.replace(/[^0-9]/g, ''))
+                              if (submitError) setSubmitError(null)
+                            }}
+                            onBlur={() => setBankAccountNumberTouched(true)}
                             placeholder="VD: 1029384756..."
-                            className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+                            className={`w-full p-2 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none transition-colors ${
+                              bankAccountNumberTouched && !bankAccountNumber.trim()
+                                ? 'border-rose-500 focus:border-rose-500'
+                                : 'border-slate-300 dark:border-slate-700 focus:border-amber-500'
+                            }`}
                           />
+                          {bankAccountNumberTouched && !bankAccountNumber.trim() && (
+                            <span className="text-[10px] text-rose-500 mt-1 block font-medium">
+                              Vui lòng nhập số tài khoản ngân hàng.
+                            </span>
+                          )}
                         </div>
 
                         <div>
@@ -541,10 +562,23 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                           <input
                             type="text"
                             value={bankAccountName}
-                            onChange={(e) => setBankAccountName(e.target.value.toUpperCase())}
+                            onChange={(e) => {
+                              setBankAccountName(e.target.value.toUpperCase())
+                              if (submitError) setSubmitError(null)
+                            }}
+                            onBlur={() => setBankAccountNameTouched(true)}
                             placeholder="VD: NGUYEN VAN A"
-                            className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-mono uppercase text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+                            className={`w-full p-2 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono uppercase text-slate-800 dark:text-slate-100 focus:outline-none transition-colors ${
+                              bankAccountNameTouched && !bankAccountName.trim()
+                                ? 'border-rose-500 focus:border-rose-500'
+                                : 'border-slate-300 dark:border-slate-700 focus:border-amber-500'
+                            }`}
                           />
+                          {bankAccountNameTouched && !bankAccountName.trim() && (
+                            <span className="text-[10px] text-rose-500 mt-1 block font-medium">
+                              Vui lòng nhập tên chủ tài khoản ngân hàng.
+                            </span>
+                          )}
                         </div>
                       </div>
 
