@@ -3908,10 +3908,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <button
                                   type="button"
                                   onClick={() => setSelectedRenewalForDocModal(activePendingRenewal)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-blue-700 border border-blue-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                                  className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                                  title="Xem dự thảo phụ lục gia hạn (phụ lục và biên lai chỉ chính thức được tạo sau khi thanh toán thành công)"
                                 >
                                   <span className="material-symbols-outlined text-[14px]">description</span>
-                                  <span>Xem phụ lục đã ký</span>
+                                  <span>Xem dự thảo phụ lục</span>
                                 </button>
                               </>
                             )}
@@ -5844,7 +5845,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               ? 'bg-blue-50 text-blue-800 border border-blue-300 animate-pulse'
                               : r.status === 'PENDING_PAYMENT'
                               ? 'bg-cyan-50 text-cyan-800 border border-cyan-300'
-                              : r.status === 'REJECTED'
+                              : (r.status === 'REJECTED' || r.status === 'CANCELLED')
                               ? 'bg-rose-50 text-rose-700 border border-rose-200'
                               : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}>
@@ -5889,10 +5890,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <button
                                   type="button"
                                   onClick={() => setSelectedRenewalForDocModal(r)}
-                                  className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold flex items-center gap-1 transition cursor-pointer"
+                                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer"
+                                  title="Xem dự thảo phụ lục gia hạn"
                                 >
                                   <span className="material-symbols-outlined text-[14px]">description</span>
-                                  <span>Phụ lục</span>
+                                  <span>Dự thảo</span>
                                 </button>
                               </>
                             )}
@@ -5916,7 +5918,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 </button>
                               </>
                             )}
-                            {(r.status === 'COMPLETED' || r.status === 'REJECTED' || r.status === 'CANCELLED') && (
+                            {r.status === 'COMPLETED' && (
                               <button
                                 type="button"
                                 onClick={() => setSelectedRenewalForDocModal(r)}
@@ -5925,6 +5927,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <span className="material-symbols-outlined text-[14px]">description</span>
                                 <span>Xem phụ lục</span>
                               </button>
+                            )}
+                            {(r.status === 'CANCELLED' || r.status === 'REJECTED') && (
+                              <span className="text-[11px] text-slate-400 font-medium px-2 py-1">
+                                —
+                              </span>
                             )}
                           </div>
                         </td>

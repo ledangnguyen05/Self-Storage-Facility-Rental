@@ -1166,23 +1166,29 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                         </div>
                       )}
                       {r.status === 'CANCELLED' && (
-                        <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                           Đã Hủy
                         </span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        {/* Phụ lục hợp đồng button */}
-                        <button
-                          type="button"
-                          onClick={() => setSelectedRenewalForAddendum(r)}
-                          className="px-2.5 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 rounded-md font-bold text-xs flex items-center gap-1 transition cursor-pointer"
-                          title="Xem văn bản Phụ lục gia hạn hợp đồng & chữ ký điện tử"
-                        >
-                          <span className="material-symbols-outlined text-[14px]">description</span>
-                          <span>Phụ lục</span>
-                        </button>
+                        {/* Phụ lục hợp đồng: Không hiển thị cho đơn đã hủy hoặc bị từ chối */}
+                        {r.status !== 'CANCELLED' && r.status !== 'REJECTED' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRenewalForAddendum(r)}
+                            className={`px-2.5 py-1 ${
+                              r.status === 'COMPLETED'
+                                ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'
+                                : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                            } border rounded-md font-bold text-xs flex items-center gap-1 transition cursor-pointer`}
+                            title={r.status === 'COMPLETED' ? 'Xem văn bản Phụ lục gia hạn hợp đồng & chữ ký điện tử' : 'Xem dự thảo phụ lục gia hạn hợp đồng'}
+                          >
+                            <span className="material-symbols-outlined text-[14px]">description</span>
+                            <span>{r.status === 'COMPLETED' ? 'Phụ lục' : 'Dự thảo'}</span>
+                          </button>
+                        )}
 
                         {/* Chi tiết button */}
                         <button
@@ -2487,7 +2493,9 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                 )}
                 <div className="flex justify-between pt-1 border-t border-slate-100"><span className="text-slate-500">Người tiếp nhận hoàn tất:</span><span className="font-semibold text-slate-800">{selectedRenewalForDetail.handledByName || selectedRenewalForDetail.cashierStaffName || '—'}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Thời điểm hoàn tất:</span><span className="font-mono text-slate-800">{formatDateTime(selectedRenewalForDetail.handledAt || selectedRenewalForDetail.paidAt)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Phiếu thu biên lai:</span><span className="font-mono font-bold text-indigo-700">{selectedRenewalForDetail.receiptVoucherCode || '—'}</span></div>
+                {selectedRenewalForDetail.status === 'COMPLETED' && (
+                  <div className="flex justify-between"><span className="text-slate-500">Phiếu thu biên lai:</span><span className="font-mono font-bold text-indigo-700">{selectedRenewalForDetail.receiptVoucherCode || '—'}</span></div>
+                )}
                 {selectedRenewalForDetail.identityVerified && (
                   <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900 text-[11px]">
                     ✓ <strong>Đã đối soát 6 tiêu chí tiếp nhận:</strong> Xác minh {selectedRenewalForDetail.identityDocType} ({selectedRenewalForDetail.identityNumber || 'Đã kiểm tra'})
@@ -2497,22 +2505,28 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
             </div>
 
             <div className="flex items-center justify-between pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = selectedRenewalForDetail
-                  setSelectedRenewalForDetail(null)
-                  setSelectedRenewalForAddendum(target)
-                }}
-                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">description</span>
-                <span>Xem Văn Bản Phụ Lục Gia Hạn</span>
-              </button>
+              {selectedRenewalForDetail.status !== 'CANCELLED' && selectedRenewalForDetail.status !== 'REJECTED' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = selectedRenewalForDetail
+                    setSelectedRenewalForDetail(null)
+                    setSelectedRenewalForAddendum(target)
+                  }}
+                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">description</span>
+                  <span>
+                    {selectedRenewalForDetail.status === 'COMPLETED'
+                      ? 'Xem Văn Bản Phụ Lục Gia Hạn'
+                      : 'Xem Dự Thảo Phụ Lục Gia Hạn'}
+                  </span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setSelectedRenewalForDetail(null)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer ml-auto"
               >
                 Đóng
               </button>

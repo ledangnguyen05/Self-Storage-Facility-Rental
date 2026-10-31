@@ -39,6 +39,7 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
     renewal?.customerName || contract?.customerName || user?.fullName || 'Khách hàng'
   )
   const [isSigning, setIsSigning] = useState<boolean>(false)
+  const [isReSigning, setIsReSigning] = useState<boolean>(false)
   const [error, setError] = useState<string | null>(null)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -47,6 +48,7 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
 
   useEffect(() => {
     setLocalRenewal(renewal)
+    setIsReSigning(false)
     if (renewal?.customerName || contract?.customerName || user?.fullName) {
       setSignerName(renewal?.customerName || contract?.customerName || user?.fullName || 'Khách hàng')
     }
@@ -62,6 +64,7 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
   })()
 
   const effectiveSignature = localRenewal?.signatureData || storedSig || null
+  const isCompleted = localRenewal?.status === 'COMPLETED'
   const isAlreadySigned = Boolean(
     localRenewal?.signedAt ||
       effectiveSignature ||
@@ -71,8 +74,9 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
   const canSignNow =
     Boolean(localRenewal) &&
     !readOnly &&
-    !isAlreadySigned &&
-    (localRenewal?.status === 'PENDING_SIGNATURE' || localRenewal?.status === 'PENDING_PAYMENT')
+    !isCompleted &&
+    (isReSigning ||
+      (!isAlreadySigned && (localRenewal?.status === 'PENDING_SIGNATURE' || localRenewal?.status === 'PENDING_PAYMENT')))
 
   const updateCanvasResolution = () => {
     const canvas = canvasRef.current
@@ -187,9 +191,10 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
         status: updated?.status || 'PENDING_PAYMENT',
       }
       setLocalRenewal(merged)
+      setIsReSigning(false)
       toast.success(
         `Đã ký Phụ lục gia hạn kho #${localRenewal.unitCode}`,
-        'Phụ lục gia hạn hợp đồng đã được ký số thành công. Vui lòng hoàn tất thanh toán phí gia hạn.'
+        'Phụ lục gia hạn đã được ký số thành công. Vui lòng hoàn tất thanh toán để phụ lục chính thức có hiệu lực.'
       )
       onSignedSuccess?.(merged)
     } catch (err: any) {
@@ -220,7 +225,9 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-headline text-sm sm:text-base font-bold tracking-wide uppercase">
-                  Phụ Lục Gia Hạn Hợp Đồng Thuê Kho
+                  {localRenewal.status === 'COMPLETED'
+                    ? 'Phụ Lục Gia Hạn Hợp Đồng Thuê Kho'
+                    : 'Dự Thảo Phụ Lục Gia Hạn Hợp Đồng Thuê Kho'}
                 </h3>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
@@ -236,16 +243,17 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
                   {localRenewal.status === 'COMPLETED'
                     ? '✓ Đã có hiệu lực pháp lý'
                     : isAlreadySigned
-                    ? '✍️ Đã ký số • Chờ thanh toán'
+                    ? '✍️ Bản dự thảo đã ký • Chờ thanh toán'
                     : localRenewal.status === 'PENDING_SIGNATURE'
-                    ? 'Chờ khách hàng ký số'
+                    ? 'Dự thảo chờ khách hàng ký'
                     : localRenewal.status === 'PENDING_REVIEW'
                     ? 'Bản dự thảo (Chờ Quản lý duyệt)'
                     : localRenewal.status}
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-mono mt-0.5">
-                Mã phụ lục: #PLGH-{localRenewal.id.slice(0, 8).toUpperCase()} • Kèm theo HĐ gốc #{localRenewal.contractCode}
+                {localRenewal.status === 'COMPLETED' ? 'Mã phụ lục chính thức: ' : 'Mã dự thảo phụ lục: '}
+                #PLGH-{localRenewal.id.slice(0, 8).toUpperCase()} • Kèm theo HĐ gốc #{localRenewal.contractCode}
               </p>
             </div>
           </div>
@@ -272,12 +280,24 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
                 Độc lập - Tự do - Hạnh phúc
               </div>
               <h2 className="font-headline text-base sm:text-lg font-extrabold text-slate-900 uppercase pt-3">
-                PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO TỰ QUẢN
+                {localRenewal.status === 'COMPLETED'
+                  ? 'PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO TỰ QUẢN'
+                  : 'DỰ THẢO PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO TỰ QUẢN'}
               </h2>
               <p className="font-mono text-[11px] text-slate-500">
-                Số: PLGH-{localRenewal.id.slice(0, 8).toUpperCase()}/{new Date().getFullYear()}/BOXORA (Kèm theo Hợp đồng số #{localRenewal.contractCode})
+                {localRenewal.status === 'COMPLETED' ? 'Số chính thức: ' : 'Số dự thảo: '}
+                PLGH-{localRenewal.id.slice(0, 8).toUpperCase()}/{new Date().getFullYear()}/BOXORA (Kèm theo Hợp đồng số #{localRenewal.contractCode})
               </p>
             </div>
+
+            {localRenewal.status !== 'COMPLETED' && (
+              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0">pending_actions</span>
+                <div className="leading-relaxed">
+                  <strong>BẢN DỰ THẢO PHỤ LỤC:</strong> Phụ lục và biên lai thu tiền chỉ chính thức được xác lập và phát sinh hiệu lực pháp lý sau khi Quản lý phê duyệt, Khách hàng hoàn tất ký số điện tử và thanh toán thành công phí gia hạn. Nếu gặp lỗi thanh toán hoặc muốn cập nhật, bạn có thể chọn <em>"Ký lại phụ lục"</em>.
+                </div>
+              </div>
+            )}
 
             {/* Parties Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
@@ -448,7 +468,11 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
                   <div className="text-[11px] text-slate-500">Khách hàng ký xác nhận gia hạn</div>
                 </div>
 
-                {isAlreadySigned ? (
+                {isReSigning ? (
+                  <div className="my-3 text-xs text-amber-800 font-semibold italic bg-amber-50 p-2.5 rounded-lg border border-amber-200">
+                    ✍️ Đang tiến hành ký lại chữ ký mới trong khung bên dưới...
+                  </div>
+                ) : isAlreadySigned ? (
                   <div className="my-2 flex flex-col items-center">
                     {effectiveSignature ? (
                       <img
@@ -614,6 +638,31 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
               Đóng
             </button>
 
+            {!isReSigning && isAlreadySigned && !isCompleted && !readOnly && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsReSigning(true)
+                  setHasDrawn(false)
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Ký lại phụ lục nếu gặp lỗi thanh toán hoặc muốn thay đổi chữ ký"
+              >
+                <span className="material-symbols-outlined text-[16px]">edit_square</span>
+                <span>Ký lại phụ lục</span>
+              </button>
+            )}
+
+            {isReSigning && (
+              <button
+                type="button"
+                onClick={() => setIsReSigning(false)}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Hủy ký lại
+              </button>
+            )}
+
             {canSignNow && (
               <button
                 type="button"
@@ -622,11 +671,17 @@ export const RenewalAddendumModal: React.FC<RenewalAddendumModalProps> = ({
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm flex items-center gap-2 transition-all cursor-pointer disabled:opacity-60"
               >
                 <span className="material-symbols-outlined text-[18px]">ink_pen</span>
-                <span>{isSigning ? 'Đang ký số phụ lục...' : 'Xác Nhận Ký Số Phụ Lục'}</span>
+                <span>
+                  {isSigning
+                    ? 'Đang lưu chữ ký...'
+                    : isReSigning
+                    ? 'Xác Nhận Ký Lại Phụ Lục'
+                    : 'Xác Nhận Ký Số Phụ Lục'}
+                </span>
               </button>
             )}
 
-            {isAlreadySigned && localRenewal.status !== 'COMPLETED' && onPayNow && (
+            {isAlreadySigned && localRenewal.status !== 'COMPLETED' && onPayNow && !isReSigning && (
               <button
                 type="button"
                 onClick={() => onPayNow(localRenewal)}

@@ -71,7 +71,9 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
                 </span>
               </div>
               <h2 className="text-sm font-bold text-slate-100">
-                Văn Bản Phụ Lục Gia Hạn Hợp Đồng Thuê Kho Tự Quản
+                {isCompleted
+                  ? 'Văn Bản Phụ Lục Gia Hạn Hợp Đồng Thuê Kho Tự Quản'
+                  : 'Dự Thảo Phụ Lục Gia Hạn Hợp Đồng Thuê Kho Tự Quản'}
               </h2>
             </div>
           </div>
@@ -123,16 +125,27 @@ export const RenewalDocumentModal: React.FC<RenewalDocumentModalProps> = ({
 
             <div className="mt-8 mb-2">
               <h1 className="font-bold text-xl sm:text-2xl text-slate-900 uppercase font-sans tracking-tight">
-                PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO TỰ QUẢN THÔNG MINH
+                {isCompleted
+                  ? 'PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO TỰ QUẢN THÔNG MINH'
+                  : 'DỰ THẢO PHỤ LỤC GIA HẠN HỢP ĐỒNG THUÊ KHO TỰ QUẢN THÔNG MINH'}
               </h1>
               <p className="font-sans text-xs text-slate-500 mt-1">
                 (ADDENDUM TO SMART SELF-STORAGE LEASE CONTRACT &bull; BOXORA CLOUD)
               </p>
               <div className="inline-block mt-3 px-3 py-1 bg-blue-50 border border-blue-200 rounded-md font-mono text-xs font-bold text-blue-900">
-                Số Phụ Lục: PLGH-{renewal.contractCode} &bull; Căn cứ Hợp đồng số: #{renewal.contractCode}
+                {isCompleted ? 'Số Phụ Lục: ' : 'Số Dự Thảo: '}PLGH-{renewal.contractCode} &bull; Căn cứ Hợp đồng số: #{renewal.contractCode}
               </div>
             </div>
           </div>
+
+          {!isCompleted && (
+            <div className="my-4 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 text-xs flex items-center gap-2.5 print:border-amber-400">
+              <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0">pending_actions</span>
+              <div className="leading-relaxed">
+                <strong>BẢN DỰ THẢO:</strong> Phụ lục và biên lai thu tiền chỉ chính thức được xác lập và phát sinh hiệu lực pháp lý sau khi Quản lý phê duyệt, Khách hàng hoàn tất ký số điện tử và thanh toán thành công phí gia hạn.
+              </div>
+            </div>
+          )}
 
           {/* Legal preamble */}
           <div className="my-6 text-xs text-slate-600 italic">
