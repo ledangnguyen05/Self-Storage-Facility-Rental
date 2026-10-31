@@ -39,6 +39,8 @@ public interface SealingRecordRepository extends JpaRepository<SealingRecord, UU
         return existsByContract_IdAndStatus(contractId, status);
     }
 
+    Optional<SealingRecord> findFirstByContract_IdOrderByCreatedAtDesc(UUID contractId);
+
     Optional<SealingRecord> findFirstByContract_IdAndStatusOrderByCreatedAtDesc(UUID contractId, SealingStatus status);
 
     default Optional<SealingRecord> findFirstByContractIdAndStatusOrderByCreatedAtDesc(UUID contractId, SealingStatus status) {

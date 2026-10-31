@@ -29,6 +29,8 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
 
     java.util.List<Payment> findAllByBooking_Id(UUID bookingId);
 
+    java.util.List<Payment> findByContract_Id(UUID contractId);
+
     boolean existsByReceiptVoucherCodeIgnoreCase(String receiptVoucherCode);
 
     boolean existsByReferenceCodeIgnoreCase(String referenceCode);

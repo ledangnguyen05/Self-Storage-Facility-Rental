@@ -1,5 +1,7 @@
 package com.boxora.entity;
 
+import com.boxora.enums.OverduePinStatus;
+import com.boxora.enums.OverdueSealingStatus;
 import com.boxora.enums.RentalContractStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -88,4 +90,35 @@ public class RentalContract extends BaseEntity {
 
     @Column(name = "paper_notes", columnDefinition = "TEXT")
     private String paperNotes;
-}
+
+    @Column(name = "is_demo")
+    @Builder.Default
+    private Boolean isDemo = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "overdue_pin_status", length = 40)
+    @Builder.Default
+    private OverduePinStatus overduePinStatus = OverduePinStatus.PIN_ACTIVE;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "overdue_sealing_status", length = 40)
+    @Builder.Default
+    private OverdueSealingStatus overdueSealingStatus = OverdueSealingStatus.NONE;
+
+    @Column(name = "smart_lock_online_status", length = 30)
+    @Builder.Default
+    private String smartLockOnlineStatus = "ONLINE";
+
+    @Column(name = "smart_lock_is_mock")
+    @Builder.Default
+    private Boolean smartLockIsMock = true;
+
+    @Column(name = "smart_lock_last_unlocked_at")
+    private LocalDateTime smartLockLastUnlockedAt;
+
+    @Column(name = "temp_pin_granted_until")
+    private LocalDateTime tempPinGrantedUntil;
+
+    @Column(name = "temp_pin_grant_reason", length = 255)
+    private String tempPinGrantReason;
+}

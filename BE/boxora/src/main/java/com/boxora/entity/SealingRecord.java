@@ -86,6 +86,27 @@ public class SealingRecord extends BaseEntity {
     @Column(name = "notes", columnDefinition = "TEXT")
     private String notes;
 
+    @Column(name = "request_status", length = 40)
+    @Builder.Default
+    private String requestStatus = "COMPLETED";
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "requested_by_id")
+    private User requestedBy;
+
+    @Column(name = "requested_at")
+    private LocalDateTime requestedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by_id")
+    private User approvedBy;
+
+    @Column(name = "approved_at")
+    private LocalDateTime approvedAt;
+
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     // Helper alias methods for backwards compatibility
     public StorageUnit getUnit() {
         return this.storageUnit;
@@ -115,4 +136,3 @@ public class SealingRecord extends BaseEntity {
         }
     }
 }
-

@@ -1,63 +1,40 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useOutletContext } from 'react-router-dom'
-import { reportService } from '../../services/reportService'
+import { useOutletContext, useNavigate } from 'react-router-dom'
+import { overdueService, OverdueSummary, OverdueContractItem } from '../../services/overdueService'
 import { facilityService } from '../../services/facilityService'
 import { useAuth } from '../../context/AuthContext'
-import { OverdueDebtItem, Facility, OverdueDebtReport } from '../../types'
-import { NoticeDispatcherModal } from './modals/NoticeDispatcherModal'
-import { AssetSealingModal } from './modals/AssetSealingModal'
-import { overdueService } from '../../services/overdueService'
+import { Facility } from '../../types'
+import { OverdueContractDetailModal } from './modals/OverdueContractDetailModal'
 import { toast } from '../../utils/toast'
 
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const { selectedFacility: contextFacilityId, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     facilities?: Facility[]
   }>() || {}
 
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
-  const [reportSummary, setReportSummary] = useState<OverdueDebtReport | null>(null)
+  const [selectedFacilityFilter, setSelectedFacilityFilter] = useState<string>('ALL')
+  const [summary, setSummary] = useState<OverdueSummary | null>(null)
+  const [contracts, setContracts] = useState<OverdueContractItem[]>([])
+  const [totalElements, setTotalElements] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const [currentPage, setCurrentPage] = useState(0)
+  const pageSize = 8
+
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'WARNING' | 'ACCESS_BLOCKED' | 'ELIGIBLE_FOR_SEALING' | 'POLICY_UNCONFIGURED'>('ALL')
-  const [currentPage, setCurrentPage] = useState(1)
-  const itemsPerPage = 6
+  const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'WARNING' | 'PIN_REVOCATION' | 'SEALING_ELIGIBLE' | 'POLICY_UNCONFIGURED'>('ALL')
+  const [pinStatusFilter, setPinStatusFilter] = useState<string>('ALL')
+  const [sealingStatusFilter, setSealingStatusFilter] = useState<string>('ALL')
+  const [isDemoFilter, setIsDemoFilter] = useState<boolean | undefined>(undefined)
 
-  // Notice & Sealing Modals State
-  const [noticeModalData, setNoticeModalData] = useState<{
-    unitCode: string
-    tenantName: string
-    contractCode: string
-    daysOverdue: number
-    baseDebt: string
-    penaltyFee: string
-    totalDebt: string
-  } | null>(null)
+  // Detail Modal
+  const [selectedContractId, setSelectedContractId] = useState<string | null>(null)
 
-  const [sealingModalData, setSealingModalData] = useState<{
-    unitCode: string
-    unitId?: string
-    tenantName: string
-    contractCode: string
-    contractId?: string
-    facilityId?: string
-    overdueDays: number
-    totalDebt: string
-  } | null>(null)
-
-  const [confirmLockoutItem, setConfirmLockoutItem] = useState<OverdueDebtItem | null>(null)
-  const [isLocking, setIsLocking] = useState(false)
-  const [lockoutError, setLockoutError] = useState<string | null>(null)
-  const [toastMessage, setToastMessage] = useState<string | null>(null)
-
-  const showToast = (msg: string) => {
-    setToastMessage(msg)
-    setTimeout(() => setToastMessage(null), 4000)
-  }
-
-  // Load facilities if not available from context
+  // Facilities loading
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
       setFacilities(contextFacilities)
@@ -80,560 +57,627 @@ export const OverdueManagementPage: React.FC = () => {
     if (isFacilityScoped && user?.facilityId) {
       return user.facilityId
     }
+    if (selectedFacilityFilter && selectedFacilityFilter !== 'ALL') {
+      return selectedFacilityFilter
+    }
     return contextFacilityId && contextFacilityId !== 'ALL' ? contextFacilityId : undefined
-  }, [isFacilityScoped, user?.facilityId, contextFacilityId])
+  }, [isFacilityScoped, user?.facilityId, selectedFacilityFilter, contextFacilityId])
 
-  const currentFacilityName = useMemo(() => {
-    if (isFacilityScoped && user?.facilityName) {
-      return user.facilityName
-    }
-    if (activeFacilityId) {
-      const allFacs = contextFacilities && contextFacilities.length > 0 ? contextFacilities : facilities
-      const found = allFacs.find(f => f.id === activeFacilityId)
-      if (found) return found.name
-    }
-    return 'Toàn hệ thống (Tất cả cơ sở)'
-  }, [isFacilityScoped, user?.facilityName, activeFacilityId, contextFacilities, facilities])
-
-  // Fetch overdue debts for active facility from top header
-  const fetchOverdueReport = useCallback(async () => {
-    setIsLoading(true)
+  // Fetch KPI Summary
+  const fetchSummary = useCallback(async () => {
     try {
-      const data = await reportService.getOverdueDebtReport({ facilityId: activeFacilityId })
-      setOverdueItems(data?.items || [])
-      setReportSummary(data || null)
+      const data = await overdueService.getSummary(activeFacilityId)
+      setSummary(data)
     } catch (err) {
-      console.warn('Failed to fetch overdue debt report:', err)
-      setOverdueItems([])
-      setReportSummary(null)
-    } finally {
-      setIsLoading(false)
+      console.warn('Failed to load overdue summary:', err)
+      setSummary(null)
     }
   }, [activeFacilityId])
 
-  useEffect(() => {
-    fetchOverdueReport()
-  }, [fetchOverdueReport])
-
-  // KPIs
-  const totalDebtAmount = reportSummary?.totalDebtAmount
-  const blockedCount = reportSummary?.accessBlockedCount ?? 0
-  const eligibleSealingCount = reportSummary?.eligibleForSealingCount ?? 0
-  const policyUnconfiguredCount = reportSummary?.policyUnconfiguredCount ?? 0
-
-  const formatAmount = (amount?: number | null) =>
-    amount == null ? 'Chưa đối soát' : `${amount.toLocaleString('vi-VN')} ₫`
-
-  // Filtered Items
-  const filteredItems = useMemo(() => {
-    return overdueItems.filter(item => {
-      const matchSearch =
-        item.unitCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.contractCode?.toLowerCase().includes(searchTerm.toLowerCase())
-
-      if (!matchSearch) return false
-
-      if (filterStage === 'ACCESS_BLOCKED') {
-        return item.overdueStage === 'ACCESS_BLOCKED'
-      }
-      if (filterStage === 'ELIGIBLE_FOR_SEALING') {
-        return item.overdueStage === 'ELIGIBLE_FOR_SEALING'
-      }
-      if (filterStage === 'GRACE_PERIOD') {
-        return item.overdueStage === 'GRACE_PERIOD'
-      }
-      if (filterStage === 'WARNING') {
-        return item.overdueStage === 'WARNING'
-      }
-      if (filterStage === 'POLICY_UNCONFIGURED') {
-        return item.overdueStage === 'POLICY_UNCONFIGURED'
-      }
-
-      return true
-    })
-  }, [overdueItems, searchTerm, filterStage])
-
-  // Pagination
-  const totalPages = Math.ceil(filteredItems.length / itemsPerPage) || 1
-  const paginatedItems = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage
-    return filteredItems.slice(start, start + itemsPerPage)
-  }, [filteredItems, currentPage, itemsPerPage])
-
-  const handleLockoutConfirm = async () => {
-    if (!confirmLockoutItem?.contractId) {
-      setLockoutError('A rental contract is required for PIN/QR revocation.')
-      return
-    }
-    setIsLocking(true)
-    setLockoutError(null)
+  // Fetch Paginated Contracts
+  const fetchContracts = useCallback(async () => {
+    setIsLoading(true)
     try {
-      await overdueService.lockoutContract(
-        confirmLockoutItem.contractId,
-        `Overdue ${confirmLockoutItem.daysOverdue} days (balance: ${formatAmount(confirmLockoutItem.totalDebt)})`
-      )
-      showToast(`Đã thu hồi PIN/QR trong Boxora cho kho #${confirmLockoutItem.unitCode}. Trạng thái khóa vật lý chưa được xác minh.`)
-      setConfirmLockoutItem(null)
-      await fetchOverdueReport()
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Không thể thực hiện khóa kho. Vui lòng kiểm tra quyền hoặc kết nối máy chủ.'
-      setLockoutError(msg)
-      showToast(`Lỗi khóa kho: ${msg}`)
+      const res = await overdueService.getContracts({
+        facilityId: activeFacilityId,
+        stage: filterStage !== 'ALL' ? filterStage : undefined,
+        pinStatus: pinStatusFilter !== 'ALL' ? pinStatusFilter : undefined,
+        sealingStatus: sealingStatusFilter !== 'ALL' ? sealingStatusFilter : undefined,
+        searchTerm: searchTerm.trim() || undefined,
+        isDemo: isDemoFilter,
+        page: currentPage,
+        size: pageSize
+      })
+      setContracts(res?.content || [])
+      setTotalElements(res?.totalElements || 0)
+      setTotalPages(res?.totalPages || 1)
+    } catch (err) {
+      console.warn('Failed to load overdue contracts:', err)
+      setContracts([])
+      setTotalElements(0)
     } finally {
-      setIsLocking(false)
+      setIsLoading(false)
+    }
+  }, [activeFacilityId, filterStage, pinStatusFilter, sealingStatusFilter, searchTerm, isDemoFilter, currentPage, pageSize])
+
+  useEffect(() => {
+    fetchSummary()
+  }, [fetchSummary])
+
+  useEffect(() => {
+    fetchContracts()
+  }, [fetchContracts])
+
+  const handleRefreshAll = () => {
+    fetchSummary()
+    fetchContracts()
+  }
+
+  const handleExportCsv = async () => {
+    try {
+      await overdueService.exportCsv(activeFacilityId, filterStage !== 'ALL' ? filterStage : undefined, searchTerm)
+      toast.success('Đã xuất file báo cáo công nợ CSV thành công!')
+    } catch (err: any) {
+      toast.error('Lỗi khi xuất file báo cáo CSV')
     }
   }
 
-  const handleExportCsv = () => {
-    if (overdueItems.length === 0) {
-      toast.warning('Không có dữ liệu nợ cước để xuất CSV.')
-      return
-    }
-    const headers = ['Mã Kho', 'Khách Hàng', 'Mã HĐ', 'Số Ngày Quá Hạn', 'Cước Nợ (VNĐ)', 'Phí Phạt (VNĐ)', 'Tổng Nợ (VNĐ)', 'Giai Đoạn Xử Lý']
-    const rows = overdueItems.map(i => [
-      i.unitCode || '',
-      i.customerName || '',
-      i.contractCode || i.bookingCode || '',
-      i.daysOverdue || 0,
-      i.unpaidRent ?? '',
-      i.totalLateFee ?? '',
-      i.totalDebt ?? '',
-      i.overdueStage || ''
-    ])
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement('a')
-    link.setAttribute('href', encodedUri)
-    link.setAttribute('download', `Bao_Cao_No_Cuoc_${new Date().toISOString().slice(0, 10)}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+  const formatVND = (num?: number | null) => {
+    if (num == null) return '0 ₫'
+    return `${num.toLocaleString('vi-VN')} ₫`
   }
 
   return (
     <div className="flex flex-col gap-6 w-full text-left">
       
-      {/* Toast Alert */}
-      {toastMessage && (
-        <div className="fixed top-5 right-5 z-50 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
-          <span className="material-symbols-outlined text-emerald-400">check_circle</span>
-          <span className="text-xs font-semibold">{toastMessage}</span>
-        </div>
-      )}
-
       {/* Header Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-[28px]">warning</span>
+            <span className="material-symbols-outlined text-[28px]">gavel</span>
           </div>
           <div>
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-xl font-bold text-slate-900">
                 Xử Lý Nợ Cước Quá Hạn &amp; Thu Hồi PIN/QR
               </h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                {currentFacilityName}
+              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                BR-RULE-012 Enforcement
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Theo dõi kỳ hạn thanh toán, gửi thông báo nhắc cước, thu hồi PIN/QR trong Boxora và chuẩn bị thủ tục niêm phong. Tình trạng khóa vật lý chưa được xác minh.
+              Theo dõi chu kỳ quá hạn (+1 ngày ân hạn, +3 ngày thu hồi PIN SmartLock, +7 ngày xem xét niêm phong kho &amp; kiểm kê)
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={fetchOverdueReport}
-            disabled={isLoading}
-            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-          >
-            <span className={`material-symbols-outlined text-[16px] ${isLoading ? 'animate-spin' : ''}`}>
-              refresh
-            </span>
-            <span>Làm mới</span>
-          </button>
-
+        <div className="flex items-center gap-2.5 self-end md:self-auto">
           <button
             type="button"
             onClick={handleExportCsv}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+            className="px-4 py-2 bg-white text-slate-700 text-xs font-bold rounded-xl border border-slate-300 hover:bg-slate-50 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[16px]">download</span>
-            <span>Xuất CSV</span>
+            <span className="material-symbols-outlined text-[18px] text-slate-500">download</span>
+            Xuất Báo Cáo CSV
+          </button>
+          <button
+            type="button"
+            onClick={handleRefreshAll}
+            className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[18px]">sync</span>
+            Làm Mới
           </button>
         </div>
       </div>
 
-      {/* 4 Financial & Risk KPI Cards */}
+      {/* Policy Warning Banner if Group 5 items exist */}
+      {summary && summary.policyUnconfiguredCount > 0 && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs text-amber-950">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
+              <span className="material-symbols-outlined text-[24px]">notification_important</span>
+            </div>
+            <div>
+              <p className="font-bold text-sm">
+                Phát hiện {summary.policyUnconfiguredCount} hợp đồng thuộc cơ sở thiếu chính sách quá hạn hợp lệ (Nhóm 5)
+              </p>
+              <p className="text-amber-800/90 mt-0.5">
+                Hệ thống tuân thủ nguyên tắc không tự ý áp đặt chính sách ngầm định. Cần Business Manager cấu hình chính sách trước khi kích hoạt phạt hoặc thu hồi PIN.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/portal/facility-policy')}
+            className="px-4 py-2 bg-amber-600 text-white font-bold rounded-xl hover:bg-amber-700 shadow-xs whitespace-nowrap cursor-pointer"
+          >
+            Quản Lý Chính Sách Cơ Sở
+          </button>
+        </div>
+      )}
+
+      {/* KPI Dashboard Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Tổng nợ cước cần thu</span>
-            <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600">
-              <span className="material-symbols-outlined text-[18px]">money_off</span>
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-rose-700 font-mono tracking-tight">
-              {formatAmount(totalDebtAmount)}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Ước tính theo hợp đồng và chính sách; khoản chưa đối soát sẽ để trống.
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Kho vi phạm quá hạn</span>
-            <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600">
-              <span className="material-symbols-outlined text-[18px]">report_problem</span>
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-slate-900 font-mono tracking-tight">
-              {reportSummary?.totalOverdueCount ?? 0}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Hợp đồng cần theo dõi tại cơ sở
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đạt ngưỡng thu hồi PIN/QR</span>
-            <div className="p-1.5 rounded-lg bg-orange-50 text-orange-600">
-              <span className="material-symbols-outlined text-[18px]">lock_person</span>
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-orange-700 font-mono tracking-tight">
-              {blockedCount}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Ngưỡng chính sách dựa trên số ngày quá hạn
-            </div>
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-            <span>Đủ điều kiện niêm phong</span>
-            <div className="p-1.5 rounded-lg bg-red-50 text-red-600">
-              <span className="material-symbols-outlined text-[18px]">gavel</span>
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-black text-red-700 font-mono tracking-tight">
-              {eligibleSealingCount}
-            </div>
-            <div className="text-[11px] text-slate-500 mt-1">
-              Ngưỡng theo chính sách cơ sở; trạng thái khóa vật lý chưa xác minh
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Delinquency Ledger */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-5">
-        
-        {/* Filter & Search Bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div className="flex items-center gap-2 flex-wrap">
-            {(['ALL', 'GRACE_PERIOD', 'WARNING', 'ACCESS_BLOCKED', 'ELIGIBLE_FOR_SEALING', 'POLICY_UNCONFIGURED'] as const).map(stage => {
-              const label =
-                stage === 'ALL' ? 'Tất cả' :
-                stage === 'GRACE_PERIOD' ? 'Ân hạn nhắc cước' :
-                stage === 'WARNING' ? 'Cảnh báo' :
-                stage === 'ACCESS_BLOCKED' ? 'Đạt ngưỡng thu hồi PIN/QR' :
-                stage === 'POLICY_UNCONFIGURED' ? 'Thiếu chính sách' : 'Đủ điều kiện niêm phong'
-              
-              const count =
-                stage === 'ALL' ? (reportSummary?.totalOverdueCount ?? 0) :
-                stage === 'GRACE_PERIOD' ? (reportSummary?.gracePeriodCount ?? 0) :
-                stage === 'WARNING' ? (reportSummary?.warningCount ?? 0) :
-                stage === 'ACCESS_BLOCKED' ? blockedCount :
-                stage === 'POLICY_UNCONFIGURED' ? policyUnconfiguredCount : eligibleSealingCount
-
-              return (
-                <button
-                  key={stage}
-                  type="button"
-                  onClick={() => { setFilterStage(stage); setCurrentPage(1) }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    filterStage === stage
-                      ? 'bg-slate-900 text-white shadow-md shadow-slate-900/25 ring-2 ring-slate-900/10'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  {label} ({count})
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="relative w-full sm:w-64">
-            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">
-              search
-            </span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1) }}
-              placeholder="Tìm theo kho, mã HĐ, khách..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 focus:bg-white"
-            />
-          </div>
-        </div>
-
-        {/* Overdue Cases Stack */}
-        <div className="flex flex-col gap-3">
-          {isLoading ? (
-            <div className="py-16 text-center text-slate-400 text-xs">
-              <span className="material-symbols-outlined text-4xl animate-spin mb-2">progress_activity</span>
-              <p>Đang kiểm tra dữ liệu nợ cước thời gian thực từ database...</p>
-            </div>
-          ) : filteredItems.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 text-xs bg-slate-50 rounded-2xl border border-slate-200">
-              <span className="material-symbols-outlined text-[42px] text-emerald-500 mb-2">verified</span>
-              <p className="font-bold text-slate-800 text-base">Cơ sở không có nợ cước quá hạn</p>
-              <p className="text-slate-500 text-xs mt-1">Tất cả khách hàng tại {currentFacilityName} đang duy trì thanh toán đúng hạn.</p>
-            </div>
-          ) : (
-            paginatedItems.map(item => {
-              const isEligibleSealing = item.overdueStage === 'ELIGIBLE_FOR_SEALING'
-              const isBlocked = item.overdueStage === 'ACCESS_BLOCKED'
-              const isWarning = item.overdueStage === 'WARNING'
-
-              return (
-                <div
-                  key={item.contractId || item.bookingId || item.unitCode}
-                  className="flex flex-col lg:flex-row lg:items-center justify-between p-4 bg-slate-50 hover:bg-slate-100/70 rounded-xl gap-4 border border-slate-200 transition-all shadow-2xs"
-                >
-                  <div className="flex flex-col gap-1.5 min-w-0">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <span className="px-2.5 py-0.5 rounded-md bg-rose-600 text-white font-mono text-xs font-bold">
-                        Kho #{item.unitCode}
-                      </span>
-                      <span className="text-sm font-bold text-slate-900">
-                        {item.customerName || 'Khách hàng'}
-                      </span>
-                      <span className="font-mono text-xs text-slate-500 font-semibold">
-                        {item.contractCode ? `(HĐ #${item.contractCode})` : `(Đặt kho #${item.bookingCode || 'chưa có mã'})`}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                        isEligibleSealing
-                          ? 'bg-red-50 text-red-700 border-red-200'
-                          : isBlocked
-                          ? 'bg-orange-50 text-orange-700 border-orange-200'
-                          : isWarning
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : 'bg-amber-50 text-amber-700 border-amber-200'
-                      }`}>
-                        {isEligibleSealing ? 'Đạt ngưỡng niêm phong theo chính sách' : isBlocked ? 'Đạt ngưỡng thu hồi PIN/QR' : isWarning ? 'Cảnh báo theo chính sách' : item.overdueStage === 'GRACE_PERIOD' ? 'Ân hạn theo chính sách' : 'Thiếu chính sách cơ sở'}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-slate-600 text-xs mt-1">
-                      <span className="text-rose-600 font-bold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px]">schedule</span>
-                        Quá hạn {item.daysOverdue} ngày
-                      </span>
-                      <span>Cước theo hồ sơ: <strong className="font-mono text-slate-900">{formatAmount(item.unpaidRent)}</strong></span>
-                      <span>Phí phạt: <strong className="font-mono text-rose-600">{formatAmount(item.totalLateFee)}</strong></span>
-                      <span>Tổng nợ: <strong className="font-mono text-rose-700 font-bold">{formatAmount(item.totalDebt)}</strong></span>
-                    </div>
-
-                    <div className="text-[11px] text-slate-500">
-                      Khách hàng: <strong>{item.customerName}</strong> &bull; SĐT: {item.customerPhone || 'Theo hồ sơ HĐ'}
-                    </div>
-                  </div>
-
-                  {/* Actions Column */}
-                  <div className="flex items-center gap-2 shrink-0 self-end lg:self-center">
-                    <button
-                      type="button"
-                      onClick={() => setNoticeModalData({
-                        unitCode: item.unitCode,
-                        tenantName: item.customerName || 'Khách hàng',
-                        contractCode: item.contractCode || item.bookingCode || 'N/A',
-                        daysOverdue: Number(item.daysOverdue) || 0,
-                        baseDebt: formatAmount(item.unpaidRent),
-                        penaltyFee: formatAmount(item.totalLateFee),
-                        totalDebt: formatAmount(item.totalDebt)
-                      })}
-                      className="px-3 py-2 rounded-lg bg-white text-slate-800 text-xs font-semibold border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[16px] text-blue-600">forward_to_inbox</span>
-                      <span>Gửi thông báo</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={!item.contractId}
-                      onClick={() => setConfirmLockoutItem(item)}
-                      title={!item.contractId ? 'No contract is associated with this booking' : undefined}
-                      className="px-3 py-2 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">lock_person</span>
-                      <span>Thu hồi PIN/QR</span>
-                    </button>
-
-                    {isEligibleSealing && item.contractId && (
-                      <button
-                        type="button"
-                        onClick={() => setSealingModalData({
-                          unitCode: item.unitCode,
-                          unitId: item.unitId,
-                          tenantName: item.customerName || 'Khách hàng',
-                          contractCode: item.contractCode || item.bookingCode || 'N/A',
-                          contractId: item.contractId || undefined,
-                          overdueDays: Number(item.daysOverdue) || 0,
-                          totalDebt: formatAmount(item.totalDebt),
-                          facilityId: item.facilityId || activeFacilityId
-                        })}
-                        className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">gavel</span>
-                        <span>Niêm phong</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-
-        {/* Pagination Controls - Centered */}
-        {filteredItems.length > itemsPerPage && (
-          <div className="relative flex flex-col md:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-100 text-xs text-slate-500">
-            <div className="text-center md:text-left">
-              Hiển thị <span className="font-semibold text-slate-800 font-mono">{paginatedItems.length}</span> trên tổng số <span className="font-semibold text-slate-800 font-mono">{filteredItems.length}</span> khoản nợ
-            </div>
-            <div className="flex items-center justify-center gap-2 md:absolute md:left-1/2 md:-translate-x-1/2">
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-semibold transition-colors"
-              >
-                Trang trước
-              </button>
-              <span className="font-mono font-bold text-slate-900 px-2 py-1 rounded-md bg-slate-100 border border-slate-200">
-                {currentPage} / {totalPages}
+        {/* Card 1: Total Overdue Debt */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tổng Công Nợ Quá Hạn</span>
+              <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 material-symbols-outlined text-[20px]">
+                attach_money
               </span>
-              <button
-                type="button"
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-semibold transition-colors"
-              >
-                Trang sau
-              </button>
             </div>
-
-            <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
+            <p className="text-2xl font-black text-rose-600 mt-2">
+              {formatVND(summary?.totalOverdueDebt)}
+            </p>
           </div>
-        )}
-
-      </div>
-
-      {/* Notice Dispatcher Modal */}
-      {noticeModalData && (
-        <NoticeDispatcherModal
-          isOpen={!!noticeModalData}
-          onClose={() => setNoticeModalData(null)}
-          noticeData={noticeModalData}
-          onSendNotice={(msg) => {
-            showToast(msg)
-            setNoticeModalData(null)
-          }}
-        />
-      )}
-
-      {/* Asset Sealing Modal */}
-      {sealingModalData && (
-        <AssetSealingModal
-          isOpen={!!sealingModalData}
-          onClose={() => setSealingModalData(null)}
-          unitCode={sealingModalData.unitCode}
-          unitId={sealingModalData.unitId}
-          tenantName={sealingModalData.tenantName}
-          contractCode={sealingModalData.contractCode}
-          contractId={sealingModalData.contractId}
-          overdueDays={sealingModalData.overdueDays}
-          totalDebt={sealingModalData.totalDebt}
-          facilityId={sealingModalData.facilityId}
-          onCompleteSealing={(msg) => {
-            showToast(msg)
-            setSealingModalData(null)
-            fetchOverdueReport()
-          }}
-        />
-      )}
-
-      {/* Lockout Confirm Modal */}
-      {confirmLockoutItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4">
-            <div className="flex items-start gap-3.5">
-              <div className="p-3 rounded-xl bg-rose-100 text-rose-700 shrink-0">
-                <span className="material-symbols-outlined text-[26px]">lock_person</span>
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  Xác nhận thu hồi PIN/QR trong Boxora
-                </h3>
-                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                  Thu hồi PIN/QR đang lưu trong Boxora cho kho #{confirmLockoutItem.unitCode} của khách hàng{' '}
-                  <strong>{confirmLockoutItem.customerName}</strong> (Quá hạn {confirmLockoutItem.daysOverdue} ngày).
-                  Thao tác này không xác nhận hoặc điều khiển khóa vật lý; trạng thái khóa tại kho chưa được xác minh.
-                </p>
-              </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
+            <div className="flex justify-between">
+              <span>Nợ gốc tiền thuê:</span>
+              <span className="font-bold text-slate-800">{formatVND(summary?.totalPrincipalDebt)}</span>
             </div>
-
-            {lockoutError && (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">error</span>
-                <span>{lockoutError}</span>
+            <div className="flex justify-between">
+              <span>Phí phạt tích lũy:</span>
+              <span className="font-bold text-rose-700">+{formatVND(summary?.totalLateFees)}</span>
+            </div>
+            {summary && summary.unverifiedPaymentsAmount > 0 && (
+              <div className="flex justify-between text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                <span>Chờ đối soát ({summary.unverifiedPaymentsCount} đơn):</span>
+                <span className="font-bold">{formatVND(summary.unverifiedPaymentsAmount)}</span>
               </div>
             )}
+          </div>
+        </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                disabled={isLocking}
-                onClick={() => {
-                  setConfirmLockoutItem(null)
-                  setLockoutError(null)
-                }}
-                className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer disabled:opacity-50"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={isLocking}
-                onClick={handleLockoutConfirm}
-                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer shadow-xs flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {isLocking ? (
-                  <>
-                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                    <span>Đang ngắt quyền truy cập...</span>
-                  </>
-                ) : (
-                  <span>Xác nhận thu hồi PIN/QR</span>
-                )}
-              </button>
+        {/* Card 2: Total Overdue Contracts */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tổng Hợp Đồng Quá Hạn</span>
+              <span className="p-1.5 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 material-symbols-outlined text-[20px]">
+                description
+              </span>
+            </div>
+            <p className="text-2xl font-black text-slate-900 mt-2">
+              {summary?.totalOverdueContracts ?? 0} <span className="text-xs font-medium text-slate-500">hợp đồng</span>
+            </p>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
+            <div className="flex justify-between">
+              <span>Ân hạn miễn phạt (Nhóm 1):</span>
+              <span className="font-bold text-emerald-700">{summary?.graceCount ?? 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Cảnh báo quá hạn (Nhóm 2):</span>
+              <span className="font-bold text-amber-700">{summary?.warningCount ?? 0}</span>
             </div>
           </div>
         </div>
+
+        {/* Card 3: PIN Revocation Threshold */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ngưỡng Thu Hồi PIN (3-6N)</span>
+              <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 material-symbols-outlined text-[20px]">
+                pin
+              </span>
+            </div>
+            <p className="text-2xl font-black text-rose-700 mt-2">
+              {summary?.pinThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">buồng kho</span>
+            </p>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">Chờ Quản lý thu hồi:</span>
+            {summary && summary.pendingPinRevocationsCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold animate-pulse">
+                {summary.pendingPinRevocationsCount} chờ xử lý
+              </span>
+            ) : (
+              <span className="font-bold text-slate-700">0 chờ xử lý</span>
+            )}
+          </div>
+        </div>
+
+        {/* Card 4: Sealing Threshold */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Đủ ĐK Niêm Phong (&gt;= 7N)</span>
+              <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600 border border-purple-100 material-symbols-outlined text-[20px]">
+                door_sensor
+              </span>
+            </div>
+            <p className="text-2xl font-black text-purple-800 mt-2">
+              {summary?.sealingThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">buồng kho</span>
+            </p>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <span className="text-slate-500">Chờ duyệt niêm phong:</span>
+            {summary && summary.pendingSealingApprovalsCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold animate-pulse">
+                {summary.pendingSealingApprovalsCount} chờ duyệt
+              </span>
+            ) : (
+              <span className="font-bold text-slate-700">0 chờ duyệt</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Advanced Filter Toolbar */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-4">
+        
+        {/* Top Filter Row: 5 Group Tabs */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => { setFilterStage('ALL'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+              filterStage === 'ALL'
+                ? 'bg-slate-900 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            Tất cả ({summary?.totalOverdueContracts ?? 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setFilterStage('GRACE_PERIOD'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              filterStage === 'GRACE_PERIOD'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            Nhóm 1: Ân hạn (1 ngày) ({summary?.graceCount ?? 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setFilterStage('WARNING'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              filterStage === 'WARNING'
+                ? 'bg-amber-600 text-white shadow-xs'
+                : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            Nhóm 2: Cảnh báo (2 ngày) ({summary?.warningCount ?? 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setFilterStage('PIN_REVOCATION'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              filterStage === 'PIN_REVOCATION'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+            Nhóm 3: Thu hồi PIN (3-6 ngày) ({summary?.pinThresholdCount ?? 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setFilterStage('SEALING_ELIGIBLE'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              filterStage === 'SEALING_ELIGIBLE'
+                ? 'bg-purple-600 text-white shadow-xs'
+                : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+            Nhóm 4: Đủ ĐK Niêm phong (&gt;= 7 ngày) ({summary?.sealingThresholdCount ?? 0})
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { setFilterStage('POLICY_UNCONFIGURED'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              filterStage === 'POLICY_UNCONFIGURED'
+                ? 'bg-slate-700 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">help</span>
+            Nhóm 5: Thiếu chính sách ({summary?.policyUnconfiguredCount ?? 0})
+          </button>
+        </div>
+
+        {/* Bottom Filter Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-5 gap-3 text-xs">
+          
+          {/* Facility Select (if not strictly scoped) */}
+          {!isFacilityScoped && (
+            <div>
+              <label className="text-slate-500 font-medium block mb-1">Cơ sở lưu trữ:</label>
+              <select
+                value={selectedFacilityFilter}
+                onChange={e => { setSelectedFacilityFilter(e.target.value); setCurrentPage(0) }}
+                className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white transition-all"
+              >
+                <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
+                {facilities.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* SmartLock Filter */}
+          <div>
+            <label className="text-slate-500 font-medium block mb-1">Trạng thái SmartLock:</label>
+            <select
+              value={pinStatusFilter}
+              onChange={e => { setPinStatusFilter(e.target.value); setCurrentPage(0) }}
+              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white transition-all"
+            >
+              <option value="ALL">Tất cả trạng thái PIN</option>
+              <option value="PIN_ACTIVE">PIN Active (Mở bình thường)</option>
+              <option value="PIN_REVOCATION_PENDING">Chờ thu hồi PIN</option>
+              <option value="PIN_REVOKED">Đã thu hồi PIN (Locked)</option>
+              <option value="PIN_REVOCATION_FAILED">Thu hồi PIN thất bại</option>
+            </select>
+          </div>
+
+          {/* Sealing Status Filter */}
+          <div>
+            <label className="text-slate-500 font-medium block mb-1">Trạng thái Niêm phong:</label>
+            <select
+              value={sealingStatusFilter}
+              onChange={e => { setSealingStatusFilter(e.target.value); setCurrentPage(0) }}
+              className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white transition-all"
+            >
+              <option value="ALL">Tất cả niêm phong</option>
+              <option value="NONE">Chưa niêm phong</option>
+              <option value="SEALING_ELIGIBLE">Đủ ĐK niêm phong (&gt;= 7 ngày)</option>
+              <option value="SEALING_REQUESTED">Chờ duyệt niêm phong</option>
+              <option value="SEALING_APPROVED">Đã duyệt (Chờ niêm phong)</option>
+              <option value="SEALING_COMPLETED">Đã niêm phong hoàn tất</option>
+            </select>
+          </div>
+
+          {/* Search Input */}
+          <div className="md:col-span-2 flex items-end gap-2">
+            <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-400 text-[18px]">
+                search
+              </span>
+              <input
+                type="text"
+                placeholder="Tìm mã HĐ, số kho, tên khách, SĐT..."
+                value={searchTerm}
+                onChange={e => { setSearchTerm(e.target.value); setCurrentPage(0) }}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white transition-all"
+              />
+            </div>
+
+            {/* Demo Filter Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsDemoFilter(prev => prev === true ? undefined : true)
+                setCurrentPage(0)
+              }}
+              className={`px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                isDemoFilter === true
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">science</span>
+              25 Ca Demo
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      {/* Main Overdue Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left">
+            <thead className="bg-slate-100 text-slate-700 border-b border-slate-200">
+              <tr>
+                <th className="p-3.5 font-bold">Hợp Đồng &amp; Buồng Kho</th>
+                <th className="p-3.5 font-bold">Khách Hàng</th>
+                <th className="p-3.5 font-bold">Cơ Sở Lưu Trữ</th>
+                <th className="p-3.5 font-bold">Ngày Đến Hạn &amp; Quá Hạn</th>
+                <th className="p-3.5 font-bold">Chi Tiết Công Nợ</th>
+                <th className="p-3.5 font-bold">SmartLock PIN/QR</th>
+                <th className="p-3.5 font-bold">Hồ Sơ Niêm Phong</th>
+                <th className="p-3.5 font-bold text-right">Thao Tác</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="p-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <span className="material-symbols-outlined animate-spin text-[32px]">sync</span>
+                      <span className="text-xs font-semibold">Đang truy vấn danh sách công nợ quá hạn...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : contracts.length > 0 ? (
+                contracts.map(item => (
+                  <tr key={item.contractId} className="hover:bg-slate-50/80 transition-colors">
+                    
+                    {/* Contract & Unit */}
+                    <td className="p-3.5">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-slate-900 text-[13px]">{item.contractCode}</span>
+                          {item.isDemo && (
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 text-purple-700">
+                              DEMO
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs font-semibold text-rose-600 flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[14px]">grid_view</span>
+                          Buồng #{item.unitCode}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Customer */}
+                    <td className="p-3.5">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800">{item.customerName}</span>
+                        <span className="text-slate-500 font-mono text-[11px]">{item.customerPhone}</span>
+                      </div>
+                    </td>
+
+                    {/* Facility */}
+                    <td className="p-3.5 text-slate-600 font-medium">
+                      {item.facilityName}
+                    </td>
+
+                    {/* Due Date & Overdue Days */}
+                    <td className="p-3.5">
+                      <div className="flex flex-col">
+                        <span className="text-slate-500">{item.dueDate}</span>
+                        <span className={`font-bold flex items-center gap-1 mt-0.5 ${
+                          item.daysOverdue <= 1 ? 'text-emerald-700' :
+                          item.daysOverdue === 2 ? 'text-amber-700' :
+                          item.daysOverdue < 7 ? 'text-rose-700' : 'text-purple-700'
+                        }`}>
+                          <span className="material-symbols-outlined text-[14px]">schedule</span>
+                          +{item.daysOverdue} ngày ({item.daysOverdue <= 1 ? 'Ân hạn' : item.daysOverdue < 7 ? 'Ngưỡng PIN' : 'Ngưỡng Niêm phong'})
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Debt Breakdown */}
+                    <td className="p-3.5">
+                      <div className="flex flex-col gap-0.5">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[11px] text-slate-400">Gốc:</span>
+                          <span className="text-slate-700 font-medium">{formatVND(item.principalDebt)}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-[11px] text-rose-600">
+                          <span>Phạt:</span>
+                          <span className="font-bold">+{formatVND(item.lateFee)}</span>
+                        </div>
+                        <div className="font-mono font-black text-rose-700 text-sm mt-0.5">
+                          {formatVND(item.totalDebt)}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* SmartLock Status */}
+                    <td className="p-3.5">
+                      <div className="flex flex-col gap-1 items-start">
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                          item.pinStatus === 'PIN_ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
+                          item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'bg-amber-100 text-amber-800' :
+                          item.pinStatus === 'PIN_REVOKED' ? 'bg-rose-100 text-rose-800' :
+                          'bg-slate-200 text-slate-700'
+                        }`}>
+                          {item.pinStatus === 'PIN_ACTIVE' ? 'PIN Active' :
+                           item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi' :
+                           item.pinStatus === 'PIN_REVOKED' ? 'Đã thu hồi (Lock)' :
+                           'Thu hồi lỗi'}
+                        </span>
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
+                          <span className={`w-1.5 h-1.5 rounded-full ${item.smartLockOnlineStatus === 'ONLINE' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                          {item.smartLockOnlineStatus}
+                          {item.smartLockIsMock && (
+                            <span className="text-purple-600 font-bold">[MOCK]</span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Sealing Status */}
+                    <td className="p-3.5">
+                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                        item.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                        item.sealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800' :
+                        item.sealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800' :
+                        item.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800' :
+                        'bg-slate-100 text-slate-500'
+                      }`}>
+                        {item.sealingStatus === 'SEALING_COMPLETED' ? 'Đã niêm phong' :
+                         item.sealingStatus === 'SEALING_APPROVED' ? 'Đã duyệt NP' :
+                         item.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ duyệt NP' :
+                         item.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ ĐK niêm phong' :
+                         'Chưa niêm phong'}
+                      </span>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="p-3.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedContractId(item.contractId)}
+                          className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shadow-xs flex items-center gap-1 cursor-pointer transition-all"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">visibility</span>
+                          Chi tiết
+                        </button>
+                      </div>
+                    </td>
+
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={8} className="p-12 text-center text-slate-400">
+                    <span className="material-symbols-outlined text-[36px] text-slate-300 mb-1">inbox</span>
+                    <p className="text-xs font-semibold">Không tìm thấy hợp đồng nợ cước nào khớp với bộ lọc.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination Footer */}
+        <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+          <div>
+            Hiển thị <span className="font-bold text-slate-800">{contracts.length}</span> trên tổng số <span className="font-bold text-slate-800">{totalElements}</span> hợp đồng
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={currentPage === 0}
+              onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+            </button>
+            <span className="px-2 font-semibold">
+              Trang {currentPage + 1} / {Math.max(1, totalPages)}
+            </span>
+            <button
+              type="button"
+              disabled={currentPage >= totalPages - 1}
+              onClick={() => setCurrentPage(p => p + 1)}
+              className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Contract Detail Modal */}
+      {selectedContractId && (
+        <OverdueContractDetailModal
+          isOpen={Boolean(selectedContractId)}
+          contractId={selectedContractId}
+          onClose={() => setSelectedContractId(null)}
+          onRefreshParent={handleRefreshAll}
+        />
       )}
 
     </div>
