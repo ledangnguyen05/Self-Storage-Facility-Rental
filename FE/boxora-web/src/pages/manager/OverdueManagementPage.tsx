@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { useOutletContext } from 'react-router-dom'
 import { reportService } from '../../services/reportService'
 import { facilityService } from '../../services/facilityService'
 import { useAuth } from '../../context/AuthContext'
@@ -10,8 +11,12 @@ import { toast } from '../../utils/toast'
 
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
+  const { selectedFacility: contextFacilityId, facilities: contextFacilities } = useOutletContext<{
+    selectedFacility?: string
+    facilities?: Facility[]
+  }>() || {}
+
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [overdueItems, setOverdueItems] = useState<OverdueDebtItem[]>([])
   const [reportSummary, setReportSummary] = useState<OverdueDebtReport | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -52,32 +57,49 @@ export const OverdueManagementPage: React.FC = () => {
     setTimeout(() => setToastMessage(null), 4000)
   }
 
-  // Load facilities
+  // Load facilities if not available from context
   useEffect(() => {
+    if (contextFacilities && contextFacilities.length > 0) {
+      setFacilities(contextFacilities)
+      return
+    }
     const loadFacilities = async () => {
       try {
         const res = await facilityService.getFacilities()
         const facs = res?.content || []
         setFacilities(facs)
-        const userFacId = user?.facilityId
-        if (userFacId && facs.some(f => f.id === userFacId)) {
-          setSelectedFacilityId(userFacId)
-        } else if (facs.length > 0) {
-          setSelectedFacilityId(facs[0].id)
-        }
       } catch (err) {
         console.warn('Failed to load facilities:', err)
       }
     }
     loadFacilities()
-  }, [user])
+  }, [contextFacilities])
 
-  // Fetch overdue debts for facility
-  const fetchOverdueReport = async () => {
-    if (!selectedFacilityId) return
+  const isFacilityScoped = user?.role?.name === 'FACILITY_MANAGER' || user?.role?.name === 'STAFF'
+  const activeFacilityId = useMemo(() => {
+    if (isFacilityScoped && user?.facilityId) {
+      return user.facilityId
+    }
+    return contextFacilityId && contextFacilityId !== 'ALL' ? contextFacilityId : undefined
+  }, [isFacilityScoped, user?.facilityId, contextFacilityId])
+
+  const currentFacilityName = useMemo(() => {
+    if (isFacilityScoped && user?.facilityName) {
+      return user.facilityName
+    }
+    if (activeFacilityId) {
+      const allFacs = contextFacilities && contextFacilities.length > 0 ? contextFacilities : facilities
+      const found = allFacs.find(f => f.id === activeFacilityId)
+      if (found) return found.name
+    }
+    return 'Toàn hệ thống (Tất cả cơ sở)'
+  }, [isFacilityScoped, user?.facilityName, activeFacilityId, contextFacilities, facilities])
+
+  // Fetch overdue debts for active facility from top header
+  const fetchOverdueReport = useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await reportService.getOverdueDebtReport({ facilityId: selectedFacilityId })
+      const data = await reportService.getOverdueDebtReport({ facilityId: activeFacilityId })
       setOverdueItems(data?.items || [])
       setReportSummary(data || null)
     } catch (err) {
@@ -87,15 +109,11 @@ export const OverdueManagementPage: React.FC = () => {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [activeFacilityId])
 
   useEffect(() => {
     fetchOverdueReport()
-  }, [selectedFacilityId])
-
-  const currentFacilityName = useMemo(() => {
-    return facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở Boxora'
-  }, [facilities, selectedFacilityId])
+  }, [fetchOverdueReport])
 
   // KPIs
   const totalDebtAmount = reportSummary?.totalDebtAmount
@@ -226,18 +244,6 @@ export const OverdueManagementPage: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
-          {facilities.length > 1 && (
-            <select
-              value={selectedFacilityId}
-              onChange={e => setSelectedFacilityId(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-slate-400"
-            >
-              {facilities.map(f => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          )}
-
           <button
             type="button"
             onClick={fetchOverdueReport}
@@ -488,7 +494,7 @@ export const OverdueManagementPage: React.FC = () => {
                           contractId: item.contractId || undefined,
                           overdueDays: Number(item.daysOverdue) || 0,
                           totalDebt: formatAmount(item.totalDebt),
-                          facilityId: selectedFacilityId
+                          facilityId: item.facilityId || activeFacilityId
                         })}
                         className="px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all flex items-center gap-1 shadow-xs cursor-pointer"
                       >
