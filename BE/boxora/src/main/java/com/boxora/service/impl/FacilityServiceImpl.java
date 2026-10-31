@@ -38,6 +38,7 @@ public class FacilityServiceImpl implements FacilityService {
     private final FacilityMapper facilityMapper;
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
+    private final com.boxora.validator.FloorPlanValidator floorPlanValidator;
     private final com.boxora.repository.FacilityPolicyRepository facilityPolicyRepository;
     private final com.boxora.repository.StorageUnitRepository storageUnitRepository;
     private final com.boxora.repository.ActivityLogRepository activityLogRepository;
@@ -55,6 +56,10 @@ public class FacilityServiceImpl implements FacilityService {
         validateCoordinates(request.getLatitude(), request.getLongitude());
         if (facilityRepository.existsByCode(request.getCode())) {
             throw new AppException(ErrorCode.FACILITY_CODE_EXISTED);
+        }
+
+        if (request.getLayoutConfig() != null) {
+            floorPlanValidator.validateFloorPlan(request.getLayoutConfig(), null);
         }
 
         Facility facility = facilityMapper.toEntity(request);
@@ -98,6 +103,10 @@ public class FacilityServiceImpl implements FacilityService {
         if (request.getCode() != null
                 && facilityRepository.existsByCodeAndIdNot(request.getCode(), facility.getId())) {
             throw new AppException(ErrorCode.FACILITY_CODE_EXISTED);
+        }
+
+        if (request.getLayoutConfig() != null) {
+            floorPlanValidator.validateFloorPlan(request.getLayoutConfig(), facility.getId());
         }
 
         facilityMapper.updateEntityFromRequest(request, facility);

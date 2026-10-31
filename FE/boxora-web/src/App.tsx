@@ -181,9 +181,19 @@ function MainContent() {
               }
             />
 
-            {/* 5. System Admin Portal: Admin and Business Manager (Policies & Pricing) */}
+            {/* 5. System Admin Portal: Admin (Users, RBAC, Logs) */}
             <Route
               path="admin"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER']}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* 5b. Pricing & Facilities Policy: Business Manager and Admin */}
+            <Route
+              path="facilities"
               element={
                 <ProtectedRoute allowedRoles={['ADMIN', 'BUSINESS_MANAGER']}>
                   <AdminDashboard />

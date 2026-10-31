@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType, Facility } from '../../types'
@@ -32,6 +32,10 @@ export const DashboardLayout: React.FC = () => {
   const [isScopingModalOpen, setIsScopingModalOpen] = useState(false)
   const isCurrentPath = (path: string) => location.pathname === path
   const isFacilityManagerPage = location.pathname.includes('/facility-manager')
+  const isFacilitiesPolicyPage =
+    location.pathname.startsWith('/portal/facilities') ||
+    (location.pathname.startsWith('/portal/admin') &&
+      (new URLSearchParams(location.search).get('tab') === 'facilities' || role === 'BUSINESS_MANAGER'))
 
   useEffect(() => {
     facilityService.getFacilities()
@@ -58,31 +62,33 @@ export const DashboardLayout: React.FC = () => {
 
         if (isFacilityScopedRole && assignedFacilityId) {
           setSelectedFacility(assignedFacilityId)
-        } else if (list.length > 0) {
-          setSelectedFacility(current => {
-            if (location.pathname.includes('/facility-manager')) {
-              if (current && current !== 'ALL' && list.some(f => f.id === current)) return current
-              return list[0].id
-            }
-            if (current && (current === 'ALL' || list.some(f => f.id === current))) return current
-            return 'ALL'
-          })
+        } else {
+          setSelectedFacility('ALL')
         }
       })
       .catch(err => {
         console.warn('Failed to load facilities in DashboardLayout:', err)
       })
-  }, [location.pathname, isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode])
+  }, [isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode])
+
+  // When switching between dashboard sections, always default facility filter to 'ALL' (Toàn hệ thống)
+  const prevPathRef = useRef(location.pathname)
+  useEffect(() => {
+    if (prevPathRef.current !== location.pathname) {
+      prevPathRef.current = location.pathname
+      if (!isFacilityScopedRole) {
+        setSelectedFacility('ALL')
+      }
+    }
+  }, [location.pathname, isFacilityScopedRole])
 
   useEffect(() => {
     if (isFacilityScopedRole && assignedFacilityId) {
       if (selectedFacility !== assignedFacilityId) {
         setSelectedFacility(assignedFacilityId)
       }
-    } else if (isFacilityManagerPage && selectedFacility === 'ALL' && facilities.length > 0) {
-      setSelectedFacility(facilities[0].id)
     }
-  }, [isFacilityScopedRole, assignedFacilityId, isFacilityManagerPage, selectedFacility, facilities])
+  }, [isFacilityScopedRole, assignedFacilityId, selectedFacility])
 
   const handleSetSelectedFacility = (facId: string) => {
     if (isFacilityScopedRole && assignedFacilityId) {
@@ -149,7 +155,7 @@ export const DashboardLayout: React.FC = () => {
             <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
 
             {/* Facility Selector & Scoping Modal Trigger (Only for internal staff/managers) */}
-            {role && role !== 'CUSTOMER' && (
+            {role && role !== 'CUSTOMER' && !isFacilitiesPolicyPage && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl hover:border-slate-300 transition-colors">
                 <span className="material-symbols-outlined text-blue-600 text-[18px]">location_on</span>
                 <div className="flex flex-col text-left">
@@ -169,9 +175,7 @@ export const DashboardLayout: React.FC = () => {
                       onChange={(e) => handleSetSelectedFacility(e.target.value)}
                       className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                     >
-                      {!isFacilityManagerPage && (
-                        <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
-                      )}
+                      <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
                       {facilities.length > 0 ? (
                         facilities.map(f => (
                           <option key={f.id} value={f.id}>
@@ -263,7 +267,7 @@ export const DashboardLayout: React.FC = () => {
           </div>
 
           {/* Mobile Facility Selector */}
-          {role && role !== 'CUSTOMER' && (
+          {role && role !== 'CUSTOMER' && !isFacilitiesPolicyPage && (
             <div className="sm:hidden p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
               <span className="font-mono text-[9px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">
                 CƠ SỞ TRỰC THUỘC
@@ -281,9 +285,7 @@ export const DashboardLayout: React.FC = () => {
                   onChange={(e) => handleSetSelectedFacility(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer"
                 >
-                  {!isFacilityManagerPage && (
-                    <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
-                  )}
+                  <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
                   {facilities.length > 0 && facilities.map(f => (
                     <option key={f.id} value={f.id}>
                       {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
@@ -592,9 +594,9 @@ export const DashboardLayout: React.FC = () => {
 
                 {(hasPermission('FACILITY_UPDATE') || hasPermission('PRICE_ADJUST') || hasPermission('POLICY_UPDATE')) && (
                   <Link
-                    to="/portal/admin?tab=facilities"
+                    to="/portal/facilities"
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                      isCurrentPath('/portal/admin')
+                      isCurrentPath('/portal/facilities') || (isCurrentPath('/portal/admin') && new URLSearchParams(location.search).get('tab') === 'facilities')
                         ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
                         : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                     }`}

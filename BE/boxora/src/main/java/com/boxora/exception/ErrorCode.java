@@ -111,6 +111,12 @@ public enum ErrorCode {
     FACILITY_INACTIVE(1004, "Cơ sở lưu trữ này hiện đang tạm ngưng hoạt động, không thể thực hiện đặt giữ chỗ mới", HttpStatus.BAD_REQUEST),
     FACILITY_UNDER_MAINTENANCE(1005, "Cơ sở lưu trữ này hiện đang bảo trì kỹ thuật, không thể thực hiện đặt giữ chỗ mới", HttpStatus.BAD_REQUEST),
     FACILITY_IN_USE(1006, "Không thể xóa cơ sở vì đang có hợp đồng, đơn đặt kho hoặc dữ liệu vận hành liên quan", HttpStatus.CONFLICT),
+    FLOOR_PLAN_INVALID(1007, "Cấu hình sơ đồ mặt bằng chi nhánh không hợp lệ", HttpStatus.BAD_REQUEST),
+    FLOOR_CODE_DUPLICATE(1008, "Mã tầng bị trùng lặp trong cùng cơ sở", HttpStatus.BAD_REQUEST),
+    ZONE_CODE_DUPLICATE(1009, "Mã phân khu bị trùng lặp trong cùng cơ sở", HttpStatus.BAD_REQUEST),
+    FUNCTIONAL_AREA_CODE_DUPLICATE(1010, "Mã khu vực chức năng bị trùng lặp trong cùng cơ sở", HttpStatus.BAD_REQUEST),
+    FLOOR_CANNOT_BE_DELETED_IN_USE(1011, "Không thể xóa tầng đang có kho vật lý hoặc dữ liệu liên kết", HttpStatus.CONFLICT),
+    FLOOR_AREA_EXCEEDED(1012, "Tổng diện tích các phân khu và khu vực chức năng vượt quá diện tích sàn của tầng", HttpStatus.BAD_REQUEST),
 
     // ========================= FACILITY_POLICY (1100 - 1199) =========================
     FACILITY_POLICY_NOT_FOUND(1100, "Không tìm thấy chính sách cơ sở kho", HttpStatus.NOT_FOUND),

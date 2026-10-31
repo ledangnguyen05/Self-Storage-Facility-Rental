@@ -17,65 +17,72 @@ export const CHECK_IN_PERIOD_GROUPS: CheckInPeriodGroup[] = [
   {
     id: 'morning',
     name: 'Buổi sáng',
-    rangeText: 'Từ 1:00 đến 10:00',
+    rangeText: '08:00 – 11:30',
     icon: '🌅',
     hours: [
-      { value: '01:00', label: '01:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '02:00', label: '02:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '03:00', label: '03:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '04:00', label: '04:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '05:00', label: '05:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '06:00', label: '06:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '07:00', label: '07:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '08:00', label: '08:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '09:00', label: '09:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
-      { value: '10:00', label: '10:00 - Buổi sáng (Từ 1:00 đến 10:00)' },
+      { value: '08:00', label: '08:00 - Buổi sáng (08:00 – 11:30)' },
+      { value: '08:30', label: '08:30 - Buổi sáng (08:00 – 11:30)' },
+      { value: '09:00', label: '09:00 - Buổi sáng (08:00 – 11:30)' },
+      { value: '09:30', label: '09:30 - Buổi sáng (08:00 – 11:30)' },
+      { value: '10:00', label: '10:00 - Buổi sáng (08:00 – 11:30)' },
+      { value: '10:30', label: '10:30 - Buổi sáng (08:00 – 11:30)' },
+      { value: '11:00', label: '11:00 - Buổi sáng (08:00 – 11:30)' },
     ],
   },
   {
     id: 'noon',
     name: 'Buổi trưa',
-    rangeText: 'Khoảng từ 11:00 đến 12:00',
+    rangeText: '11:30 – 13:30',
     icon: '☀️',
     hours: [
-      { value: '11:00', label: '11:00 - Buổi trưa (Từ 11:00 đến 12:00)' },
-      { value: '12:00', label: '12:00 - Buổi trưa (Từ 11:00 đến 12:00)' },
+      { value: '11:30', label: '11:30 - Buổi trưa (11:30 – 13:30)' },
+      { value: '12:00', label: '12:00 - Buổi trưa (11:30 – 13:30)' },
+      { value: '12:30', label: '12:30 - Buổi trưa (11:30 – 13:30)' },
+      { value: '13:00', label: '13:00 - Buổi trưa (11:30 – 13:30)' },
     ],
   },
   {
     id: 'afternoon',
     name: 'Buổi chiều',
-    rangeText: 'Từ 13:00 đến 18:00',
+    rangeText: '13:30 – 17:30',
     icon: '🌤️',
     hours: [
-      { value: '13:00', label: '13:00 - Buổi chiều (Từ 13:00 đến 18:00)' },
-      { value: '14:00', label: '14:00 - Buổi chiều (Từ 13:00 đến 18:00)' },
-      { value: '15:00', label: '15:00 - Buổi chiều (Từ 13:00 đến 18:00)' },
-      { value: '16:00', label: '16:00 - Buổi chiều (Từ 13:00 đến 18:00)' },
-      { value: '17:00', label: '17:00 - Buổi chiều (Từ 13:00 đến 18:00)' },
-      { value: '18:00', label: '18:00 - Buổi chiều (Từ 13:00 đến 18:00)' },
+      { value: '13:30', label: '13:30 - Buổi chiều (13:30 – 17:30)' },
+      { value: '14:00', label: '14:00 - Buổi chiều (13:30 – 17:30)' },
+      { value: '14:30', label: '14:30 - Buổi chiều (13:30 – 17:30)' },
+      { value: '15:00', label: '15:00 - Buổi chiều (13:30 – 17:30)' },
+      { value: '15:30', label: '15:30 - Buổi chiều (13:30 – 17:30)' },
+      { value: '16:00', label: '16:00 - Buổi chiều (13:30 – 17:30)' },
+      { value: '16:30', label: '16:30 - Buổi chiều (13:30 – 17:30)' },
+      { value: '17:00', label: '17:00 - Buổi chiều (13:30 – 17:30)' },
     ],
   },
   {
     id: 'evening',
     name: 'Buổi tối',
-    rangeText: 'Từ 19:00 đến 21:00',
+    rangeText: '17:30 – 21:00',
     icon: '🌙',
     hours: [
-      { value: '19:00', label: '19:00 - Buổi tối (Từ 19:00 đến 21:00)' },
-      { value: '20:00', label: '20:00 - Buổi tối (Từ 19:00 đến 21:00)' },
-      { value: '21:00', label: '21:00 - Buổi tối (Từ 19:00 đến 21:00)' },
+      { value: '17:30', label: '17:30 - Buổi tối (17:30 – 21:00)' },
+      { value: '18:00', label: '18:00 - Buổi tối (17:30 – 21:00)' },
+      { value: '18:30', label: '18:30 - Buổi tối (17:30 – 21:00)' },
+      { value: '19:00', label: '19:00 - Buổi tối (17:30 – 21:00)' },
+      { value: '19:30', label: '19:30 - Buổi tối (17:30 – 21:00)' },
+      { value: '20:00', label: '20:00 - Buổi tối (17:30 – 21:00)' },
+      { value: '20:30', label: '20:30 - Buổi tối (17:30 – 21:00)' },
     ],
   },
   {
     id: 'night',
-    name: 'Buổi đêm',
-    rangeText: 'Từ 22:00 đến 24:00',
+    name: 'Ca đêm',
+    rangeText: '21:00 – 23:30',
     icon: '🌌',
     hours: [
-      { value: '22:00', label: '22:00 - Buổi đêm (Từ 22:00 đến 24:00)' },
-      { value: '23:00', label: '23:00 - Buổi đêm (Từ 22:00 đến 24:00)' },
-      { value: '00:00', label: '24:00 (00:00) - Buổi đêm (Từ 22:00 đến 24:00)' },
+      { value: '21:00', label: '21:00 - Ca đêm (21:00 – 23:30)' },
+      { value: '21:30', label: '21:30 - Ca đêm (21:00 – 23:30)' },
+      { value: '22:00', label: '22:00 - Ca đêm (21:00 – 23:30)' },
+      { value: '22:30', label: '22:30 - Ca đêm (21:00 – 23:30)' },
+      { value: '23:00', label: '23:00 - Ca đêm (21:00 – 23:30)' },
     ],
   },
 ]
@@ -83,11 +90,15 @@ export const CHECK_IN_PERIOD_GROUPS: CheckInPeriodGroup[] = [
 export const CHECK_IN_HOURS_24 = CHECK_IN_PERIOD_GROUPS.flatMap((g) => g.hours)
 
 export const getPeriodForHour = (hour: string): CheckInPeriodId => {
-  const h = parseInt(hour.split(':')[0], 10)
-  if (h >= 1 && h <= 10) return 'morning'
-  if (h >= 11 && h <= 12) return 'noon'
-  if (h >= 13 && h <= 18) return 'afternoon'
-  if (h >= 19 && h <= 21) return 'evening'
+  const parts = hour.split(':')
+  const h = parseInt(parts[0], 10)
+  const m = parts[1] ? parseInt(parts[1], 10) : 0
+  const minutes = h * 60 + m
+
+  if (minutes < 11 * 60 + 30) return 'morning'
+  if (minutes < 13 * 60 + 30) return 'noon'
+  if (minutes < 17 * 60 + 30) return 'afternoon'
+  if (minutes < 21 * 60) return 'evening'
   return 'night'
 }
 
@@ -103,18 +114,18 @@ export const formatLocalDate = (date: Date = new Date()): string => {
 
 /**
  * Giờ kết thúc của từng ca đón tiếp (hệ 24h).
- * Sáng kết thúc lúc 10:00
- * Trưa kết thúc lúc 12:00
- * Chiều kết thúc lúc 18:00
- * Tối kết thúc lúc 21:00
- * Đêm kết thúc lúc 24:00 (nửa đêm)
+ * Sáng kết thúc lúc 11:30 (11.5)
+ * Trưa kết thúc lúc 13:30 (13.5)
+ * Chiều kết thúc lúc 17:30 (17.5)
+ * Tối kết thúc lúc 21:00 (21)
+ * Đêm kết thúc lúc 23:30 (23.5)
  */
 export const PERIOD_END_HOURS: Record<CheckInPeriodId, number> = {
-  morning: 10,
-  noon: 12,
-  afternoon: 18,
+  morning: 11.5,
+  noon: 13.5,
+  afternoon: 17.5,
   evening: 21,
-  night: 24,
+  night: 23.5,
 }
 
 /**
@@ -136,7 +147,7 @@ export const isPeriodInPast = (
   if (cleanDate > todayStr) return false
 
   const endHour = PERIOD_END_HOURS[periodId as CheckInPeriodId] ?? 24
-  const endMinutes = endHour * 60
+  const endMinutes = Math.floor(endHour * 60)
   const currentMinutes = refDate.getHours() * 60 + refDate.getMinutes()
 
   return currentMinutes >= endMinutes

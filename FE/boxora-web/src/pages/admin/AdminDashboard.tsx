@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect, useMemo } from 'react'
-import { useOutletContext, useSearchParams, Link } from 'react-router-dom'
+import React, { useState, useEffect, useMemo } from 'react'
+import { useOutletContext, useSearchParams, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAuth, DEFAULT_PERMISSIONS_BY_ROLE } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
 import { roleService } from '../../services/roleService'
@@ -27,11 +27,20 @@ const isDashboardTab = (tab: string | null): tab is AdminDashboardTab =>
 export const AdminDashboard: React.FC = () => {
   const { role, user } = useAuth()
   const { t } = useLanguage()
+  const location = useLocation()
+  const navigate = useNavigate()
   const outletContext = useOutletContext<DashboardOutletContextType | undefined>()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
+  const isFacilitiesRoute = location.pathname.includes('/facilities')
   const [activeTab, setActiveTabState] = useState<AdminDashboardTab>(
-    (role === 'ADMIN' && requestedTab === 'facilities') ? 'users' : (role === 'BUSINESS_MANAGER' ? 'facilities' : (isDashboardTab(requestedTab) ? requestedTab : 'users'))
+    isFacilitiesRoute
+      ? 'facilities'
+      : (role === 'ADMIN' && requestedTab === 'facilities')
+      ? 'users'
+      : (role === 'BUSINESS_MANAGER'
+      ? 'facilities'
+      : (isDashboardTab(requestedTab) ? requestedTab : 'users'))
   )
   const setActiveTab = (tab: AdminDashboardTab) => {
     setActiveTabState(tab)
@@ -44,18 +53,23 @@ export const AdminDashboard: React.FC = () => {
 
   useEffect(() => {
     if (role === 'BUSINESS_MANAGER') {
+      if (location.pathname === '/portal/admin') {
+        navigate('/portal/facilities', { replace: true })
+        return
+      }
       if (activeTab !== 'facilities') {
         setActiveTabState('facilities')
-        setSearchParams({ tab: 'facilities' }, { replace: true })
       }
     } else {
-      if (isDashboardTab(requestedTab)) {
+      if (isFacilitiesRoute) {
+        if (activeTab !== 'facilities') setActiveTabState('facilities')
+      } else if (isDashboardTab(requestedTab)) {
         setActiveTabState(requestedTab)
       } else {
         setActiveTabState('users')
       }
     }
-  }, [role, requestedTab, setSearchParams])
+  }, [role, requestedTab, isFacilitiesRoute, activeTab, location.pathname, navigate])
 
   // Facility state
   const [facilities, setFacilities] = useState<Facility[]>(outletContext?.facilities || [])
@@ -561,10 +575,10 @@ export const AdminDashboard: React.FC = () => {
           <button type="button" aria-label="Đóng thông báo" onClick={() => setFeedbackMessage(null)} className="ml-2 text-slate-400 hover:text-slate-700">×</button>
         </div>
       )}
-      {role !== 'ADMIN' && activeTab === 'facilities' ? (
+      {(isFacilitiesRoute || activeTab === 'facilities') ? (
         /* ========================================================
-           PHẦN 1: CẤU HÌNH CHI NHÁNH (Hoàn toàn độc lập)
-           URL: /portal/admin?tab=facilities
+           PHẦN 1: CẤU HÌNH CHI NHÁNH & CHÍNH SÁCH GIÁ
+           URL: /portal/facilities
            ======================================================== */
         <div className="flex flex-col gap-6 w-full">
           {/* Top Banner - Chi Nhánh */}

@@ -186,7 +186,7 @@ export const ManagerDashboard: React.FC = () => {
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>(
     isFacilityScoped && assignedFacilityId
       ? assignedFacilityId
-      : (selectedFacility && selectedFacility !== 'ALL' ? selectedFacility : (contextFacilities?.[0]?.id || ''))
+      : (selectedFacility || 'ALL')
   )
   const [units, setUnits] = useState<InspectedUnit[]>([])
   const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
@@ -401,24 +401,18 @@ export const ManagerDashboard: React.FC = () => {
 
   useEffect(() => {
     let targetFacility = isFacilityScoped && assignedFacilityId ? assignedFacilityId : selectedFacility
-    if (!targetFacility || targetFacility === 'ALL') {
-      if (isFacilityScoped && assignedFacilityId) {
-        targetFacility = assignedFacilityId
-      } else if (facilities.length > 0) {
-        targetFacility = facilities[0].id
-        if (setSelectedFacility) {
-          setSelectedFacility(facilities[0].id)
-        }
-      }
+    if (isFacilityScoped && assignedFacilityId) {
+      targetFacility = assignedFacilityId
+    } else if (!targetFacility) {
+      targetFacility = 'ALL'
     }
-    if (targetFacility && targetFacility !== 'ALL') {
-      if (targetFacility !== selectedFacilityId) {
-        setStatusFilter('all')
-      }
-      setSelectedFacilityId(targetFacility)
-      void fetchUnits(targetFacility)
+
+    if (targetFacility !== selectedFacilityId) {
+      setStatusFilter('all')
     }
-  }, [selectedFacility, facilities, isFacilityScoped, assignedFacilityId])
+    setSelectedFacilityId(targetFacility)
+    void fetchUnits(targetFacility)
+  }, [selectedFacility, isFacilityScoped, assignedFacilityId])
 
   const fetchUnits = async (facId?: string) => {
     setIsLoading(true)
@@ -811,12 +805,19 @@ export const ManagerDashboard: React.FC = () => {
         code: user?.facilityCode || 'FAC',
       } as Facility)
     }
+    if (selectedFacilityId === 'ALL' || !selectedFacilityId) {
+      return {
+        id: 'ALL',
+        name: t('Toàn hệ thống Boxora (Tất cả cơ sở)', 'All Boxora Facilities'),
+        code: 'ALL',
+      } as Facility
+    }
     return facilities.find(f => f.id === selectedFacilityId) || facilities[0]
-  }, [facilities, selectedFacilityId, isFacilityScoped, assignedFacilityId, user?.facilityName, user?.facilityCode])
+  }, [facilities, selectedFacilityId, isFacilityScoped, assignedFacilityId, user?.facilityName, user?.facilityCode, t])
 
   const currentFacilityName = currentFacility?.name
     ? currentFacility.name.replace(/StoreHub\s*/gi, 'Boxora ')
-    : (user?.facilityName ? user.facilityName.replace(/StoreHub\s*/gi, 'Boxora ') : 'Cơ sở Boxora')
+    : t('Toàn hệ thống Boxora', 'All Boxora Facilities')
 
   const handleToggleMaintenance = async () => {
     if (!selectedUnit) return
@@ -2722,8 +2723,8 @@ export const ManagerDashboard: React.FC = () => {
             setIsPolicyModalOpen(false)
             if (currentFacility.id) void fetchUnits(currentFacility.id)
           }}
-          facilityId={currentFacility.id}
-          facilityName={currentFacility.name}
+          facilityId={currentFacility.id === 'ALL' ? (facilities[0]?.id || '') : currentFacility.id}
+          facilityName={currentFacility.id === 'ALL' ? (facilities[0]?.name || '') : currentFacility.name}
           canEdit={hasPolicyException}
         />
       )}

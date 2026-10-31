@@ -36,6 +36,7 @@ import {
   Lock,
   QrCode,
   Smartphone,
+  CalendarCheck,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Facility, StorageUnit, RentalContract, UnitType } from '../../types'
@@ -46,6 +47,7 @@ import { paymentService } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { FacilityNoUnitsModal } from '../../components/modals/FacilityNoUnitsModal'
+import { PayLaterAppointmentConfirmModal } from '../../components/modals/PayLaterAppointmentConfirmModal'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { AccountProfileModal } from '../../components/common/AccountProfileModal'
@@ -341,8 +343,20 @@ export const BookingPage: React.FC = () => {
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
   const [isNoUnitsModalOpen, setIsNoUnitsModalOpen] = useState(false)
 
-  // Customer rental access state
-  const isCustomer = user?.role?.name === 'CUSTOMER'
+  // User role & customer rental access state
+  const userRole = (user?.role?.name || (user as any)?.roleName || (user as any)?.role || '').toUpperCase()
+  const isCustomer = userRole === 'CUSTOMER' || userRole === 'ROLE_CUSTOMER'
+  const isStaffOrManager = ['ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'ROLE_ADMIN', 'ROLE_BUSINESS_MANAGER', 'ROLE_FACILITY_MANAGER', 'ROLE_STAFF'].includes(userRole)
+
+  const getRoleDisplayName = (role?: string) => {
+    const r = (role || userRole || '').toUpperCase()
+    if (r.includes('ADMIN')) return 'Quản trị viên (Admin)'
+    if (r.includes('BUSINESS')) return 'Quản lý kinh doanh (Business Manager)'
+    if (r.includes('FACILITY')) return 'Quản lý cơ sở (Facility Manager)'
+    if (r.includes('STAFF')) return 'Nhân viên cơ sở (Staff)'
+    return 'Quản trị / Nhân viên'
+  }
+
   const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
   const canAccessPortal = !isCustomer || customerAccess.hasAccess
 
@@ -481,6 +495,7 @@ export const BookingPage: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [bookingCode, setBookingCode] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState<boolean>(false)
+  const [showPayLaterConfirmModal, setShowPayLaterConfirmModal] = useState<boolean>(false)
 
   // DocuSeal e-Signing state (Bước 2: Ký hợp đồng trực tuyến trước khi thanh toán)
   const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
@@ -537,24 +552,50 @@ export const BookingPage: React.FC = () => {
           setFacilities(activeList)
         }
 
-        if (unitRes.status === 'fulfilled' && Array.isArray(unitRes.value)) {
-          setStorageUnits(unitRes.value)
+        const freshUnits = (unitRes.status === 'fulfilled' && Array.isArray(unitRes.value)) ? unitRes.value : []
+        if (freshUnits.length > 0) {
+          setStorageUnits(freshUnits)
         }
         if (utRes && utRes.status === 'fulfilled' && Array.isArray(utRes.value)) {
           setDbUnitTypes(utRes.value)
         }
+
+        const savedFacId =
+          localStorage.getItem('boxora_selected_facility_id') ||
+          sessionStorage.getItem('boxora_selected_facility_id')
+        const facParam = searchParams.get('facility')
 
         // Restore draft from sessionStorage or localStorage if exists (Task 2: Guest Flow Persistence)
         try {
           const draftStr = sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')
           if (draftStr) {
             const draft = JSON.parse(draftStr)
-            if (draft.facilityId && activeList.length > 0) {
-              const matchedFac = activeList.find((f) => f.id === draft.facilityId)
-              if (matchedFac) setSelectedFacility(matchedFac)
-            } else if (activeList.length > 0 && !selectedFacility) {
-              setSelectedFacility(activeList[0])
+            const targetFacId = draft.facilityId || savedFacId
+            let matchedFac = targetFacId ? activeList.find((f) => String(f.id) === String(targetFacId)) : undefined
+            if (!matchedFac && draft.facilityName) {
+              matchedFac = activeList.find((f) => 
+                f.name?.toLowerCase().trim() === draft.facilityName.toLowerCase().trim() ||
+                f.name?.toLowerCase().includes(draft.facilityName.toLowerCase()) ||
+                draft.facilityName.toLowerCase().includes(f.name?.toLowerCase() || '')
+              )
             }
+            if (!matchedFac && draft.facilityCode) {
+              matchedFac = activeList.find((f) => f.code?.toLowerCase() === draft.facilityCode.toLowerCase())
+            }
+
+            if (matchedFac) {
+              setSelectedFacility(matchedFac)
+              localStorage.setItem('boxora_selected_facility_id', matchedFac.id)
+            } else if (activeList.length > 0) {
+              // Priority: First facility that actually has AVAILABLE storage units > 0
+              const facWithUnits = activeList.find((f) => {
+                return freshUnits.filter((u: any) => u.facilityId === f.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')).length > 0
+              })
+              const chosen = facWithUnits || activeList[0]
+              setSelectedFacility(chosen)
+              if (chosen) localStorage.setItem('boxora_selected_facility_id', chosen.id)
+            }
+
             if (draft.selectedSizeId) setSelectedSizeId(draft.selectedSizeId)
             if (draft.acMode && draft.selectedSizeId) {
               setAcSelectionMap((prev) => ({ ...prev, [draft.selectedSizeId]: draft.acMode }))
@@ -574,8 +615,13 @@ export const BookingPage: React.FC = () => {
             if (isAuthenticated) {
               sessionStorage.removeItem('boxora_booking_draft')
               localStorage.removeItem('boxora_booking_draft')
+              const pName = user?.fullName || user?.username || draft.customerName || ''
+              if (pName) setCustomerName(pName)
+              const pPhone = user?.phone || (user as any)?.phoneNumber || draft.customerPhone || ''
+              if (pPhone) setCustomerPhone(pPhone)
+              if (user?.email || draft.customerEmail) setCustomerEmail(user?.email || draft.customerEmail)
               const userCccd = (user as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user?.email) || localStorage.getItem('boxora_user_cccd') || ''
-              if (userCccd && !customerIdCard) {
+              if (userCccd) {
                 setCustomerIdCard(userCccd)
               }
               setCurrentStep(4)
@@ -586,19 +632,29 @@ export const BookingPage: React.FC = () => {
           console.warn('Draft restoration error:', e)
         }
 
-        // URL param matching fallback
-        const facParam = searchParams.get('facility')
+        // When no draft exists: determine default facility
+        let defaultFac: Facility | undefined = undefined
         if (facParam && activeList.length > 0) {
-          const matchedFacility = activeList.find(
+          defaultFac = activeList.find(
             (f) =>
               f.id === facParam ||
               (f.code && f.code.toLowerCase() === facParam.toLowerCase()) ||
               (f.name && f.name.toLowerCase().includes(facParam.toLowerCase()))
           )
-          if (matchedFacility) setSelectedFacility(matchedFacility)
-          else if (activeList.length > 0 && !selectedFacility) setSelectedFacility(activeList[0])
-        } else if (activeList.length > 0 && !selectedFacility) {
-          setSelectedFacility(activeList[0])
+        }
+        if (!defaultFac && savedFacId && activeList.length > 0) {
+          defaultFac = activeList.find((f) => String(f.id) === String(savedFacId))
+        }
+        if (!defaultFac && activeList.length > 0) {
+          // Choose first facility that actually has AVAILABLE storage units > 0
+          defaultFac = activeList.find((f) => {
+            return freshUnits.filter((u: any) => u.facilityId === f.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')).length > 0
+          }) || activeList[0]
+        }
+
+        if (defaultFac) {
+          setSelectedFacility(defaultFac)
+          localStorage.setItem('boxora_selected_facility_id', defaultFac.id)
         }
       })
       .finally(() => {
@@ -612,7 +668,8 @@ export const BookingPage: React.FC = () => {
 
   // Dedicated listener to advance to step 4 whenever user is authenticated and has a pending booking draft
   useEffect(() => {
-    if (isAuthenticated) {
+    // CRITICAL: MUST WAIT UNTIL FACILITIES ARE LOADED SO FACILITY ID IS NEVER LOST
+    if (isAuthenticated && facilities.length > 0) {
       try {
         const draftStr = sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')
         if (draftStr) {
@@ -629,9 +686,24 @@ export const BookingPage: React.FC = () => {
           if (draft.specialNotes) setSpecialNotes(draft.specialNotes)
           if (draft.idCardType) setIdCardType(draft.idCardType)
 
-          if (draft.facilityId && facilities.length > 0) {
-            const matched = facilities.find((f) => f.id === draft.facilityId)
-            if (matched) setSelectedFacility(matched)
+          const targetFacId = draft.facilityId || localStorage.getItem('boxora_selected_facility_id') || sessionStorage.getItem('boxora_selected_facility_id')
+          let matched: Facility | undefined = undefined
+          if (targetFacId) {
+            matched = facilities.find((f) => String(f.id) === String(targetFacId))
+          }
+          if (!matched && draft.facilityName) {
+            matched = facilities.find((f) => 
+              f.name?.toLowerCase().trim() === draft.facilityName.toLowerCase().trim() ||
+              f.name?.toLowerCase().includes(draft.facilityName.toLowerCase()) ||
+              draft.facilityName.toLowerCase().includes(f.name?.toLowerCase() || '')
+            )
+          }
+          if (!matched && draft.facilityCode) {
+            matched = facilities.find((f) => f.code?.toLowerCase() === draft.facilityCode.toLowerCase())
+          }
+          if (matched) {
+            setSelectedFacility(matched)
+            localStorage.setItem('boxora_selected_facility_id', matched.id)
           }
 
           // Pre-fill profile info
@@ -793,6 +865,8 @@ export const BookingPage: React.FC = () => {
   const handleSelectFacility = async (fac: Facility) => {
     if (selectedFacility?.id !== fac.id) {
       setSelectedFacility(fac)
+      localStorage.setItem('boxora_selected_facility_id', fac.id)
+      sessionStorage.setItem('boxora_selected_facility_id', fac.id)
       setSelectedSizeId('') // Clear unit selection
       try {
         const res = await storageUnitService.getUnits({ facilityId: fac.id, status: 'AVAILABLE' })
@@ -1131,22 +1205,70 @@ export const BookingPage: React.FC = () => {
     }
 
     setFormErrors(errors)
-    return Object.keys(errors).length === 0
+
+    const errorKeys = Object.keys(errors)
+    if (errorKeys.length > 0) {
+      // Xác định field lỗi đầu tiên theo thứ tự xuất hiện trên form
+      const fieldSequence = [
+        { key: 'checkInTime', id: 'booking-checkin-time' },
+        { key: 'customerName', id: 'booking-customer-name' },
+        { key: 'customerPhone', id: 'booking-customer-phone' },
+        { key: 'customerIdCard', id: 'booking-customer-id-card' },
+        { key: 'customerEmail', id: 'booking-customer-email' },
+        { key: 'specialNotes', id: 'booking-special-notes' },
+        { key: 'policyAccepted', id: 'booking-policy-checkbox' },
+      ]
+
+      const firstFault = fieldSequence.find((f) => errors[f.key])
+      if (firstFault) {
+        toast.warning(errors[firstFault.key], {
+          title: 'Thông tin chưa đầy đủ',
+        })
+
+        // Tự động cuộn và focus thẳng vào field thiếu/lỗi
+        setTimeout(() => {
+          const el = document.getElementById(firstFault.id)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            if (typeof (el as HTMLElement).focus === 'function') {
+              ;(el as HTMLElement).focus()
+            }
+            // Nếu là khối cha (như booking-checkin-time), focus phần tử tương tác đầu tiên bên trong
+            const interactive = el.querySelector<HTMLElement>('input, button, select, textarea')
+            if (interactive && typeof interactive.focus === 'function') {
+              interactive.focus()
+            }
+          }
+        }, 60)
+      }
+      return false
+    }
+
+    return true
   }
 
   // Handle Process Payment & Confirm (DocuSeal E-sign -> VNPay Sandbox)
   const handleProcessPaymentAndConfirm = async (overrideMethod?: 'ONLINE' | 'PAY_LATER') => {
     const selectedMethod = overrideMethod || paymentMethod
 
+    if (isStaffOrManager) {
+      toast.warning('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.', {
+        title: 'Giới hạn quyền thao tác',
+      })
+      setSubmitError('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.')
+      setIsSubmitting(false)
+      return
+    }
+
     if (!customerName.trim() || !customerPhone.trim() || !customerIdCard.trim()) {
       setSubmitError('Vui lòng kiểm tra và điền đầy đủ Họ tên, Số điện thoại và Số CCCD.')
-      setCurrentStep(3)
+      setCurrentStep(4)
       return
     }
 
     if (isPeriodInPast(checkInDate, selectedPeriodId)) {
       setSubmitError('Khung giờ tiếp đón bạn chọn đã kết thúc. Vui lòng chọn khung giờ khác hoặc ngày tiếp theo.')
-      setCurrentStep(3)
+      setCurrentStep(4)
       return
     }
 
@@ -1371,6 +1493,15 @@ export const BookingPage: React.FC = () => {
 
   // Tiếp tục thực hiện thanh toán cho đơn và hợp đồng đã ký trước đó
   const handleContinuePayment = async () => {
+    if (isStaffOrManager) {
+      toast.warning('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.', {
+        title: 'Giới hạn quyền thao tác',
+      })
+      setSubmitError('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.')
+      setIsSubmitting(false)
+      return
+    }
+
     setIsSubmitting(true)
     setSubmitError(null)
 
@@ -1465,6 +1596,8 @@ export const BookingPage: React.FC = () => {
       if (!isAuthenticated || !user) {
         const draft = {
           facilityId: selectedFacility?.id,
+          facilityName: selectedFacility?.name,
+          facilityCode: selectedFacility?.code,
           selectedSizeId,
           acMode: isAcActive ? 'AC' : 'NON_AC',
           durationMode,
@@ -1483,6 +1616,11 @@ export const BookingPage: React.FC = () => {
           targetStep: 4,
         }
         sessionStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+        localStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+        if (selectedFacility?.id) {
+          localStorage.setItem('boxora_selected_facility_id', selectedFacility.id)
+          sessionStorage.setItem('boxora_selected_facility_id', selectedFacility.id)
+        }
         setShowAuthModal(true)
         return
       }
@@ -1528,8 +1666,16 @@ export const BookingPage: React.FC = () => {
       return
     }
     if (currentStep === 5) {
+      if (isStaffOrManager) {
+        toast.warning('Chỉ tài khoản khách hàng mới thực hiện đặt được kho.', {
+          title: 'Giới hạn quyền thao tác',
+        })
+        return
+      }
       if (paymentMethod === 'ONLINE' && isContractAlreadySigned) {
         void handleContinuePayment()
+      } else if (paymentMethod === 'PAY_LATER') {
+        setShowPayLaterConfirmModal(true)
       } else {
         void handleProcessPaymentAndConfirm()
       }
@@ -2479,7 +2625,7 @@ export const BookingPage: React.FC = () => {
                   </div>
 
                   {/* Time Slot Selector */}
-                  <div className="space-y-1.5">
+                  <div id="booking-checkin-time" className="space-y-1.5 scroll-mt-28">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
                         Khung giờ hẹn đến cơ sở
@@ -2586,12 +2732,13 @@ export const BookingPage: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* Full Name */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      <label htmlFor="booking-customer-name" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Họ và tên người thuê <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
+                          id="booking-customer-name"
                           type="text"
                           value={customerName}
                           onChange={(e) => {
@@ -2616,12 +2763,13 @@ export const BookingPage: React.FC = () => {
 
                     {/* Phone */}
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      <label htmlFor="booking-customer-phone" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                         Số điện thoại liên hệ <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
+                          id="booking-customer-phone"
                           type="tel"
                           value={customerPhone}
                           onChange={(e) => {
@@ -2647,7 +2795,7 @@ export const BookingPage: React.FC = () => {
                     {/* Document Selector & Number */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        <label htmlFor="booking-customer-id-card" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                           Loại giấy tờ &amp; Số định danh <span className="text-red-500">*</span>
                         </label>
                         <div className="inline-flex rounded-md bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold">
@@ -2680,6 +2828,7 @@ export const BookingPage: React.FC = () => {
                       <div className="relative">
                         <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
+                          id="booking-customer-id-card"
                           type="text"
                           value={customerIdCard}
                           onChange={(e) => {
@@ -2705,13 +2854,14 @@ export const BookingPage: React.FC = () => {
                     {/* Email */}
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        <label htmlFor="booking-customer-email" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                           Địa chỉ Email nhận phiếu &amp; HĐ <span className="text-red-500">*</span>
                         </label>
                       </div>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
+                          id="booking-customer-email"
                           type="email"
                           value={customerEmail}
                           onChange={(e) => {
@@ -2738,7 +2888,7 @@ export const BookingPage: React.FC = () => {
                   {/* Special Notes with 500 Char Counter */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      <label htmlFor="booking-special-notes" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                         Ghi chú về tài sản lưu trữ hoặc yêu cầu hỗ trợ (tùy chọn)
                       </label>
                       <span className={`text-[10px] ${specialNotes.length > 500 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
@@ -2746,6 +2896,7 @@ export const BookingPage: React.FC = () => {
                       </span>
                     </div>
                     <input
+                      id="booking-special-notes"
                       type="text"
                       maxLength={500}
                       value={specialNotes}
@@ -2764,8 +2915,9 @@ export const BookingPage: React.FC = () => {
 
                 {/* 3. POLICY ACCEPTANCE */}
                 <div className="p-3 sm:p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-2">
-                  <label className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                  <label htmlFor="booking-policy-checkbox" className="flex items-start gap-2.5 text-xs sm:text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
                     <input
+                      id="booking-policy-checkbox"
                       type="checkbox"
                       checked={policyAccepted}
                       onChange={(e) => {
@@ -2898,6 +3050,20 @@ export const BookingPage: React.FC = () => {
                 </p>
               </div>
             </div>
+
+            {isStaffOrManager && (
+              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs sm:text-sm flex items-start gap-3 shadow-xs">
+                <AlertCircle size={20} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-950 dark:text-amber-100">
+                    Chỉ tài khoản khách hàng mới thực hiện đặt được kho
+                  </p>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                    Bạn đang đăng nhập bằng tài khoản <strong>{getRoleDisplayName(userRole)}</strong> ({user?.fullName || user?.username || user?.email}). Các vai trò quản trị và nhân viên chỉ có thể xem báo giá và quy trình ở Bước 5. Để thực hiện ký kết hợp đồng điện tử và thanh toán giữ chỗ, vui lòng đăng nhập bằng tài khoản Khách hàng (Customer).
+                  </p>
+                </div>
+              </div>
+            )}
 
             {submitError && (
               <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-xs sm:text-sm flex items-center gap-2.5">
@@ -3054,9 +3220,33 @@ export const BookingPage: React.FC = () => {
                         </p>
                       </div>
                     ) : (
-                      <p className="text-[11px] text-slate-500 leading-relaxed">
-                        Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {checkInDate}.
-                      </p>
+                      <>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {checkInDate}.
+                        </p>
+                        {!isStaffOrManager && (
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => setShowPayLaterConfirmModal(true)}
+                              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                            >
+                              <CalendarCheck size={16} />
+                              <span>Xác nhận (Ký HĐ &amp; Thanh toán tại cơ sở)</span>
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {isStaffOrManager && (
+                      <div className="pt-2.5 border-t border-amber-200 dark:border-amber-800/70">
+                        <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-200 font-medium flex items-start gap-1.5">
+                          <AlertCircle size={14} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+                          <span>Chỉ tài khoản khách hàng mới thực hiện đặt được kho (Tài khoản hiện tại: <strong>{getRoleDisplayName(userRole)}</strong>).</span>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -3316,35 +3506,44 @@ export const BookingPage: React.FC = () => {
               )}
 
               {currentStep === 5 && (
-                <button
-                  type="button"
-                  disabled={isSubmitting}
-                  onClick={() => {
-                    if (paymentMethod === 'ONLINE' && isContractAlreadySigned) {
-                      void handleContinuePayment()
-                    } else {
-                      void handleProcessPaymentAndConfirm()
-                    }
-                  }}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Đang xử lý...</span>
-                    </span>
-                  ) : (
-                    <span>
-                      {paymentMethod === 'ONLINE'
-                        ? (isContractAlreadySigned
-                            ? 'Tiếp tục thực hiện thanh toán'
-                            : (contractInvalidatedByChange
-                                ? 'Xem và ký lại hợp đồng'
-                                : 'Tiến hành Ký HĐ & Thanh toán trực tuyến'))
-                        : 'Xác nhận (Ký HĐ & Thanh toán tại cơ sở)'}
-                    </span>
-                  )}
-                </button>
+                isStaffOrManager ? (
+                  <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-semibold shadow-xs">
+                    <AlertCircle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Chỉ tài khoản khách hàng mới thực hiện đặt được kho</span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => {
+                      if (paymentMethod === 'ONLINE' && isContractAlreadySigned) {
+                        void handleContinuePayment()
+                      } else if (paymentMethod === 'PAY_LATER') {
+                        setShowPayLaterConfirmModal(true)
+                      } else {
+                        void handleProcessPaymentAndConfirm()
+                      }
+                    }}
+                    className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Đang xử lý...</span>
+                      </span>
+                    ) : (
+                      <span>
+                        {paymentMethod === 'ONLINE'
+                          ? (isContractAlreadySigned
+                              ? 'Tiếp tục thực hiện thanh toán'
+                              : (contractInvalidatedByChange
+                                  ? 'Xem và ký lại hợp đồng'
+                                  : 'Tiến hành Ký HĐ & Thanh toán trực tuyến'))
+                          : 'Xác nhận (Ký HĐ & Thanh toán tại cơ sở)'}
+                      </span>
+                    )}
+                  </button>
+                )
               )}
             </div>
 
@@ -3600,6 +3799,8 @@ export const BookingPage: React.FC = () => {
                 onClick={() => {
                   const draft = {
                     facilityId: selectedFacility?.id,
+                    facilityName: selectedFacility?.name,
+                    facilityCode: selectedFacility?.code,
                     selectedSizeId,
                     acMode: isAcActive ? 'AC' : 'NON_AC',
                     durationMode,
@@ -3608,9 +3809,9 @@ export const BookingPage: React.FC = () => {
                     checkInDate,
                     selectedPeriodId,
                     fullName: customerName.trim(),
-          phone: customerPhone.trim().replace(/[\s.-]/g, ''),
-          email: customerEmail.trim(),
-          customerName: customerName.trim(),
+                    phone: customerPhone.trim().replace(/[\s.-]/g, ''),
+                    email: customerEmail.trim(),
+                    customerName: customerName.trim(),
                     customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
                     customerEmail: customerEmail.trim(),
                     specialNotes: specialNotes.trim(),
@@ -3619,6 +3820,10 @@ export const BookingPage: React.FC = () => {
                   }
                   sessionStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
                   localStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+                  if (selectedFacility?.id) {
+                    localStorage.setItem('boxora_selected_facility_id', selectedFacility.id)
+                    sessionStorage.setItem('boxora_selected_facility_id', selectedFacility.id)
+                  }
                   navigate('/login?redirect=/booking')
                 }}
                 className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all"
@@ -3632,6 +3837,8 @@ export const BookingPage: React.FC = () => {
                 onClick={() => {
                   const draft = {
                     facilityId: selectedFacility?.id,
+                    facilityName: selectedFacility?.name,
+                    facilityCode: selectedFacility?.code,
                     selectedSizeId,
                     acMode: isAcActive ? 'AC' : 'NON_AC',
                     durationMode,
@@ -3640,9 +3847,9 @@ export const BookingPage: React.FC = () => {
                     checkInDate,
                     selectedPeriodId,
                     fullName: customerName.trim(),
-          phone: customerPhone.trim().replace(/[\s.-]/g, ''),
-          email: customerEmail.trim(),
-          customerName: customerName.trim(),
+                    phone: customerPhone.trim().replace(/[\s.-]/g, ''),
+                    email: customerEmail.trim(),
+                    customerName: customerName.trim(),
                     customerPhone: customerPhone.trim().replace(/[\s.-]/g, ''),
                     customerEmail: customerEmail.trim(),
                     specialNotes: specialNotes.trim(),
@@ -3651,6 +3858,10 @@ export const BookingPage: React.FC = () => {
                   }
                   sessionStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
                   localStorage.setItem('boxora_booking_draft', JSON.stringify(draft))
+                  if (selectedFacility?.id) {
+                    localStorage.setItem('boxora_selected_facility_id', selectedFacility.id)
+                    sessionStorage.setItem('boxora_selected_facility_id', selectedFacility.id)
+                  }
                   navigate('/register?redirect=/booking')
                 }}
                 className="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
@@ -3751,6 +3962,29 @@ export const BookingPage: React.FC = () => {
           await logout()
           navigate('/')
         }}
+      />
+
+      {/* Pay Later Appointment Confirm Modal */}
+      <PayLaterAppointmentConfirmModal
+        isOpen={showPayLaterConfirmModal}
+        onClose={() => setShowPayLaterConfirmModal(false)}
+        isSubmitting={isSubmitting}
+        onConfirm={async () => {
+          setShowPayLaterConfirmModal(false)
+          await handleProcessPaymentAndConfirm('PAY_LATER')
+        }}
+        facilityName={selectedFacility?.name}
+        facilityAddress={selectedFacility?.address}
+        unitName={`Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C Máy lạnh' : 'Thường'})`}
+        rentalDuration={rentalDurationText}
+        checkInDate={checkInDate}
+        checkInTime={checkInTime}
+        customerName={customerName.trim()}
+        customerPhone={customerPhone.trim()}
+        customerIdCard={customerIdCard.trim()}
+        totalEstimate={quoteCalculation.totalEstimate}
+        depositAmount={quoteCalculation.depositAmount}
+        rentAmount={quoteCalculation.totalRent}
       />
 
     </div>

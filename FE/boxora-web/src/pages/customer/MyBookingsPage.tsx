@@ -1047,7 +1047,6 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               <span className="text-2xl sm:text-3xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
                 {pendingContactCount}
               </span>
-              <span className="text-xs text-slate-400">CSKH gọi 15-30p</span>
             </div>
           </div>
 

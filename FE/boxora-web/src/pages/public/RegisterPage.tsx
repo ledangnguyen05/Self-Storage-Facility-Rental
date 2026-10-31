@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import {
   User,
@@ -60,6 +60,68 @@ export const RegisterPage: React.FC = () => {
   const [googleNotice, setGoogleNotice] = useState<string | null>(
     googleRedirectState?.message || null
   )
+
+  // Document Type: CCCD (12 digits) or Passport (1 uppercase letter + 7 digits)
+  const [idCardType, setIdCardType] = useState<'CCCD' | 'PASSPORT'>('CCCD')
+
+  const handleIdCardChange = (val: string) => {
+    if (idCardType === 'CCCD') {
+      // If user typed a letter, automatically switch to PASSPORT mode
+      if (/^[A-Za-z]/.test(val)) {
+        setIdCardType('PASSPORT')
+        const first = val.charAt(0).toUpperCase()
+        const rest = val.slice(1).replace(/\D/g, '').slice(0, 7)
+        setFormData((prev) => ({ ...prev, identityCardNumber: `${first}${rest}` }))
+        return
+      }
+      const digits = val.replace(/\D/g, '').slice(0, 12)
+      setFormData((prev) => ({ ...prev, identityCardNumber: digits }))
+    } else {
+      // PASSPORT mode: 1 uppercase letter + 7 digits
+      const trimmed = val.trim()
+      if (!trimmed) {
+        setFormData((prev) => ({ ...prev, identityCardNumber: '' }))
+        return
+      }
+      // If user cleared and entered 9-12 digits, switch back to CCCD
+      if (/^\d{9,12}$/.test(trimmed)) {
+        setIdCardType('CCCD')
+        setFormData((prev) => ({ ...prev, identityCardNumber: trimmed.slice(0, 12) }))
+        return
+      }
+      const first = trimmed.charAt(0).toUpperCase()
+      if (/[A-Z]/.test(first)) {
+        const rest = trimmed.slice(1).replace(/\D/g, '').slice(0, 7)
+        setFormData((prev) => ({ ...prev, identityCardNumber: `${first}${rest}` }))
+      } else {
+        const cleaned = trimmed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase()
+        setFormData((prev) => ({ ...prev, identityCardNumber: cleaned }))
+      }
+    }
+  }
+
+  const idCardValidation = useMemo(() => {
+    const val = formData.identityCardNumber.trim()
+    if (!val) {
+      return {
+        isValid: false,
+        message: idCardType === 'CCCD' ? 'Vui lòng nhập 12 số CCCD' : 'Vui lòng nhập 1 chữ cái in hoa + 7 số Hộ chiếu',
+      }
+    }
+    if (idCardType === 'CCCD') {
+      const is12Digits = /^[0-9]{12}$/.test(val)
+      return {
+        isValid: is12Digits,
+        message: is12Digits ? '' : `Số CCCD bắt buộc phải gồm đúng 12 chữ số (hiện có ${val.length}/12)`,
+      }
+    } else {
+      const isPassport = /^[A-Z][0-9]{7}$/.test(val)
+      return {
+        isValid: isPassport,
+        message: isPassport ? '' : 'Hộ chiếu phải gồm 1 chữ cái in hoa đầu tiên theo sau là đúng 7 số (VD: B1234567)',
+      }
+    }
+  }, [formData.identityCardNumber, idCardType])
 
   // Anti-bot & Captcha states
   const [captchaId, setCaptchaId] = useState<string>('')
@@ -181,19 +243,42 @@ export const RegisterPage: React.FC = () => {
       return
     }
 
-    // 3. Password matching check
+    // 3. CCCD / Hộ chiếu validation
+    const idCardVal = formData.identityCardNumber.trim()
+    if (!idCardVal) {
+      setError(
+        idCardType === 'CCCD'
+          ? 'Vui lòng nhập số CCCD (bắt buộc gồm đúng 12 chữ số).'
+          : 'Vui lòng nhập số Hộ chiếu (1 chữ cái in hoa theo sau là đúng 7 chữ số, VD: B1234567).'
+      )
+      return
+    }
+
+    if (idCardType === 'CCCD') {
+      if (!/^[0-9]{12}$/.test(idCardVal)) {
+        setError('Số CCCD không hợp lệ. Bắt buộc phải gồm đúng 12 chữ số (VD: 079123456789).')
+        return
+      }
+    } else {
+      if (!/^[A-Z][0-9]{7}$/.test(idCardVal)) {
+        setError('Số Hộ chiếu không hợp lệ. Chữ cái đầu tiên phải in hoa theo sau là đúng 7 chữ số (VD: B1234567).')
+        return
+      }
+    }
+
+    // 4. Password matching check
     if (formData.password !== formData.confirmPassword) {
       setError('Mật khẩu nhập lại không trùng khớp. Vui lòng kiểm tra lại.')
       return
     }
 
-    // 4. Captcha validation
+    // 5. Captcha validation
     if (!captchaInput.trim()) {
       setError('Vui lòng nhập mã xác thực Captcha để hoàn tất đăng ký.')
       return
     }
 
-    // 5. Terms check
+    // 6. Terms check
     if (!agreeTerms) {
       setError('Vui lòng đồng ý với Điều khoản & Quy chuẩn an toàn kho Boxora.')
       return
@@ -217,6 +302,8 @@ export const RegisterPage: React.FC = () => {
       if (formData.identityCardNumber.trim()) {
         localStorage.setItem('boxora_user_cccd_' + formData.email.trim(), formData.identityCardNumber.trim())
         localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
+        localStorage.setItem('boxora_user_id_type_' + formData.email.trim(), idCardType)
+        localStorage.setItem('boxora_user_id_type', idCardType)
       }
 
       // Auto login immediately so user is authenticated without having to manually log in again
@@ -585,15 +672,57 @@ export const RegisterPage: React.FC = () => {
                 </div>
 
                 {/* Field: So CCCD / Dinh danh ca nhan */}
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-800 dark:text-slate-200">
-                      Số CCCD / Hộ chiếu
+                      Số CCCD / Hộ chiếu <span className="text-red-500">*</span>
                     </label>
-                    <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium">
-                      Tự động điền khi thuê kho &amp; cấp mã PIN
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold border border-slate-200/80 dark:border-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIdCardType('CCCD')
+                            setFormData((prev) => ({
+                              ...prev,
+                              identityCardNumber: prev.identityCardNumber.replace(/\D/g, '').slice(0, 12),
+                            }))
+                          }}
+                          className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                            idCardType === 'CCCD'
+                              ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs font-extrabold'
+                              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                          }`}
+                        >
+                          CCCD
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIdCardType('PASSPORT')
+                            const raw = formData.identityCardNumber.trim()
+                            if (raw) {
+                              const first = raw.charAt(0).toUpperCase()
+                              const isLetter = /[A-Z]/.test(first)
+                              const rest = (isLetter ? raw.slice(1) : raw).replace(/\D/g, '').slice(0, 7)
+                              setFormData((prev) => ({
+                                ...prev,
+                                identityCardNumber: `${isLetter ? first : 'B'}${rest}`,
+                              }))
+                            }
+                          }}
+                          className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                            idCardType === 'PASSPORT'
+                              ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs font-extrabold'
+                              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                          }`}
+                        >
+                          Hộ chiếu
+                        </button>
+                      </div>
+                    </div>
                   </div>
+
                   <div className="relative flex items-center">
                     <div className="absolute left-3.5 text-slate-400 pointer-events-none">
                       <CreditCard className="w-4 h-4" />
@@ -601,11 +730,52 @@ export const RegisterPage: React.FC = () => {
                     <input
                       type="text"
                       value={formData.identityCardNumber}
-                      onChange={(e) => setFormData({ ...formData, identityCardNumber: e.target.value.replace(/\D/g, '').slice(0, 12) })}
-                      placeholder="Nhập 12 số CCCD (VD: 079123456789)"
-                      className="w-full h-10.5 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 transition-all font-mono"
+                      onChange={(e) => handleIdCardChange(e.target.value)}
+                      placeholder={
+                        idCardType === 'CCCD'
+                          ? 'Nhập 12 số CCCD (VD: 079123456789)'
+                          : '1 chữ cái in hoa + 7 số (VD: B1234567)'
+                      }
+                      maxLength={idCardType === 'CCCD' ? 12 : 8}
+                      className={`w-full h-10.5 pl-10 pr-20 rounded-xl border bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none transition-all font-mono font-medium ${
+                        idCardValidation.isValid
+                          ? 'border-emerald-500 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/10'
+                          : formData.identityCardNumber
+                          ? 'border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-500/10'
+                          : 'border-slate-200 dark:border-slate-700 focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10'
+                      }`}
                     />
+                    <div className="absolute right-3 flex items-center gap-1">
+                      {idCardValidation.isValid ? (
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                          <Check size={11} strokeWidth={3} /> Hợp lệ
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {formData.identityCardNumber.length}/{idCardType === 'CCCD' ? 12 : 8}
+                        </span>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Dynamic validation error or hint */}
+                  {formData.identityCardNumber && !idCardValidation.isValid ? (
+                    <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 font-medium mt-0.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{idCardValidation.message}</span>
+                    </p>
+                  ) : (
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 px-0.5">
+                      <span>
+                        {idCardType === 'CCCD'
+                          ? 'Bắt buộc đúng 12 chữ số'
+                          : 'Bắt buộc 1 chữ cái in hoa đầu tiên + 7 số'}
+                      </span>
+                      <span className="text-blue-600 dark:text-blue-400 font-medium">
+                        Tự động điền khi thuê kho &amp; cấp mã PIN
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Field 4 & 5: Mật khẩu & Nhập lại mật khẩu (2 columns) */}

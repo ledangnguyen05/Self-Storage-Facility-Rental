@@ -42,6 +42,99 @@ export interface Facility {
   status?: string
 }
 
+export type ZoneType =
+  | 'MINI_STORAGE'
+  | 'STANDARD_STORAGE'
+  | 'BUSINESS_STORAGE'
+  | 'LARGE_STORAGE'
+  | 'CLIMATE_CONTROLLED'
+  | 'COLD_STORAGE'
+  | 'SPECIAL_STORAGE'
+  | 'UNEXPLOITED'
+  | 'CUSTOM'
+
+export interface FacilityZone {
+  id: string
+  floorId: string
+  name: string
+  code: string
+  zoneType: ZoneType
+  customTypeLabel?: string
+  area: number
+  description?: string
+  status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE'
+  displayOrder: number
+}
+
+export type FunctionalAreaType =
+  | 'LOADING_BAY'
+  | 'DISPATCH_BAY'
+  | 'STAGING_AREA'
+  | 'MAIN_CORRIDOR'
+  | 'SUB_CORRIDOR'
+  | 'STAIRCASE'
+  | 'PASSENGER_ELEVATOR'
+  | 'CARGO_ELEVATOR'
+  | 'CARGO_LIFT'
+  | 'ACCESS_RAMP'
+  | 'EMERGENCY_EXIT'
+  | 'FIRE_DOOR'
+  | 'TECHNICAL_ROOM'
+  | 'ELECTRICAL_ROOM'
+  | 'HVAC_ROOM'
+  | 'OFFICE'
+  | 'SECURITY_GUARD'
+  | 'RESTROOM'
+  | 'TROLLEY_BAY'
+  | 'PARKING'
+  | 'OTHER'
+
+export interface FunctionalAreaAttributes {
+  maxPayloadKg?: number
+  capacityPersons?: number
+  servedFloors?: string[]
+  exitDirection?: string
+  coverageArea?: string
+  mapLocationNote?: string
+}
+
+export interface FacilityFunctionalArea {
+  id: string
+  floorId: string
+  name: string
+  code: string
+  areaType: FunctionalAreaType
+  customTypeLabel?: string
+  area?: number
+  description?: string
+  status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE'
+  displayOrder: number
+  attributes?: FunctionalAreaAttributes
+}
+
+export interface FacilityFloor {
+  id: string
+  name: string
+  code: string
+  floorNumber: number
+  totalArea: number
+  height?: number
+  loadCapacity?: number
+  description?: string
+  status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE'
+  displayOrder: number
+  zones: FacilityZone[]
+  functionalAreas: FacilityFunctionalArea[]
+}
+
+export interface FacilityFloorPlanConfig {
+  version: 2
+  title: string
+  totalFloorsCount?: number
+  floors: FacilityFloor[]
+  legacy?: Partial<FacilityLayoutConfig>
+}
+
 export interface FacilityLayoutConfig {
   title: string
   floor1Name: string
@@ -60,6 +153,8 @@ export interface FacilityLayoutConfig {
   exitFloor2: string
   totalAreaFloor1: string
   totalAreaFloor2: string
+  version?: number
+  floors?: FacilityFloor[]
 }
 
 export interface UnitType {
