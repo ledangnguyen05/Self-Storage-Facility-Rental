@@ -1313,8 +1313,10 @@ public class BookingServiceImpl implements BookingService {
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         String contractStatus = contractOpt.map(c -> c.getStatus().name()).orElse("CHƯA_TẠO");
         boolean contractSigned = contractOpt.isPresent() && (
-                contractOpt.get().getStatus() == RentalContractStatus.PENDING_ACTIVATION
+                contractOpt.get().getSignedAt() != null
+                        || contractOpt.get().getStatus() == RentalContractStatus.PENDING_ACTIVATION
                         || contractOpt.get().getStatus() == RentalContractStatus.ACTIVE
+                        || (contractOpt.get().getStatus() == RentalContractStatus.CANCELLED && (contractOpt.get().getSignedDocumentUrl() != null || contractOpt.get().getDocusealSubmissionId() != null))
         );
 
         int maxDays = (policy != null && policy.getMaxHoldDays() != null) ? policy.getMaxHoldDays() : maxAdvanceDays;
@@ -1850,6 +1852,17 @@ public class BookingServiceImpl implements BookingService {
                         return "REFUND_PENDING";
                     }
                 }
+                for (com.boxora.entity.Payment p : payments) {
+                    if (p.getStatus() == PaymentStatus.PAID) {
+                        return "PAID";
+                    }
+                }
+            }
+            if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                return "PAID";
+            }
+            if ("PAID".equalsIgnoreCase(booking.getPaymentStatus())) {
+                return "PAID";
             }
             return "UNPAID";
         }
@@ -2042,12 +2055,18 @@ public class BookingServiceImpl implements BookingService {
                     contractId = c.getId();
                     contractCode = c.getContractCode();
                     contractStatus = c.getStatus() != null ? c.getStatus().name() : null;
-                    contractSigned = c.getStatus() != RentalContractStatus.SUPERSEDED
-                            && c.getStatus() != RentalContractStatus.PENDING_SIGNATURE
-                            && c.getStatus() != RentalContractStatus.CANCELLED
-                            && (c.getSignedAt() != null
+                    boolean wasSigned = (c.getSignedAt() != null
+                            || c.getSignedDocumentUrl() != null
+                            || c.getSignatureData() != null
+                            || c.getDocusealSubmissionId() != null
                             || c.getStatus() == RentalContractStatus.PENDING_ACTIVATION
                             || c.getStatus() == RentalContractStatus.ACTIVE);
+                    contractSigned = c.getStatus() != RentalContractStatus.SUPERSEDED
+                            && c.getStatus() != RentalContractStatus.PENDING_SIGNATURE
+                            && wasSigned;
+                    if (!contractSigned && Boolean.TRUE.equals(b.getContractSigned())) {
+                        contractSigned = true;
+                    }
                 }
             } catch (Exception ignored) {
             }

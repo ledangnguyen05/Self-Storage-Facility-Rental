@@ -945,13 +945,32 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
         const isCancelled = s === 'CANCELLED' || s === 'REJECTED'
         const isModalPaidPending = !isCancelled && (s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !reviewDetailBooking.storageUnitId))
         const isModalConfirmed = !isCancelled && ((s === 'CONFIRMED' && Boolean(reviewDetailBooking.storageUnitId)) || s === 'AWAITING_CHECKIN')
-        const isModalContractSigned = !isCancelled && (Boolean(reviewDetailBooking.contractSigned) || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION' || reviewDetailBooking.contractStatus === 'ACTIVE')
-        const hasModalContract = !isCancelled && Boolean(reviewDetailBooking.contractCode || reviewDetailBooking.contractId || reviewDetailBooking.paymentStatus === 'PAID' || isModalConfirmed || s === 'ACTIVE' || s === 'COMPLETED')
-        const sched = getBookingScheduleInfo(reviewDetailBooking)
         const modalIsInPerson = reviewDetailBooking.signingMethod === 'IN_PERSON'
           || (reviewDetailBooking as any).signingMethod === 'in_person'
           || (reviewDetailBooking as any).paymentMethod === 'AT_FACILITY'
           || (reviewDetailBooking as any).paymentMethod === 'IN_PERSON'
+
+        const isModalContractSigned = Boolean(reviewDetailBooking.contractSigned)
+          || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION'
+          || reviewDetailBooking.contractStatus === 'ACTIVE'
+          || (!modalIsInPerson && Boolean(reviewDetailBooking.contractCode) && (
+              reviewDetailBooking.paymentStatus === 'PAID' ||
+              reviewDetailBooking.paymentStatus === 'REFUNDED' ||
+              reviewDetailBooking.paymentStatus === 'REFUND_PENDING' ||
+              s === 'PAID_AND_SIGNED' ||
+              s === 'PAID_PENDING_ASSIGNMENT'
+            ))
+
+        const hasModalContract = Boolean(
+          reviewDetailBooking.contractCode ||
+          reviewDetailBooking.contractId ||
+          reviewDetailBooking.paymentStatus === 'PAID' ||
+          isModalConfirmed ||
+          isModalContractSigned ||
+          s === 'ACTIVE' ||
+          s === 'COMPLETED'
+        )
+        const sched = getBookingScheduleInfo(reviewDetailBooking)
         const modalCheckInMs = reviewDetailBooking.expectedCheckInAt 
           ? new Date(reviewDetailBooking.expectedCheckInAt).getTime() 
           : (reviewDetailBooking.startDate ? new Date(reviewDetailBooking.startDate + 'T' + ((reviewDetailBooking as any).checkInTime?.split(' - ')[0] || '09:00') + ':00').getTime() : 0)
@@ -1020,7 +1039,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                     )}
                     <div className="text-[11px] opacity-90 flex items-center gap-2 flex-wrap font-mono">
                       <span>Mã HĐ: <strong className="text-blue-700 dark:text-blue-400 font-bold">{reviewDetailBooking.contractCode || `CTR-${reviewDetailBooking.bookingCode}`}</strong></span>
-                      {isCancelled ? null : isModalContractSigned ? (
+                      {isModalContractSigned ? (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-sans font-semibold">
                           ✓ Đã ký điện tử
                         </span>

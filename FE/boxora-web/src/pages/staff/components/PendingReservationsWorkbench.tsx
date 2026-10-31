@@ -555,17 +555,20 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                   const s = String(b.status || '').toUpperCase()
                   const isCancelled = s === 'CANCELLED' || s === 'REJECTED'
                   const isHighlighted = highlightedBookingCode === b.bookingCode
-                  const isContractSigned = Boolean(b.contractSigned) || b.contractStatus === 'PENDING_ACTIVATION' || b.contractStatus === 'ACTIVE'
-                  const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID')
-                  const isPaidPending = !isCancelled && s === 'PENDING_PAYMENT' && b.paymentStatus === 'PAID'
-                  const isConfirmed = !isCancelled && (s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending)
-                  const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
-                  const isPending = !isCancelled && !isConfirmed && !isActiveOrCompleted && (s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || s === 'PENDING' || !s)
                   const isInPerson = b.signingMethod === 'IN_PERSON' 
                     || (b as any).signingMethod === 'in_person' 
                     || (b as any).paymentMethod === 'AT_FACILITY' 
                     || (b as any).paymentMethod === 'IN_PERSON'
                     || (b as any).isDirectPayment
+                  const isContractSigned = Boolean(b.contractSigned)
+                    || b.contractStatus === 'PENDING_ACTIVATION'
+                    || b.contractStatus === 'ACTIVE'
+                    || (!isInPerson && Boolean(b.contractCode) && (b.paymentStatus === 'PAID' || b.paymentStatus === 'REFUNDED' || b.paymentStatus === 'REFUND_PENDING' || s === 'PAID_AND_SIGNED' || s === 'PAID_PENDING_ASSIGNMENT'))
+                  const hasContract = Boolean(b.contractCode || b.contractId || b.paymentStatus === 'PAID' || isContractSigned)
+                  const isPaidPending = !isCancelled && s === 'PENDING_PAYMENT' && b.paymentStatus === 'PAID'
+                  const isConfirmed = !isCancelled && (s === 'CONFIRMED' || (s as string) === 'CHECKIN_STEP1_COMPLETED' || isPaidPending)
+                  const isActiveOrCompleted = s === 'ACTIVE' || s === 'COMPLETED'
+                  const isPending = !isCancelled && !isConfirmed && !isActiveOrCompleted && (s === 'PENDING_CONTACT' || s === 'PENDING_PAYMENT' || s === 'PENDING_APPROVAL' || (s as string) === 'PENDING_SIGNATURE' || s === 'PENDING' || !s)
 
                   const checkInTimeMs = b.expectedCheckInAt 
                     ? new Date(b.expectedCheckInAt).getTime() 
@@ -692,22 +695,20 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                             </span>
                           )}
 
-                          {!isCancelled && (
-                            isContractSigned ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <span className="material-symbols-outlined text-[12px]">draw</span>
-                                <span>Đã ký HĐ điện tử</span>
-                              </span>
-                            ) : b.signingMethod === 'IN_PERSON' ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                                <span>🏢 Ký giấy tại quầy</span>
-                              </span>
-                            ) : hasContract ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                                <span>⏳ Chờ khách ký HĐ</span>
-                              </span>
-                            ) : null
-                          )}
+                          {isContractSigned ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="material-symbols-outlined text-[12px]">draw</span>
+                              <span>Đã ký HĐ điện tử</span>
+                            </span>
+                          ) : isInPerson ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                              <span>🏢 Ký giấy tại quầy</span>
+                            </span>
+                          ) : hasContract && !isCancelled ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                              <span>⏳ Chờ khách ký HĐ</span>
+                            </span>
+                          ) : null}
                           {b.assignedStaffName ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200" title={`Nhân sự tiếp nhận: ${b.assignedStaffName}`}>
                               <span className="material-symbols-outlined text-[12px]">person</span>
@@ -1157,13 +1158,40 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
         const isCancelled = s === 'CANCELLED' || s === 'REJECTED'
         const isModalPaidPending = !isCancelled && (s === 'PAID_PENDING_ASSIGNMENT' || s === 'PAID_AND_SIGNED' || (s === 'CONFIRMED' && !reviewDetailBooking.storageUnitId))
         const isModalConfirmed = !isCancelled && ((s === 'CONFIRMED' && Boolean(reviewDetailBooking.storageUnitId)) || s === 'AWAITING_CHECKIN')
-        const isModalContractSigned = !isCancelled && (Boolean(reviewDetailBooking.contractSigned) || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION' || reviewDetailBooking.contractStatus === 'ACTIVE')
-        const hasModalContract = !isCancelled && Boolean(reviewDetailBooking.contractCode || reviewDetailBooking.contractId || reviewDetailBooking.paymentStatus === 'PAID' || isModalConfirmed || s === 'ACTIVE' || s === 'COMPLETED')
         const sched = getBookingScheduleInfo(reviewDetailBooking)
         const modalIsInPerson = reviewDetailBooking.signingMethod === 'IN_PERSON'
           || (reviewDetailBooking as any).signingMethod === 'in_person'
           || (reviewDetailBooking as any).paymentMethod === 'AT_FACILITY'
           || (reviewDetailBooking as any).paymentMethod === 'IN_PERSON'
+
+        const pStatus = String(reviewDetailBooking.paymentStatus || '').toUpperCase()
+        const isModalRefunded = pStatus === 'REFUNDED'
+        const isModalRefundPending = pStatus === 'REFUND_PENDING'
+        const isModalPaid = pStatus === 'PAID'
+          || Number(reviewDetailBooking.depositPaid || 0) > 0
+          || (!modalIsInPerson && (s === 'PAID_AND_SIGNED' || s === 'PAID_PENDING_ASSIGNMENT' || s === 'CONFIRMED' || s === 'ACTIVE'))
+
+        const isModalContractSigned = Boolean(reviewDetailBooking.contractSigned)
+          || reviewDetailBooking.contractStatus === 'PENDING_ACTIVATION'
+          || reviewDetailBooking.contractStatus === 'ACTIVE'
+          || (!modalIsInPerson && Boolean(reviewDetailBooking.contractCode) && (
+              isModalPaid ||
+              isModalRefundPending ||
+              isModalRefunded ||
+              s === 'PAID_AND_SIGNED' ||
+              s === 'PAID_PENDING_ASSIGNMENT' ||
+              Boolean(reviewDetailBooking.contractId)
+            ))
+
+        const hasModalContract = Boolean(
+          reviewDetailBooking.contractCode ||
+          reviewDetailBooking.contractId ||
+          isModalPaid ||
+          isModalConfirmed ||
+          isModalContractSigned ||
+          s === 'ACTIVE' ||
+          s === 'COMPLETED'
+        )
         const modalCheckInMs = reviewDetailBooking.expectedCheckInAt 
           ? new Date(reviewDetailBooking.expectedCheckInAt).getTime() 
           : (reviewDetailBooking.startDate ? new Date(reviewDetailBooking.startDate + 'T' + ((reviewDetailBooking as any).checkInTime?.split(' - ')[0] || '09:00') + ':00').getTime() : 0)
@@ -1232,16 +1260,40 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                   <div className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] flex items-center justify-between">
                     <span>3. Thanh Toán &amp; Hợp Đồng</span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                      reviewDetailBooking.paymentStatus === 'PAID' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      isModalRefunded
+                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                        : isModalRefundPending
+                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : isModalPaid
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : modalIsInPerson
+                        ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                        : 'bg-slate-100 text-slate-700 border border-slate-200'
                     }`}>
-                      {reviewDetailBooking.paymentStatus === 'PAID' ? 'ĐÃ THANH TOÁN' : 'CHƯA THANH TOÁN'}
+                      {isModalRefunded
+                        ? 'ĐÃ HOÀN TIỀN'
+                        : isModalRefundPending
+                        ? 'CHỜ HOÀN TIỀN'
+                        : isModalPaid
+                        ? 'ĐÃ THANH TOÁN'
+                        : modalIsInPerson
+                        ? 'CHƯA THANH TOÁN (Thu tại quầy)'
+                        : 'CHƯA THANH TOÁN'}
                     </span>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
                     <div>Tổng tiền thuê: <strong className="text-slate-900 dark:text-white">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(reviewDetailBooking.totalRentalFee || 0))}</strong></div>
                     <div>Tiền cọc: <strong>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(reviewDetailBooking.depositAmount || 0))}</strong></div>
                     <div>Hình thức ký: <strong>{modalIsInPerson ? '🏢 Ký giấy tại quầy' : '✍️ Ký điện tử'}</strong></div>
-                    <div>Trạng thái ký: <strong>{isModalContractSigned ? 'Đã ký hoàn tất' : hasModalContract ? 'Chờ ký' : 'Chưa ký'}</strong></div>
+                    <div>Trạng thái ký: <strong>{
+                      modalIsInPerson
+                        ? 'Chưa ký (Ký giấy tại quầy khi nhận kho)'
+                        : isModalContractSigned
+                        ? 'Đã ký hoàn tất'
+                        : hasModalContract
+                        ? 'Chờ ký điện tử'
+                        : 'Chưa ký'
+                    }</strong></div>
                   </div>
                 </div>
 
