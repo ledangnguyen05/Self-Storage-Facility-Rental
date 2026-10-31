@@ -1003,6 +1003,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
       return true
     })
+  }, [bookings, searchTerm, facilityFilter, statusFilter])
+
   // Relevant facilities that the customer currently has bookings with
   const relevantFacilities = useMemo(() => {
     const map = new Map<string, string>()
