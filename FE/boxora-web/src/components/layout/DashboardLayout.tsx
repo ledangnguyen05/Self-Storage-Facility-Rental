@@ -22,9 +22,11 @@ export const DashboardLayout: React.FC = () => {
   const assignedFacilityId = user?.facilityId
 
   const [facilities, setFacilities] = useState<Facility[]>([])
-  const [selectedFacility, setSelectedFacility] = useState<string>(
-    isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : 'ALL'
-  )
+  const [selectedFacility, setSelectedFacility] = useState<string>(() => {
+    if (isFacilityScopedRole && assignedFacilityId) return assignedFacilityId
+    if (location.pathname.includes('/facility-manager')) return ''
+    return 'ALL'
+  })
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false)
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
@@ -62,6 +64,8 @@ export const DashboardLayout: React.FC = () => {
 
         if (isFacilityScopedRole && assignedFacilityId) {
           setSelectedFacility(assignedFacilityId)
+        } else if (isFacilityManagerPage && list.length > 0) {
+          setSelectedFacility(list[0].id)
         } else {
           setSelectedFacility('ALL')
         }
@@ -69,18 +73,32 @@ export const DashboardLayout: React.FC = () => {
       .catch(err => {
         console.warn('Failed to load facilities in DashboardLayout:', err)
       })
-  }, [isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode])
+  }, [isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode, isFacilityManagerPage])
 
-  // When switching between dashboard sections, always default facility filter to 'ALL' (Toàn hệ thống)
+  // When switching between dashboard sections, default facility filter to 'ALL' (Toàn hệ thống),
+  // except for SƠ ĐỒ CƠ SỞ KHO (/portal/facility-manager) where a concrete facility branch must be selected.
   const prevPathRef = useRef(location.pathname)
   useEffect(() => {
     if (prevPathRef.current !== location.pathname) {
       prevPathRef.current = location.pathname
       if (!isFacilityScopedRole) {
-        setSelectedFacility('ALL')
+        if (isFacilityManagerPage) {
+          if (facilities.length > 0) {
+            setSelectedFacility(facilities[0].id)
+          }
+        } else {
+          setSelectedFacility('ALL')
+        }
       }
     }
-  }, [location.pathname, isFacilityScopedRole])
+  }, [location.pathname, isFacilityScopedRole, isFacilityManagerPage, facilities])
+
+  // Ensure that on facility manager page (SƠ ĐỒ CƠ SỞ KHO), we never stay on 'ALL' (always select a specific branch)
+  useEffect(() => {
+    if (isFacilityManagerPage && (!selectedFacility || selectedFacility === 'ALL') && facilities.length > 0) {
+      setSelectedFacility(facilities[0].id)
+    }
+  }, [isFacilityManagerPage, selectedFacility, facilities])
 
   useEffect(() => {
     if (isFacilityScopedRole && assignedFacilityId) {
@@ -93,6 +111,12 @@ export const DashboardLayout: React.FC = () => {
   const handleSetSelectedFacility = (facId: string) => {
     if (isFacilityScopedRole && assignedFacilityId) {
       setSelectedFacility(assignedFacilityId)
+      return
+    }
+    if (isFacilityManagerPage && (facId === 'ALL' || !facId)) {
+      if (facilities.length > 0) {
+        setSelectedFacility(facilities[0].id)
+      }
       return
     }
     setSelectedFacility(facId)
@@ -175,7 +199,9 @@ export const DashboardLayout: React.FC = () => {
                       onChange={(e) => handleSetSelectedFacility(e.target.value)}
                       className="bg-transparent font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer pr-1"
                     >
-                      <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
+                      {!isFacilityManagerPage && (
+                        <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
+                      )}
                       {facilities.length > 0 ? (
                         facilities.map(f => (
                           <option key={f.id} value={f.id}>
@@ -285,7 +311,9 @@ export const DashboardLayout: React.FC = () => {
                   onChange={(e) => handleSetSelectedFacility(e.target.value)}
                   className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer"
                 >
-                  <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
+                  {!isFacilityManagerPage && (
+                    <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
+                  )}
                   {facilities.length > 0 && facilities.map(f => (
                     <option key={f.id} value={f.id}>
                       {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})

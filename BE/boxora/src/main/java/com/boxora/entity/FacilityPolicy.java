@@ -100,4 +100,17 @@ public class FacilityPolicy extends BaseEntity {
     @OneToMany(mappedBy = "facilityPolicy", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<FacilityPolicyPrice> prices = new ArrayList<>();
+
+    public String getEffectiveVersion() {
+        if (getUpdatedAt() != null) {
+            return "v" + getUpdatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd.HHmm"));
+        }
+        if (getCreatedAt() != null) {
+            return "v" + getCreatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd.HHmm"));
+        }
+        if (getId() != null) {
+            return "v1.0-" + getId().toString().substring(0, 8);
+        }
+        return "v1.0";
+    }
 }

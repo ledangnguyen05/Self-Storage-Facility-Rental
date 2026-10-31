@@ -471,12 +471,27 @@ export function DocuSealSimulationModal({
               </div>
             </div>
 
-            <div className="rounded-lg bg-slate-100/60 p-3 border border-slate-200 text-[11px] space-y-1">
+            <div className="rounded-lg bg-slate-100/60 p-3 border border-slate-200 text-[11px] space-y-1.5">
               <strong className="text-slate-900 block font-semibold">Cam kết & Điều khoản chung:</strong>
               <ul className="list-disc pl-4 space-y-0.5 text-slate-600">
                 <li>Bên B cam đoan không chứa hàng cấm, vũ khí, chất cháy nổ hoặc động vật sống.</li>
                 <li>Mã PIN bảo mật cá nhân chỉ được kích hoạt và cấp phát sau khi hoàn tất đối soát đủ 4 điều kiện check-in và bàn giao kho tại cơ sở.</li>
                 <li>Thời gian thanh toán định kỳ hàng tháng tuân thủ theo chính sách tự quản Boxora.</li>
+                {(contract.policyConfirmationStatement || contract.policyVersion || (booking as any)?.policyVersion) && (
+                  <li className="text-blue-900 font-medium">
+                    {contract.policyConfirmationStatement || (
+                      `Khách hàng xác nhận đã được cung cấp và đã đồng ý với Chính sách hủy hợp đồng và hoàn tiền Boxora, phiên bản ${
+                        contract.policyVersion || (booking as any)?.policyVersion || 'v2026.1'
+                      }, tại thời điểm ${
+                        contract.policyConfirmedAt
+                          ? new Date(contract.policyConfirmedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                          : (booking as any)?.policyConfirmedAt
+                          ? new Date((booking as any).policyConfirmedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+                          : 'thời điểm xác nhận trực tuyến'
+                      }.`
+                    )}
+                  </li>
+                )}
               </ul>
             </div>
           </div>

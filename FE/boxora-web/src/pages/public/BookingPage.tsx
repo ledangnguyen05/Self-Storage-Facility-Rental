@@ -45,9 +45,12 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
+import { cancellationPolicyService } from '../../services/cancellationPolicyService'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { FacilityNoUnitsModal } from '../../components/modals/FacilityNoUnitsModal'
 import { PayLaterAppointmentConfirmModal } from '../../components/modals/PayLaterAppointmentConfirmModal'
+import { CancellationPolicyConfirmModal } from '../../components/modals/CancellationPolicyConfirmModal'
+import { CancellationPolicyDetail } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { AccountProfileModal } from '../../components/common/AccountProfileModal'
@@ -496,6 +499,13 @@ export const BookingPage: React.FC = () => {
   const [bookingCode, setBookingCode] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState<boolean>(false)
   const [showPayLaterConfirmModal, setShowPayLaterConfirmModal] = useState<boolean>(false)
+
+  // Cancellation Policy confirmation state (Xác nhận điều khoản hủy trước khi mở DocuSeal)
+  const [showPolicyConfirmModal, setShowPolicyConfirmModal] = useState<boolean>(false)
+  const [policyDetail, setPolicyDetail] = useState<CancellationPolicyDetail | null>(null)
+  const [isLoadingPolicy, setIsLoadingPolicy] = useState<boolean>(false)
+  const [policyError, setPolicyError] = useState<string | null>(null)
+  const [isConfirmingPolicy, setIsConfirmingPolicy] = useState<boolean>(false)
 
   // DocuSeal e-Signing state (Bước 2: Ký hợp đồng trực tuyến trước khi thanh toán)
   const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
@@ -1399,22 +1409,57 @@ export const BookingPage: React.FC = () => {
           throw new Error('Chưa thể khởi tạo thông tin giao dịch trực tuyến. Quý khách vui lòng thử lại hoặc chọn hình thức Thanh toán sau khi nhận kho.')
         }
 
-        // Bước 1 & 2: Lấy hợp đồng điện tử DocuSeal (ghi theo Size_ID) và mở modal cho khách ký trước khi thanh toán
         setCreatedBookingForSigning(createdBooking)
-        let contract = null
+
+        // Kiểm tra xem khách hàng đã xác nhận điều khoản hủy phiên bản mới nhất cho booking này chưa
+        let statusRes: any = null
         try {
-          contract = await contractService.getContractByBookingId(backendBookingId)
-        } catch (cErr) {
-          console.warn('Error fetching contract for signing:', cErr)
+          statusRes = await cancellationPolicyService.getPolicyConfirmationStatus(backendBookingId)
+        } catch (e) {
+          console.warn('Check policy confirmation status warning:', e)
         }
 
-        if (!contract) {
-          throw new Error('Không thể khởi tạo tài liệu hợp đồng điện tử DocuSeal. Vui lòng thử lại.')
+        if (statusRes?.policyConfirmed && statusRes?.isLatestPolicy) {
+          // Đã xác nhận phiên bản mới nhất -> Chuyển thẳng sang ký hợp đồng DocuSeal
+          let contract = null
+          try {
+            contract = await contractService.getContractByBookingId(backendBookingId)
+          } catch (cErr) {
+            console.warn('Error fetching contract for signing:', cErr)
+          }
+
+          if (!contract) {
+            throw new Error('Không thể khởi tạo tài liệu hợp đồng điện tử DocuSeal. Vui lòng thử lại.')
+          }
+
+          setContractForSigning(contract)
+          setShowDocuSealModal(true)
+          setIsSubmitting(false)
+          return
         }
 
-        setContractForSigning(contract)
-        // Snapshot is only captured upon actual signature completion
-        setShowDocuSealModal(true)
+        // Chưa xác nhận hoặc chính sách đã cập nhật phiên bản mới -> Tải thông tin và mở modal Điều khoản hủy hợp đồng & hoàn tiền
+        setIsLoadingPolicy(true)
+        setPolicyError(null)
+        try {
+          const facilityIdToUse = selectedFacility?.id || createdBooking?.facilityId || (createdBooking?.facility as any)?.id
+          if (facilityIdToUse) {
+            const pol = await cancellationPolicyService.getCancellationPolicyByFacility(facilityIdToUse)
+            setPolicyDetail(pol)
+            if (!pol?.isConfigured) {
+              setPolicyError('Cơ sở chưa được cấu hình đầy đủ chính sách hủy hợp đồng & hoàn tiền. Vui lòng liên hệ quản trị viên.')
+            }
+          } else {
+            setPolicyError('Không tìm thấy thông tin cơ sở kho để tra cứu chính sách hủy hợp đồng.')
+          }
+        } catch (pErr: any) {
+          console.warn('Load cancellation policy error:', pErr)
+          setPolicyError(pErr?.response?.data?.message || 'Không thể tải thông tin chính sách hủy hợp đồng của cơ sở.')
+        } finally {
+          setIsLoadingPolicy(false)
+        }
+
+        setShowPolicyConfirmModal(true)
         setIsSubmitting(false)
         return
       } else {
@@ -1445,6 +1490,55 @@ export const BookingPage: React.FC = () => {
     }
   }
 
+  // Xử lý khi khách hàng đọc và bấm "Xác nhận & Tiếp tục" trên Modal Điều khoản hủy & Hoàn tiền
+  const handleConfirmCancellationPolicy = async () => {
+    if (!createdBookingForSigning?.id) {
+      toast.error('Không tìm thấy mã đơn đặt kho để xác nhận điều khoản.')
+      return
+    }
+    const facilityIdToUse = selectedFacility?.id || createdBookingForSigning?.facilityId || (createdBookingForSigning?.facility as any)?.id
+    if (!facilityIdToUse) {
+      toast.error('Không tìm thấy thông tin cơ sở của đơn đặt kho.')
+      return
+    }
+    if (!policyDetail?.policyVersion || !policyDetail?.isConfigured) {
+      toast.error('Chính sách hủy của cơ sở chưa được cấu hình đầy đủ.')
+      return
+    }
+
+    setIsConfirmingPolicy(true)
+    try {
+      await cancellationPolicyService.confirmCancellationPolicy({
+        bookingId: createdBookingForSigning.id,
+        facilityId: facilityIdToUse,
+        policyVersion: policyDetail.policyVersion,
+        agreed: true,
+      })
+
+      // Đóng modal điều khoản
+      setShowPolicyConfirmModal(false)
+
+      // Sau khi backend lưu xác nhận thành công, tiến hành lấy hợp đồng và mở modal DocuSeal
+      let contract = null
+      try {
+        contract = await contractService.getContractByBookingId(createdBookingForSigning.id)
+      } catch (cErr) {
+        console.warn('Error fetching contract after policy confirmation:', cErr)
+      }
+
+      if (!contract) {
+        throw new Error('Không thể khởi tạo tài liệu hợp đồng điện tử DocuSeal. Vui lòng thử lại.')
+      }
+
+      setContractForSigning(contract)
+      setShowDocuSealModal(true)
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Xác nhận điều khoản thất bại. Vui lòng thử lại.'
+      toast.error(msg, { title: 'Lỗi xác nhận điều khoản' })
+    } finally {
+      setIsConfirmingPolicy(false)
+    }
+  }
 
   // Bước 3: Sau khi khách ký hợp đồng trực tuyến DocuSeal thành công -> Tạo VNPay và chuyển hướng sang Sandbox
   const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
@@ -3961,6 +4055,28 @@ export const BookingPage: React.FC = () => {
           setIsLogoutConfirmOpen(false)
           await logout()
           navigate('/')
+        }}
+      />
+
+      {/* Cancellation Policy Confirm Modal (Trước khi hiển thị DocuSeal E-Contract) */}
+      <CancellationPolicyConfirmModal
+        isOpen={showPolicyConfirmModal}
+        onClose={() => setShowPolicyConfirmModal(false)}
+        onConfirm={handleConfirmCancellationPolicy}
+        isSubmitting={isConfirmingPolicy}
+        policyDetail={policyDetail}
+        isLoadingPolicy={isLoadingPolicy}
+        policyError={policyError}
+        bookingInfo={{
+          facilityName: selectedFacility?.name || 'Cơ sở Boxora',
+          unitName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C Máy lạnh' : 'Tiêu chuẩn'})`,
+          rentalDuration: rentalDurationText,
+          startDate: startDate,
+          endDate: rentalEndDate,
+          totalRent: quoteCalculation.totalRent,
+          depositAmount: quoteCalculation.depositAmount,
+          totalPayment: quoteCalculation.totalEstimate,
+          paymentMethodName: 'VNPay Sandbox (Thanh toán trực tuyến)',
         }}
       />
 

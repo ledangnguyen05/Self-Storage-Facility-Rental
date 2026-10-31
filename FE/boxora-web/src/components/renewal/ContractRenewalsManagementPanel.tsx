@@ -940,7 +940,7 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                 onChange={(e) => setSelectedFacility(e.target.value)}
                 className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
-                <option value="all">Tất cả cơ sở</option>
+                {showChainWideFilter && <option value="all">Tất cả cơ sở</option>}
                 {facilities.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.name}

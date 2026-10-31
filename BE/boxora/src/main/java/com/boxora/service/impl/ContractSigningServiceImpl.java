@@ -373,7 +373,12 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                                                 ? contract.getBooking().getDepositAmount().toPlainString()
                                                 : (contract.getDepositHeld() != null ? contract.getDepositHeld().toPlainString() : "0")),
                                         field("expected_check_in_at", contract.getBooking() != null && contract.getBooking().getExpectedCheckInAt() != null
-                                                ? contract.getBooking().getExpectedCheckInAt().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) : "")
+                                                ? contract.getBooking().getExpectedCheckInAt().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) : ""),
+                                        field("policy_confirmation_statement", contract.getBooking() != null && Boolean.TRUE.equals(contract.getBooking().getPolicyConfirmed()) && contract.getBooking().getPolicyVersion() != null
+                                                ? String.format("Khách hàng xác nhận đã được cung cấp và đã đồng ý với Chính sách hủy hợp đồng và hoàn tiền Boxora, phiên bản %s, tại thời điểm %s.",
+                                                contract.getBooking().getPolicyVersion(),
+                                                contract.getBooking().getPolicyConfirmedAt() != null ? contract.getBooking().getPolicyConfirmedAt().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy")) : "")
+                                                : "")
                                 ))
                                 .build()
                 ))
@@ -1145,6 +1150,20 @@ public class ContractSigningServiceImpl implements ContractSigningService {
         if (!"CUSTOMER".equalsIgnoreCase(requestContext.currentUserRole())
                 && c.getDocusealSubmitterSlug() != null) {
             res.setSigningUrl(signingUrl(c, c.getDocusealSubmitterSlug()));
+        }
+        if (c.getBooking() != null) {
+            Booking b = c.getBooking();
+            if (Boolean.TRUE.equals(b.getPolicyConfirmed()) && b.getPolicyVersion() != null) {
+                res.setPolicyVersion(b.getPolicyVersion());
+                res.setPolicyConfirmedAt(b.getPolicyConfirmedAt());
+                String timeStr = b.getPolicyConfirmedAt() != null
+                        ? b.getPolicyConfirmedAt().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"))
+                        : "thời điểm xác nhận";
+                res.setPolicyConfirmationStatement(String.format(
+                        "Khách hàng xác nhận đã được cung cấp và đã đồng ý với Chính sách hủy hợp đồng và hoàn tiền Boxora, phiên bản %s, tại thời điểm %s.",
+                        b.getPolicyVersion(), timeStr
+                ));
+            }
         }
         return res;
     }

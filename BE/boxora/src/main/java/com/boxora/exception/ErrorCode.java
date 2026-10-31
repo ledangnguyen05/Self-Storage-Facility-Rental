@@ -123,6 +123,10 @@ public enum ErrorCode {
     FACILITY_POLICY_ALREADY_EXISTS(1101, "Cơ sở này đã được thiết lập chính sách", HttpStatus.BAD_REQUEST),
     FACILITY_POLICY_INVALID_CANCELLATION(1102, "Mốc thời gian hoàn 100% kể từ lúc đặt kho phải nhỏ hơn hoặc bằng mốc hoàn một phần", HttpStatus.BAD_REQUEST),
     FACILITY_POLICY_INVALID_PRICES(1103, "Mỗi loại ngăn kho chỉ có một mức giá trong chính sách cơ sở", HttpStatus.BAD_REQUEST),
+    POLICY_NOT_CONFIGURED(1104, "Cơ sở chưa được cấu hình đầy đủ chính sách hủy hợp đồng & hoàn tiền. Vui lòng liên hệ quản trị viên để thiết lập.", HttpStatus.BAD_REQUEST),
+    POLICY_CONFIRMATION_REQUIRED(1105, "Quý khách bắt buộc phải đọc và xác nhận đồng ý với Điều khoản hủy hợp đồng & hoàn tiền trước khi tiến hành ký hợp đồng.", HttpStatus.BAD_REQUEST),
+    POLICY_VERSION_MISMATCH(1106, "Phiên bản chính sách hủy hợp đồng đã được cập nhật mới. Quý khách vui lòng đọc và xác nhận lại chính sách mới nhất.", HttpStatus.CONFLICT),
+    POLICY_CONFIRMATION_FAILED(1107, "Ghi nhận xác nhận điều khoản hủy hợp đồng thất bại. Vui lòng thử lại.", HttpStatus.INTERNAL_SERVER_ERROR),
 
     // ========================= SUPPORT_TICKET (1200 - 1299) =========================
     TICKET_NOT_FOUND(1200, "Phiếu sự cố không tồn tại hoặc không thuộc quyền quản lý của bạn", HttpStatus.NOT_FOUND),

@@ -147,4 +147,14 @@ public class Booking extends BaseEntity {
 
     @Column(name = "checkin_overdue_reminder_sent_at")
     private LocalDateTime checkinOverdueReminderSentAt;
+
+    @Column(name = "policy_confirmed")
+    @Builder.Default
+    private Boolean policyConfirmed = false;
+
+    @Column(name = "policy_confirmed_at")
+    private LocalDateTime policyConfirmedAt;
+
+    @Column(name = "policy_version", length = 50)
+    private String policyVersion;
 }

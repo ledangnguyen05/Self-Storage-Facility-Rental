@@ -183,11 +183,11 @@ export const ManagerDashboard: React.FC = () => {
   }, [searchParams, role])
 
   const [facilities, setFacilities] = useState<Facility[]>(contextFacilities || [])
-  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(
-    isFacilityScoped && assignedFacilityId
-      ? assignedFacilityId
-      : (selectedFacility || 'ALL')
-  )
+  const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() => {
+    if (isFacilityScoped && assignedFacilityId) return assignedFacilityId
+    if (selectedFacility && selectedFacility !== 'ALL') return selectedFacility
+    return contextFacilities?.[0]?.id || ''
+  })
   const [units, setUnits] = useState<InspectedUnit[]>([])
   const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false)
@@ -403,16 +403,18 @@ export const ManagerDashboard: React.FC = () => {
     let targetFacility = isFacilityScoped && assignedFacilityId ? assignedFacilityId : selectedFacility
     if (isFacilityScoped && assignedFacilityId) {
       targetFacility = assignedFacilityId
-    } else if (!targetFacility) {
-      targetFacility = 'ALL'
+    } else if (!targetFacility || targetFacility === 'ALL') {
+      targetFacility = facilities[0]?.id || ''
     }
 
     if (targetFacility !== selectedFacilityId) {
       setStatusFilter('all')
     }
     setSelectedFacilityId(targetFacility)
-    void fetchUnits(targetFacility)
-  }, [selectedFacility, isFacilityScoped, assignedFacilityId])
+    if (targetFacility) {
+      void fetchUnits(targetFacility)
+    }
+  }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, selectedFacilityId])
 
   const fetchUnits = async (facId?: string) => {
     setIsLoading(true)
@@ -805,19 +807,18 @@ export const ManagerDashboard: React.FC = () => {
         code: user?.facilityCode || 'FAC',
       } as Facility)
     }
-    if (selectedFacilityId === 'ALL' || !selectedFacilityId) {
-      return {
-        id: 'ALL',
-        name: t('Toàn hệ thống Boxora (Tất cả cơ sở)', 'All Boxora Facilities'),
-        code: 'ALL',
-      } as Facility
-    }
-    return facilities.find(f => f.id === selectedFacilityId) || facilities[0]
-  }, [facilities, selectedFacilityId, isFacilityScoped, assignedFacilityId, user?.facilityName, user?.facilityCode, t])
+    const found = facilities.find(f => f.id === selectedFacilityId)
+    if (found) return found
+    return facilities[0] || ({
+      id: '',
+      name: 'Cơ sở Boxora',
+      code: 'FAC',
+    } as Facility)
+  }, [facilities, selectedFacilityId, isFacilityScoped, assignedFacilityId, user?.facilityName, user?.facilityCode])
 
   const currentFacilityName = currentFacility?.name
     ? currentFacility.name.replace(/StoreHub\s*/gi, 'Boxora ')
-    : t('Toàn hệ thống Boxora', 'All Boxora Facilities')
+    : 'Cơ sở Boxora'
 
   const handleToggleMaintenance = async () => {
     if (!selectedUnit) return
@@ -1379,9 +1380,32 @@ export const ManagerDashboard: React.FC = () => {
             </span>
           </div>
 
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-            {currentFacilityName} — {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng' : 'Bảng Tổng Quan Quản Lý'}
-          </h1>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+              {currentFacilityName} — {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng' : 'Bảng Tổng Quan Quản Lý'}
+            </h1>
+            {isManagementRole && facilities.length > 1 && (
+              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl shadow-2xs">
+                <span className="material-symbols-outlined text-[16px] text-blue-600">store</span>
+                <span className="text-xs font-semibold text-slate-500">Chi nhánh:</span>
+                <select
+                  value={selectedFacilityId}
+                  onChange={(e) => {
+                    const newId = e.target.value
+                    setSelectedFacilityId(newId)
+                    if (setSelectedFacility) setSelectedFacility(newId)
+                  }}
+                  className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+                >
+                  {facilities.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           <p className="text-xs text-slate-500">
             {role === 'STAFF'
@@ -2220,7 +2244,7 @@ export const ManagerDashboard: React.FC = () => {
             currentFacilityId={selectedFacilityId}
             facilities={facilities}
             userRole={role || undefined}
-            showChainWideFilter={role === 'BUSINESS_MANAGER' || role === 'ADMIN'}
+            showChainWideFilter={false}
           />
         </section>
       )}

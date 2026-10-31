@@ -439,6 +439,51 @@ export interface RentalContract {
   signatureData?: string | null
   unitTypeName?: string | null
   unitPricePerMonth?: number | null
+  policyVersion?: string | null
+  policyConfirmedAt?: string | null
+  policyConfirmationStatement?: string | null
+}
+
+export interface CancellationPolicyDetail {
+  facilityId: string
+  facilityName: string
+  policyVersion: string | null
+  isConfigured: boolean
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  returnNoticeDays?: number
+  depositRefundSlaDays?: number
+  holdGraceHours?: number
+  depositPercentage?: number
+  policySummaryText?: string
+}
+
+export interface PolicyConfirmationPayload {
+  bookingId: string
+  facilityId: string
+  policyVersion: string
+  agreed: boolean
+}
+
+export interface PolicyConfirmationResult {
+  confirmationId: string
+  bookingId: string
+  customerId: string
+  policyVersion: string
+  confirmedAt: string
+  status: string
+  message: string
+}
+
+export interface PolicyConfirmationStatus {
+  bookingId: string
+  policyConfirmed: boolean
+  policyVersion?: string | null
+  currentActivePolicyVersion?: string | null
+  confirmedAt?: string | null
+  status: 'POLICY_NOT_CONFIRMED' | 'POLICY_CONFIRMED' | 'POLICY_VERSION_OUTDATED' | string
+  isLatestPolicy: boolean
 }
 
 export type ContractRenewalStatus =

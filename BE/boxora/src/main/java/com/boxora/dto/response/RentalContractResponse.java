@@ -59,4 +59,8 @@ public class RentalContractResponse {
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    private String policyVersion;
+    private LocalDateTime policyConfirmedAt;
+    private String policyConfirmationStatement;
 }
