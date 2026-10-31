@@ -897,6 +897,16 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
             localStorage.setItem('boxora_return_requests', JSON.stringify(next))
           }
         }
+        if (b.unitCode) {
+          try {
+            const rawCancelled = localStorage.getItem('boxora_cancelled_return_units')
+            const currentList: string[] = rawCancelled ? JSON.parse(rawCancelled) : []
+            if (!currentList.includes(b.unitCode.toUpperCase())) {
+              currentList.push(b.unitCode.toUpperCase())
+              localStorage.setItem('boxora_cancelled_return_units', JSON.stringify(currentList))
+            }
+          } catch (e) {}
+        }
       } catch (e) {
         console.warn('Local storage sync error:', e)
       }

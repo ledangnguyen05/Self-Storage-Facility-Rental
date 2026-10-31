@@ -242,6 +242,169 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [isProcessingTicketAction, setIsProcessingTicketAction] = useState(false)
   const [contractHistoryModal, setContractHistoryModal] = useState<any | null>(null)
   const [selectedRenewalForDocModal, setSelectedRenewalForDocModal] = useState<any | null>(null)
+  const [cancellingReturnUnit, setCancellingReturnUnit] = useState<string | null>(null)
+  const [confirmCancelReturnModal, setConfirmCancelReturnModal] = useState<{
+    unitCode: string
+    contractCode?: string
+    bookingId?: string
+    facilityName?: string
+    returnRequest: any
+  } | null>(null)
+  const [cancelledReturnEpoch, setCancelledReturnEpoch] = useState<number>(0)
+
+  const handleConfirmCancelReturn = async () => {
+    if (!confirmCancelReturnModal) return
+    const { unitCode, bookingId, facilityName, returnRequest } = confirmCancelReturnModal
+    setCancellingReturnUnit(unitCode)
+    try {
+      // 1. Ghi nhận unitCode vào danh sách đã hủy yêu cầu trả kho trong localStorage
+      try {
+        const rawCancelled = localStorage.getItem('boxora_cancelled_return_units')
+        const currentList: string[] = rawCancelled ? JSON.parse(rawCancelled) : []
+        if (unitCode && !currentList.includes(unitCode.toUpperCase())) {
+          currentList.push(unitCode.toUpperCase())
+          localStorage.setItem('boxora_cancelled_return_units', JSON.stringify(currentList))
+        }
+      } catch (e) {
+        console.warn('Could not save cancelled return unit to localStorage:', e)
+      }
+
+      // 2. Nếu có support ticket trả kho tương ứng -> Đóng ticket
+      try {
+        const matchingTickets = customerTickets.filter(t => {
+          const isUnitMatch = (t.unitCode && unitCode && t.unitCode.toUpperCase() === unitCode.toUpperCase()) ||
+            (t.bookingId && bookingId && t.bookingId === bookingId) ||
+            (t.title && unitCode && t.title.toUpperCase().includes(unitCode.toUpperCase())) ||
+            (t.description && unitCode && t.description.toUpperCase().includes(unitCode.toUpperCase()))
+          const isReturnCategory = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' ||
+            t.title?.toLowerCase().includes('trả kho') ||
+            t.description?.toLowerCase().includes('trả kho') ||
+            t.title?.toLowerCase().includes('hoàn cọc') ||
+            t.description?.toLowerCase().includes('hoàn cọc')
+          const isNotClosed = t.status !== 'CANCELLED' && t.status !== 'REJECTED' && t.status !== 'CLOSED'
+          return isUnitMatch && isReturnCategory && isNotClosed
+        })
+
+        for (const t of matchingTickets) {
+          await supportTicketService.closeTicket(t.id, 'Khách hàng chủ động hủy yêu cầu trả kho trên cổng khách hàng')
+        }
+        if (returnRequest?.ticketId && !matchingTickets.some(t => t.id === returnRequest.ticketId)) {
+          await supportTicketService.closeTicket(returnRequest.ticketId, 'Khách hàng chủ động hủy yêu cầu trả kho trên cổng khách hàng')
+        }
+      } catch (err) {
+        console.warn('Close ticket warning:', err)
+      }
+
+      // 3. Nếu có booking liên quan -> gọi revokeCancellation
+      try {
+        const targetBooking = customerBookings.find(b =>
+          (bookingId && b.id === bookingId) ||
+          (unitCode && b.unitCode && b.unitCode.toUpperCase() === unitCode.toUpperCase())
+        )
+        if (targetBooking?.id || targetBooking?.bookingCode) {
+          try {
+            await bookingService.revokeCancellation(targetBooking.id || targetBooking.bookingCode)
+          } catch (err: any) {
+            console.warn('bookingService.revokeCancellation warning:', err)
+          }
+        }
+      } catch (e) {
+        console.warn('Booking revoke warning:', e)
+      }
+
+      // 4. Dọn dẹp cache cục bộ trả kho trong localStorage
+      try {
+        const rawV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
+        if (rawV4) {
+          const list = JSON.parse(rawV4)
+          if (Array.isArray(list)) {
+            const next = list.filter((it: any) =>
+              !(it.unitCode && unitCode && it.unitCode.toUpperCase() === unitCode.toUpperCase()) &&
+              !(bookingId && it.bookingId && it.bookingId === bookingId) &&
+              !(returnRequest?.id && it.id === returnRequest.id)
+            )
+            localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(next))
+          }
+        }
+
+        const rawOld = localStorage.getItem('boxora_return_requests')
+        if (rawOld) {
+          const listOld = JSON.parse(rawOld)
+          if (Array.isArray(listOld)) {
+            const nextOld = listOld.filter((it: any) =>
+              !(it.unitCode && unitCode && it.unitCode.toUpperCase() === unitCode.toUpperCase()) &&
+              !(bookingId && it.bookingId && it.bookingId === bookingId) &&
+              !(returnRequest?.id && it.id === returnRequest.id)
+            )
+            localStorage.setItem('boxora_return_requests', JSON.stringify(nextOld))
+          }
+        }
+
+        const rawRes = localStorage.getItem('boxora_guest_reservations')
+        if (rawRes) {
+          const listRes = JSON.parse(rawRes)
+          if (Array.isArray(listRes)) {
+            const updated = listRes.map((item: any) => {
+              if (
+                (item.unitCode && unitCode && item.unitCode.toUpperCase() === unitCode.toUpperCase()) ||
+                (bookingId && (item.id === bookingId || item.bookingCode === bookingId))
+              ) {
+                const clone = { ...item, status: 'CONFIRMED' }
+                delete clone.cancellationReason
+                delete clone.refundStatus
+                delete clone.refundRequestCode
+                delete clone.cancelledAt
+                delete clone.cancelledBy
+                delete clone.returnStatus
+                return clone
+              }
+              return item
+            })
+            localStorage.setItem('boxora_guest_reservations', JSON.stringify(updated))
+          }
+        }
+      } catch (lsErr) {
+        console.warn('Local storage sync error:', lsErr)
+      }
+
+      // 5. Ghi nhật ký thao tác
+      recordUnitActivity({
+        unitCode,
+        category: 'SUPPORT',
+        actionType: 'SUPPORT_REQUEST',
+        title: `Hủy yêu cầu trả kho #${unitCode}`,
+        description: `Đã hủy yêu cầu trả kho #${unitCode} (${facilityName || ''}). Tiếp tục duy trì hợp đồng thuê kho.`,
+        statusLabel: 'Đã hủy yêu cầu trả kho',
+        statusTone: 'rose',
+      })
+
+      // 6. Phát sự kiện đồng bộ toàn hệ thống
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
+      window.dispatchEvent(new CustomEvent('boxora_reservation_updated', {
+        detail: { unitCode, status: 'ACTIVE' }
+      }))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+
+      toast.success(`Đã hủy yêu cầu trả kho #${unitCode} thành công! Kho đã được tiếp tục duy trì hoạt động.`)
+      setConfirmCancelReturnModal(null)
+      setCancelledReturnEpoch(prev => prev + 1)
+
+      // 7. Tải lại dữ liệu mới nhất
+      await Promise.all([
+        fetchContracts(),
+        fetchCustomerBookings(),
+        fetchCustomerTickets(),
+        fetchMyRenewals(),
+        fetchCustomerNotifications(),
+      ])
+    } catch (err: any) {
+      console.error('Lỗi khi hủy yêu cầu trả kho:', err)
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể hủy yêu cầu trả kho lúc này.')
+    } finally {
+      setCancellingReturnUnit(null)
+    }
+  }
 
   const handleReopenCustomerTicket = async () => {
     if (!reopenModalTicket || !reopenReasonText.trim()) return
@@ -3393,6 +3556,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                 // Kiểm tra xem kho này đã có yêu cầu trả kho / hồ sơ nghiệm thu quyết toán hay chưa
                 const activeReturnRequest = (() => {
+                  void cancelledReturnEpoch
+
+                  // 0. Nếu kho đã được khách hủy yêu cầu trả kho -> không coi là đang trả kho
+                  try {
+                    const rawCancelled = localStorage.getItem('boxora_cancelled_return_units')
+                    if (rawCancelled) {
+                      const cancelledList = JSON.parse(rawCancelled)
+                      if (Array.isArray(cancelledList) && c.unitCode && cancelledList.includes(c.unitCode.toUpperCase())) {
+                        return null
+                      }
+                    }
+                  } catch (e) {}
+
                   // 1. Kiểm tra trong danh sách support tickets
                   const returnTicket = customerTickets.find(t => {
                     const isUnitMatch = (t.unitCode && c.unitCode && t.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
@@ -3404,13 +3580,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       t.description?.toLowerCase().includes('trả kho') ||
                       t.title?.toLowerCase().includes('hoàn cọc') ||
                       t.description?.toLowerCase().includes('hoàn cọc')
-                    const isNotCancelled = t.status !== 'CANCELLED' && t.status !== 'REJECTED'
+                    const isNotCancelled = t.status !== 'CANCELLED' && t.status !== 'REJECTED' && t.status !== 'CLOSED'
                     return isUnitMatch && isReturnCategory && isNotCancelled
                   })
                   if (returnTicket) {
-                    const isCompleted = returnTicket.status === 'RESOLVED' || returnTicket.status === 'CLOSED'
+                    const isCompleted = returnTicket.status === 'RESOLVED'
                     return {
                       id: returnTicket.id,
+                      ticketId: returnTicket.id,
                       title: returnTicket.title || `Yêu cầu trả kho #${c.unitCode}`,
                       description: returnTicket.description || 'Đang tiến hành thủ tục trả kho.',
                       status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
@@ -3634,6 +3811,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               <span className="material-symbols-outlined text-[15px]">visibility</span>
                               <span>Theo dõi tiến độ trả kho</span>
                             </button>
+                            {!isReturnCompleted && (
+                              <button
+                                type="button"
+                                disabled={cancellingReturnUnit === c.unitCode}
+                                onClick={() => setConfirmCancelReturnModal({
+                                  unitCode: c.unitCode,
+                                  contractCode: c.contractCode,
+                                  bookingId: c.bookingId,
+                                  facilityName: c.facilityName,
+                                  returnRequest: activeReturnRequest,
+                                })}
+                                className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 active:scale-98 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                                title="Hủy bỏ yêu cầu trả kho để tiếp tục thuê kho này"
+                              >
+                                <span className="material-symbols-outlined text-[15px] text-rose-600">undo</span>
+                                <span>Hủy yêu cầu</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -3856,7 +4051,28 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                      {!isReturnCompleted && (
+                      {activeReturnRequest && !isReturnCompleted ? (
+                        <button
+                          type="button"
+                          disabled={cancellingReturnUnit === c.unitCode}
+                          onClick={() => setConfirmCancelReturnModal({
+                            unitCode: c.unitCode,
+                            contractCode: c.contractCode,
+                            bookingId: c.bookingId,
+                            facilityName: c.facilityName,
+                            returnRequest: activeReturnRequest,
+                          })}
+                          className="flex-1 min-w-[150px] h-10 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 active:scale-98 text-rose-700 border border-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                          title="Hủy bỏ yêu cầu trả kho để tiếp tục thuê và gia hạn sử dụng kho này"
+                        >
+                          <span className="material-symbols-outlined text-[17px] text-rose-600">
+                            {cancellingReturnUnit === c.unitCode ? 'sync' : 'undo'}
+                          </span>
+                          <span>
+                            {cancellingReturnUnit === c.unitCode ? 'Đang hủy...' : 'Hủy yêu cầu trả kho'}
+                          </span>
+                        </button>
+                      ) : !isReturnCompleted ? (
                         <button
                           onClick={() => openRenewModal(c)}
                           className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
@@ -3876,7 +4092,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               : 'Yêu Cầu Gia Hạn'}
                           </span>
                         </button>
-                      )}
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => {
@@ -8358,6 +8574,110 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             await Promise.all([fetchCustomerNotifications(), fetchCustomerBookings()])
           }}
         />
+      )}
+
+      {/* Modal Xác Nhận Hủy Yêu Cầu Trả Kho */}
+      {confirmCancelReturnModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden text-left animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header Modal */}
+            <div className="p-5 border-b border-rose-100 bg-rose-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                  <span className="material-symbols-outlined text-[22px]">undo</span>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-rose-950">
+                    Xác Nhận Hủy Yêu Cầu Trả Kho
+                  </h3>
+                  <span className="text-[11px] font-mono text-rose-700/80">
+                    Kho #{confirmCancelReturnModal.unitCode} {confirmCancelReturnModal.contractCode ? `• Hợp đồng #${confirmCancelReturnModal.contractCode}` : ''}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfirmCancelReturnModal(null)}
+                disabled={Boolean(cancellingReturnUnit)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body Modal */}
+            <div className="p-6 space-y-4 text-xs text-slate-700">
+              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Buồng kho áp dụng:</span>
+                  <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    #{confirmCancelReturnModal.unitCode}
+                  </span>
+                </div>
+                {confirmCancelReturnModal.facilityName && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Cơ sở lưu trữ:</span>
+                    <span className="font-bold text-slate-800">
+                      {confirmCancelReturnModal.facilityName}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Trạng thái hiện tại:</span>
+                  <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                    Đang xử lý trả kho &amp; đối soát
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-950 space-y-1.5 leading-relaxed">
+                <div className="font-bold flex items-center gap-1.5 text-blue-900">
+                  <span className="material-symbols-outlined text-[16px] text-blue-700">info</span>
+                  <span>Quyền lợi của bạn:</span>
+                </div>
+                <p className="text-[11px] text-blue-800">
+                  Sau khi hủy yêu cầu trả kho, kho của bạn sẽ <strong>tiếp tục duy trì trạng thái hoạt động bình thường</strong>. Bạn vẫn có thể truy cập kho và thực hiện <strong>Yêu Cầu Gia Hạn</strong> tiếp tục thuê kho.
+                </p>
+                <p className="text-[11px] text-blue-700 italic">
+                  * Mọi thủ tục nghiệm thu, kiểm tra hiện trường hoặc quyết toán hoàn cọc tương ứng sẽ được dừng lại.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={Boolean(cancellingReturnUnit)}
+                  onClick={() => setConfirmCancelReturnModal(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
+                >
+                  Giữ Lại Yêu Cầu
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(cancellingReturnUnit)}
+                  onClick={handleConfirmCancelReturn}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {cancellingReturnUnit ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Đang hủy yêu cầu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">undo</span>
+                      <span>Xác Nhận Hủy Trả Kho</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

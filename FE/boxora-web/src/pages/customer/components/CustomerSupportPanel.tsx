@@ -373,6 +373,16 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
             localStorage.setItem('boxora_return_requests', JSON.stringify(nextOld))
           }
         }
+        if (t.unitCode) {
+          try {
+            const rawCancelled = localStorage.getItem('boxora_cancelled_return_units')
+            const currentList: string[] = rawCancelled ? JSON.parse(rawCancelled) : []
+            if (!currentList.includes(t.unitCode.toUpperCase())) {
+              currentList.push(t.unitCode.toUpperCase())
+              localStorage.setItem('boxora_cancelled_return_units', JSON.stringify(currentList))
+            }
+          } catch (e) {}
+        }
       } catch (e) {}
 
       toast.success(isReturn ? 'Đã hủy yêu cầu trả kho thành công!' : 'Đã hủy yêu cầu hỗ trợ thành công!')
