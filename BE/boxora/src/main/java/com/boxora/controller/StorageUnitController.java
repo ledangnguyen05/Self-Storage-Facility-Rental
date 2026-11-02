@@ -29,7 +29,7 @@ public class StorageUnitController {
     private final CloudflareR2Service cloudflareR2Service;
 
     @PostMapping("/upload-image")
-    @PreAuthorize("hasAnyAuthority('STORAGE_UNIT_CREATE', 'STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyAuthority('STORAGE_UNIT_CREATE', 'STORAGE_UNIT_UPDATE')")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadUnitImage(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = cloudflareR2Service.uploadUnitImage(file);
         return ResponseEntity.ok(ApiResponse.success("Tải ảnh ngăn kho lên Cloudflare R2 thành công", response));
@@ -66,14 +66,14 @@ public class StorageUnitController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> createUnit(@Valid @RequestBody StorageUnitCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tạo ngăn kho thành công", storageUnitService.createUnit(request)));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_STAFF', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> updateUnit(
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
@@ -82,14 +82,14 @@ public class StorageUnitController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE')")
     public ResponseEntity<ApiResponse<Void>> deleteUnit(@PathVariable UUID id) {
         storageUnitService.deleteUnit(id);
         return ResponseEntity.ok(ApiResponse.success("Xóa ngăn kho thành công", null));
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('FACILITY_STAFF', 'STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(
             @PathVariable UUID id,
             @RequestBody(required = false) ToggleMaintenanceRequest request

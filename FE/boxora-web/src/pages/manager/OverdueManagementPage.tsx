@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
-import { overdueService, OverdueSummary, OverdueContractItem } from '../../services/overdueService'
+import { overdueService, OverdueSummary, OverdueContractItem, OverdueSettlementPayload } from '../../services/overdueService'
 import { facilityService } from '../../services/facilityService'
 import { useAuth } from '../../context/AuthContext'
 import { Facility } from '../../types'
@@ -61,6 +61,29 @@ export const OverdueManagementPage: React.FC = () => {
   const [isCustomerArrivalMode, setIsCustomerArrivalMode] = useState<boolean>(false)
   const [contractToSettle, setContractToSettle] = useState<OverdueContractItem | null>(null)
   const [isSettling, setIsSettling] = useState<boolean>(false)
+  // Form state cho modal Tất toán nợ cước
+  const [settlementPaymentMethod, setSettlementPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER'>('CASH')
+  const [settlementReceiptCode, setSettlementReceiptCode] = useState<string>('')
+  const [settlementAmount, setSettlementAmount] = useState<number>(0)
+  const [settlementRefCode, setSettlementRefCode] = useState<string>('')
+  const [settlementProofUrl, setSettlementProofUrl] = useState<string>('')
+  const [settlementNotes, setSettlementNotes] = useState<string>('')
+  const [settlementFormErrors, setSettlementFormErrors] = useState<Record<string, string>>({})
+
+  // Reset form khi chọn hợp đồng tất toán mới
+  useEffect(() => {
+    if (contractToSettle) {
+      setSettlementPaymentMethod('CASH')
+      const todayStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+      const codeSuffix = (contractToSettle.contractCode || 'HD').replace(/[^a-zA-Z0-9]/g, '').slice(-4)
+      setSettlementReceiptCode(`PT-${todayStr}-${codeSuffix}`)
+      setSettlementAmount(contractToSettle.totalDebt || 0)
+      setSettlementRefCode('')
+      setSettlementProofUrl('')
+      setSettlementNotes('')
+      setSettlementFormErrors({})
+    }
+  }, [contractToSettle])
   const [settledContracts, setSettledContracts] = useState<Array<OverdueContractItem & { settledAt: string; settledByName?: string }>>(() => {
     try {
       const raw = localStorage.getItem('boxora_settled_overdue_contracts')
@@ -213,13 +236,37 @@ export const OverdueManagementPage: React.FC = () => {
 
   const handleConfirmSettlement = async () => {
     if (!contractToSettle) return
+
+    const remainingDebt = contractToSettle.totalDebt || 0
+    const errors: Record<string, string> = {}
+
+    if (remainingDebt > 0) {
+      if (!settlementReceiptCode.trim()) {
+        errors.receiptCode = 'Vui lòng nhập mã phiếu thu / số biên lai quầy giao dịch'
+      }
+      if (settlementAmount < remainingDebt) {
+        errors.amount = `Số tiền thu (${formatVND(settlementAmount)}) không đủ để thanh toán toàn bộ nợ (${formatVND(remainingDebt)})`
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setSettlementFormErrors(errors)
+      toast.error('Vui lòng kiểm tra lại thông tin phiếu thu và số tiền thanh toán')
+      return
+    }
+
     setIsSettling(true)
     try {
-      try {
-        await overdueService.completeSettlement(contractToSettle.contractId)
-      } catch (beErr) {
-        console.warn('Backend completeSettlement fallback:', beErr)
-      }
+      const payload: OverdueSettlementPayload | undefined = remainingDebt > 0 ? {
+        paymentMethod: settlementPaymentMethod,
+        receiptVoucherCode: settlementReceiptCode.trim(),
+        referenceCode: settlementRefCode.trim() || undefined,
+        proofDocumentUrl: settlementProofUrl.trim() || undefined,
+        amount: Number(settlementAmount),
+        notes: settlementNotes.trim() || undefined
+      } : undefined
+
+      await overdueService.completeSettlement(contractToSettle.contractId, payload)
 
       const now = new Date()
       const hh = String(now.getHours()).padStart(2, '0')
@@ -252,7 +299,8 @@ export const OverdueManagementPage: React.FC = () => {
       fetchSummary()
       fetchContracts()
     } catch (err: any) {
-      toast.error('Lỗi khi hoàn tất đơn nợ cước: ' + (err?.message || ''))
+      const backendMessage = err?.response?.data?.message || err?.message || 'Lỗi khi hoàn tất đơn nợ cước'
+      toast.error(backendMessage)
     } finally {
       setIsSettling(false)
     }
@@ -935,7 +983,7 @@ export const OverdueManagementPage: React.FC = () => {
       {/* Modal Confirm Khách đã tới hoàn tất đơn */}
       {contractToSettle && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp max-h-[90vh] overflow-y-auto">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200">
                 <span className="material-symbols-outlined text-2xl">how_to_reg</span>
@@ -943,7 +991,7 @@ export const OverdueManagementPage: React.FC = () => {
               <div className="flex-1">
                 <h3 className="text-sm font-bold text-slate-900">Xác nhận hoàn tất đơn nợ cước</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Khách hàng đã thanh toán đầy đủ và hoàn tất trả kho.
+                  Ghi nhận thu tiền tại quầy, cập nhật thanh toán và hoàn tất tất toán hợp đồng trả kho.
                 </p>
               </div>
             </div>
@@ -969,15 +1017,172 @@ export const OverdueManagementPage: React.FC = () => {
                 <span className="font-medium text-slate-800">{contractToSettle.facilityName}</span>
               </div>
               <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <span className="text-slate-600 font-bold">Tổng tiền thu:</span>
+                <span className="text-slate-600 font-bold">Tổng nợ cần thu:</span>
                 <span className="font-mono font-black text-emerald-700 text-sm">
                   {formatVND(contractToSettle.totalDebt)}
                 </span>
               </div>
             </div>
 
-            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
-              ✓ Sau khi bấm <strong>"Xác nhận đã xong"</strong>, đơn sẽ chuyển sang trạng thái <strong>Đã xong (Khách trả kho)</strong>, buồng kho <strong>#{contractToSettle.unitCode}</strong> sẽ được giải phóng sẵn sàng cho khách mới thuê.
+            {/* Form ghi nhận phiếu thu quầy khi còn nợ */}
+            {contractToSettle.totalDebt > 0 ? (
+              <div className="space-y-3 p-3.5 bg-blue-50/50 border border-blue-200/80 rounded-xl text-xs">
+                <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs pb-1 border-b border-blue-200/60">
+                  <span className="material-symbols-outlined text-[17px] text-blue-600">receipt_long</span>
+                  Thông tin phiếu thu & thanh toán tại quầy
+                </div>
+
+                {/* Phương thức thanh toán */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Phương thức thanh toán <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSettlementPaymentMethod('CASH')}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                        settlementPaymentMethod === 'CASH'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">payments</span>
+                      Tiền mặt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSettlementPaymentMethod('BANK_TRANSFER')}
+                      className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                        settlementPaymentMethod === 'BANK_TRANSFER'
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">account_balance</span>
+                      Chuyển khoản quầy
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mã phiếu thu / Số biên lai */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Mã phiếu thu / Số biên lai <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={settlementReceiptCode}
+                    onChange={(e) => {
+                      setSettlementReceiptCode(e.target.value)
+                      if (settlementFormErrors.receiptCode) {
+                        setSettlementFormErrors(prev => ({ ...prev, receiptCode: '' }))
+                      }
+                    }}
+                    placeholder="VD: PT-20261102-001"
+                    className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-medium focus:outline-hidden focus:ring-2 ${
+                      settlementFormErrors.receiptCode
+                        ? 'border-rose-400 focus:ring-rose-200'
+                        : 'border-slate-300 focus:ring-blue-200'
+                    }`}
+                  />
+                  {settlementFormErrors.receiptCode && (
+                    <p className="text-[11px] text-rose-600 mt-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">error</span>
+                      {settlementFormErrors.receiptCode}
+                    </p>
+                  )}
+                </div>
+
+                {/* Số tiền thực thu */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[11px] font-semibold text-slate-700">
+                      Số tiền thực thu (VND) <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[11px] font-mono text-emerald-700 font-bold">
+                      {formatVND(settlementAmount)}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min={contractToSettle.totalDebt}
+                    value={settlementAmount || ''}
+                    onChange={(e) => {
+                      setSettlementAmount(Number(e.target.value) || 0)
+                      if (settlementFormErrors.amount) {
+                        setSettlementFormErrors(prev => ({ ...prev, amount: '' }))
+                      }
+                    }}
+                    className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-bold focus:outline-hidden focus:ring-2 ${
+                      settlementFormErrors.amount
+                        ? 'border-rose-400 focus:ring-rose-200'
+                        : 'border-slate-300 focus:ring-blue-200'
+                    }`}
+                  />
+                  {settlementFormErrors.amount && (
+                    <p className="text-[11px] text-rose-600 mt-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">error</span>
+                      {settlementFormErrors.amount}
+                    </p>
+                  )}
+                </div>
+
+                {/* Mã tham chiếu chuyển khoản */}
+                {settlementPaymentMethod === 'BANK_TRANSFER' && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Mã tham chiếu ngân hàng / App Banking
+                    </label>
+                    <input
+                      type="text"
+                      value={settlementRefCode}
+                      onChange={(e) => setSettlementRefCode(e.target.value)}
+                      placeholder="VD: FT263078491820..."
+                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                )}
+
+                {/* Link / Ghi chú chứng từ */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Link ảnh biên lai / Ghi chú chứng từ (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    value={settlementProofUrl}
+                    onChange={(e) => setSettlementProofUrl(e.target.value)}
+                    placeholder="VD: Biên lai thu tiền ký tay số 1234"
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+
+                {/* Ghi chú thu ngân */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Ghi chú tất toán (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    value={settlementNotes}
+                    onChange={(e) => setSettlementNotes(e.target.value)}
+                    placeholder="VD: Khách nộp tiền mặt tại quầy bàn giao cơ sở"
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2">
+                <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>
+                <span>
+                  Hợp đồng này <strong>không còn nợ cước</strong> (khách hàng đã thanh toán trực tuyến hoặc đã hoàn tất công nợ). Không cần tạo thêm phiếu thu.
+                </span>
+              </div>
+            )}
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 leading-relaxed">
+              ✓ Sau khi bấm <strong>"Xác nhận đã xong"</strong>, hệ thống sẽ xác thực phiếu thu, gọi SmartLock thu hồi PIN truy cập và kiểm tra biên bản nghiệm thu trả kho trước khi chuyển trạng thái buồng kho <strong>#{contractToSettle.unitCode}</strong>.
             </div>
 
             {/* Modal Actions */}

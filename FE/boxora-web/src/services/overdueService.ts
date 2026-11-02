@@ -166,6 +166,15 @@ export interface SealingWorkflowPayload {
   }>
 }
 
+export interface OverdueSettlementPayload {
+  paymentMethod?: 'CASH' | 'BANK_TRANSFER'
+  receiptVoucherCode?: string
+  referenceCode?: string
+  proofDocumentUrl?: string
+  amount?: number
+  notes?: string
+}
+
 export const overdueService = {
   getSummary: async (facilityId?: string): Promise<OverdueSummary> => {
     const res = await api.get('/api/v1/overdue/summary', {
@@ -249,8 +258,8 @@ export const overdueService = {
     link.remove()
   },
 
-  completeSettlement: async (contractId: string): Promise<void> => {
-    await api.post(`/api/v1/overdue/contracts/${contractId}/complete-settlement`)
+  completeSettlement: async (contractId: string, payload?: OverdueSettlementPayload): Promise<void> => {
+    await api.post(`/api/v1/overdue/contracts/${contractId}/complete-settlement`, payload)
   },
 
   // Legacy compatibility
