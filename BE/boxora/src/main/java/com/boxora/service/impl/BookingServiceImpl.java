@@ -1128,6 +1128,13 @@ public class BookingServiceImpl implements BookingService {
         User currentUser = currentUserEmail != null ? userRepository.findByEmail(currentUserEmail).orElse(null) : null;
         validateBookingAccess(booking, currentUser);
 
+        RentalContract linkedContractPin = rentalContractRepository != null ? rentalContractRepository.findByBookingId(booking.getId()).orElse(null) : null;
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED
+                || "REVOKED_SETTLED".equals(booking.getQrAccessToken())
+                || (linkedContractPin != null && (linkedContractPin.getStatus() == RentalContractStatus.TERMINATED || linkedContractPin.getStatus() == RentalContractStatus.CANCELLED))) {
+            throw new AppException(ErrorCode.CONTRACT_ALREADY_TERMINATED);
+        }
+
         if (booking.getStatus() == BookingStatus.OVERDUE || "REVOKED_OVERDUE".equals(booking.getQrAccessToken())) {
             throw new AppException(ErrorCode.PIN_REVOKED_OVERDUE);
         }
@@ -1251,6 +1258,13 @@ public class BookingServiceImpl implements BookingService {
     public BookingAccessCredentialsResponse getAccessCredentials(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        RentalContract linkedContractCred = rentalContractRepository != null ? rentalContractRepository.findByBookingId(booking.getId()).orElse(null) : null;
+        if (booking.getStatus() == BookingStatus.COMPLETED || booking.getStatus() == BookingStatus.CANCELLED
+                || "REVOKED_SETTLED".equals(booking.getQrAccessToken())
+                || (linkedContractCred != null && (linkedContractCred.getStatus() == RentalContractStatus.TERMINATED || linkedContractCred.getStatus() == RentalContractStatus.CANCELLED))) {
+            throw new AppException(ErrorCode.CONTRACT_ALREADY_TERMINATED);
+        }
+
         if (booking.getStatus() == BookingStatus.OVERDUE || "REVOKED_OVERDUE".equals(booking.getQrAccessToken())) {
             throw new AppException(ErrorCode.PIN_REVOKED_OVERDUE);
         }
@@ -1845,7 +1859,7 @@ public class BookingServiceImpl implements BookingService {
             return "REFUND_PENDING";
         }
         if (booking.getStatus() == BookingStatus.CANCELLED) {
-            List<com.boxora.entity.Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+            List<com.boxora.entity.Payment> payments = paymentRepository != null ? paymentRepository.findAllByBooking_Id(booking.getId()) : java.util.Collections.emptyList();
             if (payments != null) {
                 for (com.boxora.entity.Payment p : payments) {
                     if (p.getStatus() == PaymentStatus.REFUNDED) {
@@ -2108,8 +2122,15 @@ public class BookingServiceImpl implements BookingService {
                 ? b.getStorageUnit().getUnitType()
                 : b.getUnitType();
 
+        boolean isTerminatedOrClosed = b.getStatus() == BookingStatus.COMPLETED
+                || b.getStatus() == BookingStatus.CANCELLED
+                || "REVOKED_SETTLED".equals(b.getQrAccessToken())
+                || "REVOKED_OVERDUE".equals(b.getQrAccessToken())
+                || "TERMINATED".equalsIgnoreCase(contractStatus)
+                || "CANCELLED".equalsIgnoreCase(contractStatus);
+
         String plainAccessPin = null;
-        if (b.getAccessPin() != null && !b.getAccessPin().isBlank()) {
+        if (!isTerminatedOrClosed && b.getAccessPin() != null && !b.getAccessPin().isBlank()) {
             try {
                 plainAccessPin = encryptionService.decrypt(b.getAccessPin());
             } catch (Exception ex) {
@@ -2169,8 +2190,8 @@ public class BookingServiceImpl implements BookingService {
                 .assignedStaffId(b.getHandedOverByStaffId())
                 .assignedStaffName(assignedStaffName)
                 .staffAssignmentNotes(b.getStaffAssignmentNotes())
-                .accessPin(plainAccessPin)
-                .qrAccessToken(b.getQrAccessToken())
+                .accessPin(isTerminatedOrClosed ? null : plainAccessPin)
+                .qrAccessToken(isTerminatedOrClosed ? null : b.getQrAccessToken())
                 .handoverTime(b.getHandoverTime())
                 .returnTime(b.getReturnTime())
                 .identityCardNumber(b.getIdentityCardNumber())

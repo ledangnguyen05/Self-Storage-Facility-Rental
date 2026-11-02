@@ -90,10 +90,10 @@ class ReportServiceTest {
         OverdueDebtReportResponse report = reportService.getOverdueDebtReport(null);
 
         assertThat(report.getItems()).hasSize(1);
-        assertThat(report.getItems().get(0).getUnpaidRent()).isNull();
+        assertThat(report.getItems().get(0).getUnpaidRent()).isEqualByComparingTo("1500000");
         assertThat(report.getItems().get(0).getTotalLateFee()).isEqualByComparingTo("300");
-        assertThat(report.getItems().get(0).getTotalDebt()).isNull();
-        assertThat(report.getTotalDebtAmount()).isNull();
+        assertThat(report.getItems().get(0).getTotalDebt()).isEqualByComparingTo("1500300");
+        assertThat(report.getTotalDebtAmount()).isEqualByComparingTo("1500300");
         assertThat(report.getItems().get(0).getSmartLockStatus()).isEqualTo("UNVERIFIED");
     }
 
@@ -213,7 +213,7 @@ class ReportServiceTest {
 
         verify(emailService).sendOverdueNoticeEmail(
                 eq("customer@example.com"), eq("Customer"), eq("RC-REMINDER"), eq("A-101"),
-                eq(4L), isNull(), eq("ACCESS_BLOCKED"));
+                eq(4L), eq(new BigDecimal("1500300")), eq("PIN_REVOCATION"));
         verify(activityLogService).record(
                 eq(facility.getId()), eq(ActivityAction.OVERDUE_REMINDER_SENT), eq("RentalContract"),
                 eq(contract.getId()), contains("not reconciled"), isNull(), eq("RC-REMINDER"));

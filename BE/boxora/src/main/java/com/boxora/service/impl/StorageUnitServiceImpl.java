@@ -304,6 +304,13 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
+        if (request.getPricePerMonth() != null && request.getPricePerMonth().compareTo(BigDecimal.ZERO) < 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Giá thuê hàng tháng phải lớn hơn hoặc bằng 0");
+        }
+        if (request.getAreaSqMeters() != null && request.getAreaSqMeters() <= 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Diện tích ngăn kho phải lớn hơn 0");
+        }
+
         String trimmedCode = request.getUnitCode().trim();
         if (storageUnitRepository.existsByFacility_IdAndUnitCode(request.getFacilityId(), trimmedCode)) {
             throw new AppException(ErrorCode.STORAGE_UNIT_CODE_EXISTED);
@@ -348,6 +355,10 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .orElseThrow(() -> new AppException(ErrorCode.STORAGE_UNIT_NOT_FOUND));
 
         facilityAccessGuard.checkFacilityAccess(unit.getFacility().getId());
+
+        if (request.getPricePerMonth() != null && request.getPricePerMonth().compareTo(BigDecimal.ZERO) < 0) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Giá thuê hàng tháng phải lớn hơn hoặc bằng 0");
+        }
 
         String trimmedCode = request.getUnitCode().trim();
         if (storageUnitRepository.existsByFacility_IdAndUnitCodeAndIdNot(unit.getFacility().getId(), trimmedCode, id)) {

@@ -44,6 +44,12 @@ class BookingAccessServiceTest {
     @Mock
     private FacilityAccessGuard facilityAccessGuard;
 
+    @Mock
+    private com.boxora.repository.RentalContractRepository rentalContractRepository;
+
+    @Mock
+    private com.boxora.repository.PaymentRepository paymentRepository;
+
     @InjectMocks
     private BookingServiceImpl bookingService;
 

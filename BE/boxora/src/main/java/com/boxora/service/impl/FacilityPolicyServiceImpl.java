@@ -82,6 +82,13 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
             throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
         }
 
+        int grace = request.getOverdueGraceDays() != null ? request.getOverdueGraceDays() : 0;
+        int disable = request.getOverdueAccessDisableDays() != null ? request.getOverdueAccessDisableDays() : 0;
+        int sealing = request.getOverdueSealingDays() != null ? request.getOverdueSealingDays() : 0;
+        if (grace < 0 || disable <= grace || sealing < disable) {
+            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_OVERDUE_TIMELINE);
+        }
+
         Facility facility = facilityRepository.findById(request.getFacilityId())
                 .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
 
@@ -136,6 +143,13 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
 
         if (fullHours > partialHours) {
             throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_CANCELLATION);
+        }
+
+        int grace = request.getOverdueGraceDays() != null ? request.getOverdueGraceDays() : (policy.getOverdueGraceDays() != null ? policy.getOverdueGraceDays() : 0);
+        int disable = request.getOverdueAccessDisableDays() != null ? request.getOverdueAccessDisableDays() : (policy.getOverdueAccessDisableDays() != null ? policy.getOverdueAccessDisableDays() : 0);
+        int sealing = request.getOverdueSealingDays() != null ? request.getOverdueSealingDays() : (policy.getOverdueSealingDays() != null ? policy.getOverdueSealingDays() : 0);
+        if (grace < 0 || disable <= grace || sealing < disable) {
+            throw new AppException(ErrorCode.FACILITY_POLICY_INVALID_OVERDUE_TIMELINE);
         }
 
         facilityPolicyMapper.updateEntityFromRequest(request, policy);

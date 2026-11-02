@@ -4254,12 +4254,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   return null
                 })()
 
+                const matchedBooking = customerBookings.find(
+                  b => (b.unitCode && b.unitCode.toUpperCase() === (c.unitCode || '').toUpperCase()) ||
+                       (b.id && b.id === c.bookingId)
+                )
+
                 // Kiểm tra xem kho này đã hoàn tất thủ tục trả kho hay chưa
                 const isReturnCompleted = Boolean(
                   activeReturnRequest?.status === 'COMPLETED' ||
                   (c.status as string) === 'TERMINATED' ||
                   (c.status as string) === 'COMPLETED' ||
                   (c as any).returnStatus === 'COMPLETED' ||
+                  matchedBooking?.status === 'COMPLETED' ||
+                  matchedBooking?.status === 'CANCELLED' ||
                   isContractReturnCompleted(c)
                 )
 
@@ -4270,11 +4277,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   c.tempPinGrantedUntil &&
                     !isNaN(new Date(c.tempPinGrantedUntil).getTime()) &&
                     new Date(c.tempPinGrantedUntil).getTime() > Date.now()
-                )
-
-                const matchedBooking = customerBookings.find(
-                  b => (b.unitCode && b.unitCode.toUpperCase() === (c.unitCode || '').toUpperCase()) ||
-                       (b.id && b.id === c.bookingId)
                 )
 
                 const isUnitPinRevoked = !isContractTempPinActive && (
@@ -4343,7 +4345,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </div>
                       </div>
 
-                      {(c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked || isRentalExpired) && (
+                      {!isReturnCompleted && (c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked || isRentalExpired) && (
                         <OverdueGraceWarningBanner
                           contract={c}
                           isReturnCompleted={isReturnCompleted}
@@ -4369,11 +4371,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
                             {formatDisplayDate(c.endDate)}
                           </span>
-                          <RentalExpirationCountdown
-                            contract={c}
-                            renewals={unitRenewals}
-                            isReturnCompleted={isReturnCompleted}
-                          />
+                          {!isReturnCompleted && (
+                            <RentalExpirationCountdown
+                              contract={c}
+                              renewals={unitRenewals}
+                              isReturnCompleted={isReturnCompleted}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -4599,7 +4603,21 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       )}
 
                       {/* Security PIN Box / Overdue Locked Notice */}
-                      {isUnitPinRevoked ? (
+                      {isReturnCompleted ? (
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-slate-200/80 text-slate-500 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-[22px]">lock</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-xs sm:text-sm font-bold text-slate-700">
+                              Hợp đồng đã hoàn tất ngưng thuê
+                            </span>
+                            <span className="text-[11px] text-slate-500 mt-0.5">
+                              Mã PIN và quyền truy cập buồng kho đã được thu hồi và đóng quyền sử dụng theo thủ tục trả kho.
+                            </span>
+                          </div>
+                        </div>
+                      ) : isUnitPinRevoked ? (
                         <div className="p-4 rounded-xl bg-rose-50/90 border border-rose-300 shadow-xs flex flex-col gap-2.5 relative">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-2">

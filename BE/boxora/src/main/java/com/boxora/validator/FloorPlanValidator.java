@@ -40,8 +40,6 @@ public class FloorPlanValidator {
             }
 
             Set<String> floorCodes = new HashSet<>();
-            Set<String> zoneCodes = new HashSet<>();
-            Set<String> functionalAreaCodes = new HashSet<>();
             Set<String> validFloorIdentifiers = new HashSet<>();
 
             for (JsonNode floor : floorsNode) {
@@ -69,6 +67,8 @@ public class FloorPlanValidator {
                 }
 
                 double zonesAndAreasTotal = 0.0;
+                Set<String> zoneCodes = new HashSet<>();
+                Set<String> functionalAreaCodes = new HashSet<>();
 
                 // Validate Zones
                 JsonNode zonesNode = floor.get("zones");

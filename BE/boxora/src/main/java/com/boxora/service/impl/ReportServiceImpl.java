@@ -124,11 +124,11 @@ public class ReportServiceImpl implements ReportService {
                         warningAmt = warningAmt.add(debt);
                         warningCnt++;
                     }
-                    case "ACCESS_BLOCKED" -> {
+                    case "ACCESS_BLOCKED", "PIN_REVOCATION" -> {
                         accessBlockedAmt = accessBlockedAmt.add(debt);
                         accessBlockedCnt++;
                     }
-                    case "ELIGIBLE_FOR_SEALING" -> {
+                    case "ELIGIBLE_FOR_SEALING", "SEALING_ELIGIBLE" -> {
                         eligibleForSealingAmt = eligibleForSealingAmt.add(debt);
                         eligibleForSealingCnt++;
                     }
@@ -486,11 +486,10 @@ public class ReportServiceImpl implements ReportService {
             }
 
             long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-            // RentalContract has no recurring invoice/payment ledger, so monthlyFee cannot be called unpaid rent.
-            BigDecimal unpaidRent = null;
+            BigDecimal unpaidRent = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
             BigDecimal dailyLateFee = configuredDailyLateFee(policy);
             BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
-            BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+            BigDecimal totalDebt = unpaidRent.add(totalLateFee != null ? totalLateFee : BigDecimal.ZERO);
             String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
             overdueItems.add(OverdueDebtItemResponse.builder()
@@ -611,9 +610,9 @@ public class ReportServiceImpl implements ReportService {
                 graceCount++;
             } else if ("WARNING".equals(item.getOverdueStage())) {
                 warningCount++;
-            } else if ("ACCESS_BLOCKED".equals(item.getOverdueStage())) {
+            } else if ("ACCESS_BLOCKED".equals(item.getOverdueStage()) || "PIN_REVOCATION".equals(item.getOverdueStage())) {
                 blockedCount++;
-            } else if ("ELIGIBLE_FOR_SEALING".equals(item.getOverdueStage())) {
+            } else if ("ELIGIBLE_FOR_SEALING".equals(item.getOverdueStage()) || "SEALING_ELIGIBLE".equals(item.getOverdueStage())) {
                 sealingCount++;
             } else if ("POLICY_UNCONFIGURED".equals(item.getOverdueStage())) {
                 policyUnconfiguredCount++;
@@ -692,10 +691,9 @@ public class ReportServiceImpl implements ReportService {
         }
 
         long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-        // The contract model has no recurring invoice ledger, so monthlyFee is not an authoritative unpaid balance.
-        BigDecimal unpaidRent = null;
+        BigDecimal unpaidRent = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
         BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
-        BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
+        BigDecimal totalDebt = unpaidRent.add(totalLateFee != null ? totalLateFee : BigDecimal.ZERO);
         String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
         User customer = contract.getCustomer();
@@ -753,8 +751,8 @@ public class ReportServiceImpl implements ReportService {
         }
         if (daysOverdue <= policy.getOverdueGraceDays()) return "GRACE_PERIOD";
         if (daysOverdue < policy.getOverdueAccessDisableDays()) return "WARNING";
-        if (daysOverdue < policy.getOverdueSealingDays()) return "ACCESS_BLOCKED";
-        return "ELIGIBLE_FOR_SEALING";
+        if (daysOverdue < policy.getOverdueSealingDays()) return "PIN_REVOCATION";
+        return "SEALING_ELIGIBLE";
     }
 
     private BigDecimal addIfKnown(BigDecimal left, BigDecimal right) {

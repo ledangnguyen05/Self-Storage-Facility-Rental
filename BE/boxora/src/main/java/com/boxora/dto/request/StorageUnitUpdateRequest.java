@@ -2,6 +2,7 @@ package com.boxora.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -24,6 +25,8 @@ public class StorageUnitUpdateRequest {
     @NotNull(message = "Unit type ID is required")
     private UUID unitTypeId;
 
+    @NotNull(message = "Giá thuê hàng tháng không được để trống")
+    @PositiveOrZero(message = "Giá thuê hàng tháng phải lớn hơn hoặc bằng 0")
     private java.math.BigDecimal pricePerMonth;
 
     private String priceChangeReason;

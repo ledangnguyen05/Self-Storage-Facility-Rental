@@ -114,10 +114,13 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
         if (policy.getOverdueGraceDays() == null || policy.getOverdueGraceDays() < 0) {
             return false;
         }
-        if (policy.getDailyLateFee() == null || policy.getDailyLateFee().compareTo(BigDecimal.ZERO) <= 0) {
+        if (policy.getDailyLateFee() == null || policy.getDailyLateFee().compareTo(BigDecimal.ZERO) < 0) {
             return false;
         }
         if (policy.getOverdueAccessDisableDays() == null || policy.getOverdueAccessDisableDays() < 0) {
+            return false;
+        }
+        if (policy.getOverdueAccessDisableDays() <= policy.getOverdueGraceDays()) {
             return false;
         }
         if (policy.getOverdueSealingDays() == null || policy.getOverdueSealingDays() < 0) {

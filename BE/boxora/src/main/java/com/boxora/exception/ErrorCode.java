@@ -130,6 +130,7 @@ public enum ErrorCode {
     POLICY_CONFIRMATION_REQUIRED(1105, "Quý khách bắt buộc phải đọc và xác nhận đồng ý với Điều khoản hủy hợp đồng & hoàn tiền trước khi tiến hành ký hợp đồng.", HttpStatus.BAD_REQUEST),
     POLICY_VERSION_MISMATCH(1106, "Phiên bản chính sách hủy hợp đồng đã được cập nhật mới. Quý khách vui lòng đọc và xác nhận lại chính sách mới nhất.", HttpStatus.CONFLICT),
     POLICY_CONFIRMATION_FAILED(1107, "Ghi nhận xác nhận điều khoản hủy hợp đồng thất bại. Vui lòng thử lại.", HttpStatus.INTERNAL_SERVER_ERROR),
+    FACILITY_POLICY_INVALID_OVERDUE_TIMELINE(1108, "Các mốc thời gian quá hạn phải thỏa mãn: 0 <= Ân hạn < Vô hiệu hóa PIN <= Niêm phong", HttpStatus.BAD_REQUEST),
 
     // ========================= SUPPORT_TICKET (1200 - 1299) =========================
     TICKET_NOT_FOUND(1200, "Phiếu sự cố không tồn tại hoặc không thuộc quyền quản lý của bạn", HttpStatus.NOT_FOUND),

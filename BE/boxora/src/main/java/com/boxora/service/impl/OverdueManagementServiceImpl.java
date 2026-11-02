@@ -1421,7 +1421,38 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         if (booking == null && contract.getUnit() != null) {
             booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(contract.getUnit().getId()).orElse(null);
         }
+
+        // Book debt settlement payment to cash-in and recognized revenue
+        Facility facility = contract.getFacility();
+        FacilityPolicy policy = (facility != null)
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null)
+                : null;
+        LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
+        OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+        BigDecimal settledAmount = (calc != null && calc.totalDebt() != null) ? calc.totalDebt() : BigDecimal.ZERO;
+
+        if (settledAmount.compareTo(BigDecimal.ZERO) > 0) {
+            String txnId = "SETTLE-" + contract.getContractCode() + "-" + System.currentTimeMillis();
+            Payment payment = Payment.builder()
+                    .transactionId(txnId)
+                    .booking(booking)
+                    .contract(contract)
+                    .amount(settledAmount)
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .paymentMethod("CASH")
+                    .status(PaymentStatus.PAID)
+                    .paymentTime(LocalDateTime.now())
+                    .collectedByStaff(currentUser)
+                    .confirmedByStaff(currentUser)
+                    .confirmedAt(LocalDateTime.now())
+                    .paymentNotes("Tất toán toàn bộ công nợ quá hạn và hoàn tất trả kho giải phóng buồng tại quầy")
+                    .build();
+            paymentRepository.save(payment);
+        }
+
         if (booking != null) {
+            booking.setAccessPin(null);
+            booking.setQrAccessToken("REVOKED_SETTLED");
             booking.setStatus(BookingStatus.COMPLETED);
             bookingRepository.save(booking);
         }
