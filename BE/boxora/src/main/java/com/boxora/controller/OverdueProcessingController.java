@@ -142,8 +142,11 @@ public class OverdueProcessingController {
     @PostMapping("/overdue/contracts/{contractId}/complete-settlement")
     @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_BUSINESS_MANAGER', 'ROLE_STAFF')")
     @Operation(summary = "Xác nhận khách hàng đã tới thanh toán công nợ và hoàn tất trả kho")
-    public ResponseEntity<ApiResponse<String>> completeSettlement(@PathVariable UUID contractId) {
-        overdueManagementService.completeSettlement(contractId);
+    public ResponseEntity<ApiResponse<String>> completeSettlement(
+            @PathVariable UUID contractId,
+            @RequestBody(required = false) com.boxora.dto.request.OverdueSettlementRequest request
+    ) {
+        overdueManagementService.completeSettlement(contractId, request);
         return ResponseEntity.ok(ApiResponse.success("Đã hoàn tất thanh toán và trả kho thành công"));
     }
 

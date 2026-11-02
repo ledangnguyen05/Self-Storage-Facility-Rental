@@ -47,6 +47,8 @@ class OverdueManagementServiceTest {
     @Mock
     private PaymentRepository paymentRepository;
     @Mock
+    private HandoverRecordRepository handoverRecordRepository;
+    @Mock
     private OverdueNoticeLogRepository overdueNoticeLogRepository;
     @Mock
     private PinRevocationRequestRepository pinRevocationRequestRepository;

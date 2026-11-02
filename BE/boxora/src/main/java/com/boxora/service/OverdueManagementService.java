@@ -42,6 +42,10 @@ public interface OverdueManagementService {
 
     byte[] exportOverdueCsv(UUID facilityId, String stage, String searchTerm);
 
-    void completeSettlement(UUID contractId);
+    default void completeSettlement(UUID contractId) {
+        completeSettlement(contractId, null);
+    }
+
+    void completeSettlement(UUID contractId, com.boxora.dto.request.OverdueSettlementRequest request);
 }
 

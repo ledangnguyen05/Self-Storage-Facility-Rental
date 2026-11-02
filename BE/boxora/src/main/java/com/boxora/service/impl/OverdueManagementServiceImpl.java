@@ -3,6 +3,7 @@ package com.boxora.service.impl;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.OverduePinActionRequest;
 import com.boxora.dto.request.OverduePinTempGrantRequest;
+import com.boxora.dto.request.OverdueSettlementRequest;
 import com.boxora.dto.request.OverdueSealingWorkflowRequest;
 import com.boxora.dto.request.OverdueSendReminderRequest;
 import com.boxora.dto.response.OverdueContractDetailResponse;
@@ -46,6 +47,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     private final SealingRecordRepository sealingRecordRepository;
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
+    private final HandoverRecordRepository handoverRecordRepository;
 
     private final OverdueNoticeLogRepository overdueNoticeLogRepository;
     private final PinRevocationRequestRepository pinRevocationRequestRepository;
@@ -1383,6 +1385,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     @Override
     @Transactional
     public void completeSettlement(UUID contractId) {
+        completeSettlement(contractId, null);
+    }
+
+    @Override
+    @Transactional
+    public void completeSettlement(UUID contractId, OverdueSettlementRequest request) {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
@@ -1397,6 +1405,74 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         User currentUser = getCurrentUser();
         String oldStatus = contract.getStatus() != null ? contract.getStatus().name() : "N/A";
 
+        Booking booking = contract.getBooking();
+        if (booking == null && contract.getUnit() != null) {
+            booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(contract.getUnit().getId()).orElse(null);
+        }
+
+        Facility facility = contract.getFacility();
+        FacilityPolicy policy = (facility != null)
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null)
+                : null;
+        LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
+        OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+        BigDecimal remainingDebt = (calc != null && calc.totalDebt() != null) ? calc.totalDebt() : BigDecimal.ZERO;
+
+        // Strict Financial Audit:
+        // Do NOT blindly create a PAID CASH payment merely from clicking "Đã xong".
+        // Must verify real payment proof or existing PAID payment before settling.
+        if (remainingDebt.compareTo(BigDecimal.ZERO) > 0) {
+            if (request == null || request.getReceiptVoucherCode() == null || request.getReceiptVoucherCode().trim().isEmpty()) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Không thể hoàn tất tất toán: Khách hàng vẫn còn nợ cước "
+                                + String.format(Locale.ROOT, "%,.0f", remainingDebt.doubleValue())
+                                + " đ chưa được thanh toán hoặc xác nhận qua chứng từ hợp lệ.");
+            }
+
+            // Verify staff counter payment submission
+            String cleanVoucher = request.getReceiptVoucherCode().trim();
+            if (paymentRepository.existsByReceiptVoucherCodeIgnoreCase(cleanVoucher)) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Mã phiếu thu " + cleanVoucher + " đã tồn tại trong hệ thống");
+            }
+
+            if (request.getAmount() == null || request.getAmount().compareTo(remainingDebt) < 0) {
+                throw new AppException(ErrorCode.INVALID_REQUEST,
+                        "Số tiền thanh toán (" + (request.getAmount() != null ? request.getAmount() : 0)
+                                + ") nhỏ hơn số dư nợ quá hạn cần thanh toán (" + remainingDebt + ")");
+            }
+
+            String method = (request.getPaymentMethod() != null && !request.getPaymentMethod().isBlank())
+                    ? request.getPaymentMethod().trim().toUpperCase() : "CASH";
+            if (!"CASH".equals(method) && !"BANK_TRANSFER".equals(method)) {
+                throw new AppException(ErrorCode.INVALID_PAYMENT_METHOD);
+            }
+
+            String txnId = "SETTLE-" + contract.getContractCode() + "-" + System.currentTimeMillis();
+            Payment payment = Payment.builder()
+                    .transactionId(txnId)
+                    .booking(booking)
+                    .contract(contract)
+                    .amount(request.getAmount())
+                    .paymentType(PaymentType.RENTAL_FEE)
+                    .paymentMethod(method)
+                    .receiptVoucherCode(cleanVoucher)
+                    .referenceCode(request.getReferenceCode() != null ? request.getReferenceCode().trim() : null)
+                    .proofDocumentUrl(request.getProofDocumentUrl() != null ? request.getProofDocumentUrl().trim() : null)
+                    .status(PaymentStatus.PAID)
+                    .paymentTime(LocalDateTime.now())
+                    .collectedByStaff(currentUser)
+                    .confirmedByStaff(currentUser)
+                    .confirmedAt(LocalDateTime.now())
+                    .paymentNotes(request.getNotes() != null && !request.getNotes().isBlank()
+                            ? request.getNotes()
+                            : "Thanh toán công nợ quá hạn tại quầy cơ sở")
+                    .build();
+            paymentRepository.save(payment);
+        }
+        // Note: If remainingDebt <= 0, customer ALREADY paid in full.
+        // We do NOT create any duplicate payment! (Test 2: Đã thanh toán hợp lệ -> không thu trùng)
+
+        // Clear temporary overdue access & mark contract terminated
         contract.setStatus(RentalContractStatus.TERMINATED);
         contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
         contract.setOverdueSealingStatus(OverdueSealingStatus.NONE);
@@ -1412,49 +1488,61 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             sealingRecordRepository.save(sr);
         }
 
-        if (contract.getUnit() != null) {
-            contract.getUnit().setStatus(UnitStatus.AVAILABLE);
-            storageUnitRepository.save(contract.getUnit());
-        }
-
-        Booking booking = contract.getBooking();
-        if (booking == null && contract.getUnit() != null) {
-            booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(contract.getUnit().getId()).orElse(null);
-        }
-
-        // Book debt settlement payment to cash-in and recognized revenue
-        Facility facility = contract.getFacility();
-        FacilityPolicy policy = (facility != null)
-                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null)
-                : null;
-        LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
-        OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
-        BigDecimal settledAmount = (calc != null && calc.totalDebt() != null) ? calc.totalDebt() : BigDecimal.ZERO;
-
-        if (settledAmount.compareTo(BigDecimal.ZERO) > 0) {
-            String txnId = "SETTLE-" + contract.getContractCode() + "-" + System.currentTimeMillis();
-            Payment payment = Payment.builder()
-                    .transactionId(txnId)
-                    .booking(booking)
-                    .contract(contract)
-                    .amount(settledAmount)
-                    .paymentType(PaymentType.RENTAL_FEE)
-                    .paymentMethod("CASH")
-                    .status(PaymentStatus.PAID)
-                    .paymentTime(LocalDateTime.now())
-                    .collectedByStaff(currentUser)
-                    .confirmedByStaff(currentUser)
-                    .confirmedAt(LocalDateTime.now())
-                    .paymentNotes("Tất toán toàn bộ công nợ quá hạn và hoàn tất trả kho giải phóng buồng tại quầy")
-                    .build();
-            paymentRepository.save(payment);
-        }
-
         if (booking != null) {
             booking.setAccessPin(null);
             booking.setQrAccessToken("REVOKED_SETTLED");
             booking.setStatus(BookingStatus.COMPLETED);
             bookingRepository.save(booking);
+        }
+
+        // Safe Storage Unit Release Logic:
+        // Distinguish:
+        // A. Customer pays debt and continues renting -> (contract renewal)
+        // B. Customer pays debt but has not completed physical return -> unit remains not AVAILABLE
+        // C. Customer pays debt, returns locker, inspection passes, and IoT SmartLock access is revoked -> AVAILABLE
+        if (contract.getUnit() != null) {
+            StorageUnit unit = contract.getUnit();
+            String unitCode = unit.getUnitCode() != null ? unit.getUnitCode() : "";
+
+            // Check if physical return handover record exists
+            Optional<HandoverRecord> returnRecordOpt = Optional.empty();
+            if (booking != null) {
+                returnRecordOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(booking.getId(), "RETURN");
+                if (returnRecordOpt.isEmpty()) {
+                    returnRecordOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(booking.getId(), "INSPECTION");
+                }
+            }
+
+            // Revoke IoT credentials via SmartLockAdapter
+            SmartLockAdapter.RevocationResult revokeRes = smartLockAdapter.revokeCredentials(unitCode, "ONLINE", false);
+            boolean smartLockRevoked = (revokeRes != null && revokeRes.success());
+
+            if (returnRecordOpt.isEmpty()) {
+                // Physical return has not taken place: do NOT release unit to AVAILABLE!
+                log.info("Contract {} settled debt, but physical return handover is pending. Unit {} remains in status {}",
+                        contract.getContractCode(), unitCode, unit.getStatus());
+            } else if (!smartLockRevoked) {
+                // SmartLock IoT device revocation failed: do NOT release unit to AVAILABLE!
+                log.warn("Contract {} settled and inspected, but SmartLock IoT revocation failed for unit {}. Unit cannot be AVAILABLE.",
+                        contract.getContractCode(), unitCode);
+            } else {
+                HandoverRecord hr = returnRecordOpt.get();
+                boolean hasDamageOrIssues = (hr.getDeductionAmount() != null && hr.getDeductionAmount().compareTo(BigDecimal.ZERO) > 0)
+                        || Boolean.FALSE.equals(hr.getDoorConditionPassed())
+                        || Boolean.FALSE.equals(hr.getCleanlinessPassed())
+                        || Boolean.FALSE.equals(hr.getSmartLockPassed())
+                        || Boolean.FALSE.equals(hr.getSensorPassed())
+                        || Boolean.FALSE.equals(hr.getWallStructurePassed());
+
+                if (hasDamageOrIssues) {
+                    unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+                    log.info("Unit {} moved to UNDER_MAINTENANCE after return inspection with issues", unitCode);
+                } else {
+                    unit.setStatus(UnitStatus.AVAILABLE);
+                    log.info("Unit {} return inspection passed and SmartLock revoked successfully. Released to AVAILABLE", unitCode);
+                }
+                storageUnitRepository.save(unit);
+            }
         }
 
         rentalContractRepository.save(contract);

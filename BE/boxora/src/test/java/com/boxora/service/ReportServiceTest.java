@@ -6,9 +6,11 @@ import com.boxora.dto.response.SystemRevenueSummaryResponse;
 import com.boxora.enums.ActivityAction;
 import com.boxora.entity.*;
 import com.boxora.enums.BookingStatus;
+import com.boxora.enums.OverdueStage;
 import com.boxora.enums.RentalContractStatus;
 import com.boxora.repository.*;
 import com.boxora.security.FacilityAccessGuard;
+import com.boxora.service.OverdueDebtCalculationService;
 import com.boxora.service.impl.ReportServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,6 +29,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -47,6 +50,7 @@ class ReportServiceTest {
     @Mock private ActivityLogService activityLogService;
     @Mock private FacilityAccessGuard facilityAccessGuard;
     @Mock private RefundRequestRepository refundRequestRepository;
+    @Mock private OverdueDebtCalculationService overdueDebtCalculationService;
 
     @InjectMocks
     private ReportServiceImpl reportService;
@@ -68,6 +72,23 @@ class ReportServiceTest {
                 .overdueSealingDays(7)
                 .dailyLateFee(new BigDecimal("100"))
                 .build();
+
+        lenient().when(overdueDebtCalculationService.calculateOverdueDebt(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    RentalContract c = invocation.getArgument(0);
+                    FacilityPolicy p = invocation.getArgument(1);
+                    LocalDate d = invocation.getArgument(2);
+                    long days = java.time.temporal.ChronoUnit.DAYS.between(c.getEndDate(), d != null ? d : LocalDate.now());
+                    BigDecimal daily = (p != null && p.getDailyLateFee() != null) ? p.getDailyLateFee() : BigDecimal.ZERO;
+                    long billable = (p != null && p.getOverdueGraceDays() != null) ? Math.max(0, days - p.getOverdueGraceDays()) : days;
+                    BigDecimal late = daily.multiply(BigDecimal.valueOf(billable));
+                    BigDecimal principal = c.getMonthlyFee() != null ? c.getMonthlyFee() : BigDecimal.ZERO;
+                    BigDecimal total = principal.add(late);
+                    return new OverdueDebtCalculationService.CalculationResult(
+                            days, principal, daily, late, total, BigDecimal.ZERO,
+                            OverdueStage.PIN_REVOCATION, true, null, c.getEndDate(), d, ""
+                    );
+                });
         lenient().when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()))
                 .thenReturn(Optional.of(policy));
     }

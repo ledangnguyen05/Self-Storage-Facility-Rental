@@ -33,15 +33,41 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
                 : 0L;
 
         boolean policyValid = isPolicyValid(policy);
-        BigDecimal principalDebt = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
 
-        // Check for any pending unverified payments
+        // Multi-period calculation: overdueCycles is 1 for <= 30 days, 2 for 31-60 days, etc.
+        long overdueCycles = (overdueDays > 0) ? ((overdueDays - 1) / 30 + 1) : 0L;
+        BigDecimal monthlyFee = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
+        BigDecimal grossPrincipalDebt = (overdueDays > 0)
+                ? monthlyFee.multiply(BigDecimal.valueOf(Math.max(1L, overdueCycles)))
+                : monthlyFee;
+
+        // Check for paid and unverified payments
+        BigDecimal paidTowardsDebt = BigDecimal.ZERO;
         BigDecimal unverifiedAmount = BigDecimal.ZERO;
         try {
-            List<Payment> contractPayments = paymentRepository.findByContract_Id(contract.getId());
-            for (Payment p : contractPayments) {
-                if (p.getStatus() == PaymentStatus.PENDING && p.getAmount() != null) {
-                    unverifiedAmount = unverifiedAmount.add(p.getAmount());
+            if (contract.getId() != null) {
+                List<Payment> contractPayments = paymentRepository.findByContract_Id(contract.getId());
+                for (Payment p : contractPayments) {
+                    if (p.getStatus() == PaymentStatus.PAID && p.getAmount() != null) {
+                        paidTowardsDebt = paidTowardsDebt.add(p.getAmount());
+                    } else if (p.getStatus() == PaymentStatus.PENDING && p.getAmount() != null) {
+                        unverifiedAmount = unverifiedAmount.add(p.getAmount());
+                    }
+                }
+            }
+            if (contract.getBooking() != null && contract.getBooking().getId() != null) {
+                List<Payment> bookingPayments = paymentRepository.findAllByBooking_Id(contract.getBooking().getId());
+                for (Payment p : bookingPayments) {
+                    if (p.getContract() != null && contract.getId() != null && contract.getId().equals(p.getContract().getId())) {
+                        continue;
+                    }
+                    if (p.getPaymentTime() != null && dueDate != null && !p.getPaymentTime().toLocalDate().isBefore(dueDate)) {
+                        if (p.getStatus() == PaymentStatus.PAID && p.getAmount() != null) {
+                            paidTowardsDebt = paidTowardsDebt.add(p.getAmount());
+                        } else if (p.getStatus() == PaymentStatus.PENDING && p.getAmount() != null) {
+                            unverifiedAmount = unverifiedAmount.add(p.getAmount());
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
@@ -49,12 +75,13 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
         }
 
         if (!policyValid) {
+            BigDecimal netPrincipal = grossPrincipalDebt.subtract(paidTowardsDebt).max(BigDecimal.ZERO);
             return new CalculationResult(
                     overdueDays,
-                    principalDebt,
+                    netPrincipal,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
-                    principalDebt,
+                    netPrincipal,
                     unverifiedAmount,
                     OverdueStage.POLICY_UNCONFIGURED,
                     false,
@@ -71,8 +98,13 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
         int sealingDays = policy.getOverdueSealingDays();
 
         long billableDays = Math.max(0, overdueDays - graceDays);
-        BigDecimal lateFee = dailyRate.multiply(BigDecimal.valueOf(billableDays));
-        BigDecimal totalDebt = principalDebt.add(lateFee);
+        BigDecimal grossLateFee = dailyRate.multiply(BigDecimal.valueOf(billableDays));
+
+        // Deduct paid debt: first against principal debt, remainder against late fee
+        BigDecimal netPrincipalDebt = grossPrincipalDebt.subtract(paidTowardsDebt).max(BigDecimal.ZERO);
+        BigDecimal remainderPaid = paidTowardsDebt.subtract(grossPrincipalDebt).max(BigDecimal.ZERO);
+        BigDecimal netLateFee = grossLateFee.subtract(remainderPaid).max(BigDecimal.ZERO);
+        BigDecimal netTotalDebt = netPrincipalDebt.add(netLateFee);
 
         OverdueStage stage;
         if (overdueDays <= graceDays) {
@@ -86,16 +118,18 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
         }
 
         String formulaExplanation = String.format(
-                "Phí phạt = max(0, %d ngày quá hạn - %d ngày ân hạn) × %,.0f đ/ngày = %,.0f đ",
-                overdueDays, graceDays, dailyRate.doubleValue(), lateFee.doubleValue()
+                "Phí phạt = max(0, %d ngày quá hạn - %d ngày ân hạn) × %,.0f đ/ngày = %,.0f đ. Nợ gốc (%d kỳ) = %,.0f đ%s",
+                overdueDays, graceDays, dailyRate.doubleValue(), netLateFee.doubleValue(),
+                Math.max(1L, overdueCycles), netPrincipalDebt.doubleValue(),
+                paidTowardsDebt.compareTo(BigDecimal.ZERO) > 0 ? String.format(" (Đã thanh toán: %,.0f đ)", paidTowardsDebt.doubleValue()) : ""
         );
 
         return new CalculationResult(
                 overdueDays,
-                principalDebt,
+                netPrincipalDebt,
                 dailyRate,
-                lateFee,
-                totalDebt,
+                netLateFee,
+                netTotalDebt,
                 unverifiedAmount,
                 stage,
                 true,
@@ -132,4 +166,3 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
         return true;
     }
 }
-

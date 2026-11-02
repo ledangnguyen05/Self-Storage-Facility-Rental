@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 
 import com.boxora.entity.Payment;
 import com.boxora.enums.PaymentType;
+import com.boxora.service.OverdueDebtCalculationService;
 
 @Service
 @RequiredArgsConstructor
@@ -49,6 +50,7 @@ public class ReportServiceImpl implements ReportService {
     private final ActivityLogService activityLogService;
     private final FacilityAccessGuard facilityAccessGuard;
     private final RefundRequestRepository refundRequestRepository;
+    private final OverdueDebtCalculationService overdueDebtCalculationService;
 
     @Override
     public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate) {
@@ -485,12 +487,13 @@ public class ReportServiceImpl implements ReportService {
                 policy = policyCache.computeIfAbsent(facilityId, id -> facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(id).orElse(null));
             }
 
-            long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-            BigDecimal unpaidRent = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
-            BigDecimal dailyLateFee = configuredDailyLateFee(policy);
-            BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
-            BigDecimal totalDebt = unpaidRent.add(totalLateFee != null ? totalLateFee : BigDecimal.ZERO);
-            String overdueStage = resolveOverdueStage(daysOverdue, policy);
+            OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+            long daysOverdue = calc.overdueDays();
+            BigDecimal unpaidRent = calc.principalDebt();
+            BigDecimal dailyLateFee = calc.dailyLateFee();
+            BigDecimal totalLateFee = calc.lateFee();
+            BigDecimal totalDebt = calc.totalDebt();
+            String overdueStage = calc.stage() != null ? calc.stage().name() : "POLICY_UNCONFIGURED";
 
             overdueItems.add(OverdueDebtItemResponse.builder()
                     .contractId(contract.getId())
@@ -690,11 +693,10 @@ public class ReportServiceImpl implements ReportService {
             throw new AppException(ErrorCode.INVALID_REQUEST, "An active facility overdue policy is required to calculate this reminder");
         }
 
-        long daysOverdue = ChronoUnit.DAYS.between(contract.getEndDate(), today);
-        BigDecimal unpaidRent = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
-        BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
-        BigDecimal totalDebt = unpaidRent.add(totalLateFee != null ? totalLateFee : BigDecimal.ZERO);
-        String overdueStage = resolveOverdueStage(daysOverdue, policy);
+        OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+        long daysOverdue = calc.overdueDays();
+        BigDecimal totalDebt = calc.totalDebt();
+        String overdueStage = calc.stage() != null ? calc.stage().name() : "POLICY_UNCONFIGURED";
 
         User customer = contract.getCustomer();
         if (customer != null && customer.getEmail() != null) {
