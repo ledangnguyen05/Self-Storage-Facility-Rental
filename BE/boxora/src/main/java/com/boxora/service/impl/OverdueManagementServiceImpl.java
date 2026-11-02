@@ -201,6 +201,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     if (!matches) {
                         continue;
                     }
+                }
                 LocalDateTime settledTime = logItem.getCreatedAt() != null ? logItem.getCreatedAt()
                         : (c.getUpdatedAt() != null ? c.getUpdatedAt() : LocalDateTime.now());
                 String settledAtStr = settledTime.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
@@ -395,6 +396,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             var settlementAuditOpt = overdueAuditLogRepository.findByContract_IdOrderByCreatedAtDesc(contractId).stream()
                     .filter(a -> "OVERDUE_SETTLED_COMPLETED".equals(a.getAction()))
                     .findFirst();
+            if (settlementAuditOpt.isPresent()) {
+                var audit = settlementAuditOpt.get();
                 LocalDateTime settledTime = audit.getCreatedAt() != null ? audit.getCreatedAt()
                         : (contract.getUpdatedAt() != null ? contract.getUpdatedAt() : LocalDateTime.now());
                 settledAtStr = settledTime.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));

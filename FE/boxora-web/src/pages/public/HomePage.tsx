@@ -116,7 +116,7 @@ export const HomePage: React.FC = () => {
                         >
                           <span className="flex items-center gap-2">
                             <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                            <span>{isCustomer ? t('Vào Portal Quản Lý Kho (Khóa IoT)') : t('Vào Trang Điều Hành Portal')}</span>
+                            <span>{isCustomer ? t('Vào trang Quản Lý Kho ') : t('Vào Trang Điều Hành Portal')}</span>
                           </span>
                           <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                         </button>

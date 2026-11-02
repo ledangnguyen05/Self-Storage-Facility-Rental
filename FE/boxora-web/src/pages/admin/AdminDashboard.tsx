@@ -749,7 +749,7 @@ export const AdminDashboard: React.FC = () => {
                     <span>Truy vết an ninh &amp; kiểm toán</span>
                   </div>
                   <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
-                    Nhật ký kiểm toán (Audit logs)
+                    Nhật ký kiểm toán
                   </h1>
                   <p className="text-sm text-slate-600 mt-1 max-w-3xl">
                     Bảng theo dõi lịch sử đăng nhập và truy vết mọi thao tác thay đổi dữ liệu quan trọng trên hệ thống của tất cả người dùng, đảm bảo tính minh bạch và an toàn bảo mật.

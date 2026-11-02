@@ -710,7 +710,7 @@ export const DashboardLayout: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                  <span>{t('MA TRẬN PHÂN QUYỀN (RBAC)', 'RBAC MATRIX')}</span>
+                  <span>{t('MA TRẬN PHÂN QUYỀN', 'RBAC MATRIX')}</span>
                 </Link>
 
                 {/* 3. Nhật ký kiểm toán (Audit logs) */}
@@ -723,7 +723,7 @@ export const DashboardLayout: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">receipt_long</span>
-                  <span>{t('NHẬT KÝ KIỂM TOÁN (AUDIT LOGS)', 'AUDIT LOGS')}</span>
+                  <span>{t('NHẬT KÝ KIỂM TOÁN', 'AUDIT LOGS')}</span>
                 </Link>
 
                 {/* 4. Báo cáo sự cố hệ thống */}

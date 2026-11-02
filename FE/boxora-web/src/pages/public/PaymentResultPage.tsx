@@ -546,7 +546,7 @@ export const PaymentResultPage = () => {
                     to="/portal/customer"
                     className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer"
                   >
-                    Vào Portal Quản Lý Kho
+                    Vào trang Quản Lý Kho
                   </Link>
                 </div>
               )}
