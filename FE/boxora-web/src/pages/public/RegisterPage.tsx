@@ -266,7 +266,17 @@ export const RegisterPage: React.FC = () => {
       }
     }
 
-    // 4. Password matching check
+    // 4. Password validation
+    if (!formData.password) {
+      setError('Mật khẩu là bắt buộc.')
+      return
+    }
+
+    if (formData.password.length < 5) {
+      setError('Mật khẩu phải ít nhất 5 ký tự.')
+      return
+    }
+
     if (formData.password !== formData.confirmPassword) {
       setError('Mật khẩu nhập lại không trùng khớp. Vui lòng kiểm tra lại.')
       return
@@ -331,7 +341,20 @@ export const RegisterPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err)
-      setError(err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.')
+      let msg = err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.'
+      if (
+        msg.includes('must be at least 5') ||
+        msg.includes('phải có ít nhất 5 ký tự') ||
+        msg.includes('Mật khẩu must') ||
+        msg.includes('password:')
+      ) {
+        msg = msg
+          .replace(/Mật khẩu must be at least 5 characters/gi, 'Mật khẩu phải ít nhất 5 ký tự')
+          .replace(/Password must be at least 5 characters/gi, 'Mật khẩu phải ít nhất 5 ký tự')
+          .replace(/Mật khẩu phải có ít nhất 5 ký tự/gi, 'Mật khẩu phải ít nhất 5 ký tự')
+          .replace(/\(password: [^)]+\)/gi, '(password: Mật khẩu phải ít nhất 5 ký tự)')
+      }
+      setError(msg)
       loadCaptcha()
     } finally {
       setIsLoading(false)

@@ -282,7 +282,7 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
         {/* Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            Hệ thống chính sách được đồng bộ tự động từ API FacilityPolicyController
+            Hệ thống chính sách được đồng bộ tự động từ hệ thống
           </span>
           <button
             type="button"

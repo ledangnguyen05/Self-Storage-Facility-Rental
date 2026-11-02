@@ -40,7 +40,7 @@ export const ResetPasswordPage: React.FC = () => {
     }
 
     if (newPassword.length < 5) {
-      setError('Mật khẩu mới phải có tối thiểu 5 ký tự.')
+      setError('Mật khẩu phải ít nhất 5 ký tự.')
       return
     }
 

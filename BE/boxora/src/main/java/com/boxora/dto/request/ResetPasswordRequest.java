@@ -15,7 +15,7 @@ public class ResetPasswordRequest {
     private String token;
 
     @NotBlank(message = "New password is required")
-    @Size(min = 5, message = "Mật khẩu phải có ít nhất 5 ký tự")
+    @Size(min = 5, message = "Mật khẩu phải ít nhất 5 ký tự")
     private String newPassword;
 
     @NotBlank(message = "Xác nhận mật khẩu")

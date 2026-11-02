@@ -233,33 +233,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               {t('Tùy chỉnh nhanh')}
             </span>
 
-            {/* Dark Mode toggle */}
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-500">
-                  {isDark ? 'dark_mode' : 'light_mode'}
-                </span>
-                {t('Giao diện tối')}
-              </span>
-              <button
-                type="button"
-                onClick={handleToggleDark}
-                role="switch"
-                aria-checked={isDark}
-                aria-label={t('Giao diện tối')}
-                className={`w-10 h-6 rounded-full p-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 cursor-pointer ${
-                  isDark ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
-                }`}
-                title={isDark ? t('Chuyển sang giao diện sáng') : t('Chuyển sang giao diện tối')}
-              >
-                <div
-                  className={`w-5 h-5 rounded-full bg-white shadow-xs transition-transform ${
-                    isDark ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-
             {/* Language switch */}
             <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
               <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5">

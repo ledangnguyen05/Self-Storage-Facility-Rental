@@ -201,7 +201,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
     setPwError(null)
 
     if (!oldPassword) { setPwError('Vui lòng nhập mật khẩu hiện tại.'); return }
-    if (newPassword.length < 5) { setPwError('Mật khẩu mới phải có tối thiểu 5 ký tự.'); return }
+    if (newPassword.length < 5) { setPwError('Mật khẩu mới phải ít nhất 5 ký tự.'); return }
     if (newPassword === oldPassword) { setPwError('Mật khẩu mới không được trùng mật khẩu hiện tại.'); return }
     if (newPassword !== confirmPassword) { setPwError('Xác nhận mật khẩu không khớp.'); return }
 

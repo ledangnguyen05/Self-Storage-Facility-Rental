@@ -19,7 +19,7 @@ public class RegisterRequest {
     private String email;
 
     @NotBlank(message = "Mật khẩu là bắt buộc")
-    @Size(min = 5, message = "Mật khẩu phải có ít nhất 5 ký tự")
+    @Size(min = 5, message = "Mật khẩu phải ít nhất 5 ký tự")
     private String password;
 
     @NotBlank(message = "Họ tên là bắt buộc")
