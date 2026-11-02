@@ -135,7 +135,15 @@ public class FileStorageServiceImpl implements FileStorageService {
     @Override
     public FileUploadResponse storeDocumentFile(MultipartFile file, String subDirectory) {
         if (cloudflareR2Service != null) {
-            return cloudflareR2Service.uploadFile(file, subDirectory);
+            try {
+                FileUploadResponse r2Response = cloudflareR2Service.uploadFile(file, subDirectory);
+                if (r2Response != null) {
+                    return r2Response;
+                }
+            } catch (Exception e) {
+                log.warn("Cloudflare R2 document upload error ({}), falling back to local file storage for directory '{}'...",
+                        e.getMessage(), subDirectory);
+            }
         }
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp tài liệu tải lên không được để trống");

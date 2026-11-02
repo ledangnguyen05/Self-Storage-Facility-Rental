@@ -310,6 +310,9 @@ export const handoverService = {
   },
 
   async viewAuthorizedDocument(bookingId: string, fileUrl: string): Promise<string> {
+    if (fileUrl && /^https?:\/\//i.test(fileUrl.trim())) {
+      return fileUrl.trim()
+    }
     const response = await api.get(`/api/v1/handovers/booking/${bookingId}/documents/view`, {
       params: { fileUrl },
       responseType: 'blob'

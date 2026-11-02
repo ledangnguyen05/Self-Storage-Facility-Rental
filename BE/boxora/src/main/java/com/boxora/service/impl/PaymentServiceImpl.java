@@ -612,9 +612,10 @@ public class PaymentServiceImpl implements PaymentService {
                 }
             }
 
+            String resolvedReturnUrl = resolveClientReturnUrl(request.getReturnUrl(), httpRequest);
             if (reusablePending != null) {
-                String existingUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
-                        ? vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl())
+                String existingUrl = (resolvedReturnUrl != null && !resolvedReturnUrl.isBlank())
+                        ? vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress, resolvedReturnUrl)
                         : vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress);
                 return VNPayPaymentResponse.builder()
                         .paymentUrl(existingUrl)
@@ -627,8 +628,8 @@ public class PaymentServiceImpl implements PaymentService {
             }
 
             String txnRef = "BOX" + System.currentTimeMillis() + VNPayUtil.randomAlphaNumeric(6);
-            String paymentUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
-                    ? vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl())
+            String paymentUrl = (resolvedReturnUrl != null && !resolvedReturnUrl.isBlank())
+                    ? vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress, resolvedReturnUrl)
                     : vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress);
 
             Payment payment = Payment.builder()
@@ -854,9 +855,10 @@ public class PaymentServiceImpl implements PaymentService {
             }
         }
 
+        String resolvedReturnUrl = resolveClientReturnUrl(request.getReturnUrl(), httpRequest);
         if (reusablePending != null) {
-            String existingUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
-                    ? vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl())
+            String existingUrl = (resolvedReturnUrl != null && !resolvedReturnUrl.isBlank())
+                    ? vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress, resolvedReturnUrl)
                     : vnPayService.createPaymentUrl(reusablePending.getTransactionId(), authoritativeAmount, orderInfo, ipAddress);
             return VNPayPaymentResponse.builder()
                     .paymentUrl(existingUrl)
@@ -897,8 +899,8 @@ public class PaymentServiceImpl implements PaymentService {
         );
 
         // Generate VNPay checkout URL
-        String paymentUrl = (request.getReturnUrl() != null && !request.getReturnUrl().isBlank())
-                ? vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress, request.getReturnUrl())
+        String paymentUrl = (resolvedReturnUrl != null && !resolvedReturnUrl.isBlank())
+                ? vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress, resolvedReturnUrl)
                 : vnPayService.createPaymentUrl(txnRef, authoritativeAmount, orderInfo, ipAddress);
 
         return VNPayPaymentResponse.builder()
@@ -1598,7 +1600,10 @@ public class PaymentServiceImpl implements PaymentService {
                 payment.getId()
         );
 
-        String paymentUrl = vnPayService.createPaymentUrl(txnRef, amount, orderInfo, ipAddress);
+        String resolvedReturnUrl = resolveClientReturnUrl(null, httpRequest);
+        String paymentUrl = (resolvedReturnUrl != null && !resolvedReturnUrl.isBlank())
+                ? vnPayService.createPaymentUrl(txnRef, amount, orderInfo, ipAddress, resolvedReturnUrl)
+                : vnPayService.createPaymentUrl(txnRef, amount, orderInfo, ipAddress);
 
         return VNPayPaymentResponse.builder()
                 .paymentUrl(paymentUrl)
@@ -1608,6 +1613,29 @@ public class PaymentServiceImpl implements PaymentService {
                 .amount(payment.getAmount())
                 .orderInfo(orderInfo)
                 .build();
+    }
+
+    private String resolveClientReturnUrl(String explicitReturnUrl, HttpServletRequest httpRequest) {
+        if (explicitReturnUrl != null && !explicitReturnUrl.isBlank()) {
+            return explicitReturnUrl.trim();
+        }
+        if (httpRequest != null) {
+            String candidate = httpRequest.getHeader("Origin");
+            if (candidate == null || candidate.isBlank()) {
+                candidate = httpRequest.getHeader("Referer");
+            }
+            if (candidate != null && !candidate.isBlank()) {
+                try {
+                    java.net.URI uri = java.net.URI.create(candidate.trim());
+                    if (uri.getScheme() != null && uri.getHost() != null) {
+                        int port = uri.getPort();
+                        return uri.getScheme() + "://" + uri.getHost() + (port > 0 ? ":" + port : "") + "/payment-result";
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return null;
     }
 
     private void sendContractSignedConfirmationEmailIfApplicable(Booking booking) {
