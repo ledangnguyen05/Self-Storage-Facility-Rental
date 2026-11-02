@@ -122,6 +122,24 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             }
         }
 
+        long settledCount = 0;
+        try {
+            List<OverdueAuditLog> settledLogs = overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_SETTLED_COMPLETED");
+            if (effectiveFacilityId != null) {
+                settledCount = settledLogs.stream()
+                        .filter(l -> l.getContract() != null && l.getContract().getFacility() != null && effectiveFacilityId.equals(l.getContract().getFacility().getId()))
+                        .map(l -> l.getContract().getId())
+                        .distinct()
+                        .count();
+            } else {
+                settledCount = settledLogs.stream()
+                        .filter(l -> l.getContract() != null)
+                        .map(l -> l.getContract().getId())
+                        .distinct()
+                        .count();
+            }
+        } catch (Exception ignored) {}
+
         return OverdueSummaryResponse.builder()
                 .asOfDate(today)
                 .totalOverdueContracts(totalOverdueContracts)
@@ -137,6 +155,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .policyUnconfiguredCount(policyUnconfiguredCount)
                 .pendingPinRevocationsCount(pendingPinRevocationsCount)
                 .pendingSealingApprovalsCount(pendingSealingApprovalsCount)
+                .settledCount(settledCount)
                 .build();
     }
 
@@ -156,6 +175,87 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     ) {
         UUID effectiveFacilityId = resolveFacilityId(facilityId);
         LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
+
+        if ("SETTLED".equalsIgnoreCase(stage)) {
+            List<OverdueAuditLog> settledLogs = overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_SETTLED_COMPLETED");
+            List<OverdueContractItemResponse> settledItems = new ArrayList<>();
+            Set<UUID> seenContracts = new HashSet<>();
+            for (OverdueAuditLog logItem : settledLogs) {
+                RentalContract c = logItem.getContract();
+                if (c == null || seenContracts.contains(c.getId())) {
+                    continue;
+                }
+                seenContracts.add(c.getId());
+                if (effectiveFacilityId != null && c.getFacility() != null && !effectiveFacilityId.equals(c.getFacility().getId())) {
+                    continue;
+                }
+                if (isDemo != null && !Objects.equals(c.getIsDemo(), isDemo)) {
+                    continue;
+                }
+                if (searchTerm != null && !searchTerm.trim().isEmpty()) {
+                    String term = searchTerm.trim().toLowerCase();
+                    boolean matches = (c.getContractCode() != null && c.getContractCode().toLowerCase().contains(term))
+                            || (c.getUnit() != null && c.getUnit().getUnitCode() != null && c.getUnit().getUnitCode().toLowerCase().contains(term))
+                            || (c.getCustomer() != null && c.getCustomer().getFullName() != null && c.getCustomer().getFullName().toLowerCase().contains(term))
+                            || (c.getCustomer() != null && c.getCustomer().getPhone() != null && c.getCustomer().getPhone().toLowerCase().contains(term));
+                    if (!matches) {
+                        continue;
+                    }
+                LocalDateTime settledTime = logItem.getCreatedAt() != null ? logItem.getCreatedAt()
+                        : (c.getUpdatedAt() != null ? c.getUpdatedAt() : LocalDateTime.now());
+                String settledAtStr = settledTime.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
+                settledItems.add(OverdueContractItemResponse.builder()
+                        .contractId(c.getId())
+                        .contractCode(c.getContractCode())
+                        .bookingId(c.getBooking() != null ? c.getBooking().getId() : null)
+                        .bookingCode(c.getBooking() != null ? c.getBooking().getBookingCode() : null)
+                        .unitId(c.getUnit() != null ? c.getUnit().getId() : null)
+                        .unitCode(c.getUnit() != null ? c.getUnit().getUnitCode() : "N/A")
+                        .facilityId(c.getFacility() != null ? c.getFacility().getId() : null)
+                        .facilityName(c.getFacility() != null ? c.getFacility().getName() : "N/A")
+                        .customerId(c.getCustomer() != null ? c.getCustomer().getId() : null)
+                        .customerName(c.getCustomer() != null ? c.getCustomer().getFullName() : "N/A")
+                        .customerPhone(c.getCustomer() != null ? c.getCustomer().getPhone() : "")
+                        .customerEmail(c.getCustomer() != null ? c.getCustomer().getEmail() : "")
+                        .startDate(c.getStartDate())
+                        .dueDate(c.getEndDate())
+                        .daysOverdue(0)
+                        .principalDebt(BigDecimal.ZERO)
+                        .dailyLateFee(BigDecimal.ZERO)
+                        .lateFee(BigDecimal.ZERO)
+                        .totalDebt(BigDecimal.ZERO)
+                        .unverifiedAmount(BigDecimal.ZERO)
+                        .stage(null)
+                        .stageLabel("Đã xong (Khách trả kho)")
+                        .pinStatus(c.getOverduePinStatus() != null ? c.getOverduePinStatus() : OverduePinStatus.PIN_REVOKED)
+                        .sealingStatus(OverdueSealingStatus.NONE)
+                        .smartLockOnlineStatus("OFFLINE")
+                        .smartLockIsMock(c.getSmartLockIsMock() != null ? c.getSmartLockIsMock() : true)
+                        .isDemo(Boolean.TRUE.equals(c.getIsDemo()))
+                        .hasActivePolicy(true)
+                        .contractStatus(c.getStatus() != null ? c.getStatus().name() : "TERMINATED")
+                        .isSettled(true)
+                        .settledAt(settledAtStr)
+                        .settledByName(logItem.getPerformedByName())
+                        .build());
+            }
+
+            int totalElements = settledItems.size();
+            int fromIndex = Math.min(page * size, totalElements);
+            int toIndex = Math.min(fromIndex + size, totalElements);
+            List<OverdueContractItemResponse> pagedContent = settledItems.subList(fromIndex, toIndex);
+            int totalPages = (int) Math.ceil((double) totalElements / (double) Math.max(1, size));
+
+            return PageResponse.<OverdueContractItemResponse>builder()
+                    .content(pagedContent)
+                    .page(page)
+                    .size(size)
+                    .totalElements(totalElements)
+                    .totalPages(totalPages)
+                    .last(page >= totalPages - 1)
+                    .first(page == 0)
+                    .build();
+        }
 
         List<RentalContract> allContracts = getScopedOverdueContracts(effectiveFacilityId, today);
         Map<UUID, FacilityPolicy> policyCache = new HashMap<>();
@@ -253,6 +353,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     .hasActivePolicy(calc.isPolicyValid())
                     .lastReminderSentAt(lastReminderSentAt)
                     .reminderCount(reminderCount)
+                    .contractStatus(contract.getStatus() != null ? contract.getStatus().name() : "N/A")
+                    .isSettled(contract.getStatus() == RentalContractStatus.TERMINATED)
                     .build());
         }
 
@@ -284,6 +386,20 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
 
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        }
+
+        boolean isSettled = contract.getStatus() == RentalContractStatus.TERMINATED;
+        String settledAtStr = null;
+        String settledByName = null;
+        if (isSettled) {
+            var settlementAuditOpt = overdueAuditLogRepository.findByContract_IdOrderByCreatedAtDesc(contractId).stream()
+                    .filter(a -> "OVERDUE_SETTLED_COMPLETED".equals(a.getAction()))
+                    .findFirst();
+                LocalDateTime settledTime = audit.getCreatedAt() != null ? audit.getCreatedAt()
+                        : (contract.getUpdatedAt() != null ? contract.getUpdatedAt() : LocalDateTime.now());
+                settledAtStr = settledTime.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
+                settledByName = audit.getPerformedByName();
+            }
         }
 
         LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
@@ -450,28 +566,32 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : "")
                 .startDate(contract.getStartDate())
                 .dueDate(contract.getEndDate())
-                .daysOverdue(calc.overdueDays())
-                .principalDebt(calc.principalDebt())
-                .dailyLateFee(calc.dailyLateFee())
-                .lateFee(calc.lateFee())
-                .totalDebt(calc.totalDebt())
-                .unverifiedAmount(calc.unverifiedAmount())
+                .daysOverdue(isSettled ? 0 : calc.overdueDays())
+                .principalDebt(isSettled ? BigDecimal.ZERO : calc.principalDebt())
+                .dailyLateFee(isSettled ? BigDecimal.ZERO : calc.dailyLateFee())
+                .lateFee(isSettled ? BigDecimal.ZERO : calc.lateFee())
+                .totalDebt(isSettled ? BigDecimal.ZERO : calc.totalDebt())
+                .unverifiedAmount(isSettled ? BigDecimal.ZERO : calc.unverifiedAmount())
                 .depositHeld(contract.getDepositHeld())
-                .stage(calc.stage())
-                .stageLabel(resolveStageLabel(calc.stage()))
-                .feeFormulaExplanation(calc.feeFormulaExplanation())
+                .stage(isSettled ? null : calc.stage())
+                .stageLabel(isSettled ? "Đã xong (Khách trả kho)" : resolveStageLabel(calc.stage()))
+                .feeFormulaExplanation(isSettled ? "Hợp đồng đã hoàn tất thanh toán nợ cước và thủ tục trả kho." : calc.feeFormulaExplanation())
                 .pinStatus(effectivePinStatus)
-                .sealingStatus(contract.getOverdueSealingStatus() != null ? contract.getOverdueSealingStatus() : OverdueSealingStatus.NONE)
-                .smartLockOnlineStatus(contract.getSmartLockOnlineStatus() != null ? contract.getSmartLockOnlineStatus() : "ONLINE")
+                .sealingStatus(isSettled ? OverdueSealingStatus.NONE : (contract.getOverdueSealingStatus() != null ? contract.getOverdueSealingStatus() : OverdueSealingStatus.NONE))
+                .smartLockOnlineStatus(isSettled ? "OFFLINE" : (contract.getSmartLockOnlineStatus() != null ? contract.getSmartLockOnlineStatus() : "ONLINE"))
                 .smartLockIsMock(contract.getSmartLockIsMock() != null ? contract.getSmartLockIsMock() : true)
-                .maskedPin(maskedPin)
-                .tempAccessPin(isTempActive ? contract.getTempAccessPin() : null)
+                .maskedPin(isSettled ? "Đã thu hồi" : maskedPin)
+                .tempAccessPin(isSettled ? null : (isTempActive ? contract.getTempAccessPin() : null))
                 .smartLockLastUnlockedAt(contract.getSmartLockLastUnlockedAt())
-                .tempPinGrantedUntil(contract.getTempPinGrantedUntil())
-                .tempPinGrantReason(contract.getTempPinGrantReason())
+                .tempPinGrantedUntil(isSettled ? null : contract.getTempPinGrantedUntil())
+                .tempPinGrantReason(isSettled ? null : contract.getTempPinGrantReason())
                 .isDemo(Boolean.TRUE.equals(contract.getIsDemo()))
                 .hasActivePolicy(calc.isPolicyValid())
-                .policyWarning(calc.policyWarning())
+                .policyWarning(isSettled ? null : calc.policyWarning())
+                .contractStatus(contract.getStatus() != null ? contract.getStatus().name() : "N/A")
+                .isSettled(isSettled)
+                .settledAt(settledAtStr)
+                .settledByName(settledByName)
                 .payments(payments)
                 .reminders(reminders)
                 .pinRequests(pinRequests)
@@ -485,6 +605,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     public void sendReminder(UUID contractId, OverdueSendReminderRequest request) {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        validateContractActive(contract);
 
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
@@ -593,6 +715,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
+        validateContractActive(contract);
+
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
         }
@@ -642,6 +766,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     public OverdueContractDetailResponse.PinRevocationDto executePinRevocation(UUID contractId, OverduePinActionRequest request) {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        validateContractActive(contract);
 
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
@@ -765,6 +891,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
 
+        validateContractActive(contract);
+
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
         }
@@ -824,6 +952,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     public void processSealingWorkflow(UUID contractId, OverdueSealingWorkflowRequest request) {
         RentalContract contract = rentalContractRepository.findById(contractId)
                 .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        validateContractActive(contract);
 
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
@@ -930,9 +1060,84 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 contract.setOverdueSealingStatus(OverdueSealingStatus.SEALING_IN_PROGRESS);
                 rentalContractRepository.save(contract);
 
+                // Validate inventory items: estimatedValue >= 0 and quantity >= 1
+                if (request.getInventoryItems() != null) {
+                    for (var itemDto : request.getInventoryItems()) {
+                        if (itemDto.getItemName() != null && !itemDto.getItemName().trim().isEmpty()) {
+                            if (itemDto.getEstimatedValue() != null && itemDto.getEstimatedValue().compareTo(BigDecimal.ZERO) < 0) {
+                                throw new AppException(ErrorCode.INVALID_REQUEST, "Giá trị ước tính của tài sản '" + itemDto.getItemName() + "' phải lớn hơn hoặc bằng 0");
+                            }
+                            if (itemDto.getQuantity() != null && itemDto.getQuantity() < 1) {
+                                throw new AppException(ErrorCode.INVALID_REQUEST, "Số lượng của tài sản '" + itemDto.getItemName() + "' phải lớn hơn hoặc bằng 1");
+                            }
+                        }
+                    }
+                }
+
                 User witness = (request.getWitnessId() != null)
                         ? userRepository.findById(request.getWitnessId()).orElse(currentUser)
                         : currentUser;
+
+                // Check if inventory has actually changed compared to existing record
+                boolean isInventoryChanged = true;
+                if (existingSealingOpt.isPresent()) {
+                    SealingRecord existingSealing = existingSealingOpt.get();
+                    List<AssetInventoryItem> existingItems = assetInventoryItemRepository.findBySealingRecord_Id(existingSealing.getId());
+                    List<OverdueSealingWorkflowRequest.AssetItemDto> incomingItems = request.getInventoryItems() != null
+                            ? request.getInventoryItems().stream()
+                                    .filter(i -> i.getItemName() != null && !i.getItemName().trim().isEmpty())
+                                    .toList()
+                            : List.of();
+
+                    boolean notesMatch = Objects.equals(
+                            existingSealing.getNotes() != null ? existingSealing.getNotes().trim() : "",
+                            request.getNotes() != null ? request.getNotes().trim() : ""
+                    );
+
+                    boolean witnessMatch = (existingSealing.getWitness() == null && witness == null)
+                            || (existingSealing.getWitness() != null && witness != null && Objects.equals(existingSealing.getWitness().getId(), witness.getId()));
+
+                    boolean itemsMatch = existingItems.size() == incomingItems.size();
+                    if (itemsMatch) {
+                        for (int i = 0; i < existingItems.size(); i++) {
+                            AssetInventoryItem existingItem = existingItems.get(i);
+                            OverdueSealingWorkflowRequest.AssetItemDto incomingItem = incomingItems.get(i);
+
+                            String existingName = existingItem.getItemName() != null ? existingItem.getItemName().trim() : "";
+                            String incomingName = incomingItem.getItemName() != null ? incomingItem.getItemName().trim() : "";
+
+                            int existingQty = existingItem.getQuantity() != null ? existingItem.getQuantity() : 1;
+                            int incomingQty = incomingItem.getQuantity() != null ? incomingItem.getQuantity() : 1;
+
+                            String existingCond = existingItem.getConditionStatus() != null ? existingItem.getConditionStatus().trim() : "";
+                            String incomingCond = incomingItem.getConditionStatus() != null ? incomingItem.getConditionStatus().trim() : "";
+
+                            BigDecimal existingVal = existingItem.getEstimatedValue() != null ? existingItem.getEstimatedValue() : BigDecimal.ZERO;
+                            BigDecimal incomingVal = incomingItem.getEstimatedValue() != null ? incomingItem.getEstimatedValue() : BigDecimal.ZERO;
+
+                            String existingItemNotes = existingItem.getNotes() != null ? existingItem.getNotes().trim() : "";
+                            String incomingItemNotes = incomingItem.getNotes() != null ? incomingItem.getNotes().trim() : "";
+
+                            if (!existingName.equalsIgnoreCase(incomingName)
+                                    || existingQty != incomingQty
+                                    || !existingCond.equalsIgnoreCase(incomingCond)
+                                    || existingVal.compareTo(incomingVal) != 0
+                                    || !existingItemNotes.equals(incomingItemNotes)) {
+                                itemsMatch = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (notesMatch && witnessMatch && itemsMatch) {
+                        isInventoryChanged = false;
+                    }
+                }
+
+                if (!isInventoryChanged) {
+                    log.info("Inventory details for contract {} remain unchanged. Skipping audit log recording.", contractId);
+                    return;
+                }
 
                 SealingRecord sealing = existingSealingOpt.orElseGet(() -> SealingRecord.builder()
                         .contract(contract)
@@ -949,7 +1154,9 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 sealing.setRequestStatus("IN_PROGRESS");
                 sealing.setWitness(witness);
                 sealing.setNotes(request.getNotes());
-                sealing.setProtocolNumber("BB-KK-" + (contract.getUnit() != null ? contract.getUnit().getUnitCode() : "") + "-" + (System.currentTimeMillis() % 10000));
+                if (sealing.getProtocolNumber() == null || sealing.getProtocolNumber().isBlank()) {
+                    sealing.setProtocolNumber("BB-KK-" + (contract.getUnit() != null ? contract.getUnit().getUnitCode() : "") + "-" + (System.currentTimeMillis() % 10000));
+                }
                 sealingRecordRepository.save(sealing);
 
                 // Clear old items if updating inventory
@@ -985,12 +1192,27 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                         OverdueSealingStatus.SEALING_APPROVED.name(),
                         OverdueSealingStatus.SEALING_IN_PROGRESS.name(),
                         String.format("Đã hoàn tất kiểm kê hiện trường buồng kho có sự chứng kiến của %s. Biên bản kiểm kê: %s",
-                                witness.getFullName(), sealing.getProtocolNumber())
+                                witness != null ? witness.getFullName() : (currentUser != null ? currentUser.getFullName() : "Nhân viên"),
+                                sealing.getProtocolNumber())
                 );
             }
             case "COMPLETE" -> {
                 if (request.getSealTagNumber() == null || request.getSealTagNumber().trim().isEmpty()) {
                     throw new AppException(ErrorCode.INVALID_REQUEST, "Số tem niêm phong không được để trống khi hoàn tất niêm phong");
+                }
+
+                // Validate inventory items if provided: estimatedValue >= 0 and quantity >= 1
+                if (request.getInventoryItems() != null) {
+                    for (var itemDto : request.getInventoryItems()) {
+                        if (itemDto.getItemName() != null && !itemDto.getItemName().trim().isEmpty()) {
+                            if (itemDto.getEstimatedValue() != null && itemDto.getEstimatedValue().compareTo(BigDecimal.ZERO) < 0) {
+                                throw new AppException(ErrorCode.INVALID_REQUEST, "Giá trị ước tính của tài sản '" + itemDto.getItemName() + "' phải lớn hơn hoặc bằng 0");
+                            }
+                            if (itemDto.getQuantity() != null && itemDto.getQuantity() < 1) {
+                                throw new AppException(ErrorCode.INVALID_REQUEST, "Số lượng của tài sản '" + itemDto.getItemName() + "' phải lớn hơn hoặc bằng 1");
+                            }
+                        }
+                    }
                 }
 
                 User witness = (request.getWitnessId() != null)
@@ -1165,13 +1387,27 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
         }
 
+        if (contract.getStatus() == RentalContractStatus.TERMINATED || contract.getStatus() == RentalContractStatus.CANCELLED) {
+            throw new AppException(ErrorCode.CONTRACT_ALREADY_TERMINATED);
+        }
+
         User currentUser = getCurrentUser();
         String oldStatus = contract.getStatus() != null ? contract.getStatus().name() : "N/A";
 
         contract.setStatus(RentalContractStatus.TERMINATED);
         contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
+        contract.setOverdueSealingStatus(OverdueSealingStatus.NONE);
         contract.setTempAccessPin(null);
         contract.setTempPinGrantedUntil(null);
+
+        var sealingOpt = sealingRecordRepository.findFirstByContract_IdOrderByCreatedAtDesc(contractId);
+        if (sealingOpt.isPresent()) {
+            SealingRecord sr = sealingOpt.get();
+            sr.setRequestStatus("SETTLED");
+            sr.setStatus(SealingStatus.UNSEALED);
+            sr.setNotes((sr.getNotes() != null && !sr.getNotes().isBlank() ? sr.getNotes() + " | " : "") + "Đã hoàn tất thanh toán nợ cước và trả kho giải phóng buồng.");
+            sealingRecordRepository.save(sr);
+        }
 
         if (contract.getUnit() != null) {
             contract.getUnit().setStatus(UnitStatus.AVAILABLE);
@@ -1197,6 +1433,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 RentalContractStatus.TERMINATED.name(),
                 "Khách hàng đã tới cơ sở thanh toán đủ công nợ quá hạn và hoàn tất thủ tục trả kho"
         );
+    }
+
+    private void validateContractActive(RentalContract contract) {
+        if (contract.getStatus() == RentalContractStatus.TERMINATED || contract.getStatus() == RentalContractStatus.CANCELLED) {
+            throw new AppException(ErrorCode.CONTRACT_ALREADY_TERMINATED);
+        }
     }
 
     private String escapeCsv(String str) {

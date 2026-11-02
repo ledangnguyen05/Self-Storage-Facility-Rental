@@ -60,6 +60,11 @@ public class OverdueContractDetailResponse {
     private Boolean hasActivePolicy;
     private String policyWarning;
 
+    private String contractStatus;
+    private Boolean isSettled;
+    private String settledAt;
+    private String settledByName;
+
     // Sub-records
     private List<PaymentHistoryDto> payments;
     private List<NoticeLogDto> reminders;

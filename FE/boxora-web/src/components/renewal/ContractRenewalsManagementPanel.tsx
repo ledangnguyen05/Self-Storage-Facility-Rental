@@ -1230,28 +1230,6 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
                           </>
                         )}
 
-                        {/* Kích hoạt duyệt lại: dành cho Quản lý khi đơn bị từ chối */}
-                        {(isManager || isAdmin) && r.status === 'REJECTED' && (
-                          <button
-                            type="button"
-                            onClick={() => handleReactivate(r)}
-                            disabled={!isEligibleForReReview3d(r)}
-                            className={`px-2 py-1 rounded-md font-bold text-xs transition cursor-pointer flex items-center gap-1 ${
-                              isEligibleForReReview3d(r)
-                                ? 'bg-purple-600 hover:bg-purple-700 text-white shadow-2xs'
-                                : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-                            }`}
-                            title={
-                              isEligibleForReReview3d(r)
-                                ? 'Kích hoạt duyệt lại yêu cầu gia hạn này'
-                                : 'Chưa đủ 3 ngày kể từ ngày gửi đơn, chưa thể kích hoạt duyệt lại'
-                            }
-                          >
-                            <span className="material-symbols-outlined text-[13px]">refresh</span>
-                            <span>Kích hoạt lại</span>
-                          </button>
-                        )}
-
                         {/* Bỏ duyệt: dành cho Facility Manager khi PENDING_SIGNATURE và chưa ký */}
                         {isManager && r.status === 'PENDING_SIGNATURE' && !r.signedAt && !r.signatureData && (
                           <button

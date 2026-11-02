@@ -29,5 +29,8 @@ public class OverdueSummaryResponse {
     // Workflow actions pending
     private long pendingPinRevocationsCount;
     private long pendingSealingApprovalsCount;
+
+    // Settled contracts
+    private long settledCount;
 }
 

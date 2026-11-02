@@ -15,6 +15,7 @@ export interface OverdueSummary {
   policyUnconfiguredCount: number
   pendingPinRevocationsCount: number
   pendingSealingApprovalsCount: number
+  settledCount?: number
 }
 
 export interface OverdueContractItem {
@@ -48,6 +49,10 @@ export interface OverdueContractItem {
   hasActivePolicy: boolean
   lastReminderSentAt?: string
   reminderCount: number
+  contractStatus?: string
+  isSettled?: boolean
+  settledAt?: string
+  settledByName?: string
 }
 
 export interface OverdueContractDetail extends OverdueContractItem {

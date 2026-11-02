@@ -171,9 +171,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return
           }
           const parsed = JSON.parse(storedUser)
+          const jwtRole = parseJwtRole(storedToken)
+          const normalizedRoleName = (parsed?.role?.name || parsed?.roleName || (typeof parsed?.role === 'string' ? parsed.role : null) || jwtRole || 'CUSTOMER') as RoleType
+          const normalizedUser: User = {
+            ...parsed,
+            role: {
+              id: parsed?.role?.id || parsed?.roleId || '',
+              name: normalizedRoleName,
+              description: normalizedRoleName
+            },
+            roleName: normalizedRoleName
+          }
           if (isMounted) {
             setToken(storedToken)
-            setUser(parsed)
+            setUser(normalizedUser)
           }
         }
       } catch {
@@ -221,14 +232,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.data) {
         const { accessToken, refreshToken, user: rawUser } = res.data
         const jwtRole = parseJwtRole(accessToken)
+        const roleName = (rawUser?.roleName || rawUser?.role?.name || (typeof rawUser?.role === 'string' ? rawUser.role : null) || jwtRole || 'CUSTOMER') as RoleType
         const enrichedUser: User = {
           ...rawUser,
-          role: rawUser?.role || (rawUser?.roleName ? {
-            id: rawUser.roleId,
-            name: rawUser.roleName as RoleType,
-            description: rawUser.roleName
-          } : (jwtRole ? { name: jwtRole } : undefined)),
-          roleName: (rawUser?.roleName || rawUser?.role?.name || jwtRole || undefined) as (RoleType | string | undefined),
+          role: {
+            id: rawUser?.roleId || rawUser?.role?.id || '',
+            name: roleName,
+            description: roleName
+          },
+          roleName,
           roleId: rawUser?.roleId || rawUser?.role?.id || undefined,
           facilityId: rawUser?.facilityId || undefined,
           facilityName: rawUser?.facilityName || undefined,
@@ -256,9 +268,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.data) {
         const { accessToken, refreshToken, user: rawUser } = res.data
         const jwtRole = parseJwtRole(accessToken)
+        const roleName = (rawUser?.roleName || rawUser?.role?.name || (typeof rawUser?.role === 'string' ? rawUser.role : null) || jwtRole || 'CUSTOMER') as RoleType
         const enrichedUser: User = {
           ...rawUser,
-          role: rawUser?.role || (jwtRole ? { name: jwtRole } : undefined)
+          role: {
+            id: rawUser?.roleId || rawUser?.role?.id || '',
+            name: roleName,
+            description: roleName
+          },
+          roleName
         }
         localStorage.setItem('boxora_access_token', accessToken)
         if (refreshToken) {
@@ -316,7 +334,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return updatedUser
   }
 
-  const role: RoleType | null = (user?.role?.name as RoleType) || null
+  const role: RoleType | null =
+    (user?.role?.name as RoleType) ||
+    (user?.roleName as RoleType) ||
+    (typeof (user as any)?.role === 'string' ? ((user as any).role as RoleType) : null) ||
+    (token ? parseJwtRole(token) : null)
 
   const reloadPermissions = async (targetRole = role, roleId = user?.roleId || user?.role?.id) => {
     try {

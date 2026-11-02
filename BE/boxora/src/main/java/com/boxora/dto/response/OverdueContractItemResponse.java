@@ -51,5 +51,10 @@ public class OverdueContractItemResponse {
 
     private LocalDateTime lastReminderSentAt;
     private long reminderCount;
+
+    private String contractStatus;
+    private Boolean isSettled;
+    private String settledAt;
+    private String settledByName;
 }
 

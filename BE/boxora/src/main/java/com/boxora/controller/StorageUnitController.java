@@ -66,7 +66,7 @@ public class StorageUnitController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> createUnit(@Valid @RequestBody StorageUnitCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tạo ngăn kho thành công", storageUnitService.createUnit(request)));

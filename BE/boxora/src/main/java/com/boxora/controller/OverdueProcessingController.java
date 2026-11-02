@@ -85,7 +85,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/remind")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_BUSINESS_MANAGER', 'ROLE_FACILITY_MANAGER', 'ROLE_STAFF')")
     @Operation(summary = "Gửi thông báo nhắc nợ cước đa kênh (SMS, EMAIL, CALL) và lưu vết")
     public ResponseEntity<ApiResponse<String>> sendReminder(
             @PathVariable UUID contractId,
@@ -96,7 +96,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/pin-revocation/request")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE', 'ROLE_ADMIN', 'ROLE_BUSINESS_MANAGER', 'ROLE_FACILITY_MANAGER', 'ROLE_STAFF')")
     @Operation(summary = "Tạo yêu cầu thu hồi PIN/QR SmartLock")
     public ResponseEntity<ApiResponse<OverdueContractDetailResponse.PinRevocationDto>> requestPinRevocation(
             @PathVariable UUID contractId,

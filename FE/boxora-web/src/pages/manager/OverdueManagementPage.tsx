@@ -7,6 +7,32 @@ import { Facility } from '../../types'
 import { OverdueContractDetailModal } from './modals/OverdueContractDetailModal'
 import { toast } from '../../utils/toast'
 
+const formatSettledTime = (timeVal?: string | null, fallbackDate?: string | null): string => {
+  if (timeVal && typeof timeVal === 'string' && timeVal.trim() && timeVal.trim() !== 'Vừa xong') {
+    return timeVal.trim()
+  }
+  if (fallbackDate) {
+    try {
+      const d = new Date(fallbackDate)
+      if (!isNaN(d.getTime())) {
+        const hh = String(d.getHours()).padStart(2, '0')
+        const mm = String(d.getMinutes()).padStart(2, '0')
+        const dd = String(d.getDate()).padStart(2, '0')
+        const MM = String(d.getMonth() + 1).padStart(2, '0')
+        const yyyy = d.getFullYear()
+        return `${hh}:${mm} ${dd}/${MM}/${yyyy}`
+      }
+    } catch {}
+  }
+  const now = new Date()
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  const dd = String(now.getDate()).padStart(2, '0')
+  const MM = String(now.getMonth() + 1).padStart(2, '0')
+  const yyyy = now.getFullYear()
+  return `${hh}:${mm} ${dd}/${MM}/${yyyy}`
+}
+
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
   const navigate = useNavigate()
@@ -38,7 +64,15 @@ export const OverdueManagementPage: React.FC = () => {
   const [settledContracts, setSettledContracts] = useState<Array<OverdueContractItem & { settledAt: string; settledByName?: string }>>(() => {
     try {
       const raw = localStorage.getItem('boxora_settled_overdue_contracts')
-      return raw ? JSON.parse(raw) : []
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        return parsed.map((item: any) => ({
+          ...item,
+          settledAt: formatSettledTime(item.settledAt, item.dueDate || item.startDate)
+        }))
+      }
+      return []
     } catch {
       return []
     }
@@ -96,10 +130,6 @@ export const OverdueManagementPage: React.FC = () => {
 
   // Fetch Paginated Contracts
   const fetchContracts = useCallback(async () => {
-    if (filterStage === 'SETTLED') {
-      setIsLoading(false)
-      return
-    }
     setIsLoading(true)
     try {
       const res = await overdueService.getContracts({
@@ -112,13 +142,38 @@ export const OverdueManagementPage: React.FC = () => {
         page: currentPage,
         size: pageSize
       })
-      setContracts(res?.content || [])
-      setTotalElements(res?.totalElements || 0)
-      setTotalPages(res?.totalPages || 1)
+      if (filterStage === 'SETTLED') {
+        const backendItems = res?.content || []
+        setContracts(backendItems)
+        setSettledContracts(prev => {
+          let changed = false
+          const map = new Map(prev.map(p => [p.contractId, p]))
+          backendItems.forEach((b: any) => {
+            if (!map.has(b.contractId)) {
+              map.set(b.contractId, b)
+              changed = true
+            }
+          })
+          if (!changed) return prev
+          const merged = Array.from(map.values())
+          try {
+            localStorage.setItem('boxora_settled_overdue_contracts', JSON.stringify(merged))
+          } catch {}
+          return merged
+        })
+        setTotalElements(res?.totalElements || backendItems.length)
+        setTotalPages(res?.totalPages || 1)
+      } else {
+        setContracts(res?.content || [])
+        setTotalElements(res?.totalElements || 0)
+        setTotalPages(res?.totalPages || 1)
+      }
     } catch (err) {
       console.warn('Failed to load overdue contracts:', err)
-      setContracts([])
-      setTotalElements(0)
+      if (filterStage !== 'SETTLED') {
+        setContracts([])
+        setTotalElements(0)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -129,7 +184,15 @@ export const OverdueManagementPage: React.FC = () => {
   // Lọc danh sách hợp đồng hiển thị trên table
   const displayedContracts = useMemo(() => {
     if (filterStage === 'SETTLED') {
-      return settledContracts.filter(item => {
+      const map = new Map<string, any>()
+      contracts.forEach(c => map.set(c.contractId, c))
+      settledContracts.forEach(s => {
+        if (!map.has(s.contractId)) {
+          map.set(s.contractId, s)
+        }
+      })
+      const list = Array.from(map.values())
+      return list.filter(item => {
         if (activeFacilityId && item.facilityId && item.facilityId !== activeFacilityId) {
           return false
         }
@@ -146,7 +209,7 @@ export const OverdueManagementPage: React.FC = () => {
       })
     }
     return contracts.filter(c => !settledIds.has(c.contractId))
-  }, [filterStage, settledContracts, contracts, settledIds, activeFacilityId, searchTerm])
+  }, [filterStage, contracts, settledContracts, settledIds, activeFacilityId, searchTerm])
 
   const handleConfirmSettlement = async () => {
     if (!contractToSettle) return
@@ -158,13 +221,13 @@ export const OverdueManagementPage: React.FC = () => {
         console.warn('Backend completeSettlement fallback:', beErr)
       }
 
-      const nowStr = new Date().toLocaleString('vi-VN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      })
+      const now = new Date()
+      const hh = String(now.getHours()).padStart(2, '0')
+      const mm = String(now.getMinutes()).padStart(2, '0')
+      const dd = String(now.getDate()).padStart(2, '0')
+      const MM = String(now.getMonth() + 1).padStart(2, '0')
+      const yyyy = now.getFullYear()
+      const nowStr = `${hh}:${mm} ${dd}/${MM}/${yyyy}`
 
       const newSettledItem = {
         ...contractToSettle,
@@ -172,10 +235,14 @@ export const OverdueManagementPage: React.FC = () => {
         settledByName: user?.fullName || 'Quản lý cơ sở'
       }
 
-      const updated = [newSettledItem, ...settledContracts.filter(s => s.contractId !== contractToSettle.contractId)]
+      const updated = [newSettledItem, ...settledContracts.filter(s => s.contractId !== contractToSettle.contractId)].map(s => ({
+        ...s,
+        settledAt: formatSettledTime(s.settledAt, (s as any).dueDate || (s as any).startDate)
+      }))
       setSettledContracts(updated)
       try {
         localStorage.setItem('boxora_settled_overdue_contracts', JSON.stringify(updated))
+        window.dispatchEvent(new Event('storage'))
       } catch (lsErr) {
         console.warn('Failed to save settled contracts to localStorage:', lsErr)
       }
@@ -448,7 +515,7 @@ export const OverdueManagementPage: React.FC = () => {
             }`}
           >
             <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-            Đã thanh toán &amp; trả kho ({settledContracts.length})
+            Đã thanh toán &amp; trả kho ({summary?.settledCount ?? settledContracts.length})
           </button>
 
           {/* Button: Khách đã tới hoàn tất (nằm ở phía bên phải) */}
@@ -654,7 +721,7 @@ export const OverdueManagementPage: React.FC = () => {
 
                       {/* Settled Time */}
                       <td className="p-3.5 text-slate-500 text-xs font-medium">
-                        {(item as any).settledAt || 'Vừa xong'}
+                        {formatSettledTime((item as any).settledAt, (item as any).dueDate || (item as any).startDate)}
                       </td>
 
                       {/* Actions */}
@@ -876,7 +943,7 @@ export const OverdueManagementPage: React.FC = () => {
               <div className="flex-1">
                 <h3 className="text-sm font-bold text-slate-900">Xác nhận hoàn tất đơn nợ cước</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Khách hàng đã tới quầy thanh toán đầy đủ và hoàn tất trả kho.
+                  Khách hàng đã thanh toán đầy đủ và hoàn tất trả kho.
                 </p>
               </div>
             </div>
@@ -902,7 +969,7 @@ export const OverdueManagementPage: React.FC = () => {
                 <span className="font-medium text-slate-800">{contractToSettle.facilityName}</span>
               </div>
               <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <span className="text-slate-600 font-bold">Tổng tiền thu tại quầy:</span>
+                <span className="text-slate-600 font-bold">Tổng tiền thu:</span>
                 <span className="font-mono font-black text-emerald-700 text-sm">
                   {formatVND(contractToSettle.totalDebt)}
                 </span>

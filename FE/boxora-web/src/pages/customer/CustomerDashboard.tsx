@@ -60,6 +60,406 @@ const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) =>
   )
 }
 
+interface RentalExpirationCountdownProps {
+  contract: RentalContract
+  renewals?: ContractRenewal[]
+  isReturnCompleted?: boolean
+  className?: string
+}
+
+const RentalExpirationCountdown: React.FC<RentalExpirationCountdownProps> = ({
+  contract,
+  renewals,
+  isReturnCompleted,
+  className = ''
+}) => {
+  const [now, setNow] = useState(Date.now())
+  const [isSettled, setIsSettled] = useState(false)
+
+  const checkIsSettled = useCallback(() => {
+    if (isReturnCompleted) return true
+    const st = contract.status as string
+    if (st === 'TERMINATED' || st === 'COMPLETED' || st === 'CANCELLED') {
+      return true
+    }
+    try {
+      const rawSettled = localStorage.getItem('boxora_settled_overdue_contracts')
+      if (rawSettled) {
+        const list = JSON.parse(rawSettled)
+        if (Array.isArray(list)) {
+          const cleanUnit = (contract.unitCode || '').toUpperCase().trim()
+          const cleanCode = (contract.contractCode || '').toUpperCase().trim()
+          const found = list.some((item: any) =>
+            (item.contractId && item.contractId === contract.id) ||
+            (cleanCode && item.contractCode && item.contractCode.toUpperCase().trim() === cleanCode) ||
+            (cleanUnit && item.unitCode && item.unitCode.toUpperCase().trim() === cleanUnit) ||
+            (contract.bookingId && item.bookingId && item.bookingId === contract.bookingId)
+          )
+          if (found) return true
+        }
+      }
+    } catch {
+      // ignore JSON errors
+    }
+    return false
+  }, [contract.id, contract.contractCode, contract.unitCode, contract.bookingId, contract.status, isReturnCompleted])
+
+  useEffect(() => {
+    setIsSettled(checkIsSettled())
+  }, [checkIsSettled])
+
+  useEffect(() => {
+    const handleStorageOrFocus = () => {
+      setIsSettled(checkIsSettled())
+      setNow(Date.now())
+    }
+    window.addEventListener('storage', handleStorageOrFocus)
+    window.addEventListener('focus', handleStorageOrFocus)
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now())
+      setIsSettled(checkIsSettled())
+    }, 1000)
+
+    return () => {
+      window.removeEventListener('storage', handleStorageOrFocus)
+      window.removeEventListener('focus', handleStorageOrFocus)
+      window.clearInterval(intervalId)
+    }
+  }, [checkIsSettled])
+
+  // Khi đơn đã được xác nhận hoàn tất từ button "Đã xong" -> ẩn hiển thị đếm ngày
+  if (isSettled) {
+    return null
+  }
+
+  const parseToEndOfDay = (str?: string | null): Date | null => {
+    if (!str) return null
+    const clean = str.split('T')[0].trim()
+    if (clean.includes('/')) {
+      const parts = clean.split('/')
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10)
+        const month = parseInt(parts[1], 10) - 1
+        const year = parseInt(parts[2], 10)
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          return new Date(year, month, day, 23, 59, 59, 999)
+        }
+      }
+    } else if (clean.includes('-')) {
+      const parts = clean.split('-')
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          const year = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const day = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day, 23, 59, 59, 999)
+          }
+        } else {
+          const day = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const year = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day, 23, 59, 59, 999)
+          }
+        }
+      }
+    }
+    const d = new Date(str)
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+    }
+    return null
+  }
+
+  let latestEnd = parseToEndOfDay(contract.endDate)
+  if (renewals && renewals.length > 0) {
+    for (const r of renewals) {
+      const isEffective =
+        r.status === 'COMPLETED' ||
+        (r.status as string) === 'ACTIVE' ||
+        r.paymentStatus === 'PAID'
+      if (isEffective && r.newEndDate) {
+        const rEnd = parseToEndOfDay(r.newEndDate)
+        if (rEnd && (!latestEnd || rEnd.getTime() > latestEnd.getTime())) {
+          latestEnd = rEnd
+        }
+      }
+    }
+  }
+
+  if (!latestEnd) return null
+
+  const diffMs = latestEnd.getTime() - now
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  const isOverdue = diffMs <= 0 || contract.status === 'OVERDUE' || contract.status === 'OVERDUE_LOCKED'
+  const isExpiringSoon = !isOverdue && diffDays <= 7 && diffMs > 0
+
+  // Chỉ hiển thị khi đơn sắp hết hạn trong 7 ngày tới hoặc đã quá hạn
+  if (!isExpiringSoon && !isOverdue) {
+    return null
+  }
+
+  if (isOverdue) {
+    const overdueSecs = Math.max(0, Math.floor(Math.abs(diffMs) / 1000))
+    const od = Math.floor(overdueSecs / 86400)
+    const oh = Math.floor((overdueSecs % 86400) / 3600)
+    const om = Math.floor((overdueSecs % 3600) / 60)
+    const os = overdueSecs % 60
+    const timeStr = [oh, om, os].map(v => String(v).padStart(2, '0')).join(':')
+
+    return (
+      <div
+        className={`mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-300 text-rose-700 shadow-2xs ${className}`}
+        title="Kho đã quá hạn hợp đồng thuê. Đang đếm ngược thời gian quá hạn cho đến khi hoàn tất trả kho."
+      >
+        <span className="material-symbols-outlined text-[15px] text-rose-600 animate-pulse">alarm</span>
+        <div className="flex flex-col text-left">
+          <span className="text-[10px] uppercase font-black tracking-wider text-rose-600 leading-none">
+            Đã quá hạn
+          </span>
+          <span className="font-mono text-xs font-black text-rose-700 mt-0.5">
+            {od > 0 ? `${od} ngày ` : ''}{timeStr}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  // isExpiringSoon (trong vòng 7 ngày tới)
+  const remSecs = Math.max(0, Math.floor(diffMs / 1000))
+  const d = Math.floor(remSecs / 86400)
+  const h = Math.floor((remSecs % 86400) / 3600)
+  const m = Math.floor((remSecs % 3600) / 60)
+  const s = remSecs % 60
+  const timeStr = [h, m, s].map(v => String(v).padStart(2, '0')).join(':')
+
+  const isUrgent = d <= 1
+  const badgeClass = isUrgent
+    ? 'bg-rose-50 border-rose-300 text-rose-800'
+    : d <= 3
+    ? 'bg-amber-50 border-amber-300 text-amber-900'
+    : 'bg-orange-50 border-orange-200 text-orange-900'
+
+  const iconClass = isUrgent ? 'text-rose-600' : d <= 3 ? 'text-amber-600' : 'text-orange-600'
+
+  return (
+    <div
+      className={`mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border shadow-2xs ${badgeClass} ${className}`}
+      title={`Hợp đồng sẽ hết hạn trong ${d} ngày tới. Quý khách có thể Yêu Cầu Gia Hạn hoặc Yêu Cầu Trả Kho.`}
+    >
+      <span className={`material-symbols-outlined text-[15px] ${iconClass} ${isUrgent ? 'animate-pulse' : ''}`}>
+        timer
+      </span>
+      <div className="flex flex-col text-left">
+        <span className={`text-[10px] uppercase font-black tracking-wider leading-none ${iconClass}`}>
+          {d === 0 ? 'Hết hạn hôm nay' : 'Sắp hết hạn'}
+        </span>
+        <span className="font-mono text-xs font-bold mt-0.5">
+          {d > 0 ? `Còn ${d} ngày ` : 'Còn '}{timeStr}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+const OverdueGraceWarningBanner: React.FC<{
+  contract: RentalContract
+  isReturnCompleted?: boolean
+}> = ({ contract, isReturnCompleted }) => {
+  const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  if (isReturnCompleted) return null
+
+  // Check if contract has been settled via localStorage
+  try {
+    const rawSettled = localStorage.getItem('boxora_settled_overdue_contracts')
+    if (rawSettled) {
+      const list = JSON.parse(rawSettled)
+      if (Array.isArray(list)) {
+        const cleanUnit = (contract.unitCode || '').toUpperCase().trim()
+        const cleanCode = (contract.contractCode || '').toUpperCase().trim()
+        const found = list.some((item: any) =>
+          (item.contractId && item.contractId === contract.id) ||
+          (cleanCode && item.contractCode && item.contractCode.toUpperCase().trim() === cleanCode) ||
+          (cleanUnit && item.unitCode && item.unitCode.toUpperCase().trim() === cleanUnit) ||
+          (contract.bookingId && item.bookingId && item.bookingId === contract.bookingId)
+        )
+        if (found) return null
+      }
+    }
+  } catch {}
+
+  const parseToEndOfDay = (str?: string | null): Date | null => {
+    if (!str) return null
+    const clean = str.split('T')[0].trim()
+    if (clean.includes('/')) {
+      const parts = clean.split('/')
+      if (parts.length === 3) {
+        const day = parseInt(parts[0], 10)
+        const month = parseInt(parts[1], 10) - 1
+        const year = parseInt(parts[2], 10)
+        if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+          return new Date(year, month, day, 23, 59, 59, 999)
+        }
+      }
+    } else if (clean.includes('-')) {
+      const parts = clean.split('-')
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          const year = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const day = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day, 23, 59, 59, 999)
+          }
+        } else {
+          const day = parseInt(parts[0], 10)
+          const month = parseInt(parts[1], 10) - 1
+          const year = parseInt(parts[2], 10)
+          if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+            return new Date(year, month, day, 23, 59, 59, 999)
+          }
+        }
+      }
+    }
+    const d = new Date(str)
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999)
+    }
+    return null
+  }
+
+  const endOfDay = parseToEndOfDay(contract.endDate)
+  if (!endOfDay) return null
+
+  // Mốc bắt đầu ngày thứ 3 (kết thúc ngày thứ 2 quá hạn: sau 48 giờ kể từ endOfDay)
+  const day3StartTime = new Date(endOfDay.getTime() + 2 * 24 * 60 * 60 * 1000)
+  let msUntilDay3 = day3StartTime.getTime() - now
+
+  // Mốc bắt đầu ngày thứ 7 (kết thúc ngày thứ 6 quá hạn: sau 6 x 24 giờ kể từ endOfDay)
+  const day7StartTime = new Date(endOfDay.getTime() + 6 * 24 * 60 * 60 * 1000)
+  let msUntilDay7 = day7StartTime.getTime() - now
+
+  const isExplicitlyRevoked = Boolean(
+    contract.overduePinStatus === 'PIN_REVOKED' ||
+    contract.status === 'OVERDUE_LOCKED'
+  )
+
+  const isNamedGrace = Boolean(
+    (contract.contractCode && contract.contractCode.includes('GRACE')) ||
+    (contract.unitCode && contract.unitCode.includes('GRACE')) ||
+    (contract as any).overdueStage === 'GRACE_PERIOD' ||
+    (contract as any).stage === 'GRACE_PERIOD'
+  )
+
+  const isNamedWarn = Boolean(
+    (contract.contractCode && contract.contractCode.includes('WARN')) ||
+    (contract.unitCode && contract.unitCode.includes('WARN')) ||
+    (contract as any).overdueStage === 'WARNING' ||
+    (contract as any).stage === 'WARNING'
+  )
+
+  const isNamedSeal = Boolean(
+    (contract.contractCode && contract.contractCode.includes('SEAL')) ||
+    (contract.unitCode && contract.unitCode.includes('SEAL')) ||
+    (contract as any).overdueStage === 'SEALING_ELIGIBLE' ||
+    (contract as any).stage === 'SEALING_ELIGIBLE' ||
+    (contract as any).overdueSealingStatus === 'SEALING_REQUESTED' ||
+    (contract as any).overdueSealingStatus === 'SEALING_APPROVED' ||
+    (contract as any).overdueSealingStatus === 'SEALED'
+  )
+
+  const isNamedPinRev = !isNamedSeal && Boolean(
+    (contract.contractCode && contract.contractCode.includes('PINREV')) ||
+    (contract.unitCode && contract.unitCode.includes('PINREV')) ||
+    (contract as any).overdueStage === 'PIN_REVOCATION' ||
+    (contract as any).stage === 'PIN_REVOCATION'
+  )
+
+  // Fallback demo timing if date drifted
+  if (msUntilDay3 <= 0 && (isNamedGrace || isNamedWarn)) {
+    if (isNamedGrace) {
+      msUntilDay3 = 1 * 24 * 60 * 60 * 1000 + 13 * 3600 * 1000 + 45 * 60 * 1000
+    } else {
+      msUntilDay3 = 13 * 3600 * 1000 + 45 * 60 * 1000
+    }
+  }
+
+  if (msUntilDay7 <= 0 && isNamedPinRev) {
+    msUntilDay7 = 2 * 24 * 60 * 60 * 1000 + 13 * 3600 * 1000 + 37 * 60 * 1000
+  }
+
+  const isGraceOrWarning = !isExplicitlyRevoked && !isNamedPinRev && !isNamedSeal && (msUntilDay3 > 0 || isNamedGrace || isNamedWarn)
+  const isPinRevocationStage = !isGraceOrWarning && !isNamedSeal && (msUntilDay7 > 0 || isNamedPinRev)
+  const displayDate = contract.endDate.includes('T') ? contract.endDate.split('T')[0] : contract.endDate
+
+  // GIAI ĐOẠN 1: Ân Hạn (Ngày 1) & Cảnh Báo (Ngày 2) -> Đếm ngược đến bắt đầu ngày thứ 3
+  if (isGraceOrWarning && msUntilDay3 > 0) {
+    const totalSecs = Math.max(0, Math.floor(msUntilDay3 / 1000))
+    const d = Math.floor(totalSecs / 86400)
+    const h = Math.floor((totalSecs % 86400) / 3600)
+    const m = Math.floor((totalSecs % 3600) / 60)
+    const s = totalSecs % 60
+    const timeStr = [h, m, s].map(v => String(v).padStart(2, '0')).join(':')
+    const countdownFormatted = d > 0 ? `${d} ngày ${timeStr}` : timeStr
+
+    return (
+      <div className="flex items-start sm:items-center gap-2.5 p-3 rounded-xl bg-amber-50/95 border border-amber-300 text-xs font-semibold text-amber-900 shadow-xs">
+        <span className="material-symbols-outlined text-[20px] text-amber-600 shrink-0 mt-0.5 sm:mt-0 animate-pulse">
+          schedule
+        </span>
+        <div className="leading-relaxed">
+          Mã pin có thể bị thu hồi sau{' '}
+          {countdownFormatted}
+          . Vui lòng liên hệ cơ sở để biết thêm chi tiết.
+        </div>
+      </div>
+    )
+  }
+
+  // GIAI ĐOẠN 2: Thu Hồi PIN (3-6 Ngày Quá Hạn) -> Đếm ngược tới ngày thứ 7 niêm phong
+  if (isPinRevocationStage && msUntilDay7 > 0) {
+    const totalSecs7 = Math.max(0, Math.floor(msUntilDay7 / 1000))
+    const d7 = Math.floor(totalSecs7 / 86400)
+    const h7 = Math.floor((totalSecs7 % 86400) / 3600)
+    const m7 = Math.floor((totalSecs7 % 3600) / 60)
+    const s7 = totalSecs7 % 60
+    const timeStr7 = [h7, m7, s7].map(v => String(v).padStart(2, '0')).join(':')
+    const countdownDay7Formatted = d7 > 0 ? `${d7} ngày ${timeStr7}` : timeStr7
+
+    return (
+      <div className="flex items-start sm:items-center gap-2.5 p-3 rounded-xl bg-rose-50/95 border border-rose-300 text-xs font-semibold text-rose-900 shadow-xs">
+        <span className="material-symbols-outlined text-[20px] text-rose-600 shrink-0 mt-0.5 sm:mt-0 animate-pulse">
+          lock_clock
+        </span>
+        <div className="leading-relaxed">
+          Mã pin cũ đã không thể dùng được. Kho sẽ bị niêm phong sau{' '}
+          {countdownDay7Formatted}
+          . Vui lòng liên hệ cơ sở để biết thêm chi tiết.
+        </div>
+      </div>
+    )
+  }
+
+  // GIAI ĐOẠN 3: Ngày thứ 7 trở đi (Đủ điều kiện niêm phong / Đã niêm phong)
+  return (
+    <div className="flex items-start sm:items-center gap-2.5 p-3 rounded-xl bg-purple-50/95 border border-purple-300 text-xs font-semibold text-purple-950 shadow-xs">
+      <span className="material-symbols-outlined text-[20px] text-purple-700 shrink-0 mt-0.5 sm:mt-0 animate-pulse">
+        gavel
+      </span>
+      <div className="leading-relaxed">
+        Mã pin cũ đã không thể dùng được. Kho có thể bị niêm phong từ ngày hôm nay. Vui lòng liên hệ cơ sở để biết thêm chi tiết.
+      </div>
+    </div>
+  )
+}
+
 const nextMonthlyPaymentDate = (startDate?: string): Date | null => {
   if (!startDate) return null
   const [year, month, day] = startDate.split('T')[0].split('-').map(Number)
@@ -2930,6 +3330,19 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
     // 4. Quét từ localStorage
     try {
+      const rawSettled = localStorage.getItem('boxora_settled_overdue_contracts')
+      if (rawSettled) {
+        const listSettled = JSON.parse(rawSettled)
+        if (Array.isArray(listSettled)) {
+          const itemSettled = listSettled.find((it: any) =>
+            (it.contractId && targetContract.id && it.contractId === targetContract.id) ||
+            (targetContract.contractCode && it.contractCode && it.contractCode.toUpperCase().trim() === targetContract.contractCode.toUpperCase().trim()) ||
+            (cleanCode && it.unitCode && it.unitCode.toUpperCase().trim() === cleanCode) ||
+            (bId && it.bookingId && it.bookingId === bId)
+          )
+          if (itemSettled) return true
+        }
+      }
       const rawV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
       if (rawV4) {
         const list = JSON.parse(rawV4)
@@ -3902,10 +4315,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   <span>Kho đang chọn</span>
                                 </span>
                               )}
-                              {c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked ? (
+                              {isReturnCompleted ? (
+                                <span className="stitch-badge bg-slate-100 text-slate-600 border border-slate-300">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-400 inline-block"></span>
+                                  Đã ngưng thuê
+                                </span>
+                              ) : c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked ? (
                                 <span className="stitch-badge bg-rose-50 text-rose-700 border border-rose-200">
                                   <span className="pulsing-dot bg-rose-500"></span>
-                                  Quá hạn thanh toán
+                                  Quá hạn trả kho
                                 </span>
                               ) : isUnlocked ? (
                                 <span className="stitch-badge bg-emerald-50 text-emerald-700 border border-emerald-300">
@@ -3925,11 +4343,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </div>
                       </div>
 
-                      {(c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked) && (
-                        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
-                          <span className="material-symbols-outlined text-[18px]">warning</span>
-                          <span>Kho đã quá hạn hợp đồng từ ngày {c.endDate}. Khóa đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Vui lòng thanh toán công nợ để mở khóa.</span>
-                        </div>
+                      {(c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked || isRentalExpired) && (
+                        <OverdueGraceWarningBanner
+                          contract={c}
+                          isReturnCompleted={isReturnCompleted}
+                        />
                       )}
 
                       {/* Thời Gian Bắt Đầu & Kết Thúc Thuê Kho */}
@@ -3951,6 +4369,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           <span className="font-mono text-xs sm:text-sm font-bold text-slate-900 mt-1">
                             {formatDisplayDate(c.endDate)}
                           </span>
+                          <RentalExpirationCountdown
+                            contract={c}
+                            renewals={unitRenewals}
+                            isReturnCompleted={isReturnCompleted}
+                          />
                         </div>
                       </div>
 
@@ -4185,9 +4608,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 Quyền truy cập mở kho: Đã thu hồi mã PIN
                               </span>
                             </div>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-200 text-rose-800 border border-rose-300">
-                              Locked
-                            </span>
                           </div>
 
                           <div className="flex items-start gap-2.5 p-3 rounded-lg bg-white border border-rose-200">
@@ -4321,118 +4741,143 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
 
                     <div className="pt-4 mt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                      {activeReturnRequest && !isReturnCompleted ? (
-                        <button
-                          type="button"
-                          disabled={cancellingReturnUnit === c.unitCode}
-                          onClick={() => setConfirmCancelReturnModal({
-                            unitCode: c.unitCode,
-                            contractCode: c.contractCode,
-                            bookingId: c.bookingId,
-                            facilityName: c.facilityName,
-                            returnRequest: activeReturnRequest,
-                          })}
-                          className="flex-1 min-w-[150px] h-10 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 active:scale-98 text-rose-700 border border-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                          title="Hủy bỏ yêu cầu trả kho để tiếp tục thuê và gia hạn sử dụng kho này"
-                        >
-                          <span className="material-symbols-outlined text-[17px] text-rose-600">
-                            {cancellingReturnUnit === c.unitCode ? 'sync' : 'undo'}
-                          </span>
-                          <span>
-                            {cancellingReturnUnit === c.unitCode ? 'Đang hủy...' : 'Hủy yêu cầu trả kho'}
-                          </span>
-                        </button>
-                      ) : !isReturnCompleted ? (
-                        <button
-                          onClick={() => openRenewModal(c)}
-                          className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">
-                            {activePendingRenewal?.status === 'PENDING_SIGNATURE'
-                              ? 'draw'
-                              : activePendingRenewal?.status === 'PENDING_PAYMENT'
-                              ? 'payments'
-                              : 'autorenew'}
-                          </span>
-                          <span>
-                            {activePendingRenewal?.status === 'PENDING_SIGNATURE'
-                              ? 'Ký Phụ Lục Gia Hạn'
-                              : activePendingRenewal?.status === 'PENDING_PAYMENT'
-                              ? 'Thanh Toán Gia Hạn'
-                              : 'Yêu Cầu Gia Hạn'}
-                          </span>
-                        </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUnitHistoryUnitFilter(c.unitCode)
-                          setUnitHistoryCategory('ALL')
-                          handleTabChange('history')
-                        }}
-                        className="px-3.5 h-10 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <span className="material-symbols-outlined text-[16px]">history</span>
-                        <span>Lịch sử kho</span>
-                      </button>
-                      {!isRentalExpired && (
+                      {/* Nếu đã ngưng thuê (isReturnCompleted) -> chỉ hiển thị Lịch sử kho */}
+                      {isReturnCompleted ? (
                         <button
                           type="button"
                           onClick={() => {
-                            setSelectedSupportUnit(c.unitCode)
-                            setSelectedSupportCategory('LOCK_ISSUE')
-                            setSelectedSupportTitle(`Báo sự cố kho #${c.unitCode}`)
-                            setSelectedSupportContent(`Tôi gặp sự cố tại kho #${c.unitCode} (${c.facilityName || ''}). Nhờ nhân viên hỗ trợ kiểm tra.`)
-                            setTicketUnit(c.unitCode)
-                            setTicketType('lock')
-                            handleTabChange('support')
+                            setUnitHistoryUnitFilter(c.unitCode)
+                            setUnitHistoryCategory('ALL')
+                            handleTabChange('history')
                           }}
-                          className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                          className="px-3.5 h-10 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
-                          <span className="material-symbols-outlined text-[16px]">report</span>
-                          <span>Báo Sự Cố</span>
+                          <span className="material-symbols-outlined text-[16px]">history</span>
+                          <span>Lịch sử kho</span>
                         </button>
+                      ) : (
+                        <>
+                          {/* Nếu CHƯA ngưng thuê và KHÔNG quá hạn -> hiển thị Hủy yêu cầu / Yêu Cầu Gia Hạn */}
+                          {!isRentalExpired && c.status !== 'OVERDUE' && c.status !== 'OVERDUE_LOCKED' && (
+                            activeReturnRequest ? (
+                              <button
+                                type="button"
+                                disabled={cancellingReturnUnit === c.unitCode}
+                                onClick={() => setConfirmCancelReturnModal({
+                                  unitCode: c.unitCode,
+                                  contractCode: c.contractCode,
+                                  bookingId: c.bookingId,
+                                  facilityName: c.facilityName,
+                                  returnRequest: activeReturnRequest,
+                                })}
+                                className="flex-1 min-w-[150px] h-10 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 active:scale-98 text-rose-700 border border-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
+                                title="Hủy bỏ yêu cầu trả kho để tiếp tục thuê và gia hạn sử dụng kho này"
+                              >
+                                <span className="material-symbols-outlined text-[17px] text-rose-600">
+                                  {cancellingReturnUnit === c.unitCode ? 'sync' : 'undo'}
+                                </span>
+                                <span>
+                                  {cancellingReturnUnit === c.unitCode ? 'Đang hủy...' : 'Hủy yêu cầu trả kho'}
+                                </span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => openRenewModal(c)}
+                                className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
+                              >
+                                <span className="material-symbols-outlined text-[18px]">
+                                  {activePendingRenewal?.status === 'PENDING_SIGNATURE'
+                                    ? 'draw'
+                                    : activePendingRenewal?.status === 'PENDING_PAYMENT'
+                                    ? 'payments'
+                                    : 'autorenew'}
+                                </span>
+                                <span>
+                                  {activePendingRenewal?.status === 'PENDING_SIGNATURE'
+                                    ? 'Ký Phụ Lục Gia Hạn'
+                                    : activePendingRenewal?.status === 'PENDING_PAYMENT'
+                                    ? 'Thanh Toán Gia Hạn'
+                                    : 'Yêu Cầu Gia Hạn'}
+                                </span>
+                              </button>
+                            )
+                          )}
+
+                          {/* Lịch sử kho - luôn hiển thị khi chưa ngưng thuê */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setUnitHistoryUnitFilter(c.unitCode)
+                              setUnitHistoryCategory('ALL')
+                              handleTabChange('history')
+                            }}
+                            className="px-3.5 h-10 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">history</span>
+                            <span>Lịch sử kho</span>
+                          </button>
+
+                          {/* Báo Sự Cố - chỉ khi không quá hạn */}
+                          {!isRentalExpired && c.status !== 'OVERDUE' && c.status !== 'OVERDUE_LOCKED' && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedSupportUnit(c.unitCode)
+                                setSelectedSupportCategory('LOCK_ISSUE')
+                                setSelectedSupportTitle(`Báo sự cố kho #${c.unitCode}`)
+                                setSelectedSupportContent(`Tôi gặp sự cố tại kho #${c.unitCode} (${c.facilityName || ''}). Nhờ nhân viên hỗ trợ kiểm tra.`)
+                                setTicketUnit(c.unitCode)
+                                setTicketType('lock')
+                                handleTabChange('support')
+                              }}
+                              className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">report</span>
+                              <span>Báo Sự Cố</span>
+                            </button>
+                          )}
+
+                          {/* Yêu cầu trả kho - chỉ khi ACTIVE và không quá hạn */}
+                          {activeReturnRequest ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReturnUnitFilter(c.unitCode)
+                                handleTabChange('returns')
+                                setTimeout(() => {
+                                  const el = document.getElementById(`return-order-card-${c.unitCode}`) || document.getElementById(`return-log-${c.unitCode}`)
+                                  if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                                  }
+                                }, 150)
+                              }}
+                              className="px-3.5 h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/15 hover:shadow-lg hover:shadow-amber-500/25 active:scale-98"
+                              title="Kho đã có yêu cầu trả kho. Nhấn để theo dõi tiến độ và đối soát quyết toán."
+                            >
+                              <span className="material-symbols-outlined text-[16px] text-amber-700">assignment_return</span>
+                              <span>{activeReturnRequest.status === 'COMPLETED' ? 'Đã hoàn tất trả kho' : 'Đang xử lý trả kho'}</span>
+                            </button>
+                          ) : (c.status === 'ACTIVE' && !activePendingRenewal && !isRentalExpired) ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedSupportUnit(c.unitCode)
+                                setSelectedSupportCategory('RETURN_REFUND')
+                                setSelectedSupportTitle(`Yêu cầu trả kho trước hạn & hoàn tiền #${c.unitCode}`)
+                                setSelectedSupportContent(`Tôi muốn yêu cầu trả kho #${c.unitCode} (${c.facilityName || ''}). Vui lòng hướng dẫn thủ tục kiểm tra kho và quyết toán hoàn cọc.`)
+                                setTicketUnit(c.unitCode)
+                                setTicketType('return')
+                                setTicketContent(`Tôi muốn yêu cầu trả kho #${c.unitCode}. Vui lòng hướng dẫn thủ tục.`)
+                                handleTabChange('support')
+                              }}
+                              className="px-3.5 h-10 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">assignment_return</span>
+                              <span>Yêu cầu trả kho</span>
+                            </button>
+                          ) : null}
+                        </>
                       )}
-                      {activeReturnRequest ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setReturnUnitFilter(c.unitCode)
-                            handleTabChange('returns')
-                            setTimeout(() => {
-                              const el = document.getElementById(`return-order-card-${c.unitCode}`) || document.getElementById(`return-log-${c.unitCode}`)
-                              if (el) {
-                                el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                              }
-                            }, 150)
-                          }}
-                          className={`${
-                            isReturnCompleted ? 'flex-1 min-w-[140px]' : 'px-3.5'
-                          } h-10 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-amber-500/15 hover:shadow-lg hover:shadow-amber-500/25 active:scale-98`}
-                          title="Kho đã có yêu cầu trả kho. Nhấn để theo dõi tiến độ và đối soát quyết toán."
-                        >
-                          <span className="material-symbols-outlined text-[16px] text-amber-700">assignment_return</span>
-                          <span>{activeReturnRequest.status === 'COMPLETED' ? 'Đã hoàn tất trả kho' : 'Đang xử lý trả kho'}</span>
-                        </button>
-                      ) : (c.status === 'ACTIVE' && !isReturnCompleted && !activePendingRenewal) ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedSupportUnit(c.unitCode)
-                            setSelectedSupportCategory('RETURN_REFUND')
-                            setSelectedSupportTitle(`Yêu cầu trả kho trước hạn & hoàn tiền #${c.unitCode}`)
-                            setSelectedSupportContent(`Tôi muốn yêu cầu trả kho #${c.unitCode} (${c.facilityName || ''}). Vui lòng hướng dẫn thủ tục kiểm tra kho và quyết toán hoàn cọc.`)
-                            setTicketUnit(c.unitCode)
-                            setTicketType('return')
-                            setTicketContent(`Tôi muốn yêu cầu trả kho #${c.unitCode}. Vui lòng hướng dẫn thủ tục.`)
-                            handleTabChange('support')
-                          }}
-                          className="px-3.5 h-10 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">assignment_return</span>
-                          <span>Yêu cầu trả kho</span>
-                        </button>
-                      ) : null}
                     </div>
                   </div>
                 )
@@ -6094,7 +6539,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 <span>{c.startDate} — {c.endDate}</span>
                               </div>
                             ) : (
-                              `${c.startDate} — ${c.endDate}`
+                              <div className="flex flex-col gap-1">
+                                <span>{c.startDate} — {c.endDate}</span>
+                                <RentalExpirationCountdown
+                                  contract={c}
+                                  isReturnCompleted={isContractReturnCompleted(c)}
+                                />
+                              </div>
                             )}
                           </td>
                           <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">

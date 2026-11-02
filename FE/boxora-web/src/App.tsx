@@ -59,7 +59,9 @@ function RootRedirect() {
     return <Navigate to="/login" replace />
   }
 
-  switch (role) {
+  const activeRole = role || user?.role?.name || user?.roleName || (typeof (user as any)?.role === 'string' ? (user as any).role : null) || 'CUSTOMER'
+
+  switch (activeRole) {
     case 'ADMIN':
       return <Navigate to="/portal/admin" replace />
     case 'BUSINESS_MANAGER':
@@ -132,11 +134,11 @@ function MainContent() {
           >
             <Route index element={<RootRedirect />} />
 
-            {/* 1. Customer Portal: Strictly Customer and Admin */}
+            {/* 1. Customer Portal: Strictly Customer */}
             <Route
               path="customer"
               element={
-                <ProtectedRoute allowedRoles={['CUSTOMER', 'ADMIN']}>
+                <ProtectedRoute allowedRoles={['CUSTOMER']}>
                   <CustomerDashboard />
                 </ProtectedRoute>
               }

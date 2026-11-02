@@ -187,6 +187,7 @@ public enum ErrorCode {
     STAFF_NOT_CHECKED_IN_SHIFT(1528, "Người tiếp nhận chưa điểm danh vào ca trực hôm nay tại cơ sở này, không thể thực hiện tiếp nhận", HttpStatus.FORBIDDEN),
     CONTRACT_RENEWAL_RECEPTION_CHECKLIST_INCOMPLETE(1529, "Chưa hoàn tất đầy đủ 5 hạng mục kiểm tra tiếp nhận gia hạn bắt buộc", HttpStatus.BAD_REQUEST),
     CONTRACT_RENEWAL_STAFF_FACILITY_MISMATCH(1530, "Nhân viên được phân công không thuộc cơ sở của hợp đồng gia hạn", HttpStatus.BAD_REQUEST),
+    CONTRACT_ALREADY_TERMINATED(1531, "Hợp đồng đã hoàn tất thanh toán và trả kho, không thể tiếp tục xử lý nợ cước hoặc niêm phong", HttpStatus.BAD_REQUEST),
 
     // ========================= PRICE & PRICE HISTORY (BR-RULE-011) (1600 - 1699) =========================
     PRICE_MUST_BE_GREATER_THAN_ZERO(1600, "Giá thuê phải lớn hơn 0đ", HttpStatus.BAD_REQUEST),

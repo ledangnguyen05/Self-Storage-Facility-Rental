@@ -10,5 +10,7 @@ import java.util.UUID;
 @Repository
 public interface OverdueAuditLogRepository extends JpaRepository<OverdueAuditLog, UUID> {
     List<OverdueAuditLog> findByContract_IdOrderByCreatedAtDesc(UUID contractId);
+    List<OverdueAuditLog> findByActionOrderByCreatedAtDesc(String action);
+    long countByAction(String action);
 }
 

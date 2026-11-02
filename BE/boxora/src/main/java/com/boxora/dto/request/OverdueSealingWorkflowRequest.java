@@ -1,5 +1,8 @@
 package com.boxora.dto.request;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
@@ -26,7 +29,7 @@ public class OverdueSealingWorkflowRequest {
     private String photoEvidenceUrl;
     private String notes;
 
-    private List<AssetItemDto> inventoryItems;
+    private List<@Valid AssetItemDto> inventoryItems;
 
     @Getter
     @Setter
@@ -35,9 +38,15 @@ public class OverdueSealingWorkflowRequest {
     @Builder
     public static class AssetItemDto {
         private String itemName;
+
+        @Min(value = 1, message = "Số lượng tài sản phải lớn hơn hoặc bằng 1")
         private Integer quantity;
+
         private String conditionStatus;
+
+        @DecimalMin(value = "0.0", message = "Giá trị ước tính của tài sản phải lớn hơn hoặc bằng 0")
         private BigDecimal estimatedValue;
+
         private String notes;
     }
 }

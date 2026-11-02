@@ -115,20 +115,6 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
                 <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-800 text-[11px] font-bold border border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-900">
                   {facilityName}
                 </span>
-                {policy?.isActive === false && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900">
-                    Ngừng áp dụng
-                  </span>
-                )}
-                {canEdit && policy?.id && !isEditing && (
-                  <button
-                    type="button"
-                    onClick={() => setIsEditing(true)}
-                    className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[10px] font-bold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300 dark:hover:bg-indigo-900/60 cursor-pointer"
-                  >
-                    Sửa ngoại lệ
-                  </button>
-                )}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 Căn cứ thực hiện nghiệp vụ trạm do Business Operations Manager ban hành
@@ -144,30 +130,13 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
           </button>
         </div>
 
-        {/* Thẩm quyền & Phạm vi */}
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-950 text-xs dark:bg-amber-950/30 dark:border-amber-900/50 dark:text-amber-200">
-          <span className="material-symbols-outlined text-[20px] text-amber-700 dark:text-amber-400 shrink-0">verified_user</span>
-          <div>
-            <div className="font-bold flex items-center gap-1.5">
-              <span>QUY CHUẨN PHÂN QUYỀN &bull; FACILITY MANAGER</span>
-            </div>
-            <p className="text-[11px] text-amber-900 dark:text-amber-300 mt-0.5 leading-relaxed">
-              Quản lý cơ sở thực hiện nghiêm túc các nghiệp vụ thu cọc, nghiệm thu trả kho và niêm phong kho nợ đúng theo các mốc thời gian dưới đây. Mọi trường hợp điều chỉnh ngoại lệ phải được <strong>Business Operations Manager</strong> phê duyệt trước bằng văn bản.
-            </p>
-          </div>
-        </div>
-
         {errorMsg && (
           <div className="p-2.5 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-xs flex items-center gap-2 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300">
             <span className="material-symbols-outlined text-[16px] text-slate-500 dark:text-slate-400">info</span>
             <span>{errorMsg}</span>
           </div>
         )}
-        {!isLoading && policy?.isActive === false && (
-          <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs dark:bg-rose-950/40 dark:border-rose-900 dark:text-rose-300">
-            Chính sách này hiện đã ngừng áp dụng. Các giá trị bên dưới là cấu hình đã lưu, không xác nhận chính sách đang có hiệu lực.
-          </div>
-        )}
+       
         {isLoading && (
           <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-slate-600 text-xs dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300">
             Đang tải chính sách áp dụng...

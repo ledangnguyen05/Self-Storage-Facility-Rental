@@ -127,7 +127,7 @@ public class ReportController {
     }
 
     @PostMapping("/overdue-debt/{contractId}/send-reminder")
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Gửi email thông báo nhắc nợ quá hạn và chi tiết tiền phạt trễ hạn tới khách hàng")
     public ResponseEntity<ApiResponse<Void>> sendOverdueReminder(@PathVariable UUID contractId) {
         reportService.sendOverdueReminder(contractId);

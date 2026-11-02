@@ -1,9 +1,11 @@
 package com.boxora.service;
 
+import com.boxora.dto.request.OverdueSealingWorkflowRequest;
 import com.boxora.dto.response.OverdueContractDetailResponse;
 import com.boxora.entity.*;
 import com.boxora.enums.*;
 import com.boxora.exception.AppException;
+import com.boxora.exception.ErrorCode;
 import com.boxora.integration.smartlock.SmartLockAdapter;
 import com.boxora.repository.*;
 import com.boxora.security.FacilityAccessGuard;
@@ -62,6 +64,8 @@ class OverdueManagementServiceTest {
     private RequestContext requestContext;
     @Mock
     private EmailService emailService;
+    @Mock
+    private NotificationLogRepository notificationLogRepository;
     @Mock
     private ActivityLogService activityLogService;
 
@@ -235,5 +239,131 @@ class OverdueManagementServiceTest {
 
         // Act & Assert
         assertThrows(AppException.class, () -> overdueManagementService.getOverdueContractDetail(contractId));
+    }
+
+    @Test
+    @DisplayName("Should skip creating audit log when inventory data is unchanged")
+    void shouldSkipAuditLog_whenInventoryIsUnchanged() {
+        // Arrange
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(testContract));
+
+        User witness = User.builder().fullName("Trinh Thu Ha").build();
+        witness.setId(UUID.randomUUID());
+
+        SealingRecord existingSealing = SealingRecord.builder()
+                .contract(testContract)
+                .storageUnit(testUnit)
+                .facility(testFacility)
+                .protocolNumber("BB-KK-TD-S-101-1234")
+                .sealTagNumber("INV-TEMP-1234")
+                .witness(witness)
+                .notes("ok")
+                .build();
+        existingSealing.setId(UUID.randomUUID());
+
+        AssetInventoryItem item1 = AssetInventoryItem.builder()
+                .sealingRecord(existingSealing)
+                .itemName("fwf")
+                .quantity(1)
+                .conditionStatus("Tốt")
+                .estimatedValue(BigDecimal.valueOf(355))
+                .notes("ghi chu 1")
+                .build();
+
+        when(sealingRecordRepository.findFirstByContract_IdOrderByCreatedAtDesc(contractId))
+                .thenReturn(Optional.of(existingSealing));
+        when(assetInventoryItemRepository.findBySealingRecord_Id(existingSealing.getId()))
+                .thenReturn(List.of(item1));
+
+        OverdueSealingWorkflowRequest request = OverdueSealingWorkflowRequest.builder()
+                .action("INVENTORY")
+                .witnessId(witness.getId())
+                .notes("ok")
+                .inventoryItems(List.of(
+                        OverdueSealingWorkflowRequest.AssetItemDto.builder()
+                                .itemName("fwf")
+                                .quantity(1)
+                                .conditionStatus("Tốt")
+                                .estimatedValue(BigDecimal.valueOf(355))
+                                .notes("ghi chu 1")
+                                .build()
+                ))
+                .build();
+
+        when(userRepository.findById(witness.getId())).thenReturn(Optional.of(witness));
+
+        // Act
+        overdueManagementService.processSealingWorkflow(contractId, request);
+
+        // Assert: No new audit log should be saved
+        verify(overdueAuditLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should record audit log when inventory has changed")
+    void shouldRecordAuditLog_whenInventoryHasChanged() {
+        // Arrange
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(testContract));
+
+        User witness = User.builder().fullName("Trinh Thu Ha").build();
+        witness.setId(UUID.randomUUID());
+
+        SealingRecord existingSealing = SealingRecord.builder()
+                .contract(testContract)
+                .storageUnit(testUnit)
+                .facility(testFacility)
+                .protocolNumber("BB-KK-TD-S-101-1234")
+                .witness(witness)
+                .notes("ghi chu cu")
+                .build();
+        existingSealing.setId(UUID.randomUUID());
+
+        when(sealingRecordRepository.findFirstByContract_IdOrderByCreatedAtDesc(contractId))
+                .thenReturn(Optional.of(existingSealing));
+        when(assetInventoryItemRepository.findBySealingRecord_Id(existingSealing.getId()))
+                .thenReturn(Collections.emptyList());
+
+        OverdueSealingWorkflowRequest request = OverdueSealingWorkflowRequest.builder()
+                .action("INVENTORY")
+                .witnessId(witness.getId())
+                .notes("ghi chu moi")
+                .inventoryItems(List.of(
+                        OverdueSealingWorkflowRequest.AssetItemDto.builder()
+                                .itemName("Ban lam viec")
+                                .quantity(1)
+                                .conditionStatus("Tốt")
+                                .estimatedValue(BigDecimal.valueOf(1000000))
+                                .notes("Ghi chu do dung")
+                                .build()
+                ))
+                .build();
+
+        when(userRepository.findById(witness.getId())).thenReturn(Optional.of(witness));
+
+        // Act
+        overdueManagementService.processSealingWorkflow(contractId, request);
+
+        // Assert: An audit log MUST be saved
+        verify(overdueAuditLogRepository, times(1)).save(any());
+    }
+
+    @Test
+    @DisplayName("Should throw CONTRACT_ALREADY_TERMINATED when attempting sealing on terminated contract")
+    void shouldThrowException_whenContractIsTerminated() {
+        // Arrange
+        testContract.setStatus(RentalContractStatus.TERMINATED);
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(testContract));
+
+        OverdueSealingWorkflowRequest request = OverdueSealingWorkflowRequest.builder()
+                .action("INVENTORY")
+                .witnessId(UUID.randomUUID())
+                .notes("kiem ke")
+                .inventoryItems(Collections.emptyList())
+                .build();
+
+        // Act & Assert
+        AppException ex = assertThrows(AppException.class, () ->
+                overdueManagementService.processSealingWorkflow(contractId, request));
+        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_ALREADY_TERMINATED);
     }
 }

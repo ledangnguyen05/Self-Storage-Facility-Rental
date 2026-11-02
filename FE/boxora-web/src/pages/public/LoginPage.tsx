@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import {
   ShieldCheck,
@@ -28,11 +28,31 @@ import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
 import { AuthAnimatedBackground } from '../../components/auth/AuthAnimatedBackground'
 import { syncCustomerPortalAccess } from '../../utils/rentalAccess'
 
+const resolvePortalPath = (r?: string | null): string => {
+  switch (r) {
+    case 'ADMIN':
+      return '/portal/admin'
+    case 'BUSINESS_MANAGER':
+      return '/portal/business-manager'
+    case 'FACILITY_MANAGER':
+      return '/portal/facility-manager'
+    case 'STAFF':
+      return '/portal/staff'
+    case 'CUSTOMER':
+    default:
+      return '/portal/customer'
+  }
+}
+
+const extractRoleName = (u: any): string => {
+  return u?.role?.name || u?.roleName || (typeof u?.role === 'string' ? u.role : null) || 'CUSTOMER'
+}
+
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const redirect = searchParams.get('redirect')
-  const { login, loginWithGoogle, isLoading } = useAuth()
+  const { user, role, login, loginWithGoogle, isLoading, isAuthenticated } = useAuth()
 
   // Form states
   const [email, setEmail] = useState(() => searchParams.get('email') || '')
@@ -52,6 +72,26 @@ export const LoginPage: React.FC = () => {
   const [isForgotLoading, setIsForgotLoading] = useState(false)
   const [forgotSuccess, setForgotSuccess] = useState(false)
   const [forgotError, setForgotError] = useState<string | null>(null)
+
+  // If user is already authenticated, redirect them directly to their appropriate portal
+  useEffect(() => {
+    if (isAuthenticated && user && !isLoading) {
+      const activeRole = role || extractRoleName(user)
+      if (redirect) {
+        const decoded = decodeURIComponent(redirect)
+        const isCustomerPath = decoded.startsWith('/portal/customer')
+        if (isCustomerPath && activeRole !== 'CUSTOMER') {
+          navigate(resolvePortalPath(activeRole), { replace: true })
+          return
+        }
+        if (!isCustomerPath) {
+          navigate(decoded, { replace: true })
+          return
+        }
+      }
+      navigate(resolvePortalPath(activeRole), { replace: true })
+    }
+  }, [isAuthenticated, user, role, isLoading, redirect, navigate])
 
   const handleOpenForgotModal = () => {
     setForgotEmail(email.trim())
@@ -88,30 +128,22 @@ export const LoginPage: React.FC = () => {
     try {
       const user = await loginWithGoogle(idToken, 'LOGIN')
       setSocialNotice(null)
-      const userRole = user?.role?.name || 'CUSTOMER'
+      const userRole = extractRoleName(user)
       const customerPortalAccess = user ? await syncCustomerPortalAccess(user) : true
-
-      const getPortalForRole = (r: string) => {
-        switch (r) {
-          case 'ADMIN':
-            return '/portal/admin'
-          case 'BUSINESS_MANAGER':
-            return '/portal/business-manager'
-          case 'FACILITY_MANAGER':
-            return '/portal/facility-manager'
-          case 'STAFF':
-            return '/portal/staff'
-          case 'CUSTOMER':
-          default:
-            return '/portal/customer'
-        }
-      }
 
       if (redirect) {
         const decoded = decodeURIComponent(redirect)
+        const isCustomerPath = decoded.startsWith('/portal/customer')
+
+        // CRITICAL: Staff/Managers/Admin must NEVER be redirected to customer portal!
+        if (isCustomerPath && userRole !== 'CUSTOMER') {
+          navigate(resolvePortalPath(userRole))
+          return
+        }
+
         const isAllowed =
-          (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
+          (isCustomerPath && userRole === 'CUSTOMER') ||
+          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/facility-manager') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
@@ -129,7 +161,7 @@ export const LoginPage: React.FC = () => {
         return
       }
 
-      navigate(getPortalForRole(userRole))
+      navigate(resolvePortalPath(userRole))
     } catch (err: any) {
       console.error('Google login error:', err)
       setSocialNotice(null)
@@ -196,30 +228,22 @@ export const LoginPage: React.FC = () => {
 
     try {
       const user = await login(email.trim(), password)
-      const userRole = user?.role?.name || 'CUSTOMER'
+      const userRole = extractRoleName(user)
       const customerPortalAccess = user ? await syncCustomerPortalAccess(user) : true
-
-      const getPortalForRole = (r: string) => {
-        switch (r) {
-          case 'ADMIN':
-            return '/portal/admin'
-          case 'BUSINESS_MANAGER':
-            return '/portal/business-manager'
-          case 'FACILITY_MANAGER':
-            return '/portal/facility-manager'
-          case 'STAFF':
-            return '/portal/staff'
-          case 'CUSTOMER':
-          default:
-            return '/portal/customer'
-        }
-      }
 
       if (redirect) {
         const decoded = decodeURIComponent(redirect)
+        const isCustomerPath = decoded.startsWith('/portal/customer')
+
+        // CRITICAL: Staff/Managers/Admin must NEVER be redirected to customer portal!
+        if (isCustomerPath && userRole !== 'CUSTOMER') {
+          navigate(resolvePortalPath(userRole))
+          return
+        }
+
         const isAllowed =
-          (decoded.startsWith('/portal/customer') && (userRole === 'CUSTOMER' || userRole === 'ADMIN')) ||
-          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER')) ||
+          (isCustomerPath && userRole === 'CUSTOMER') ||
+          (decoded.startsWith('/portal/staff') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/facility-manager') && (userRole === 'STAFF' || userRole === 'FACILITY_MANAGER' || userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/business-manager') && (userRole === 'BUSINESS_MANAGER' || userRole === 'ADMIN')) ||
           (decoded.startsWith('/portal/admin') && (userRole === 'ADMIN' || userRole === 'BUSINESS_MANAGER')) ||
@@ -237,7 +261,7 @@ export const LoginPage: React.FC = () => {
         return
       }
 
-      navigate(getPortalForRole(userRole))
+      navigate(resolvePortalPath(userRole))
     } catch (err: any) {
       console.error('Login error:', err)
       setError(
