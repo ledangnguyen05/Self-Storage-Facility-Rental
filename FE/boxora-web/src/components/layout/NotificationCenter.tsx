@@ -41,6 +41,9 @@ const getTypeLabel = (type?: string) => {
     case 'SUPPORT_TICKET_UPDATE': return 'Cập nhật yêu cầu'
     case 'REFUND_BANK_INFO_REQUIRED': return 'Cần nhập STK'
     case 'REFUND_PAYOUT_COMPLETED': return 'Đã hoàn tiền'
+    case 'OVERDUE_DEBT_REMINDER': return 'Nhắc cước nợ'
+    case 'SMARTLOCK_LOCKOUT_NOTICE': return 'Tạm khóa SmartLock'
+    case 'TEMPORARY_PIN': return 'Mã PIN tạm thời'
     default: return type?.replaceAll('_', ' ') || 'Thông báo'
   }
 }
@@ -53,7 +56,11 @@ const getTypeBadgeStyle = (type?: string) => {
     case 'HANDOVER_CHECKIN':
       return 'bg-cyan-100 text-cyan-800 border-cyan-200'
     case 'RENEWAL_REJECTED':
+    case 'OVERDUE_DEBT_REMINDER':
+    case 'SMARTLOCK_LOCKOUT_NOTICE':
       return 'bg-rose-100 text-rose-800 border-rose-200'
+    case 'TEMPORARY_PIN':
+      return 'bg-amber-100 text-amber-800 border-amber-200'
     case 'RENEWAL_APPROVED':
     case 'RENEWAL_COMPLETED':
     case 'REFUND_PAYOUT_COMPLETED':
@@ -105,7 +112,7 @@ const getNotificationAction = (item: NotificationLog, role?: string | null) => {
   }
 
   if (item.notificationType === 'BOOKING_CREATED' && role === 'CUSTOMER') {
-    return { label: 'Xem đơn đặt giữ chỗ', to: '/portal/customer?tab=bookings' }
+    return { label: 'Xem đơn', to: '/portal/customer?tab=bookings' }
   }
 
   if (
@@ -115,6 +122,16 @@ const getNotificationAction = (item: NotificationLog, role?: string | null) => {
     role === 'CUSTOMER'
   ) {
     return { label: 'Xem yêu cầu hỗ trợ', to: '/portal/customer?tab=support' }
+  }
+
+  if (
+    (item.notificationType === 'OVERDUE_DEBT_REMINDER' ||
+      item.notificationType === 'SMARTLOCK_LOCKOUT_NOTICE' ||
+      item.notificationType === 'SEALING_NOTICE' ||
+      item.notificationType === 'TEMPORARY_PIN') &&
+    role === 'CUSTOMER'
+  ) {
+    return { label: 'Xem thông báo nợ cước', to: '/portal/customer?tab=history' }
   }
 
   return null

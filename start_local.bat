@@ -54,12 +54,12 @@ echo.
 :: BUOC 1: KIEM TRA VA KHOI DONG POSTGRESQL (PORT 5432)
 :: ==============================================================================
 echo [1/4] Kiem tra Database PostgreSQL (Port 5432)...
-powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5432 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% neq 0 (
     echo [WARNING] PostgreSQL chua chay! Dang thu khoi dong Windows Service PostgreSQL...
     powershell -NoProfile -Command "Get-Service *postgres* -ErrorAction SilentlyContinue | Start-Service -ErrorAction SilentlyContinue"
     ping 127.0.0.1 -n 5 >nul
-    powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5432 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+    powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5432 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
     if !errorlevel! neq 0 (
         echo [ERROR] Khong the khoi dong PostgreSQL! Vui long bat PostgreSQL thu cong.
         pause
@@ -73,7 +73,7 @@ echo.
 :: BUOC 2: KIEM TRA VA KHOI DONG BACKEND SPRING BOOT (PORT 8080)
 :: ==============================================================================
 echo [2/4] Kiem tra Backend Spring Boot (Port 8080)...
-powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 (
     echo [OK] Backend Spring Boot da dang chay tren Port 8080.
     goto CHECK_FRONTEND
@@ -82,10 +82,10 @@ if %errorlevel% equ 0 (
 set "JAR_FILE=%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar"
 if exist "!JAR_FILE!" (
     echo   - Tim thay JAR, khoi dong truc tiep ^(khong build lai^)...
-    start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA BACKEND (8080) && "!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar"
+    start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k ""title BOXORA BACKEND (8080) && "!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar target\boxora-backend-0.0.1-SNAPSHOT.jar""
 ) else (
     echo   - Chua co file JAR, dang build va chay Backend ^(lan dau co the mat vai phut^)...
-    start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "title BOXORA BACKEND (8080) && call setup_and_run_backend.bat 1"
+    start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k ""title BOXORA BACKEND (8080) && call setup_and_run_backend.bat 1""
 )
 
 echo   - Dang cho Backend khoi dong tren Port 8080 (toi da 90 giay)...
@@ -93,7 +93,7 @@ set /a RETRY_COUNT=0
 :CHECK_BACKEND_LOOP
 ping 127.0.0.1 -n 3 >nul
 set /a RETRY_COUNT+=1
-powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 (
     echo [OK] Backend Spring Boot da san sang tren Port 8080!
     goto CHECK_FRONTEND
@@ -123,21 +123,21 @@ echo.
 :: BUOC 4: KHOI DONG FRONTEND VITE DEV SERVER (PORT 5173)
 :: ==============================================================================
 echo [4/4] Khoi dong Frontend Vite Dev Server (Port 5173)...
-powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 (
     echo [OK] Frontend Vite Dev Server da dang chay tren Port 5173.
     goto LAUNCH_BROWSER
 )
 
 echo   - Dang khoi dong Vite Dev Server trong cua so rieng...
-start "BOXORA - FRONTEND VITE (PORT 5173)" /d "%~dp0FE\boxora-web" cmd /k "title BOXORA FRONTEND (5173) && npm run dev"
+start "BOXORA - FRONTEND VITE (PORT 5173)" /d "%~dp0FE\boxora-web" cmd /k ""title BOXORA FRONTEND (5173) && npm run dev""
 
 echo   - Dang cho Frontend san sang tren Port 5173 (toi da 45 giay)...
 set /a FE_RETRY=0
 :CHECK_FE_LOOP
 ping 127.0.0.1 -n 3 >nul
 set /a FE_RETRY+=1
-powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
 if %errorlevel% equ 0 (
     echo [OK] Frontend Vite da san sang tren Port 5173!
     goto LAUNCH_BROWSER

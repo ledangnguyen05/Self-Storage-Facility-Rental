@@ -121,4 +121,7 @@ public class RentalContract extends BaseEntity {
 
     @Column(name = "temp_pin_grant_reason", length = 255)
     private String tempPinGrantReason;
+
+    @Column(name = "temp_access_pin", length = 50)
+    private String tempAccessPin;
 }

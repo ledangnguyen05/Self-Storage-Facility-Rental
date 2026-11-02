@@ -85,7 +85,7 @@ interface CustomerUnitActivityLog {
   id: string
   unitCode?: string
   facilityName?: string
-  category: 'ACCESS' | 'RENEWAL' | 'CONTRACT' | 'NOTIFICATION' | 'SUPPORT'
+  category: 'ACCESS' | 'RENEWAL' | 'CONTRACT' | 'NOTIFICATION' | 'SUPPORT' | 'OVERDUE'
   actionType:
     | 'LOCK_OPEN'
     | 'LOCK_CLOSE'
@@ -100,6 +100,9 @@ interface CustomerUnitActivityLog {
     | 'RENEWAL_REJECTED'
     | 'CONTRACT_ACTIVATED'
     | 'CONTRACT_OVERDUE'
+    | 'OVERDUE_NOTICE'
+    | 'LOCK_BLOCKED'
+    | 'SEALING_NOTICE'
     | 'PAYMENT_COMPLETED'
     | 'SUPPORT_REQUEST'
     | 'RETURN_SETTLEMENT'
@@ -122,10 +125,66 @@ interface CustomerUnitActivityLog {
     contractId?: string
     renewalId?: string
     bookingId?: string
+    bookingCode?: string
     notificationId?: string
+    notificationType?: string
     paymentId?: string
     payment?: PaymentItem
   }
+}
+
+// Helper: Phân loại các thông báo/hoạt động thuộc bộ lọc "Nợ cước"
+// Bao gồm toàn bộ thông báo của 3 mục:
+// 1. Công Nợ & Công Thức
+// 2. SmartLock & Thu Hồi PIN
+// 3. Niêm Phong & Kiểm Kê
+const isOverdueDebtItem = (item: CustomerUnitActivityLog): boolean => {
+  if (item.category === 'OVERDUE') return true
+  if (
+    item.actionType === 'CONTRACT_OVERDUE' ||
+    item.actionType === 'OVERDUE_NOTICE' ||
+    item.actionType === 'LOCK_BLOCKED' ||
+    item.actionType === 'SEALING_NOTICE'
+  ) {
+    return true
+  }
+
+  const notifType = (item.meta as any)?.notificationType
+  if (
+    notifType &&
+    (notifType === 'OVERDUE_DEBT_REMINDER' ||
+      notifType === 'SMARTLOCK_LOCKOUT_NOTICE' ||
+      notifType === 'SEALING_NOTICE' ||
+      notifType === 'TEMPORARY_PIN')
+  ) {
+    return true
+  }
+
+  const text = `${item.title || ''} ${item.description || ''} ${item.statusLabel || ''}`.toLowerCase()
+  const isDebtOrFormula =
+    text.includes('nhắc cước') ||
+    text.includes('nhắc nợ') ||
+    text.includes('nợ cước') ||
+    text.includes('quá hạn') ||
+    text.includes('phí phạt') ||
+    text.includes('tiền phạt') ||
+    text.includes('công nợ')
+
+  const isSmartLockPin =
+    text.includes('thu hồi pin') ||
+    text.includes('thu hồi mã pin') ||
+    text.includes('tạm khóa smartlock') ||
+    text.includes('khóa cửa kho iot') ||
+    text.includes('mã pin tạm thời') ||
+    text.includes('tạm khóa (overdue')
+
+  const isSealingInventory =
+    text.includes('niêm phong') ||
+    text.includes('kiểm kê') ||
+    text.includes('biên bản niêm phong') ||
+    text.includes('tịch thu')
+
+  return isDebtOrFormula || isSmartLockPin || isSealingInventory
 }
 
 const formatRelativeTimeVi = (isoString?: string): string => {
@@ -434,7 +493,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setIsSettlementReadOnly(readOnly)
     setSelectedBookingForSettlementModal(bookingId)
   }
-  const [unitHistoryCategory, setUnitHistoryCategory] = useState<'ALL' | 'ACCESS' | 'RENEWAL' | 'NOTIFICATION' | 'SUPPORT'>('ALL')
+  const [unitHistoryCategory, setUnitHistoryCategory] = useState<'ALL' | 'OVERDUE' | 'ACCESS' | 'RENEWAL' | 'NOTIFICATION' | 'SUPPORT'>('ALL')
   const [unitHistoryUnitFilter, setUnitHistoryUnitFilter] = useState<string>('ALL')
   const [unitHistorySearch, setUnitHistorySearch] = useState<string>('')
   const [unitHistoryLimit, setUnitHistoryLimit] = useState<number>(12)
@@ -708,7 +767,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   }, [user?.id])
 
-  const activeContracts = contracts.filter(c => c.status === 'ACTIVE' || c.status === 'OVERDUE')
+  const activeContracts = contracts.filter(c => c.status === 'ACTIVE' || c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED')
   const activatedContracts = contracts.filter(c => c.status === 'ACTIVE')
 
   // Merge active bookings that have unit assigned into effectiveActiveContracts to guarantee
@@ -2267,19 +2326,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           id: `CTR-OVD-${c.id}`,
           unitCode: c.unitCode,
           facilityName: c.facilityName,
-          category: 'CONTRACT',
+          category: 'OVERDUE',
           actionType: 'CONTRACT_OVERDUE',
           title: `Thông báo quá hạn kho #${c.unitCode} — Tạm khóa cửa kho IoT`,
-          description: `Kho #${c.unitCode} (Hợp đồng #${c.contractCode}) đã quá hạn thuê từ ngày ${formatDisplayDate(c.endDate)}. Hệ thống SmartLock đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Quý khách vui lòng gia hạn kho để mở khóa lại.`,
+          description: `Kho #${c.unitCode} (Hợp đồng #${c.contractCode}) đã quá hạn thuê từ ngày ${formatDisplayDate(c.endDate)}. Hệ thống SmartLock đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Quý khách vui lòng thanh toán nợ cước để khôi phục quyền truy cập kho.`,
           timestamp: overdueTs,
           actorName: 'Hệ thống Cảnh báo Boxora',
-          statusLabel: 'Quá hạn - Tạm khóa',
+          statusLabel: 'Quá hạn nợ cước',
           statusTone: 'rose',
           meta: {
             oldEndDate: c.startDate,
             newEndDate: c.endDate,
             contractCode: c.contractCode,
             contractId: c.id,
+            notificationType: 'SMARTLOCK_LOCKOUT_NOTICE',
           },
         })
       }
@@ -2418,7 +2478,28 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       const cleanContent = (n.content || '').replace(/\[\[[\s\S]*?\]\]/g, '').trim()
       const detectedUnit = extractUnitFromText(n.title) || extractUnitFromText(cleanContent)
 
-      const isRefundRequestNotif = Boolean(
+      const isOverdueDebtNotif = Boolean(
+        n.notificationType === 'OVERDUE_DEBT_REMINDER' ||
+        n.notificationType === 'SMARTLOCK_LOCKOUT_NOTICE' ||
+        n.notificationType === 'SEALING_NOTICE' ||
+        n.notificationType === 'TEMPORARY_PIN' ||
+        n.title?.toLowerCase().includes('nhắc nợ') ||
+        n.title?.toLowerCase().includes('nhắc cước') ||
+        n.title?.toLowerCase().includes('nợ cước') ||
+        n.title?.toLowerCase().includes('thu hồi pin') ||
+        n.title?.toLowerCase().includes('tạm khóa') ||
+        n.title?.toLowerCase().includes('niêm phong') ||
+        n.title?.toLowerCase().includes('kiểm kê') ||
+        cleanContent.toLowerCase().includes('nhắc cước') ||
+        cleanContent.toLowerCase().includes('nhắc nợ') ||
+        cleanContent.toLowerCase().includes('nợ cước') ||
+        cleanContent.toLowerCase().includes('thu hồi mã pin') ||
+        cleanContent.toLowerCase().includes('tạm khóa smartlock') ||
+        cleanContent.toLowerCase().includes('niêm phong buồng kho') ||
+        cleanContent.toLowerCase().includes('kiểm kê tài sản')
+      )
+
+      const isRefundRequestNotif = !isOverdueDebtNotif && Boolean(
         n.referenceType === 'RefundRequest' ||
           n.referenceType === 'REFUND' ||
           n.title?.toLowerCase().includes('yêu cầu hoàn tiền') ||
@@ -2426,7 +2507,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           cleanContent.toLowerCase().includes('ref-')
       )
 
-      const isSettlementNotif = !isRefundRequestNotif && Boolean(
+      const isSettlementNotif = !isOverdueDebtNotif && !isRefundRequestNotif && Boolean(
         n.referenceType === 'HANDOVER' ||
           n.referenceType === 'HandoverRecord' ||
           (n.referenceType === 'BOOKING' && (
@@ -2443,19 +2524,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               cleanContent.toLowerCase().includes('hiện trường')))
       )
 
-      const isRenewalNotif = !isSettlementNotif && !isRefundRequestNotif && Boolean(
+      const isRenewalNotif = !isOverdueDebtNotif && !isSettlementNotif && !isRefundRequestNotif && Boolean(
         n.notificationType?.includes('RENEWAL') ||
           n.title?.toLowerCase().includes('gia hạn') ||
           cleanContent.toLowerCase().includes('gia hạn')
       )
-      const isAccessNotif = !isSettlementNotif && !isRefundRequestNotif && Boolean(
+      const isAccessNotif = !isOverdueDebtNotif && !isSettlementNotif && !isRefundRequestNotif && Boolean(
         n.notificationType?.includes('PIN') ||
-          n.notificationType?.includes('SEAL') ||
           n.title?.toLowerCase().includes('mã pin') ||
-          n.title?.toLowerCase().includes('niêm phong') ||
           n.title?.toLowerCase().includes('mở khóa')
       )
-      const isContractOrPayNotif = !isSettlementNotif && Boolean(
+      const isContractOrPayNotif = !isOverdueDebtNotif && !isSettlementNotif && Boolean(
         isRefundRequestNotif ||
           n.notificationType?.includes('PAYMENT') ||
           n.notificationType?.includes('CONTRACT') ||
@@ -2474,16 +2553,48 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       const matchedBooking =
         (n.referenceId ? customerBookings.find(b => b.id === n.referenceId) : undefined) ||
-        (detectedUnit ? customerBookings.find(b => b.unitCode === detectedUnit) : undefined)
+        (detectedUnit ? customerBookings.find(b => b.bookingCode === detectedUnit || b.unitCode === detectedUnit) : undefined)
       // Nếu là RefundRequest thì targetBookingId lấy từ matchedBooking nếu có, không gán refundRequestId vào bookingId
       const targetBookingId = isRefundRequestNotif ? matchedBooking?.id : (n.referenceId || matchedBooking?.id)
+      const targetBookingCode = matchedBooking?.bookingCode || (detectedUnit?.startsWith('BX-') ? detectedUnit : undefined)
 
       let notifCategory: CustomerUnitActivityLog['category'] = 'NOTIFICATION'
       let notifActionType: CustomerUnitActivityLog['actionType'] = 'SYSTEM_NOTIFICATION'
       let notifStatusLabel = 'Thông báo hệ thống'
       let notifStatusTone: CustomerUnitActivityLog['statusTone'] = 'cyan'
 
-      if (isSettlementNotif) {
+      if (isOverdueDebtNotif) {
+        notifCategory = 'OVERDUE'
+        const isSealing =
+          n.notificationType === 'SEALING_NOTICE' ||
+          n.title?.toLowerCase().includes('niêm phong') ||
+          n.title?.toLowerCase().includes('kiểm kê') ||
+          cleanContent.toLowerCase().includes('niêm phong') ||
+          cleanContent.toLowerCase().includes('kiểm kê')
+
+        const isSmartLock =
+          n.notificationType === 'SMARTLOCK_LOCKOUT_NOTICE' ||
+          n.notificationType === 'TEMPORARY_PIN' ||
+          n.title?.toLowerCase().includes('thu hồi pin') ||
+          n.title?.toLowerCase().includes('tạm khóa') ||
+          n.title?.toLowerCase().includes('mã pin tạm thời') ||
+          cleanContent.toLowerCase().includes('thu hồi mã pin') ||
+          cleanContent.toLowerCase().includes('tạm khóa smartlock')
+
+        if (isSealing) {
+          notifActionType = 'SEALING_NOTICE'
+          notifStatusLabel = 'Niêm phong & Kiểm kê'
+          notifStatusTone = 'purple'
+        } else if (isSmartLock) {
+          notifActionType = 'LOCK_BLOCKED'
+          notifStatusLabel = n.notificationType === 'TEMPORARY_PIN' ? 'Mã PIN tạm thời' : 'SmartLock & Thu hồi PIN'
+          notifStatusTone = n.notificationType === 'TEMPORARY_PIN' ? 'amber' : 'rose'
+        } else {
+          notifActionType = 'OVERDUE_NOTICE'
+          notifStatusLabel = 'Công Nợ & Công Thức'
+          notifStatusTone = 'rose'
+        }
+      } else if (isSettlementNotif) {
         notifCategory = 'SUPPORT'
         notifActionType = 'RETURN_SETTLEMENT'
         notifStatusLabel = 'Nghiệm thu & Quyết toán kho'
@@ -2512,7 +2623,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         notifCategory = 'ACCESS'
         notifActionType = 'SYSTEM_NOTIFICATION'
         notifStatusLabel = 'Mã PIN & Khóa kho'
-        notifStatusTone = n.notificationType === 'SEALING_NOTICE' ? 'rose' : 'cyan'
+        notifStatusTone = 'cyan'
       } else if (isContractOrPayNotif) {
         notifCategory = 'CONTRACT'
         notifActionType = 'PAYMENT_COMPLETED'
@@ -2534,7 +2645,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         statusTone: notifStatusTone,
         meta: {
           bookingId: targetBookingId,
-          notificationId: n.id
+          bookingCode: targetBookingCode,
+          notificationId: n.id,
+          notificationType: n.notificationType,
         }
       })
     })
@@ -2574,13 +2687,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const filteredUnitActivityHistory = useMemo(() => {
     return combinedUnitActivityHistory.filter(item => {
       if (unitHistoryCategory !== 'ALL') {
-        if (unitHistoryCategory === 'NOTIFICATION') {
-          // Tab "Hợp đồng và thanh toán": Chỉ hiển thị các hoạt động về Hợp đồng & Thanh toán, loại bỏ nghiệm thu trả kho
+        if (unitHistoryCategory === 'OVERDUE') {
+          // Tab "Nợ cước": Chứa toàn bộ thông báo từ 3 mục (Công Nợ & Công Thức, SmartLock & Thu Hồi PIN, Niêm Phong & Kiểm Kê)
+          if (!isOverdueDebtItem(item)) return false
+        } else if (unitHistoryCategory === 'NOTIFICATION') {
+          // Tab "Hợp đồng và thanh toán": Chỉ hiển thị các hoạt động về Hợp đồng & Thanh toán, loại trừ nợ cước
+          if (isOverdueDebtItem(item)) return false
           if (
             item.category !== 'CONTRACT' &&
             item.actionType !== 'PAYMENT_COMPLETED' &&
             item.actionType !== 'CONTRACT_ACTIVATED' &&
-            item.actionType !== 'CONTRACT_OVERDUE' &&
             item.actionType !== 'REFUND_STATUS' &&
             item.actionType !== 'REFUND_REJECTED' &&
             item.actionType !== 'REFUND_APPROVED'
@@ -2617,17 +2733,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const unitHistoryCounts = useMemo(() => {
     return {
       all: combinedUnitActivityHistory.length,
+      overdue: combinedUnitActivityHistory.filter(isOverdueDebtItem).length,
       access: combinedUnitActivityHistory.filter(i => i.category === 'ACCESS').length,
       renewal: combinedUnitActivityHistory.filter(i => i.category === 'RENEWAL').length,
       notification: combinedUnitActivityHistory.filter(
         i =>
-          i.category === 'CONTRACT' ||
-          i.actionType === 'PAYMENT_COMPLETED' ||
-          i.actionType === 'CONTRACT_ACTIVATED' ||
-          i.actionType === 'CONTRACT_OVERDUE' ||
-          i.actionType === 'REFUND_STATUS' ||
-          i.actionType === 'REFUND_REJECTED' ||
-          i.actionType === 'REFUND_APPROVED'
+          !isOverdueDebtItem(i) &&
+          (i.category === 'CONTRACT' ||
+            i.actionType === 'PAYMENT_COMPLETED' ||
+            i.actionType === 'CONTRACT_ACTIVATED' ||
+            i.actionType === 'REFUND_STATUS' ||
+            i.actionType === 'REFUND_REJECTED' ||
+            i.actionType === 'REFUND_APPROVED')
       ).length,
       support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT' || i.actionType === 'RETURN_SETTLEMENT').length,
     }
@@ -3736,6 +3853,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 // Kiểm tra xem kho đã quá ngày kết thúc thuê (tính cả các hợp đồng/phụ lục gia hạn) hay chưa
                 const isRentalExpired = isRentalPeriodExpired(c.endDate, unitRenewals)
 
+                const isContractTempPinActive = Boolean(
+                  c.tempPinGrantedUntil &&
+                    !isNaN(new Date(c.tempPinGrantedUntil).getTime()) &&
+                    new Date(c.tempPinGrantedUntil).getTime() > Date.now()
+                )
+
+                const matchedBooking = customerBookings.find(
+                  b => (b.unitCode && b.unitCode.toUpperCase() === (c.unitCode || '').toUpperCase()) ||
+                       (b.id && b.id === c.bookingId)
+                )
+
+                const isUnitPinRevoked = !isContractTempPinActive && (
+                  c.status === 'OVERDUE_LOCKED' ||
+                  c.overduePinStatus === 'PIN_REVOKED' ||
+                  matchedBooking?.qrAccessToken === 'REVOKED_OVERDUE' ||
+                  matchedBooking?.status === 'OVERDUE'
+                )
+
                 return (
                   <div
                     key={c.id}
@@ -3767,7 +3902,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   <span>Kho đang chọn</span>
                                 </span>
                               )}
-                              {c.status === 'OVERDUE' ? (
+                              {c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked ? (
                                 <span className="stitch-badge bg-rose-50 text-rose-700 border border-rose-200">
                                   <span className="pulsing-dot bg-rose-500"></span>
                                   Quá hạn thanh toán
@@ -3790,10 +3925,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </div>
                       </div>
 
-                      {c.status === 'OVERDUE' && (
+                      {(c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isUnitPinRevoked) && (
                         <div className="flex items-center gap-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs font-semibold text-rose-700">
                           <span className="material-symbols-outlined text-[18px]">warning</span>
-                          <span>Kho đã quá hạn hợp đồng từ ngày {c.endDate}. Khóa đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Vui lòng gia hạn để mở khóa.</span>
+                          <span>Kho đã quá hạn hợp đồng từ ngày {c.endDate}. Khóa đã chuyển sang chế độ Tạm Khóa (Overdue Locked). Vui lòng thanh toán công nợ để mở khóa.</span>
                         </div>
                       )}
 
@@ -4040,71 +4175,133 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </div>
                       )}
 
-          {/* Security PIN Box is available only for activated contracts */}
-                      {c.status === 'ACTIVE' && <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs sm:text-sm font-bold text-slate-900">
-                              Mã PIN truy cập cửa kho
-                            </span>
-                          </div>
-                        </div>
-
-                        {!isRevealed ? (
-                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
-                            <div className="flex items-center gap-3">
-                              <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
-                                <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
-                              </div>
-                              <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
-                                {isLoadingPin ? 'Đang giải mã AES-256...' : '(Nhấn để hiển thị)'}
+                      {/* Security PIN Box / Overdue Locked Notice */}
+                      {isUnitPinRevoked ? (
+                        <div className="p-4 rounded-xl bg-rose-50/90 border border-rose-300 shadow-xs flex flex-col gap-2.5 relative">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-rose-600 text-[20px]">lock</span>
+                              <span className="text-xs sm:text-sm font-bold text-rose-900">
+                                Quyền truy cập mở kho: Đã thu hồi mã PIN
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-rose-200 text-rose-800 border border-rose-300">
+                              Locked
+                            </span>
+                          </div>
+
+                          <div className="flex items-start gap-2.5 p-3 rounded-lg bg-white border border-rose-200">
+                            <span className="material-symbols-outlined text-rose-600 text-[18px] shrink-0 mt-0.5">do_not_disturb_on</span>
+                            <div className="flex flex-col gap-1 text-xs">
+                              <span className="font-bold text-rose-800">
+                                Mã PIN đã bị thu hồi do quá hạn thanh toán và không thể thực hiện mở kho.
+                              </span>
+                              <span className="text-slate-600 text-[11px] leading-relaxed">
+                                Quý khách vui lòng thanh toán công nợ quá hạn hoặc liên hệ ban quản lý cơ sở ({c.facilityName}) để được hỗ trợ cấp quyền tạm thời.
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : isContractTempPinActive ? (
+                        <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-300 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="material-symbols-outlined text-amber-700 text-[20px]">timer</span>
+                              <span className="text-xs sm:text-sm font-bold text-amber-950">
+                                Mã PIN tạm thời SmartLock (24h)
+                              </span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
+                              Đang có hiệu lực
+                            </span>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-amber-300">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs font-semibold text-slate-600">Mã PIN:</span>
+                              <span className="font-mono text-xl font-black text-amber-900 tracking-widest bg-amber-50 px-3 py-1 rounded border border-amber-200">
+                                {c.tempAccessPin || loadedPins[c.unitCode] || '••••••'}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(c.unitCode, c.tempAccessPin || loadedPins[c.unitCode] || '')}
+                              className="px-2.5 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                              <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép PIN'}</span>
+                            </button>
+                          </div>
+                          <span className="text-[11px] text-amber-800">
+                            Thời hạn sử dụng đến: {safeFormatDateTime(c.tempPinGrantedUntil!)}. Sau thời gian này, mã PIN sẽ tự động hết hiệu lực.
+                          </span>
+                        </div>
+                      ) : (c.status === 'ACTIVE' || c.status === 'OVERDUE') ? (
+                        <div className="p-4 rounded-xl bg-blue-50/40 border border-blue-200 shadow-xs flex flex-col gap-3 relative overflow-hidden">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs sm:text-sm font-bold text-slate-900">
+                                Mã PIN truy cập cửa kho
+                              </span>
+                            </div>
+                          </div>
+
+                          {!isRevealed ? (
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 py-2.5 px-4 rounded-lg bg-white border border-slate-200">
+                              <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2 font-mono text-[16px] text-slate-400 tracking-widest select-none">
+                                  <span>●</span><span>●</span><span>●</span><span>●</span><span>●</span><span>●</span>
+                                </div>
+                                <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                                  {isLoadingPin ? 'Đang giải mã AES-256...' : '(Nhấn để hiển thị)'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <button
+                                  type="button"
+                                  onClick={() => togglePinReveal(c.unitCode, targetId)}
+                                  disabled={isLoadingPin}
+                                  className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                                >
+                                  <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
+                                  <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
+                                    {pin.split('').map((digit: string, idx: number) => (
+                                      <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
+                                        {digit}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopy(c.unitCode, pin)}
+                                  className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                                  <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
+                                </button>
+                              </div>
+
                               <button
                                 type="button"
                                 onClick={() => togglePinReveal(c.unitCode, targetId)}
-                                disabled={isLoadingPin}
-                                className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                                className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                               >
-                                <span>{isLoadingPin ? 'Đang giải mã...' : 'Xem mã PIN'}</span>
+                                <span className="material-symbols-outlined text-[16px]">visibility_off</span>
+                                <span>Ẩn xem</span>
                               </button>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col gap-2.5 py-2.5 px-4 rounded-lg bg-white border border-blue-200">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-2">
-                                <span className="text-[11px] font-mono text-slate-600 font-semibold">Mã số PIN:</span>
-                                <div className="flex items-center gap-1 font-mono text-base font-bold text-blue-900 tracking-wider">
-                                  {pin.split('').map((digit: string, idx: number) => (
-                                    <span key={idx} className="px-2 py-1 rounded bg-blue-50 border border-blue-200 text-blue-900">
-                                      {digit}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleCopy(c.unitCode, pin)}
-                                className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer"
-                              >
-                                <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                                <span>{copiedPin === c.unitCode ? 'Đã sao chép' : 'Sao chép'}</span>
-                              </button>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => togglePinReveal(c.unitCode, targetId)}
-                              className="w-full mt-1 py-2 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">visibility_off</span>
-                              <span>Ẩn xem</span>
-                            </button>
-                          </div>
-                        )}
-                      </div>}
+                          )}
+                        </div>
+                      ) : null}
 
                       {/* Metrics: Giá thuê & Tiền cọc */}
                       <div className="grid grid-cols-2 gap-2 text-center">
@@ -4277,35 +4474,112 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               </div>
             </div>
 
-            {/* 4 Thẻ tóm tắt nhanh */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-100/80 text-blue-700 flex items-center justify-center shrink-0">
+            {/* 5 Thẻ tóm tắt nhanh */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div
+                onClick={() => {
+                  setUnitHistoryCategory('ALL')
+                  setUnitHistoryLimit(12)
+                }}
+                className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition ${
+                  unitHistoryCategory === 'ALL'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                    : 'bg-slate-50 hover:bg-slate-100/70 border-slate-200/80'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  unitHistoryCategory === 'ALL' ? 'bg-white/20 text-white' : 'bg-blue-100/80 text-blue-700'
+                }`}>
                   <span className="material-symbols-outlined text-[20px]">receipt_long</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Tổng sự kiện</span>
-                  <span className="font-mono text-base font-extrabold text-slate-900">{unitHistoryCounts.all} hoạt động</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    unitHistoryCategory === 'ALL' ? 'text-slate-300' : 'text-slate-400'
+                  }`}>Tổng sự kiện</span>
+                  <span className={`font-mono text-base font-extrabold ${
+                    unitHistoryCategory === 'ALL' ? 'text-white' : 'text-slate-900'
+                  }`}>{unitHistoryCounts.all} hoạt động</span>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-emerald-50/50 border border-emerald-200/70 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              {/* Thẻ Nợ cước & Cảnh báo cưỡng chế */}
+              <div
+                onClick={() => {
+                  setUnitHistoryCategory('OVERDUE')
+                  setUnitHistoryLimit(12)
+                }}
+                className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition ${
+                  unitHistoryCategory === 'OVERDUE'
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                    : 'bg-rose-50/50 hover:bg-rose-100/60 border-rose-200/70'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  unitHistoryCategory === 'OVERDUE' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+                }`}>
+                  <span className="material-symbols-outlined text-[20px]">assignment_late</span>
+                </div>
+                <div className="min-w-0">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    unitHistoryCategory === 'OVERDUE' ? 'text-rose-100' : 'text-rose-700/80'
+                  }`}>Nợ cước &amp; Cảnh báo</span>
+                  <span className={`font-mono text-base font-extrabold ${
+                    unitHistoryCategory === 'OVERDUE' ? 'text-white' : 'text-rose-900'
+                  }`}>
+                    {unitHistoryCounts.overdue} thông báo
+                  </span>
+                </div>
+              </div>
+
+              <div
+                onClick={() => {
+                  setUnitHistoryCategory('ACCESS')
+                  setUnitHistoryLimit(12)
+                }}
+                className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition ${
+                  unitHistoryCategory === 'ACCESS'
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                    : 'bg-emerald-50/50 hover:bg-emerald-100/60 border-emerald-200/70'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  unitHistoryCategory === 'ACCESS' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+                }`}>
                   <span className="material-symbols-outlined text-[20px]">lock_open_right</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700/80 block">Mã PIN</span>
-                  <span className="font-mono text-base font-extrabold text-emerald-900">{unitHistoryCounts.access} thao tác</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    unitHistoryCategory === 'ACCESS' ? 'text-emerald-100' : 'text-emerald-700/80'
+                  }`}>Mã PIN</span>
+                  <span className={`font-mono text-base font-extrabold ${
+                    unitHistoryCategory === 'ACCESS' ? 'text-white' : 'text-emerald-900'
+                  }`}>{unitHistoryCounts.access} thao tác</span>
                 </div>
               </div>
 
-              <div className="p-3.5 rounded-xl bg-amber-50/50 border border-amber-200/70 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+              <div
+                onClick={() => {
+                  setUnitHistoryCategory('RENEWAL')
+                  setUnitHistoryLimit(12)
+                }}
+                className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition ${
+                  unitHistoryCategory === 'RENEWAL'
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                    : 'bg-amber-50/50 hover:bg-amber-100/60 border-amber-200/70'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+                  unitHistoryCategory === 'RENEWAL' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'
+                }`}>
                   <span className="material-symbols-outlined text-[20px]">event_repeat</span>
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700/80 block">Gia hạn kho</span>
-                  <span className="font-mono text-base font-extrabold text-amber-900">{unitHistoryCounts.renewal} bản ghi</span>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+                    unitHistoryCategory === 'RENEWAL' ? 'text-amber-100' : 'text-amber-700/80'
+                  }`}>Gia hạn kho</span>
+                  <span className={`font-mono text-base font-extrabold ${
+                    unitHistoryCategory === 'RENEWAL' ? 'text-white' : 'text-amber-900'
+                  }`}>{unitHistoryCounts.renewal} bản ghi</span>
                 </div>
               </div>
 
@@ -4328,7 +4602,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 <div className="min-w-0">
                   <span className={`text-[10px] font-bold uppercase tracking-wider block ${
                     unitHistoryCategory === 'NOTIFICATION' ? 'text-blue-100' : 'text-blue-700/80'
-                  }`}>Hợp đồng và thanh toán</span>
+                  }`}>Hợp đồng &amp; TT</span>
                   <span className={`font-mono text-base font-extrabold ${
                     unitHistoryCategory === 'NOTIFICATION' ? 'text-white' : 'text-blue-900'
                   }`}>
@@ -4343,11 +4617,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <div className="flex flex-wrap items-center gap-1.5">
                 {[
                   { id: 'ALL', label: 'Tất cả', count: unitHistoryCounts.all, icon: 'apps' },
+                  { id: 'OVERDUE', label: 'Nợ cước', count: unitHistoryCounts.overdue, icon: 'assignment_late' },
                   { id: 'ACCESS', label: 'Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
                   { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
                   { id: 'NOTIFICATION', label: 'Hợp đồng và thanh toán', count: unitHistoryCounts.notification, icon: 'receipt_long' },
                 ].map(tab => {
                   const isActive = unitHistoryCategory === tab.id
+                  const isOverdueTab = tab.id === 'OVERDUE'
                   return (
                     <button
                       key={tab.id}
@@ -4358,7 +4634,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       }}
                       className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                         isActive
-                          ? 'bg-slate-900 text-white shadow-xs'
+                          ? isOverdueTab
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'bg-slate-900 text-white shadow-xs'
+                          : isOverdueTab && tab.count > 0
+                          ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
                           : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                       }`}
                     >
@@ -4366,7 +4646,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       <span>{tab.label}</span>
                       <span
                         className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                          isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                          isActive
+                            ? 'bg-white/20 text-white'
+                            : isOverdueTab && tab.count > 0
+                            ? 'bg-rose-200 text-rose-800'
+                            : 'bg-slate-100 text-slate-600'
                         }`}
                       >
                         {tab.count}
@@ -4417,6 +4701,31 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 </div>
               </div>
             </div>
+
+            {/* Banner Giải thích Bộ lọc Nợ Cước (3 mục quản lý) */}
+            {unitHistoryCategory === 'OVERDUE' && (
+              <div className="p-4 rounded-xl bg-gradient-to-r from-rose-50 via-amber-50/60 to-purple-50/60 border border-rose-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="material-symbols-outlined text-[18px]">assignment_late</span>
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-slate-900 flex items-center gap-2">
+                      <span>Hồ sơ thông báo nợ cước &amp; cưỡng chế vận hành</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-800 font-bold border border-rose-200">
+                        Tổng hợp 3 mục
+                      </span>
+                    </h5>
+                    <p className="text-slate-600 mt-1 leading-relaxed">
+                      Bộ lọc tổng hợp toàn bộ thông báo từ:
+                      <strong className="text-rose-700"> 1. Công Nợ &amp; Công Thức</strong> (nhắc cước, nợ gốc, phí phạt trễ hạn),
+                      <strong className="text-amber-800"> 2. SmartLock &amp; Thu Hồi PIN</strong> (tạm khóa kho IoT, mã PIN tạm thời), và
+                      <strong className="text-purple-800"> 3. Niêm Phong &amp; Kiểm Kê</strong> (đề xuất &amp; hoàn tất niêm phong buồng kho).
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Danh sách Timeline Lịch sử */}
             {filteredUnitActivityHistory.length === 0 ? (
@@ -4473,6 +4782,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         return { icon: 'verified_user', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
                       case 'CONTRACT_OVERDUE':
                         return { icon: 'warning', bg: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      case 'OVERDUE_NOTICE':
+                        return { icon: 'campaign', bg: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      case 'LOCK_BLOCKED':
+                        return { icon: 'lock_clock', bg: 'bg-rose-100 text-rose-700 border-rose-200' }
+                      case 'SEALING_NOTICE':
+                        return { icon: 'security_update_warning', bg: 'bg-purple-100 text-purple-700 border-purple-200' }
                       case 'PAYMENT_COMPLETED':
                         return { icon: 'payments', bg: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
                       case 'SUPPORT_REQUEST':
@@ -4648,7 +4963,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </div>
                           )}
 
-                          {/* Chi tiết Thông báo hoàn tiền & Button Xem đơn đặt giữ chỗ */}
+                          {/* Chi tiết Thông báo hoàn tiền & Button Xem đơn */}
                           {(item.actionType === 'REFUND_STATUS' || item.actionType === 'REFUND_REJECTED' || item.actionType === 'REFUND_APPROVED') && (
                             <div className="mt-2.5 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2.5 text-xs">
                               <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-medium">
@@ -4657,11 +4972,26 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               </div>
                               <button
                                 type="button"
-                                onClick={() => navigate('/portal/customer?tab=bookings')}
+                                onClick={() => {
+                                  const rawCode =
+                                    item.meta?.bookingCode ||
+                                    (item.unitCode && item.unitCode.startsWith('BX-') ? item.unitCode : undefined) ||
+                                    (item.meta?.bookingId ? customerBookings.find(b => b.id === item.meta?.bookingId)?.bookingCode : undefined) ||
+                                    item.unitCode ||
+                                    item.title?.match(/#?(BX-\d{4}-\d{4})/i)?.[1] ||
+                                    item.description?.match(/#?(BX-\d{4}-\d{4})/i)?.[1]
+                                  const cleanCode = rawCode ? rawCode.replace(/^#/, '').trim() : ''
+                                  if (cleanCode) {
+                                    navigate(`/portal/customer?tab=bookings&bookingCode=${encodeURIComponent(cleanCode)}`)
+                                  } else {
+                                    navigate('/portal/customer?tab=bookings')
+                                  }
+                                  setActiveTab('bookings')
+                                }}
                                 className="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[15px]">bookmarks</span>
-                                <span>Xem đơn đặt giữ chỗ</span>
+                                <span>Xem đơn</span>
                               </button>
                             </div>
                           )}
@@ -4732,6 +5062,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   </div>
                                 )
                               })()}
+                            </div>
+                          )}
+
+                          {/* Chi tiết Thông báo Nợ cước & 3 phân mục (Công Nợ, SmartLock, Niêm Phong) */}
+                          {isOverdueDebtItem(item) && (
+                            <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-r from-rose-50 via-rose-50/50 to-amber-50 border border-rose-200/90 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                              <div className="flex items-center gap-2 text-rose-950 font-medium">
+                                <span className="material-symbols-outlined text-[18px] text-rose-600">
+                                  {item.actionType === 'SEALING_NOTICE'
+                                    ? 'inventory_2'
+                                    : item.actionType === 'LOCK_BLOCKED'
+                                    ? 'lock_clock'
+                                    : 'receipt_long'}
+                                </span>
+                                <span>
+                                  {item.actionType === 'SEALING_NOTICE'
+                                    ? 'Phân mục: Niêm Phong & Kiểm Kê buồng kho'
+                                    : item.actionType === 'LOCK_BLOCKED'
+                                    ? 'Phân mục: SmartLock & Thu Hồi / Cấp PIN Tạm Thời'
+                                    : 'Phân mục: Công Nợ & Công Thức Tính Phạt'}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTab('contracts')
+                                }}
+                                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">payments</span>
+                                <span>Xem hợp đồng &amp; Thanh toán</span>
+                              </button>
                             </div>
                           )}
 
@@ -5350,13 +5712,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
                               Kho đang hoạt động tốt
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleGoToMyUnit(b.unitCode || undefined)}
-                              className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline cursor-pointer"
-                            >
-                              Xem mã PIN cửa kho
-                            </button>
+                            {b.qrAccessToken === 'REVOKED_OVERDUE' || (b as any).contractStatus === 'OVERDUE_LOCKED' ? (
+                              <span className="text-xs font-bold text-rose-600 flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px]">lock</span>
+                                Mã PIN đã bị thu hồi
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleGoToMyUnit(b.unitCode || undefined)}
+                                className="text-xs font-bold text-emerald-700 hover:text-emerald-900 underline cursor-pointer"
+                              >
+                                Xem mã PIN cửa kho
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -6694,7 +7063,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     }}
                     className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold rounded-xl transition-all cursor-pointer"
                   >
-                    Xem Đơn Đặt Giữ Chỗ
+                    Xem đơn
                   </button>
                   <button
                     onClick={() => {

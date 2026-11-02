@@ -63,4 +63,9 @@ public class RentalContractResponse {
     private String policyVersion;
     private LocalDateTime policyConfirmedAt;
     private String policyConfirmationStatement;
+
+    private com.boxora.enums.OverduePinStatus overduePinStatus;
+    private LocalDateTime tempPinGrantedUntil;
+    private String tempPinGrantReason;
+    private String tempAccessPin;
 }

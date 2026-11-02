@@ -41,5 +41,7 @@ public interface OverdueManagementService {
     void processSealingWorkflow(UUID contractId, OverdueSealingWorkflowRequest request);
 
     byte[] exportOverdueCsv(UUID facilityId, String stage, String searchTerm);
+
+    void completeSettlement(UUID contractId);
 }
 

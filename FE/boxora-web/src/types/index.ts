@@ -298,6 +298,9 @@ export interface Booking {
   cancelledByRole?: string | null
   refundRequestCode?: string | null
   refundStatus?: string | null
+  refundTransferProofUrl?: string | null
+  refundProcessedAt?: string | null
+  refundTransactionReference?: string | null
   createdAt?: string
   updatedAt?: string
 }
@@ -415,6 +418,7 @@ export type RentalContractStatus =
   | 'TERMINATED'
   | 'CANCELLED'
   | 'OVERDUE'
+  | 'OVERDUE_LOCKED'
   | 'SUPERSEDED'
 
 export interface RentalContract {
@@ -449,6 +453,10 @@ export interface RentalContract {
   policyVersion?: string | null
   policyConfirmedAt?: string | null
   policyConfirmationStatement?: string | null
+  overduePinStatus?: 'PIN_ACTIVE' | 'PIN_REVOKED' | 'PIN_ELIGIBLE' | 'PIN_REVOCATION_PENDING' | 'PIN_REVOCATION_FAILED'
+  tempPinGrantedUntil?: string | null
+  tempPinGrantReason?: string | null
+  tempAccessPin?: string | null
 }
 
 export interface CancellationPolicyDetail {

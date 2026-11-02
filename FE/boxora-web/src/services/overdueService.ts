@@ -54,6 +54,7 @@ export interface OverdueContractDetail extends OverdueContractItem {
   depositHeld: number
   feeFormulaExplanation: string
   maskedPin: string
+  tempAccessPin?: string
   smartLockLastUnlockedAt?: string
   tempPinGrantedUntil?: string
   tempPinGrantReason?: string
@@ -127,7 +128,7 @@ export interface OverdueContractDetail extends OverdueContractItem {
 }
 
 export interface SendReminderPayload {
-  channel: 'SMS' | 'EMAIL' | 'CALL' | 'MULTI'
+  channel: 'SMS' | 'EMAIL' | 'CALL' | 'MULTI' | 'WEB'
   templateType: 'REMINDER' | 'WARNING' | 'LOCKOUT_NOTICE' | 'SEAL_WARNING'
   content?: string
   notes?: string
@@ -144,7 +145,7 @@ export interface PinTempGrantPayload {
 }
 
 export interface SealingWorkflowPayload {
-  action: 'REQUEST' | 'APPROVE' | 'REJECT' | 'COMPLETE'
+  action: 'REQUEST' | 'APPROVE' | 'REJECT' | 'INVENTORY' | 'COMPLETE'
   reason?: string
   rejectionReason?: string
   sealTagNumber?: string
@@ -241,6 +242,10 @@ export const overdueService = {
     document.body.appendChild(link)
     link.click()
     link.remove()
+  },
+
+  completeSettlement: async (contractId: string): Promise<void> => {
+    await api.post(`/api/v1/overdue/contracts/${contractId}/complete-settlement`)
   },
 
   // Legacy compatibility

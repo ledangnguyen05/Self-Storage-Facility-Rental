@@ -107,7 +107,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/pin-revocation/execute")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_FACILITY_MANAGER', 'ROLE_BUSINESS_MANAGER')")
     @Operation(summary = "Thực hiện thu hồi PIN/QR SmartLock qua IoT Gateway (hỗ trợ Mock Adapter và mô phỏng Offline)")
     public ResponseEntity<ApiResponse<OverdueContractDetailResponse.PinRevocationDto>> executePinRevocation(
             @PathVariable UUID contractId,
@@ -118,7 +118,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/pin-temp-grant")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ROLE_FACILITY_MANAGER', 'ROLE_BUSINESS_MANAGER')")
     @Operation(summary = "Cấp quyền truy cập tạm thời cho khách hàng có lý do chính đáng")
     public ResponseEntity<ApiResponse<String>> grantTemporaryPin(
             @PathVariable UUID contractId,
@@ -129,7 +129,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/sealing")
-    @PreAuthorize("hasAnyAuthority('SEALING_CREATE', 'OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_STAFF')")
+    @PreAuthorize("hasAnyAuthority('SEALING_CREATE', 'OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_BUSINESS_MANAGER', 'ROLE_STAFF')")
     @Operation(summary = "Quy trình niêm phong kho: REQUEST, APPROVE, REJECT, COMPLETE (kèm bảng kiểm kê tài sản)")
     public ResponseEntity<ApiResponse<String>> processSealingWorkflow(
             @PathVariable UUID contractId,
@@ -137,6 +137,14 @@ public class OverdueProcessingController {
     ) {
         overdueManagementService.processSealingWorkflow(contractId, request);
         return ResponseEntity.ok(ApiResponse.success("Đã cập nhật quy trình niêm phong thành công"));
+    }
+
+    @PostMapping("/overdue/contracts/{contractId}/complete-settlement")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_BUSINESS_MANAGER', 'ROLE_STAFF')")
+    @Operation(summary = "Xác nhận khách hàng đã tới thanh toán công nợ và hoàn tất trả kho")
+    public ResponseEntity<ApiResponse<String>> completeSettlement(@PathVariable UUID contractId) {
+        overdueManagementService.completeSettlement(contractId);
+        return ResponseEntity.ok(ApiResponse.success("Đã hoàn tất thanh toán và trả kho thành công"));
     }
 
     @GetMapping("/overdue/export/csv")

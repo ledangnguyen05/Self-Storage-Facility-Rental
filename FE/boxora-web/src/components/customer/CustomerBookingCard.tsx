@@ -207,7 +207,19 @@ export function CustomerBookingCard({
             Boxora lưu PIN/QR nhưng không xác nhận cài đặt hoặc trạng thái khóa vật lý. Hãy xác nhận tại cơ sở trước khi sử dụng.
           </p>
 
-          {!credentials ? (
+          {booking.qrAccessToken === 'REVOKED_OVERDUE' || booking.status === 'OVERDUE' || (booking as any).contractStatus === 'OVERDUE_LOCKED' || (booking as any).overduePinStatus === 'PIN_REVOKED' ? (
+            <div className="flex items-start gap-2.5 rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs">
+              <span className="material-symbols-outlined shrink-0 text-[20px] text-rose-600 mt-0.5">do_not_disturb_on</span>
+              <div className="flex flex-col gap-1">
+                <span className="font-bold text-rose-900">
+                  Mã PIN đã bị thu hồi do quá hạn thanh toán và không thể thực hiện mở kho.
+                </span>
+                <span className="text-[11px] text-slate-600">
+                  Vui lòng thanh toán công nợ cước thuê hoặc liên hệ ban quản lý để được hỗ trợ cấp quyền tạm thời.
+                </span>
+              </div>
+            </div>
+          ) : !credentials ? (
             <div className="flex flex-col gap-3 rounded-lg border border-cyan-100 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
               <span className="font-mono tracking-[0.35em] text-slate-300" aria-label="PIN đang được ẩn">
                 ● ● ● ● ● ●

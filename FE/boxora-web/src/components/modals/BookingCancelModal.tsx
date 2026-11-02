@@ -457,160 +457,43 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                 /* ============================================================== */
                 /* PHƯƠNG THỨC 1: ĐÃ THANH TOÁN ONLINE -> HIỂN THỊ CHÍNH SÁCH 3 MỐC */
                 /* ============================================================== */
-                <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 text-indigo-950 dark:text-indigo-200 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 font-bold text-xs text-indigo-900 dark:text-indigo-300">
-                        <span className="material-symbols-outlined text-[18px] text-indigo-600 dark:text-indigo-400">verified</span>
-                        <span>Chính Sách Hủy Đơn &amp; Hoàn Tiền Cọc</span>
-                      </div>
-                      {preview?.timeRemainingLabel && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300">
-                          {preview.timeRemainingLabel}
-                        </span>
-                      )}
+                <div className="p-4 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/60 text-indigo-950 dark:text-indigo-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 font-bold text-xs text-indigo-900 dark:text-indigo-300">
+                      <span className="material-symbols-outlined text-[18px] text-indigo-600 dark:text-indigo-400">verified</span>
+                      <span>Chính Sách Hủy Đơn &amp; Hoàn Tiền Cọc</span>
                     </div>
-
-                    <p className="text-xs leading-relaxed text-indigo-900/90 dark:text-indigo-200/90">
-                      Đơn hàng đã thanh toán trực tuyến tiền cọc và tiền thuê qua cổng VNPay. Quy định hoàn tiền theo 3 mốc thời gian:
-                    </p>
-
-                    <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center font-medium">
-                      <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ? 'bg-emerald-100 border-emerald-400 text-emerald-900 font-bold dark:bg-emerald-950 dark:text-emerald-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                        <div>Mốc 1 (≤ 24h)</div>
-                        <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">Hoàn 100% cọc</div>
-                      </div>
-                      <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold dark:bg-amber-950 dark:text-amber-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                        <div>Mốc 2 (24h - 48h)</div>
-                        <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn 70% cọc</div>
-                      </div>
-                      <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_3_OVER_48H_REFUND' ? 'bg-rose-100 border-rose-400 text-rose-900 font-bold dark:bg-rose-950 dark:text-rose-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                        <div>Mốc 3 (&gt; 48h)</div>
-                        <div className="font-bold text-rose-600 dark:text-rose-400 mt-0.5">Hoàn 50% cọc</div>
-                      </div>
-                    </div>
-
-                    {preview?.policyDescription && (
-                      <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-indigo-100 dark:border-indigo-900 text-[11px] text-indigo-950 dark:text-indigo-200 leading-relaxed">
-                        <strong>Áp dụng cho đơn này:</strong> {preview.policyDescription}
-                      </div>
+                    {preview?.timeRemainingLabel && (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/80 text-indigo-700 dark:text-indigo-300">
+                        {preview.timeRemainingLabel}
+                      </span>
                     )}
                   </div>
 
-                  {/* THÔNG TIN TÀI KHOẢN NGÂN HÀNG ĐỂ HOÀN TIỀN (BẮT BUỘC) */}
-                  <div className="p-4 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-bold text-xs">
-                      <span className="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400">account_balance</span>
-                      <span>Thông Tin Tài Khoản Ngân Hàng Nhận Tiền Hoàn</span>
+                  <p className="text-xs leading-relaxed text-indigo-900/90 dark:text-indigo-200/90">
+                    Đơn hàng đã thanh toán trực tuyến tiền cọc và tiền thuê qua cổng VNPay. Quy định hoàn tiền theo 3 mốc thời gian:
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center font-medium">
+                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ? 'bg-emerald-100 border-emerald-400 text-emerald-900 font-bold dark:bg-emerald-950 dark:text-emerald-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 1 (≤ 24h)</div>
+                      <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">Hoàn 100% cọc</div>
                     </div>
-                    <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
-                      Vui lòng điền thông tin tài khoản ngân hàng chính chủ để <strong>Quản lý cơ sở ({booking.facilityName})</strong> kiểm tra đối soát và hoàn tiền cọc cho quý khách:
-                    </p>
-
-                    <div className="space-y-2.5">
-                      <div>
-                        <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                          Ngân hàng thụ hưởng <span className="text-rose-500">*</span>:
-                        </label>
-                        <select
-                          value={bankCode}
-                          onChange={(e) => setBankCode(e.target.value)}
-                          className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
-                        >
-                          {POPULAR_BANKS.map((b) => (
-                            <option key={b.code} value={b.code}>
-                              {b.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {bankCode === 'OTHER' && (
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                            Tên ngân hàng khác <span className="text-rose-500">*</span>:
-                          </label>
-                          <input
-                            type="text"
-                            value={customBankName}
-                            onChange={(e) => setCustomBankName(e.target.value)}
-                            placeholder="Nhập tên ngân hàng của quý khách..."
-                            className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
-                          />
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                            Số tài khoản ngân hàng <span className="text-rose-500">*</span>:
-                          </label>
-                          <input
-                            type="text"
-                            value={bankAccountNumber}
-                            onChange={(e) => {
-                              setBankAccountNumber(e.target.value.replace(/[^0-9]/g, ''))
-                              if (submitError) setSubmitError(null)
-                            }}
-                            onBlur={() => setBankAccountNumberTouched(true)}
-                            placeholder="VD: 1029384756..."
-                            className={`w-full p-2 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none transition-colors ${
-                              bankAccountNumberTouched && !bankAccountNumber.trim()
-                                ? 'border-rose-500 focus:border-rose-500'
-                                : 'border-slate-300 dark:border-slate-700 focus:border-amber-500'
-                            }`}
-                          />
-                          {bankAccountNumberTouched && !bankAccountNumber.trim() && (
-                            <span className="text-[10px] text-rose-500 mt-1 block font-medium">
-                              Vui lòng nhập số tài khoản ngân hàng.
-                            </span>
-                          )}
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                            Tên chủ tài khoản <span className="text-rose-500">*</span>:
-                          </label>
-                          <input
-                            type="text"
-                            value={bankAccountName}
-                            onChange={(e) => {
-                              setBankAccountName(e.target.value.toUpperCase())
-                              if (submitError) setSubmitError(null)
-                            }}
-                            onBlur={() => setBankAccountNameTouched(true)}
-                            placeholder="VD: NGUYEN VAN A"
-                            className={`w-full p-2 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono uppercase text-slate-800 dark:text-slate-100 focus:outline-none transition-colors ${
-                              bankAccountNameTouched && !bankAccountName.trim()
-                                ? 'border-rose-500 focus:border-rose-500'
-                                : 'border-slate-300 dark:border-slate-700 focus:border-amber-500'
-                            }`}
-                          />
-                          {bankAccountNameTouched && !bankAccountName.trim() && (
-                            <span className="text-[10px] text-rose-500 mt-1 block font-medium">
-                              Vui lòng nhập tên chủ tài khoản ngân hàng.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
-                          Email nhận thư xác nhận hoàn tiền:
-                        </label>
-                        <input
-                          type="email"
-                          value={contactEmail}
-                          onChange={(e) => setContactEmail(e.target.value)}
-                          placeholder="Nhập email của quý khách (VD: email@gmail.com)..."
-                          className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
-                        />
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          Quản lý cơ sở sẽ gửi email ủy nhiệm chi kèm ảnh biên lai đến hòm thư này.
-                        </p>
-                      </div>
+                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold dark:bg-amber-950 dark:text-amber-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 2 (24h - 48h)</div>
+                      <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn 70% cọc</div>
+                    </div>
+                    <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_3_OVER_48H_REFUND' ? 'bg-rose-100 border-rose-400 text-rose-900 font-bold dark:bg-rose-950 dark:text-rose-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
+                      <div>Mốc 3 (&gt; 48h)</div>
+                      <div className="font-bold text-rose-600 dark:text-rose-400 mt-0.5">Hoàn 50% cọc</div>
                     </div>
                   </div>
+
+                  {preview?.policyDescription && (
+                    <div className="p-2 rounded-lg bg-white/70 dark:bg-slate-900/60 border border-indigo-100 dark:border-indigo-900 text-[11px] text-indigo-950 dark:text-indigo-200 leading-relaxed">
+                      <strong>Áp dụng cho đơn này:</strong> {preview.policyDescription}
+                    </div>
+                  )}
                 </div>
               ) : null}
 
@@ -723,6 +606,123 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
                   </>
                 )}
               </div>
+
+              {/* THÔNG TIN TÀI KHOẢN NGÂN HÀNG ĐỂ HOÀN TIỀN (BẮT BUỘC) */}
+              {isOnlinePaidBooking && (
+                <div className="p-4 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300 font-bold text-xs">
+                    <span className="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400">account_balance</span>
+                    <span>Thông Tin Tài Khoản Ngân Hàng Nhận Tiền Hoàn</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800/90 dark:text-amber-300/90 leading-relaxed">
+                    Vui lòng điền thông tin tài khoản ngân hàng chính chủ để <strong>Quản lý cơ sở ({booking.facilityName})</strong> kiểm tra đối soát và hoàn tiền cọc cho quý khách:
+                  </p>
+
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Ngân hàng thụ hưởng <span className="text-rose-500">*</span>:
+                      </label>
+                      <select
+                        value={bankCode}
+                        onChange={(e) => setBankCode(e.target.value)}
+                        className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+                      >
+                        {POPULAR_BANKS.map((b) => (
+                          <option key={b.code} value={b.code}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {bankCode === 'OTHER' && (
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tên ngân hàng khác <span className="text-rose-500">*</span>:
+                        </label>
+                        <input
+                          type="text"
+                          value={customBankName}
+                          onChange={(e) => setCustomBankName(e.target.value)}
+                          placeholder="Nhập tên ngân hàng của quý khách..."
+                          className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Số tài khoản ngân hàng <span className="text-rose-500">*</span>:
+                        </label>
+                        <input
+                          type="text"
+                          value={bankAccountNumber}
+                          onChange={(e) => {
+                            setBankAccountNumber(e.target.value.replace(/[^0-9]/g, ''))
+                            if (submitError) setSubmitError(null)
+                          }}
+                          onBlur={() => setBankAccountNumberTouched(true)}
+                          placeholder="VD: 1029384756..."
+                          className={`w-full p-2 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none transition-colors ${
+                            bankAccountNumberTouched && !bankAccountNumber.trim()
+                              ? 'border-rose-500 focus:border-rose-500'
+                              : 'border-slate-300 dark:border-slate-700 focus:border-amber-500'
+                          }`}
+                        />
+                        {bankAccountNumberTouched && !bankAccountNumber.trim() && (
+                          <span className="text-[10px] text-rose-500 mt-1 block font-medium">
+                            Vui lòng nhập số tài khoản ngân hàng.
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                          Tên chủ tài khoản <span className="text-rose-500">*</span>:
+                        </label>
+                        <input
+                          type="text"
+                          value={bankAccountName}
+                          onChange={(e) => {
+                            setBankAccountName(e.target.value.toUpperCase())
+                            if (submitError) setSubmitError(null)
+                          }}
+                          onBlur={() => setBankAccountNameTouched(true)}
+                          placeholder="VD: NGUYEN VAN A"
+                          className={`w-full p-2 bg-white dark:bg-slate-800 border rounded-lg text-xs font-mono uppercase text-slate-800 dark:text-slate-100 focus:outline-none transition-colors ${
+                            bankAccountNameTouched && !bankAccountName.trim()
+                              ? 'border-rose-500 focus:border-rose-500'
+                              : 'border-slate-300 dark:border-slate-700 focus:border-amber-500'
+                          }`}
+                        />
+                        {bankAccountNameTouched && !bankAccountName.trim() && (
+                          <span className="text-[10px] text-rose-500 mt-1 block font-medium">
+                            Vui lòng nhập tên chủ tài khoản ngân hàng.
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                        Email nhận thư xác nhận hoàn tiền:
+                      </label>
+                      <input
+                        type="email"
+                        value={contactEmail}
+                        onChange={(e) => setContactEmail(e.target.value)}
+                        placeholder="Nhập email của quý khách (VD: email@gmail.com)..."
+                        className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-amber-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Quản lý cơ sở sẽ gửi email ủy nhiệm chi kèm ảnh biên lai đến hòm thư này.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* LƯU Ý / CẢNH BÁO */}
               {isOnlinePaidBooking ? (

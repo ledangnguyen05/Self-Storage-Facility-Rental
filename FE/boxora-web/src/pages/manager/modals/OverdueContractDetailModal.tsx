@@ -10,28 +10,45 @@ interface OverdueContractDetailModalProps {
   onClose: () => void
   contractId: string
   onRefreshParent: () => void
+  initialTab?: 'debt' | 'smartlock' | 'sealing' | 'notices' | 'payments' | 'audit'
+  openInventoryDirectly?: boolean
 }
 
 export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProps> = ({
   isOpen,
   onClose,
   contractId,
-  onRefreshParent
+  onRefreshParent,
+  initialTab,
+  openInventoryDirectly
 }) => {
   const { user: currentUser } = useAuth()
   const [detail, setDetail] = useState<OverdueContractDetail | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'debt' | 'smartlock' | 'sealing' | 'notices' | 'payments' | 'audit'>('debt')
+  const [activeTab, setActiveTab] = useState<'debt' | 'smartlock' | 'sealing' | 'notices' | 'payments' | 'audit'>(initialTab || 'debt')
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialTab) {
+        setActiveTab(initialTab)
+      }
+      if (openInventoryDirectly) {
+        setShowInventoryDialog(true)
+      }
+    }
+  }, [isOpen, initialTab, openInventoryDirectly])
 
   // Action state
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Sub-dialogs state
   const [showRemindDialog, setShowRemindDialog] = useState(false)
-  const [remindChannel, setRemindChannel] = useState<'SMS' | 'EMAIL' | 'CALL' | 'MULTI'>('SMS')
   const [remindTemplate, setRemindTemplate] = useState<'REMINDER' | 'WARNING' | 'LOCKOUT_NOTICE' | 'SEAL_WARNING'>('REMINDER')
   const [remindNotes, setRemindNotes] = useState('')
+
+  const [showRevokeConfirmDialog, setShowRevokeConfirmDialog] = useState(false)
+  const [revokeReason, setRevokeReason] = useState('Quá hạn cước thuê, thực hiện khóa truy cập SmartLock')
 
   const [showTempPinDialog, setShowTempPinDialog] = useState(false)
   const [tempPinHours, setTempPinHours] = useState(24)
@@ -44,6 +61,8 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
   const [isRejecting, setIsRejecting] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
 
+  const [showInventoryDialog, setShowInventoryDialog] = useState(false)
+  const [showConfirmSealingDialog, setShowConfirmSealingDialog] = useState(false)
   const [showCompleteSealingDialog, setShowCompleteSealingDialog] = useState(false)
   const [sealTagNumber, setSealTagNumber] = useState('')
   const [witnessUsers, setWitnessUsers] = useState<User[]>([])
@@ -55,7 +74,12 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
   const [simulateOfflineRevocation, setSimulateOfflineRevocation] = useState(false)
 
-  const isManagerOrAdmin = currentUser?.role?.name === 'ADMIN' || currentUser?.role?.name === 'FACILITY_MANAGER'
+  const userRole = currentUser?.role?.name || ''
+  const isFacilityManager = userRole === 'FACILITY_MANAGER'
+  const isBusinessManager = userRole === 'BUSINESS_MANAGER'
+  const isBusinessOrFacilityManager = isFacilityManager || isBusinessManager
+  const isManagerOrAdmin = userRole === 'ADMIN' || isFacilityManager || isBusinessManager
+  const isAdmin = userRole === 'ADMIN'
 
   const fetchDetail = useCallback(async () => {
     if (!contractId) return
@@ -89,13 +113,13 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
   // Load witnesses
   useEffect(() => {
-    if (showCompleteSealingDialog) {
+    if (showInventoryDialog || showConfirmSealingDialog || showCompleteSealingDialog) {
       const loadWitnesses = async () => {
         try {
           const res = await userService.getAllUsers({ facilityId: detail?.facilityId })
           const users = (res?.data || []).filter((u: User) => u.isActive && (u.role?.name === 'STAFF' || u.role?.name === 'FACILITY_MANAGER'))
           setWitnessUsers(users)
-          if (users.length > 0) setSelectedWitnessId(users[0].id)
+          if (users.length > 0 && !selectedWitnessId) setSelectedWitnessId(users[0].id)
         } catch {
           // Fallback
         }
@@ -105,21 +129,57 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
         setSealTagNumber(`SEAL-${detail.unitCode}-${Math.floor(1000 + Math.random() * 9000)}`)
       }
     }
-  }, [showCompleteSealingDialog, detail, sealTagNumber])
+  }, [showInventoryDialog, showConfirmSealingDialog, showCompleteSealingDialog, detail, sealTagNumber, selectedWitnessId])
 
-  if (!isOpen) return null
+  // Sync existing inventory items if present in dossier
+  useEffect(() => {
+    if (detail?.sealingDossier?.items && detail.sealingDossier.items.length > 0) {
+      setInventoryItems(detail.sealingDossier.items.map(i => ({
+        itemName: i.itemName,
+        quantity: i.quantity,
+        conditionStatus: i.conditionStatus || 'Tốt',
+        estimatedValue: i.estimatedValue || 0
+      })))
+    }
+  }, [detail])
 
   const formatVND = (num?: number) => {
     if (num == null) return '0 ₫'
     return `${num.toLocaleString('vi-VN')} ₫`
   }
 
+  const formatDateTime = (dateStr?: string) => {
+    if (!dateStr) return '-'
+    try {
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return dateStr
+      return d.toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+    } catch {
+      return dateStr
+    }
+  }
+
+  const isTempPinActive = Boolean(
+    detail?.tempPinGrantedUntil &&
+      !isNaN(new Date(detail.tempPinGrantedUntil).getTime()) &&
+      new Date(detail.tempPinGrantedUntil).getTime() > Date.now()
+  )
+
+  if (!isOpen) return null
+
   // Action handlers
   const handleSendReminder = async () => {
     setIsSubmitting(true)
     try {
       await overdueService.sendReminder(contractId, {
-        channel: remindChannel,
+        channel: 'MULTI',
         templateType: remindTemplate,
         notes: remindNotes
       })
@@ -154,14 +214,15 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
     setIsSubmitting(true)
     try {
       const res = await overdueService.executePinRevocation(contractId, {
-        reason: 'Quá hạn cước thuê, thực hiện khóa truy cập SmartLock',
+        reason: revokeReason || (isTempPinActive ? 'Thu hồi quyền truy cập mã PIN tạm thời' : 'Quá hạn cước thuê, thực hiện khóa truy cập SmartLock'),
         simulateOffline: simulateOfflineRevocation
       })
       if (res.status === 'SUCCESS_MOCK' || res.status === 'SUCCESS_HARDWARE') {
-        toast.success('Đã thu hồi mã PIN/QR SmartLock thành công!')
+        toast.success(isTempPinActive ? 'Đã thu hồi mã PIN tạm thời thành công!' : 'Đã thu hồi mã PIN/QR SmartLock thành công!')
       } else {
         toast.warning('Thu hồi PIN thất bại: Thiết bị SmartLock đang OFFLINE hoặc mất kết nối!')
       }
+      setShowRevokeConfirmDialog(false)
       fetchDetail()
       onRefreshParent()
     } catch (err: any) {
@@ -189,7 +250,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
     }
   }
 
-  const handleSealingWorkflow = async (action: 'REQUEST' | 'APPROVE' | 'REJECT' | 'COMPLETE') => {
+  const handleSealingWorkflow = async (action: 'REQUEST' | 'APPROVE' | 'REJECT' | 'INVENTORY' | 'COMPLETE') => {
     setIsSubmitting(true)
     try {
       const payload: SealingWorkflowPayload = { action }
@@ -197,6 +258,10 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
         payload.reason = sealingReason
       } else if (action === 'REJECT') {
         payload.rejectionReason = rejectionReason
+      } else if (action === 'INVENTORY') {
+        payload.witnessId = selectedWitnessId
+        payload.notes = sealingNotes
+        payload.inventoryItems = inventoryItems.filter(i => i.itemName.trim() !== '')
       } else if (action === 'COMPLETE') {
         payload.sealTagNumber = sealTagNumber
         payload.witnessId = selectedWitnessId
@@ -205,10 +270,23 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
       }
 
       await overdueService.processSealingWorkflow(contractId, payload)
-      toast.success('Cập nhật quy trình niêm phong thành công!')
-      setShowSealingRequestDialog(false)
-      setShowSealingApprovalDialog(false)
-      setShowCompleteSealingDialog(false)
+      if (action === 'INVENTORY') {
+        toast.success('Đã hoàn thành kiểm kê hiện trường!')
+        setShowInventoryDialog(false)
+      } else if (action === 'COMPLETE') {
+        toast.success('Đã hoàn tất dán tem niêm phong và lập biên bản thành công!')
+        setShowConfirmSealingDialog(false)
+        setShowCompleteSealingDialog(false)
+      } else if (action === 'APPROVE') {
+        toast.success('Đã phê duyệt đề xuất niêm phong kho!')
+        setShowSealingApprovalDialog(false)
+      } else if (action === 'REJECT') {
+        toast.success('Đã từ chối đề xuất niêm phong!')
+        setShowSealingApprovalDialog(false)
+      } else {
+        toast.success('Đã gửi đề xuất niêm phong thành công!')
+        setShowSealingRequestDialog(false)
+      }
       fetchDetail()
       onRefreshParent()
     } catch (err: any) {
@@ -417,7 +495,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3">
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-[18px] text-rose-600">function</span>
-                      Bảng công thức tính phạt minh bạch (Timezone: Asia/Ho_Chi_Minh)
+                      Bảng công thức tính phạt minh bạch
                     </h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white p-3 rounded-lg border border-slate-200">
                       <div>
@@ -465,11 +543,13 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                     <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-1">
                       <span className="text-xs font-semibold text-slate-500">Trạng thái mã PIN/QR:</span>
                       <span className={`text-sm font-bold ${
+                        isTempPinActive ? 'text-amber-700' :
                         detail.pinStatus === 'PIN_ACTIVE' ? 'text-emerald-700' :
                         detail.pinStatus === 'PIN_REVOCATION_PENDING' ? 'text-amber-700' :
                         detail.pinStatus === 'PIN_REVOKED' ? 'text-rose-700' : 'text-slate-700'
                       }`}>
-                        {detail.pinStatus === 'PIN_ACTIVE' ? 'Đang hoạt động (Khách mở được kho)' :
+                        {isTempPinActive ? 'Đang cấp quyền tạm thời (24h)' :
+                         detail.pinStatus === 'PIN_ACTIVE' ? 'Đang hoạt động (Khách mở được kho)' :
                          detail.pinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi mã PIN' :
                          detail.pinStatus === 'PIN_REVOKED' ? 'Đã thu hồi quyền truy cập (Locked)' :
                          'Thu hồi thất bại (Cần kiểm tra thiết bị)'}
@@ -479,8 +559,21 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                     <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-1">
                       <span className="text-xs font-semibold text-slate-500">Mã PIN bảo mật:</span>
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono font-black text-slate-900">{detail.maskedPin}</span>
-                        <span className="text-[11px] text-slate-400">(Đã ẩn ký tự nhạy cảm)</span>
+                        {isTempPinActive ? (
+                          <>
+                            <span className="text-base font-mono font-black text-emerald-800 tracking-wider bg-emerald-100/80 px-2.5 py-0.5 rounded-lg border border-emerald-300 shadow-2xs">
+                              {detail.tempAccessPin || detail.maskedPin}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[13px]">timer</span>
+                              Tạm thời (24h)
+                            </span>
+                          </>
+                        ) : (
+                          <span className={`text-sm font-mono font-bold ${detail.maskedPin === 'Đã thu hồi' ? 'text-rose-600' : 'text-slate-900'}`}>
+                            {detail.maskedPin || 'Chưa cấp'}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -503,13 +596,29 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
                   {/* Temporary PIN Alert if active */}
                   {detail.tempPinGrantedUntil && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-center justify-between">
+                    <div className={`p-3 border rounded-xl text-xs flex items-center justify-between ${
+                      isTempPinActive
+                        ? 'bg-amber-50 border-amber-200 text-amber-900'
+                        : 'bg-slate-100 border-slate-200 text-slate-600'
+                    }`}>
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-amber-600 text-[20px]">timer</span>
+                        <span className={`material-symbols-outlined text-[20px] ${isTempPinActive ? 'text-amber-600' : 'text-slate-400'}`}>
+                          timer
+                        </span>
                         <div>
-                          <span className="font-bold">Đã cấp quyền tạm thời:</span> Hiệu lực đến {detail.tempPinGrantedUntil} • Lý do: {detail.tempPinGrantReason}
+                          <span className="font-bold">
+                            {isTempPinActive ? 'Đang cấp quyền tạm thời:' : 'Quyền tạm thời đã hết hạn:'}
+                          </span>{' '}
+                          Hiệu lực đến {formatDateTime(detail.tempPinGrantedUntil)} • Lý do: {detail.tempPinGrantReason || 'Khách hàng cam kết chuyển khoản'}
                         </div>
                       </div>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold shrink-0 ${
+                        isTempPinActive
+                          ? 'bg-amber-200/90 text-amber-900 border border-amber-300'
+                          : 'bg-slate-200 text-slate-600 border border-slate-300'
+                      }`}>
+                        {isTempPinActive ? 'Đang có hiệu lực' : 'Đã hết thời gian cấp'}
+                      </span>
                     </div>
                   )}
 
@@ -519,48 +628,66 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                       <span className="material-symbols-outlined text-[18px] text-slate-400">admin_panel_settings</span>
                       Thao tác chế tài quyền truy cập IoT SmartLock:
                     </div>
-                    <div className="flex items-center gap-2">
-                      {detail.pinStatus !== 'PIN_REVOKED' && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* Khi đang cấp PIN tạm thời: Hiển thị nút Thu hồi PIN tạm thời */}
+                      {isBusinessOrFacilityManager && isTempPinActive && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRevokeReason('Thu hồi quyền truy cập mã PIN tạm thời')
+                            setShowRevokeConfirmDialog(true)
+                          }}
+                          disabled={isSubmitting}
+                          className="px-3.5 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 cursor-pointer transition-all shadow-sm flex items-center gap-1.5"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">timer_off</span>
+                          Thu hồi pin tạm thời
+                        </button>
+                      )}
+
+                      {/* Khi chưa thu hồi PIN và không có PIN tạm: Chỉ hiển thị nút Thu hồi PIN ngay khi tới ngày quá hạn thứ 3 trở đi */}
+                      {isBusinessOrFacilityManager && !isTempPinActive && detail.pinStatus !== 'PIN_REVOKED' && (
                         <>
-                          <button
-                            type="button"
-                            onClick={handleRequestPinRevocation}
-                            disabled={isSubmitting}
-                            className="px-3.5 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 cursor-pointer transition-all"
-                          >
-                            Tạo yêu cầu thu hồi PIN
-                          </button>
-                          {isManagerOrAdmin && (
-                            <div className="flex items-center gap-2">
-                              <label className="text-xs text-slate-500 flex items-center gap-1 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={simulateOfflineRevocation}
-                                  onChange={e => setSimulateOfflineRevocation(e.target.checked)}
-                                  className="rounded"
-                                />
-                                Mô phỏng Offline
-                              </label>
-                              <button
-                                type="button"
-                                onClick={handleExecutePinRevocation}
-                                disabled={isSubmitting}
-                                className="px-3.5 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 cursor-pointer transition-all shadow-sm"
-                              >
-                                Thu hồi PIN ngay (Gateway)
-                              </button>
+                          {(detail.daysOverdue ?? 0) >= 3 ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRevokeReason('Quá hạn cước thuê, thực hiện khóa truy cập SmartLock')
+                                setShowRevokeConfirmDialog(true)
+                              }}
+                              disabled={isSubmitting}
+                              className="px-3.5 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 cursor-pointer transition-all shadow-sm flex items-center gap-1.5"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">lock</span>
+                              Thu hồi PIN ngay
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium">
+                              <span className="material-symbols-outlined text-[15px] text-amber-600">info</span>
+                              <span>
+                                Chưa đạt ngưỡng thu hồi PIN (áp dụng từ ngày quá hạn thứ 3 trở đi, hiện tại: +{detail.daysOverdue} ngày)
+                              </span>
                             </div>
                           )}
                         </>
                       )}
-                      {isManagerOrAdmin && (
+
+                      {/* Khi đã thu hồi PIN và không có PIN tạm: Hiển thị nút Cấp quyền tạm thời (24h) */}
+                      {isBusinessOrFacilityManager && detail.pinStatus === 'PIN_REVOKED' && !isTempPinActive && (
                         <button
                           type="button"
                           onClick={() => setShowTempPinDialog(true)}
-                          className="px-3.5 py-2 bg-slate-700 text-white text-xs font-bold rounded-xl hover:bg-slate-800 cursor-pointer transition-all"
+                          className="px-3.5 py-2 bg-slate-700 text-white text-xs font-bold rounded-xl hover:bg-slate-800 cursor-pointer transition-all flex items-center gap-1.5"
                         >
+                          <span className="material-symbols-outlined text-[16px]">timer</span>
                           Cấp quyền tạm thời (24h)
                         </button>
+                      )}
+                      {isAdmin && (
+                        <span className="text-[11px] text-slate-500 italic bg-slate-200/60 px-3 py-1.5 rounded-lg border border-slate-300/80 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[15px] text-slate-500">visibility</span>
+                          Tài khoản Admin ở chế độ giám sát (Thao tác thu hồi PIN &amp; cấp PIN tạm thuộc thẩm quyền của Quản lý cơ sở và Quản lý kinh doanh)
+                        </span>
                       )}
                     </div>
                   </div>
@@ -619,14 +746,16 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                       <div className="flex items-center gap-2 mt-1">
                         <span className={`px-3 py-1 rounded-full text-xs font-bold ${
                           detail.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                          detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' :
                           detail.sealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                           detail.sealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
                           detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                           'bg-slate-100 text-slate-700'
                         }`}>
                           {detail.sealingStatus === 'SEALING_COMPLETED' ? 'Đã hoàn tất niêm phong & kiểm kê tài sản' :
-                           detail.sealingStatus === 'SEALING_APPROVED' ? 'Quản lý cơ sở đã duyệt niêm phong' :
-                           detail.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ Quản lý cơ sở phê duyệt' :
+                           detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'Đã kiểm kê hiện trường • Sẵn sàng niêm phong' :
+                           detail.sealingStatus === 'SEALING_APPROVED' ? 'Business Manager đã duyệt niêm phong' :
+                           detail.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ Business Manager phê duyệt' :
                            detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ điều kiện niêm phong (>= 7 ngày)' :
                            'Chưa đạt ngưỡng niêm phong'}
                         </span>
@@ -634,45 +763,94 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                     </div>
 
                     {/* Multi-step Workflow Action Buttons */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* TRƯỜNG HỢP 1: Đủ điều kiện niêm phong (Facility Manager chưa gửi request) */}
                       {detail.sealingStatus === 'SEALING_ELIGIBLE' && (
+                        isBusinessManager ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowInventoryDialog(true)}
+                            className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span className="material-symbols-outlined text-[18px]">fact_check</span>
+                            Kiểm kê hiện trường
+                          </button>
+                        ) : isFacilityManager ? (
+                          <button
+                            type="button"
+                            onClick={() => setShowSealingRequestDialog(true)}
+                            className="px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">send</span>
+                            Gửi đề xuất niêm phong
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-500 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                            Đủ điều kiện niêm phong (Đề xuất do Facility Manager gửi)
+                          </span>
+                        )
+                      )}
+
+                      {/* TRƯỜNG HỢP 2: Facility Manager ĐÃ GỬI request -> Chờ Business Manager duyệt */}
+                      {detail.sealingStatus === 'SEALING_REQUESTED' && (
+                        isBusinessManager ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setIsRejecting(false); setShowSealingApprovalDialog(true) }}
+                              className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 shadow-sm cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                              Phê duyệt đề xuất
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => { setIsRejecting(true); setShowSealingApprovalDialog(true) }}
+                              className="px-3.5 py-2 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl hover:bg-rose-200 cursor-pointer flex items-center gap-1.5"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">cancel</span>
+                              Từ chối đề xuất
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-amber-700 font-semibold bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px] animate-pulse">hourglass_top</span>
+                            Đang chờ Business Manager phê duyệt
+                          </span>
+                        )
+                      )}
+
+                      {/* TRƯỜNG HỢP 3: Business Manager ĐÃ DUYỆT -> Hiển thị Kiểm kê hiện trường */}
+                      {detail.sealingStatus === 'SEALING_APPROVED' && (
                         <button
                           type="button"
-                          onClick={() => setShowSealingRequestDialog(true)}
-                          className="px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 shadow-sm transition-all cursor-pointer"
+                          onClick={() => setShowInventoryDialog(true)}
+                          className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
                         >
-                          Gửi đề xuất niêm phong
+                          <span className="material-symbols-outlined text-[18px]">fact_check</span>
+                          Kiểm kê hiện trường
                         </button>
                       )}
 
-                      {detail.sealingStatus === 'SEALING_REQUESTED' && isManagerOrAdmin && (
+                      {detail.sealingStatus === 'SEALING_IN_PROGRESS' && (
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            onClick={() => { setIsRejecting(false); setShowSealingApprovalDialog(true) }}
-                            className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 shadow-sm cursor-pointer"
+                            onClick={() => setShowInventoryDialog(true)}
+                            className="px-3.5 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1"
                           >
-                            Phê duyệt đề xuất
+                            <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                            Cập nhật kiểm kê
                           </button>
                           <button
                             type="button"
-                            onClick={() => { setIsRejecting(true); setShowSealingApprovalDialog(true) }}
-                            className="px-3.5 py-2 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl hover:bg-rose-200 cursor-pointer"
+                            onClick={() => setShowConfirmSealingDialog(true)}
+                            className="px-4 py-2 bg-purple-600 text-white text-xs font-bold rounded-xl hover:bg-purple-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
                           >
-                            Từ chối
+                            <span className="material-symbols-outlined text-[18px]">gavel</span>
+                            Niêm phong
                           </button>
                         </div>
-                      )}
-
-                      {(detail.sealingStatus === 'SEALING_APPROVED' || detail.sealingStatus === 'SEALING_IN_PROGRESS') && (
-                        <button
-                          type="button"
-                          onClick={() => setShowCompleteSealingDialog(true)}
-                          className="px-4 py-2 bg-purple-600 text-white text-xs font-bold rounded-xl hover:bg-purple-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                        >
-                          <span className="material-symbols-outlined text-[18px]">gavel</span>
-                          Niêm phong &amp; Kiểm kê hiện trường
-                        </button>
                       )}
                     </div>
                   </div>
@@ -921,25 +1099,39 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
       {showRemindDialog && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-3">
-            <h3 className="text-sm font-bold text-slate-900">Phát thông báo nhắc cước đa kênh</h3>
-            <div className="flex flex-col gap-2 text-xs">
-              <label className="font-semibold text-slate-700">Kênh gửi:</label>
-              <select
-                value={remindChannel}
-                onChange={e => setRemindChannel(e.target.value as any)}
-                className="p-2 border border-slate-300 rounded-lg"
-              >
-                <option value="SMS">SMS Brandname Boxora</option>
-                <option value="EMAIL">Email thông báo chính thức</option>
-                <option value="CALL">Cuộc gọi VoiceBot tự động</option>
-                <option value="MULTI">Đa kênh đồng thời (SMS &amp; Email)</option>
-              </select>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Phát thông báo nhắc cước</h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Thông báo sẽ được gửi đồng thời qua Web Boxora và Email khách hàng.
+              </p>
+            </div>
 
-              <label className="font-semibold text-slate-700 mt-1">Mẫu thông báo:</label>
+            {/* Recipient Brief Card */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Khách hàng:</span>
+                <span className="font-bold text-slate-800">{detail?.customerName || '-'} ({detail?.customerPhone || '-'})</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Hộp thư Email:</span>
+                <span className="font-semibold text-slate-800">{detail?.customerEmail || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Tổng công nợ:</span>
+                <span className="font-black text-rose-600">{formatVND(detail?.totalDebt)}</span>
+              </div>
+              <div className="mt-1 pt-1.5 border-t border-slate-200 flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold">
+                <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                Tự động phát đa kênh: Web Dashboard &amp; Email chi tiết
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 text-xs">
+              <label className="font-semibold text-slate-700">Mẫu thông báo:</label>
               <select
                 value={remindTemplate}
                 onChange={e => setRemindTemplate(e.target.value as any)}
-                className="p-2 border border-slate-300 rounded-lg"
+                className="p-2 border border-slate-300 rounded-lg text-xs"
               >
                 <option value="REMINDER">Nhắc cước nhẹ nhàng (Ân hạn)</option>
                 <option value="WARNING">Cảnh báo phát sinh phạt &amp; nguy cơ thu hồi PIN</option>
@@ -961,7 +1153,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
               <button
                 type="button"
                 onClick={() => setShowRemindDialog(false)}
-                className="px-3.5 py-1.5 text-xs text-slate-600 font-semibold"
+                className="px-3.5 py-1.5 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-lg transition cursor-pointer"
               >
                 Hủy
               </button>
@@ -969,12 +1161,135 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                 type="button"
                 onClick={handleSendReminder}
                 disabled={isSubmitting}
-                className="px-4 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700"
+                className="px-4 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 transition cursor-pointer flex items-center gap-1 shadow-sm"
               >
+                <span className="material-symbols-outlined text-[16px]">send</span>
                 Gửi thông báo
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Sub-Dialog: Confirm Revoke PIN (Gateway hoặc Tạm thời) */}
+      {showRevokeConfirmDialog && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          {isTempPinActive ? (
+            <div className="bg-white rounded-2xl max-w-sm w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 border border-amber-200">
+                  <span className="material-symbols-outlined text-2xl">help</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-slate-900">Xác nhận thu hồi</h3>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Bạn có chắc muốn thu hồi pin tạm thời không?
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowRevokeConfirmDialog(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecutePinRevocation}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                      Đang thu hồi...
+                    </>
+                  ) : (
+                    'Xác nhận'
+                  )}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 border border-rose-200">
+                  <span className="material-symbols-outlined text-2xl">lock_clock</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-slate-900">Xác nhận thu hồi quyền PIN SmartLock</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Thao tác sẽ thu hồi ngay lập tức quyền mở kho qua IoT Gateway.
+                  </p>
+                </div>
+              </div>
+
+              {/* Warning Details Card */}
+              <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Ngăn kho:</span>
+                  <span className="font-bold text-slate-900">{detail?.unitCode || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Khách hàng:</span>
+                  <span className="font-semibold text-slate-900">{detail?.customerName || '-'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">Tổng công nợ quá hạn:</span>
+                  <span className="font-black text-rose-600">{formatVND(detail?.totalDebt)}</span>
+                </div>
+                <div className="pt-2 border-t border-rose-200/80 text-[11px] text-rose-800 leading-relaxed">
+                  ⚠️ <strong>Cảnh báo:</strong> Sau khi xác nhận, mã PIN / QR của khách hàng sẽ bị vô hiệu hóa trên hệ thống SmartLock. Khách hàng không thể tự mở kho cho đến khi thanh toán toàn bộ công nợ hoặc được cấp quyền tạm thời.
+                </div>
+              </div>
+
+              {/* Reason input */}
+              <div className="flex flex-col gap-1.5 text-xs">
+                <label className="font-semibold text-slate-700">Lý do thu hồi quyền truy cập:</label>
+                <textarea
+                  value={revokeReason}
+                  onChange={e => setRevokeReason(e.target.value)}
+                  placeholder="Nhập lý do thu hồi quyền truy cập..."
+                  rows={2}
+                  className="p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowRevokeConfirmDialog(false)}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecutePinRevocation}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                      Đang thu hồi...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">lock_reset</span>
+                      Xác nhận thu hồi PIN ngay
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -984,7 +1299,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
           <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-3">
             <h3 className="text-sm font-bold text-slate-900">Cấp quyền truy cập SmartLock tạm thời</h3>
             <p className="text-xs text-slate-500">
-              Chỉ Quản lý cơ sở mới có quyền cấp mã PIN tạm thời khi khách có lý do chính đáng và cam kết hoàn tất thanh toán.
+              Chỉ Quản lý cơ sở (Facility Manager) và Quản lý kinh doanh (Business Manager) mới có thẩm quyền cấp mã PIN tạm thời khi khách có lý do chính đáng và cam kết hoàn tất thanh toán.
             </p>
             <div className="flex flex-col gap-2 text-xs">
               <label className="font-semibold text-slate-700">Thời hạn cấp quyền:</label>
@@ -1107,37 +1422,36 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
         </div>
       )}
 
-      {/* Sub-Dialog: Complete Physical Sealing & Inventory */}
-      {showCompleteSealingDialog && (
+      {/* Sub-Dialog: Inventory On-site (Kiểm kê hiện trường) */}
+      {showInventoryDialog && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 max-h-[90vh] overflow-hidden">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span className="material-symbols-outlined text-purple-600">gavel</span>
-              Lập biên bản niêm phong hiện trường &amp; Kiểm kê tài sản
-            </h3>
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4 max-h-[90vh] overflow-hidden animate-scaleUp">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-200">
+                <span className="material-symbols-outlined text-2xl">fact_check</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Kiểm kê tài sản hiện trường (Kho #{detail?.unitCode})
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Mở kho và ghi nhận toàn bộ vật dụng, tình trạng tài sản trước khi tiến hành niêm phong kho.
+                </p>
+              </div>
+            </div>
+
             <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Mã tem niêm phong (Seal Tag):</label>
-                  <input
-                    type="text"
-                    value={sealTagNumber}
-                    onChange={e => setSealTagNumber(e.target.value)}
-                    className="w-full p-2 border border-slate-300 rounded-lg font-mono font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Người chứng kiến hiện trường:</label>
-                  <select
-                    value={selectedWitnessId}
-                    onChange={e => setSelectedWitnessId(e.target.value)}
-                    className="w-full p-2 border border-slate-300 rounded-lg"
-                  >
-                    {witnessUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.fullName} ({u.role?.name})</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Người chứng kiến kiểm kê:</label>
+                <select
+                  value={selectedWitnessId}
+                  onChange={e => setSelectedWitnessId(e.target.value)}
+                  className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                >
+                  {witnessUsers.map(u => (
+                    <option key={u.id} value={u.id}>{u.fullName} ({u.role?.name})</option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -1146,9 +1460,9 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                   <button
                     type="button"
                     onClick={addInventoryRow}
-                    className="text-purple-600 font-bold hover:underline flex items-center gap-0.5"
+                    className="text-indigo-600 font-bold hover:underline flex items-center gap-0.5 cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[15px]">add_circle</span>
+                    <span className="material-symbols-outlined text-[16px]">add_circle</span>
                     Thêm đồ dùng
                   </button>
                 </div>
@@ -1189,7 +1503,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                         <button
                           type="button"
                           onClick={() => removeInventoryRow(index)}
-                          className="p-1 text-slate-400 hover:text-rose-600"
+                          className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-[18px]">delete</span>
                         </button>
@@ -1204,7 +1518,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                 <textarea
                   value={sealingNotes}
                   onChange={e => setSealingNotes(e.target.value)}
-                  placeholder="Ghi chú thêm về hiện trạng khóa, tem dán..."
+                  placeholder="Ghi chú thêm về hiện trạng đồ dùng, đóng gói, ghi nhận khách quan..."
                   rows={2}
                   className="w-full p-2 border border-slate-300 rounded-lg text-xs"
                 />
@@ -1213,25 +1527,129 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
               <span className="text-[11px] text-slate-500">
-                Kho sẽ chuyển sang trạng thái Bảo trì &amp; Khóa. Tuyệt đối không giải phóng thành TRỐNG khi còn tài sản.
+                Sau khi hoàn tất kiểm kê, hệ thống sẽ mở khóa nút <strong>Niêm phong</strong> để dán tem kho.
               </span>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowCompleteSealingDialog(false)}
-                  className="px-3.5 py-1.5 text-xs text-slate-600 font-semibold"
+                  onClick={() => setShowInventoryDialog(false)}
+                  className="px-3.5 py-1.5 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-lg transition cursor-pointer"
                 >
                   Hủy
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSealingWorkflow('COMPLETE')}
-                  disabled={isSubmitting || !sealTagNumber.trim()}
-                  className="px-4 py-1.5 bg-purple-600 text-white text-xs font-bold rounded-xl hover:bg-purple-700 shadow-sm"
+                  onClick={() => handleSealingWorkflow('INVENTORY')}
+                  disabled={isSubmitting || inventoryItems.every(i => !i.itemName.trim())}
+                  className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 shadow-sm transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
                 >
-                  Hoàn tất &amp; Lưu biên bản
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                      Đang lưu...
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      Hoàn tất kiểm kê
+                    </>
+                  )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Dialog: Confirm Sealing (Xác nhận niêm phong kho) */}
+      {showConfirmSealingDialog && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 border border-purple-200">
+                <span className="material-symbols-outlined text-2xl">gavel</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Xác nhận niêm phong ngăn kho #{detail?.unitCode}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Thao tác dán tem niêm phong vật lý và lập biên bản xử lý nợ cước BR-RULE-012.
+                </p>
+              </div>
+            </div>
+
+            {/* Confirmation Dossier Summary */}
+            <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-xl text-xs space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Ngăn kho:</span>
+                <span className="font-bold text-slate-900">{detail?.unitCode || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Hợp đồng nợ cước:</span>
+                <span className="font-semibold text-slate-900">{detail?.contractCode || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Khách hàng:</span>
+                <span className="font-semibold text-slate-900">{detail?.customerName || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Tài sản đã kiểm kê:</span>
+                <span className="font-bold text-indigo-700">
+                  {inventoryItems.filter(i => i.itemName.trim()).length || detail?.sealingDossier?.items?.length || 0} mục đồ dùng
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Người chứng kiến:</span>
+                <span className="font-semibold text-slate-900">
+                  {witnessUsers.find(u => u.id === selectedWitnessId)?.fullName || 'Nhân viên cơ sở'}
+                </span>
+              </div>
+              <div className="pt-2 border-t border-purple-200/80 text-[11px] text-purple-900 leading-relaxed">
+                ⚠️ <strong>Lưu ý nghiệp vụ:</strong> Sau khi niêm phong, ngăn kho sẽ được dán tem niêm phong vật lý và khóa cứng. Trạng thái ngăn kho chuyển sang <strong>BẢO TRÌ/NIÊM PHONG (UNDER_MAINTENANCE)</strong>. Khách hàng không thể tiếp cận ngăn kho cho đến khi thanh lý hoặc giải tỏa niêm phong.
+              </div>
+            </div>
+
+            {/* Seal Tag Input */}
+            <div className="flex flex-col gap-1.5 text-xs">
+              <label className="font-semibold text-slate-700">Mã tem niêm phong (Seal Tag):</label>
+              <input
+                type="text"
+                value={sealTagNumber}
+                onChange={e => setSealTagNumber(e.target.value)}
+                placeholder="VD: SEAL-D7-C207-4821"
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-xs font-mono font-bold uppercase focus:ring-2 focus:ring-purple-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowConfirmSealingDialog(false)}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSealingWorkflow('COMPLETE')}
+                disabled={isSubmitting || !sealTagNumber.trim()}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                    Đang niêm phong...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">gavel</span>
+                    Xác nhận dán tem niêm phong
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

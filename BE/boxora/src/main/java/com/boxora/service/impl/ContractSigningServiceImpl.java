@@ -1165,6 +1165,11 @@ public class ContractSigningServiceImpl implements ContractSigningService {
                 ));
             }
         }
+        boolean isTempActive = c.getTempPinGrantedUntil() != null && c.getTempPinGrantedUntil().isAfter(LocalDateTime.now());
+        res.setOverduePinStatus(c.getOverduePinStatus());
+        res.setTempPinGrantedUntil(c.getTempPinGrantedUntil());
+        res.setTempPinGrantReason(c.getTempPinGrantReason());
+        res.setTempAccessPin(isTempActive ? c.getTempAccessPin() : null);
         return res;
     }
 

@@ -553,6 +553,159 @@ public class EmailServiceImpl implements EmailService {
         sendHtmlEmail(toEmail, subject, html, plainText);
     }
 
+    @Override
+    @Async
+    public void sendDetailedOverdueNoticeEmail(
+            String toEmail,
+            String fullName,
+            String contractCode,
+            String unitCode,
+            String facilityName,
+            long daysOverdue,
+            BigDecimal principalDebt,
+            BigDecimal dailyLateFee,
+            BigDecimal lateFee,
+            BigDecimal totalDebt,
+            BigDecimal depositHeld,
+            LocalDate dueDate,
+            String feeFormulaExplanation,
+            String overdueStage,
+            String templateType,
+            String notes
+    ) {
+        String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
+        String safeCode = escape(contractCode != null ? contractCode : "N/A");
+        String safeUnit = escape(unitCode != null ? unitCode : "N/A");
+        String safeFacility = escape(facilityName != null ? facilityName : "Boxora");
+        String safeDueDate = dueDate != null ? dueDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "N/A";
+        String safeFormula = escape(feeFormulaExplanation != null && !feeFormulaExplanation.isBlank() ? feeFormulaExplanation : "Theo quy chế tính phạt quá hạn cơ sở");
+        String safeNotes = escape(notes != null ? notes.trim() : "");
+
+        String badgeText = switch (templateType != null ? templateType : "") {
+            case "REMINDER" -> "NHẮC CƯỚC THUÊ KHO (ÂN HẠN)";
+            case "WARNING" -> "CẢNH BÁO QUÁ HẠN & PHÁT SINH PHÍ PHẠT";
+            case "LOCKOUT_NOTICE" -> "CẢNH BÁO TẠM KHÓA SMARTLOCK & THU HỒI PIN";
+            case "SEAL_WARNING" -> "CẢNH BÁO CHUẨN BỊ NIÊM PHONG KHO";
+            default -> "THÔNG BÁO CÔNG NỢ QUÁ HẠN";
+        };
+
+        String badgeBg = switch (templateType != null ? templateType : "") {
+            case "REMINDER" -> "#eff6ff";
+            case "WARNING" -> "#fffbeb";
+            case "LOCKOUT_NOTICE" -> "#fef2f2";
+            case "SEAL_WARNING" -> "#faf5ff";
+            default -> "#fef2f2";
+        };
+
+        String badgeColor = switch (templateType != null ? templateType : "") {
+            case "REMINDER" -> "#1d4ed8";
+            case "WARNING" -> "#b45309";
+            case "LOCKOUT_NOTICE" -> "#b91c1c";
+            case "SEAL_WARNING" -> "#7e22ce";
+            default -> "#b91c1c";
+        };
+
+        String subject = String.format("[Boxora] %s - Hợp đồng %s (Kho %s)", badgeText, safeCode, safeUnit);
+
+        String intro = String.format(
+                "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s</strong> tại cơ sở <strong>%s</strong>) hiện đã quá hạn thanh toán định kỳ.",
+                safeCode, safeUnit, safeFacility
+        );
+
+        String highlightBox = renderHighlightBox(
+                "TỔNG CÔNG NỢ CẦN THANH TOÁN",
+                formatVnd(totalDebt != null ? totalDebt : BigDecimal.ZERO),
+                "#fef2f2",
+                "#b91c1c",
+                "#fca5a5"
+        );
+
+        StringBuilder detailsBuilder = new StringBuilder();
+        detailsBuilder.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">");
+        detailsBuilder.append(renderDetailRow("Mã hợp đồng", safeCode));
+        detailsBuilder.append(renderDetailRow("Buồng kho / Vị trí", String.format("<strong>#%s</strong> (%s)", safeUnit, safeFacility)));
+        detailsBuilder.append(renderDetailRow("Ngày đến hạn thanh toán", safeDueDate));
+        detailsBuilder.append(renderDetailRow("Số ngày quá hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">+%d ngày</span>", daysOverdue)));
+        detailsBuilder.append(renderDetailRow("Nợ gốc (Tiền thuê)", formatVnd(principalDebt != null ? principalDebt : BigDecimal.ZERO)));
+        detailsBuilder.append(renderDetailRow("Phí phạt trễ hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(lateFee != null ? lateFee : BigDecimal.ZERO))));
+        detailsBuilder.append(renderDetailRow("Tiền cọc đang giữ", formatVnd(depositHeld != null ? depositHeld : BigDecimal.ZERO)));
+        detailsBuilder.append(renderDetailRow("Đơn giá phạt / ngày", formatVnd(dailyLateFee != null ? dailyLateFee : BigDecimal.ZERO) + "/ngày"));
+        detailsBuilder.append(renderDetailRow("Công thức tính phạt minh bạch", String.format("<div style=\"font-family: monospace; font-size: 11px; background: #fff1f2; padding: 4px 8px; border-radius: 4px; color: #9f1239;\">%s</div>", safeFormula)));
+
+        if (!safeNotes.isEmpty()) {
+            detailsBuilder.append(renderDetailRow("Ghi chú từ BQL cơ sở", String.format("<em>%s</em>", safeNotes)));
+        }
+        detailsBuilder.append("</table>");
+
+        String alertWarningText = switch (templateType != null ? templateType : "") {
+            case "LOCKOUT_NOTICE" -> "<strong>CẢNH BÁO KHÓA KHO:</strong> Hệ thống đã kích hoạt quy trình thu hồi mã PIN/QR điện tử của khóa thông minh SmartLock. Quý khách vui lòng thanh toán công nợ ngay để phục hồi quyền truy cập kho.";
+            case "SEAL_WARNING" -> "<strong>CẢNH BÁO NIÊM PHONG:</strong> Hợp đồng đã đến ngưỡng xử lý niêm phong buồng kho (quá hạn >= 7 ngày). Nếu không thanh toán ngay, cơ sở sẽ tiến hành niêm phong chì khóa và kiểm kê tài sản theo điều khoản hợp đồng.";
+            case "WARNING" -> "<strong>LƯU Ý PHÁT SINH PHÍ PHẠT:</strong> Cước thuê đã quá thời gian ân hạn miễn phí. Phí phạt sẽ được tính cộng dồn theo từng ngày trễ hạn cho đến khi quý khách hoàn tất thanh toán.";
+            default -> "<strong>ÂN HẠN NHẮC CƯỚC:</strong> Quý khách vui lòng thu xếp thanh toán cước thuê sớm để đảm bảo dịch vụ không bị gián đoạn và tránh phát sinh phí phạt trễ hạn.";
+        };
+
+        String alert = renderAlertBox(
+                "Biện pháp xử lý & Hướng dẫn",
+                alertWarningText + "<br/><br/>Quý khách có thể đăng nhập vào ứng dụng <strong>Boxora</strong>, chọn mục <strong>Hợp đồng & Hóa đơn</strong> hoặc <strong>Kho của tôi</strong> để quét mã QR thanh toán cước trực tuyến 24/7.",
+                badgeBg,
+                badgeColor,
+                "#cbd5e1"
+        );
+
+        String paymentLink = resolveUrl("/portal/customer?tab=contracts");
+        String button = renderButton("Đăng Nhập Thanh Toán Cước Ngay", paymentLink, "#dc2626");
+
+        String note = renderSecurityNote(
+                "Bộ phận Quản lý Khách hàng Boxora • Tổng đài CSKH: 1900 6868 • Email hỗ trợ: support@boxora.vn"
+        );
+
+        String html = buildMasterTemplate(
+                "Thông Báo Nợ Cước",
+                renderBadge(badgeText, badgeBg, badgeColor),
+                badgeText,
+                "Kính gửi <strong>" + safeName + "</strong>,",
+                intro,
+                detailsBuilder.toString(),
+                highlightBox + alert,
+                button,
+                note
+        );
+
+        String plainText = String.format("""
+                BOXORA - %s
+                ============================================================
+                Kính gửi: %s,
+
+                Hợp đồng thuê kho: %s (Kho #%s tại %s)
+                - Ngày hết hạn: %s
+                - Số ngày quá hạn: %d ngày
+                - Nợ gốc (Tiền thuê): %s
+                - Phí phạt trễ hạn: %s
+                - TỔNG CÔNG NỢ CẦN THANH TOÁN: %s
+                - Tiền cọc đang giữ: %s
+                - Công thức tính phạt: %s
+                %s
+
+                Vui lòng truy cập Boxora để hoàn tất thanh toán:
+                %s
+
+                Trân trọng,
+                Ban Quản Lý Cơ Sở Boxora - Hotline: 1900 6868
+                """,
+                badgeText, fullName, contractCode, unitCode, safeFacility,
+                safeDueDate, daysOverdue,
+                formatVnd(principalDebt != null ? principalDebt : BigDecimal.ZERO),
+                formatVnd(lateFee != null ? lateFee : BigDecimal.ZERO),
+                formatVnd(totalDebt != null ? totalDebt : BigDecimal.ZERO),
+                formatVnd(depositHeld != null ? depositHeld : BigDecimal.ZERO),
+                feeFormulaExplanation != null ? feeFormulaExplanation : "",
+                !safeNotes.isEmpty() ? ("- Ghi chú nhân viên: " + notes + "\n") : "",
+                paymentLink
+        );
+
+        sendHtmlEmail(toEmail, subject, html, plainText);
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // 8. Sealing Notice Email
     // ─────────────────────────────────────────────────────────────────────────

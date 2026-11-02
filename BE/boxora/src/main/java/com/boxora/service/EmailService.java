@@ -17,6 +17,25 @@ public interface EmailService {
 
     void sendOverdueNoticeEmail(String toEmail, String fullName, String contractCode, String unitCode, long daysOverdue, java.math.BigDecimal totalDebt, String overdueStage);
 
+    void sendDetailedOverdueNoticeEmail(
+            String toEmail,
+            String fullName,
+            String contractCode,
+            String unitCode,
+            String facilityName,
+            long daysOverdue,
+            java.math.BigDecimal principalDebt,
+            java.math.BigDecimal dailyLateFee,
+            java.math.BigDecimal lateFee,
+            java.math.BigDecimal totalDebt,
+            java.math.BigDecimal depositHeld,
+            java.time.LocalDate dueDate,
+            String feeFormulaExplanation,
+            String overdueStage,
+            String templateType,
+            String notes
+    );
+
     void sendSealingNoticeEmail(String toEmail, String fullName, String contractCode, String unitCode, String protocolNumber, String sealTagNumber, long overdueDays, java.math.BigDecimal totalDebt, String reason);
 
     void sendUnsealingNoticeEmail(String toEmail, String fullName, String contractCode, String unitCode, String protocolNumber, String unsealedByName, String unsealReason);

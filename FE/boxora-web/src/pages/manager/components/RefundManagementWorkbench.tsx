@@ -166,7 +166,10 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
                   ...item,
                   status: 'CANCELLED',
                   paymentStatus: 'REFUNDED',
-                  refundStatus: 'AWAITING_CUSTOMER_CONFIRMATION'
+                  refundStatus: 'AWAITING_CUSTOMER_CONFIRMATION',
+                  refundTransferProofUrl: finalProofUrl,
+                  refundProcessedAt: new Date().toISOString(),
+                  refundTransactionReference: transactionReference.trim()
                 }
               }
               return item

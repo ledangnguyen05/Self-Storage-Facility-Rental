@@ -244,6 +244,8 @@ public enum ErrorCode {
     UNIT_ALREADY_SEALED(1810, "Kho lưu trữ này hiện đang trong trạng thái niêm phong", HttpStatus.BAD_REQUEST),
     UNIT_NOT_SEALED(1811, "Kho lưu trữ này không ở trạng thái niêm phong", HttpStatus.BAD_REQUEST),
     UNIT_OVERDUE_LOCKED(1812, "Kho đang bị niêm phong khóa cưỡng chế do quá hạn thanh toán. Vui lòng thanh toán công nợ", HttpStatus.FORBIDDEN),
+    PIN_REVOKED_OVERDUE(1813, "Mã PIN đã bị thu hồi do quá hạn thanh toán và không thể thực hiện mở kho", HttpStatus.FORBIDDEN),
+    PIN_REVOCATION_THRESHOLD_NOT_MET(1814, "Chỉ được phép thu hồi mã PIN từ ngày quá hạn thứ 3 trở đi", HttpStatus.BAD_REQUEST),
     REFUND_REQUEST_NOT_FOUND(2000, "Yêu cầu hoàn tiền không tồn tại", HttpStatus.NOT_FOUND),
     REFUND_ALREADY_REVIEWED(2001, "Yêu cầu hoàn tiền đã được xem xét/phê duyệt trước đó", HttpStatus.BAD_REQUEST),
     REFUND_ALREADY_PROCESSED(2002, "Yêu cầu hoàn tiền đã được xử lý chi trả hoàn tất", HttpStatus.BAD_REQUEST),

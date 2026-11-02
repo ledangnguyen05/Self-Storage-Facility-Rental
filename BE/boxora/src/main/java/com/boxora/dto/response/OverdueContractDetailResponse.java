@@ -54,6 +54,7 @@ public class OverdueContractDetailResponse {
     private LocalDateTime smartLockLastUnlockedAt;
     private LocalDateTime tempPinGrantedUntil;
     private String tempPinGrantReason;
+    private String tempAccessPin;
 
     private Boolean isDemo;
     private Boolean hasActivePolicy;

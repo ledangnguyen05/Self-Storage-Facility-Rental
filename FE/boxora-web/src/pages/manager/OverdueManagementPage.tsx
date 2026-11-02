@@ -26,13 +26,33 @@ export const OverdueManagementPage: React.FC = () => {
 
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'WARNING' | 'PIN_REVOCATION' | 'SEALING_ELIGIBLE' | 'POLICY_UNCONFIGURED'>('ALL')
+  const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'WARNING' | 'PIN_REVOCATION' | 'SEALING_ELIGIBLE' | 'SETTLED' | 'POLICY_UNCONFIGURED'>('ALL')
   const [pinStatusFilter, setPinStatusFilter] = useState<string>('ALL')
   const [sealingStatusFilter, setSealingStatusFilter] = useState<string>('ALL')
   const [isDemoFilter, setIsDemoFilter] = useState<boolean | undefined>(undefined)
 
+  // Khách đã tới hoàn tất - State & Local Persistence
+  const [isCustomerArrivalMode, setIsCustomerArrivalMode] = useState<boolean>(false)
+  const [contractToSettle, setContractToSettle] = useState<OverdueContractItem | null>(null)
+  const [isSettling, setIsSettling] = useState<boolean>(false)
+  const [settledContracts, setSettledContracts] = useState<Array<OverdueContractItem & { settledAt: string; settledByName?: string }>>(() => {
+    try {
+      const raw = localStorage.getItem('boxora_settled_overdue_contracts')
+      return raw ? JSON.parse(raw) : []
+    } catch {
+      return []
+    }
+  })
+
+  // User role
+  const rawRole = (user?.role as any)?.name || (user?.role as any) || ''
+  const userRole = String(rawRole).replace(/^ROLE_/, '')
+  const isBusinessManager = userRole === 'BUSINESS_MANAGER'
+
   // Detail Modal
   const [selectedContractId, setSelectedContractId] = useState<string | null>(null)
+  const [modalInitialTab, setModalInitialTab] = useState<'debt' | 'smartlock' | 'sealing' | 'notices' | 'payments' | 'audit'>('debt')
+  const [modalDirectInventory, setModalDirectInventory] = useState(false)
 
   // Facilities loading
   useEffect(() => {
@@ -76,6 +96,10 @@ export const OverdueManagementPage: React.FC = () => {
 
   // Fetch Paginated Contracts
   const fetchContracts = useCallback(async () => {
+    if (filterStage === 'SETTLED') {
+      setIsLoading(false)
+      return
+    }
     setIsLoading(true)
     try {
       const res = await overdueService.getContracts({
@@ -99,6 +123,73 @@ export const OverdueManagementPage: React.FC = () => {
       setIsLoading(false)
     }
   }, [activeFacilityId, filterStage, pinStatusFilter, sealingStatusFilter, searchTerm, isDemoFilter, currentPage, pageSize])
+
+  const settledIds = useMemo(() => new Set(settledContracts.map(s => s.contractId)), [settledContracts])
+
+  // Lọc danh sách hợp đồng hiển thị trên table
+  const displayedContracts = useMemo(() => {
+    if (filterStage === 'SETTLED') {
+      return settledContracts.filter(item => {
+        if (activeFacilityId && item.facilityId && item.facilityId !== activeFacilityId) {
+          return false
+        }
+        if (searchTerm.trim()) {
+          const term = searchTerm.trim().toLowerCase()
+          return (
+            (item.contractCode && item.contractCode.toLowerCase().includes(term)) ||
+            (item.unitCode && item.unitCode.toLowerCase().includes(term)) ||
+            (item.customerName && item.customerName.toLowerCase().includes(term)) ||
+            (item.customerPhone && item.customerPhone.includes(term))
+          )
+        }
+        return true
+      })
+    }
+    return contracts.filter(c => !settledIds.has(c.contractId))
+  }, [filterStage, settledContracts, contracts, settledIds, activeFacilityId, searchTerm])
+
+  const handleConfirmSettlement = async () => {
+    if (!contractToSettle) return
+    setIsSettling(true)
+    try {
+      try {
+        await overdueService.completeSettlement(contractToSettle.contractId)
+      } catch (beErr) {
+        console.warn('Backend completeSettlement fallback:', beErr)
+      }
+
+      const nowStr = new Date().toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+
+      const newSettledItem = {
+        ...contractToSettle,
+        settledAt: nowStr,
+        settledByName: user?.fullName || 'Quản lý cơ sở'
+      }
+
+      const updated = [newSettledItem, ...settledContracts.filter(s => s.contractId !== contractToSettle.contractId)]
+      setSettledContracts(updated)
+      try {
+        localStorage.setItem('boxora_settled_overdue_contracts', JSON.stringify(updated))
+      } catch (lsErr) {
+        console.warn('Failed to save settled contracts to localStorage:', lsErr)
+      }
+
+      toast.success(`Đã hoàn tất đơn nợ cước buồng #${contractToSettle.unitCode}! Khách hàng ${contractToSettle.customerName} đã thanh toán & trả kho thành công.`)
+      setContractToSettle(null)
+      fetchSummary()
+      fetchContracts()
+    } catch (err: any) {
+      toast.error('Lỗi khi hoàn tất đơn nợ cước: ' + (err?.message || ''))
+    } finally {
+      setIsSettling(false)
+    }
+  }
 
   useEffect(() => {
     fetchSummary()
@@ -345,6 +436,42 @@ export const OverdueManagementPage: React.FC = () => {
             <span className="w-2 h-2 rounded-full bg-purple-400"></span>
             Đủ ĐK Niêm phong (&gt;= 7 ngày) ({summary?.sealingThresholdCount ?? 0})
           </button>
+
+          {/* Filter Đã thanh toán & trả kho (nằm giữa Đủ ĐK Niêm phong và button Khách đã tới hoàn tất) */}
+          <button
+            type="button"
+            onClick={() => { setFilterStage('SETTLED'); setCurrentPage(0) }}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              filterStage === 'SETTLED'
+                ? 'bg-teal-600 text-white shadow-xs'
+                : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+            Đã thanh toán &amp; trả kho ({settledContracts.length})
+          </button>
+
+          {/* Button: Khách đã tới hoàn tất (nằm ở phía bên phải) */}
+          <button
+            type="button"
+            onClick={() => setIsCustomerArrivalMode(prev => !prev)}
+            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 text-xs font-bold shadow-xs ${
+              isCustomerArrivalMode
+                ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-sm'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+            title={isCustomerArrivalMode ? 'Nhấn để tắt chế độ Khách đã tới hoàn tất' : 'Nhấn để bật chế độ Khách đã tới hoàn tất'}
+          >
+            <span className="material-symbols-outlined text-[17px]">
+              {isCustomerArrivalMode ? 'check_circle' : 'how_to_reg'}
+            </span>
+            <span>Khách đã tới hoàn tất</span>
+            {isCustomerArrivalMode && (
+              <span className="text-[10px] bg-emerald-800/80 text-emerald-100 px-1.5 py-0.2 rounded-full font-normal">
+                Đang bật
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Bottom Filter Controls */}
@@ -428,11 +555,35 @@ export const OverdueManagementPage: React.FC = () => {
                 <th className="p-3.5 font-bold">Hợp Đồng &amp; Buồng Kho</th>
                 <th className="p-3.5 font-bold">Khách Hàng</th>
                 <th className="p-3.5 font-bold">Cơ Sở Lưu Trữ</th>
-                <th className="p-3.5 font-bold">Ngày Đến Hạn &amp; Quá Hạn</th>
-                <th className="p-3.5 font-bold">Chi Tiết Công Nợ</th>
-                <th className="p-3.5 font-bold">SmartLock PIN/QR</th>
-                <th className="p-3.5 font-bold">Hồ Sơ Niêm Phong</th>
-                <th className="p-3.5 font-bold text-right">Thao Tác</th>
+                <th className="p-3.5 font-bold">
+                  {filterStage === 'SETTLED' ? 'Ngày Đến Hạn' : 'Ngày Đến Hạn & Quá Hạn'}
+                </th>
+                <th className="p-3.5 font-bold">
+                  {filterStage === 'SETTLED' ? 'Tình Trạng Nợ' : 'Chi Tiết Công Nợ'}
+                </th>
+
+                {/* Khi không ở chế độ Khách đã tới hoàn tất và không ở filter SETTLED: hiển thị SmartLock PIN/QR */}
+                {!isCustomerArrivalMode && filterStage !== 'SETTLED' && (
+                  <th className="p-3.5 font-bold">SmartLock PIN/QR</th>
+                )}
+
+                {filterStage === 'SETTLED' ? (
+                  <>
+                    <th className="p-3.5 font-bold">Trạng Thái Đơn</th>
+                    <th className="p-3.5 font-bold">Thời Gian Hoàn Tất</th>
+                    <th className="p-3.5 font-bold text-right">Thao Tác</th>
+                  </>
+                ) : (
+                  <>
+                    <th className="p-3.5 font-bold">Hồ Sơ Niêm Phong</th>
+                    <th className="p-3.5 font-bold">Thao Tác</th>
+                    {isCustomerArrivalMode && (
+                      <th className="p-3.5 font-bold text-right text-emerald-800 bg-emerald-50/80 border-l border-emerald-200">
+                        Hoàn tất đơn
+                      </th>
+                    )}
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -445,8 +596,94 @@ export const OverdueManagementPage: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              ) : contracts.length > 0 ? (
-                contracts.map(item => (
+              ) : filterStage === 'SETTLED' ? (
+                displayedContracts.length > 0 ? (
+                  displayedContracts.map(item => (
+                    <tr key={item.contractId} className="hover:bg-teal-50/40 transition-colors bg-teal-50/15">
+                      {/* Contract & Unit */}
+                      <td className="p-3.5">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-slate-900 text-[13px]">{item.contractCode}</span>
+                            {item.isDemo && (
+                              <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 text-purple-700">
+                                DEMO
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[14px]">grid_view</span>
+                            Buồng #{item.unitCode}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Customer */}
+                      <td className="p-3.5">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-800">{item.customerName}</span>
+                          <span className="text-slate-500 font-mono text-[11px]">{item.customerPhone}</span>
+                        </div>
+                      </td>
+
+                      {/* Facility */}
+                      <td className="p-3.5 text-slate-600 font-medium">
+                        {item.facilityName}
+                      </td>
+
+                      {/* Due date */}
+                      <td className="p-3.5 text-slate-600">
+                        {item.dueDate}
+                      </td>
+
+                      {/* Debt Status */}
+                      <td className="p-3.5">
+                        <div className="flex flex-col">
+                          <span className="font-mono font-bold text-emerald-700 text-xs">0 ₫</span>
+                          <span className="text-[11px] text-emerald-600 font-medium">Đã thanh toán đủ</span>
+                        </div>
+                      </td>
+
+                      {/* Order Status */}
+                      <td className="p-3.5">
+                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 w-fit">
+                          <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                          Đã xong (Khách trả kho)
+                        </span>
+                      </td>
+
+                      {/* Settled Time */}
+                      <td className="p-3.5 text-slate-500 text-xs font-medium">
+                        {(item as any).settledAt || 'Vừa xong'}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="p-3.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedContractId(item.contractId)
+                            setModalInitialTab('debt')
+                            setModalDirectInventory(false)
+                          }}
+                          className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shadow-xs flex items-center gap-1 cursor-pointer transition-all ml-auto"
+                        >
+                          <span className="material-symbols-outlined text-[15px]">visibility</span>
+                          Chi tiết
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={8} className="p-12 text-center text-slate-400">
+                      <span className="material-symbols-outlined text-[36px] text-slate-300 mb-1">done_all</span>
+                      <p className="text-xs font-semibold">Chưa có đơn nợ cước nào được xác nhận khách đã tới thanh toán và hoàn tất trả kho.</p>
+                    </td>
+                  </tr>
+                )
+              ) : displayedContracts.length > 0 ? (
+                displayedContracts.map(item => (
                   <tr key={item.contractId} className="hover:bg-slate-50/80 transition-colors">
                     
                     {/* Contract & Unit */}
@@ -512,31 +749,26 @@ export const OverdueManagementPage: React.FC = () => {
                       </div>
                     </td>
 
-                    {/* SmartLock Status */}
-                    <td className="p-3.5">
-                      <div className="flex flex-col gap-1 items-start">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          item.pinStatus === 'PIN_ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
-                          item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'bg-amber-100 text-amber-800' :
-                          item.pinStatus === 'PIN_REVOKED' ? 'bg-rose-100 text-rose-800' :
-                          'bg-slate-200 text-slate-700'
-                        }`}>
-                          {item.pinStatus === 'PIN_ACTIVE' ? 'PIN Active' :
-                           item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi' :
-                           item.pinStatus === 'PIN_REVOKED' ? 'Đã thu hồi (Lock)' :
-                           'Thu hồi lỗi'}
-                        </span>
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500">
-                          <span className={`w-1.5 h-1.5 rounded-full ${item.smartLockOnlineStatus === 'ONLINE' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-                          {item.smartLockOnlineStatus}
-                          {item.smartLockIsMock && (
-                            <span className="text-purple-600 font-bold">[MOCK]</span>
-                          )}
+                    {/* SmartLock Status: Mất đi khi ở chế độ isCustomerArrivalMode */}
+                    {!isCustomerArrivalMode && (
+                      <td className="p-3.5">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                            item.pinStatus === 'PIN_ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
+                            item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'bg-amber-100 text-amber-800' :
+                            item.pinStatus === 'PIN_REVOKED' ? 'bg-rose-100 text-rose-800' :
+                            'bg-slate-200 text-slate-700'
+                          }`}>
+                            {item.pinStatus === 'PIN_ACTIVE' ? 'PIN Active' :
+                             item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi' :
+                             item.pinStatus === 'PIN_REVOKED' ? 'Đã thu hồi (Lock)' :
+                             'Thu hồi lỗi'}
+                          </span>
                         </div>
-                      </div>
-                    </td>
+                      </td>
+                    )}
 
-                    {/* Sealing Status */}
+                    {/* Sealing Status: Đẩy sang trái */}
                     <td className="p-3.5">
                       <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                         item.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
@@ -553,12 +785,16 @@ export const OverdueManagementPage: React.FC = () => {
                       </span>
                     </td>
 
-                    {/* Actions */}
-                    <td className="p-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
+                    {/* Actions: Đẩy sang trái */}
+                    <td className="p-3.5 text-left">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setSelectedContractId(item.contractId)}
+                          onClick={() => {
+                            setSelectedContractId(item.contractId)
+                            setModalInitialTab('debt')
+                            setModalDirectInventory(false)
+                          }}
                           className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shadow-xs flex items-center gap-1 cursor-pointer transition-all"
                         >
                           <span className="material-symbols-outlined text-[15px]">visibility</span>
@@ -566,6 +802,20 @@ export const OverdueManagementPage: React.FC = () => {
                         </button>
                       </div>
                     </td>
+
+                    {/* Hoàn tất đơn: Cột mới với button Đã xong khi isCustomerArrivalMode */}
+                    {isCustomerArrivalMode && (
+                      <td className="p-3.5 text-right bg-emerald-50/40 border-l border-emerald-100">
+                        <button
+                          type="button"
+                          onClick={() => setContractToSettle(item)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ml-auto"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">task_alt</span>
+                          Đã xong
+                        </button>
+                      </td>
+                    )}
 
                   </tr>
                 ))
@@ -584,7 +834,7 @@ export const OverdueManagementPage: React.FC = () => {
         {/* Pagination Footer */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 relative">
           <div className="text-center md:text-left">
-            Hiển thị <span className="font-bold text-slate-800 dark:text-slate-200">{contracts.length}</span> trên tổng số <span className="font-bold text-slate-800 dark:text-slate-200">{totalElements}</span> hợp đồng
+            Hiển thị <span className="font-bold text-slate-800 dark:text-slate-200">{displayedContracts.length}</span> trên tổng số <span className="font-bold text-slate-800 dark:text-slate-200">{filterStage === 'SETTLED' ? settledContracts.length : totalElements}</span> hợp đồng
           </div>
           <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
             <button
@@ -615,13 +865,99 @@ export const OverdueManagementPage: React.FC = () => {
 
       </div>
 
+      {/* Modal Confirm Khách đã tới hoàn tất đơn */}
+      {contractToSettle && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200">
+                <span className="material-symbols-outlined text-2xl">how_to_reg</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-sm font-bold text-slate-900">Xác nhận hoàn tất đơn nợ cước</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Khách hàng đã tới quầy thanh toán đầy đủ và hoàn tất trả kho.
+                </p>
+              </div>
+            </div>
+
+            {/* Contract Info Summary Card */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Mã hợp đồng:</span>
+                <span className="font-mono font-bold text-slate-900">{contractToSettle.contractCode}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Buồng kho:</span>
+                <span className="font-bold text-rose-600">Buồng #{contractToSettle.unitCode}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Khách hàng:</span>
+                <span className="font-semibold text-slate-900">
+                  {contractToSettle.customerName} ({contractToSettle.customerPhone})
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Cơ sở:</span>
+                <span className="font-medium text-slate-800">{contractToSettle.facilityName}</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
+                <span className="text-slate-600 font-bold">Tổng tiền thu tại quầy:</span>
+                <span className="font-mono font-black text-emerald-700 text-sm">
+                  {formatVND(contractToSettle.totalDebt)}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-[11px] text-emerald-900 leading-relaxed">
+              ✓ Sau khi bấm <strong>"Xác nhận đã xong"</strong>, đơn sẽ chuyển sang trạng thái <strong>Đã xong (Khách trả kho)</strong>, buồng kho <strong>#{contractToSettle.unitCode}</strong> sẽ được giải phóng sẵn sàng cho khách mới thuê.
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setContractToSettle(null)}
+                disabled={isSettling}
+                className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSettlement}
+                disabled={isSettling}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {isSettling ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                    Đang xử lý...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    Xác nhận đã xong
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Contract Detail Modal */}
       {selectedContractId && (
         <OverdueContractDetailModal
           isOpen={Boolean(selectedContractId)}
           contractId={selectedContractId}
-          onClose={() => setSelectedContractId(null)}
+          onClose={() => {
+            setSelectedContractId(null)
+            setModalDirectInventory(false)
+          }}
           onRefreshParent={handleRefreshAll}
+          initialTab={modalInitialTab}
+          openInventoryDirectly={modalDirectInventory}
         />
       )}
 

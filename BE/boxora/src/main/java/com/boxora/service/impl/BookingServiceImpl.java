@@ -1128,8 +1128,8 @@ public class BookingServiceImpl implements BookingService {
         User currentUser = currentUserEmail != null ? userRepository.findByEmail(currentUserEmail).orElse(null) : null;
         validateBookingAccess(booking, currentUser);
 
-        if (booking.getStatus() == BookingStatus.OVERDUE) {
-            throw new AppException(ErrorCode.UNIT_OVERDUE_LOCKED);
+        if (booking.getStatus() == BookingStatus.OVERDUE || "REVOKED_OVERDUE".equals(booking.getQrAccessToken())) {
+            throw new AppException(ErrorCode.PIN_REVOKED_OVERDUE);
         }
 
         if (booking.getStatus() != BookingStatus.ACTIVE || booking.getAccessPin() == null) {
@@ -1251,6 +1251,9 @@ public class BookingServiceImpl implements BookingService {
     public BookingAccessCredentialsResponse getAccessCredentials(UUID id) {
         Booking booking = bookingRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+        if (booking.getStatus() == BookingStatus.OVERDUE || "REVOKED_OVERDUE".equals(booking.getQrAccessToken())) {
+            throw new AppException(ErrorCode.PIN_REVOKED_OVERDUE);
+        }
         if (booking.getStatus() != BookingStatus.CONFIRMED && booking.getStatus() != BookingStatus.ACTIVE) {
             throw new AppException(ErrorCode.BOOKING_NOT_CHECKED_IN);
         }
@@ -2005,12 +2008,18 @@ public class BookingServiceImpl implements BookingService {
         String paymentStatus = b.getPaymentStatus();
         String refCode = null;
         String refStatus = null;
+        String refundTransferProofUrl = null;
+        LocalDateTime refundProcessedAt = null;
+        String refundTransactionReference = null;
         boolean isLatestRefundRejected = false;
         try {
             Optional<RefundRequest> refOpt = refundRequestRepository.findFirstByBooking_IdOrderByCreatedAtDesc(b.getId());
             if (refOpt.isPresent()) {
                 RefundRequest rr = refOpt.get();
                 RefundStatus rSt = rr.getStatus();
+                refundTransferProofUrl = rr.getTransferProofUrl();
+                refundProcessedAt = rr.getProcessedAt() != null ? rr.getProcessedAt() : (rr.getTransferInitiatedAt() != null ? rr.getTransferInitiatedAt() : rr.getUpdatedAt());
+                refundTransactionReference = rr.getTransactionReference() != null ? rr.getTransactionReference() : rr.getTransferReference();
                 if (rSt == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION || rSt == RefundStatus.PROCESSED || rSt == RefundStatus.COMPLETED || rSt == RefundStatus.RECONCILED) {
                     refCode = rr.getRequestCode();
                     refStatus = rSt.name();
@@ -2023,6 +2032,9 @@ public class BookingServiceImpl implements BookingService {
                     isLatestRefundRejected = true;
                     refCode = null;
                     refStatus = null;
+                    refundTransferProofUrl = null;
+                    refundProcessedAt = null;
+                    refundTransactionReference = null;
                     if ("REFUND_PENDING".equalsIgnoreCase(paymentStatus)) {
                         paymentStatus = "PAID";
                     }
@@ -2177,6 +2189,9 @@ public class BookingServiceImpl implements BookingService {
                 .cancelledByRole(cancelledByRole)
                 .refundRequestCode(refCode)
                 .refundStatus(refStatus)
+                .refundTransferProofUrl(refundTransferProofUrl)
+                .refundProcessedAt(refundProcessedAt)
+                .refundTransactionReference(refundTransactionReference)
                 .createdAt(b.getCreatedAt())
                 .updatedAt(b.getUpdatedAt())
                 .build();

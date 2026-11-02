@@ -72,6 +72,9 @@ public class BookingResponse {
     private String cancelledByRole;
     private String refundRequestCode;
     private String refundStatus;
+    private String refundTransferProofUrl;
+    private LocalDateTime refundProcessedAt;
+    private String refundTransactionReference;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

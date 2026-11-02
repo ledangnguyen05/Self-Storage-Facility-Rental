@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   QrCode,
   RotateCcw,
+  ExternalLink,
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import { useAuth } from '../../context/AuthContext'
@@ -44,6 +45,24 @@ import { BookingRescheduleModal } from '../../components/modals/BookingReschedul
 import { CustomerPolicyModal, PolicyTab } from '../../components/modals/CustomerPolicyModal'
 import { useLanguage } from '../../context/LanguageContext'
 import { checkCustomerPortalAccess, syncCustomerPortalAccess } from '../../utils/rentalAccess'
+import { getApiBaseUrl } from '../../lib/axios'
+
+export const resolveReceiptUrl = (url: string | null | undefined): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  const cleanBase = base ? base.replace(/\/api\/?$/, '') : ''
+  return cleanBase ? `${cleanBase}${cleanUrl}` : cleanUrl
+}
 
 export const formatUnitTypeName = (b: Partial<Booking> | any): string => {
   if (!b) return 'Kho Tiêu chuẩn'
@@ -566,7 +585,7 @@ export interface MyBookingsPageProps {
 export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false, onGoToMyUnit }) => {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const targetBookingCodeParam = searchParams.get('bookingCode') || searchParams.get('code')
+  const targetBookingCodeParam = searchParams.get('bookingCode') || searchParams.get('highlight') || searchParams.get('code')
   const [highlightedBookingCode, setHighlightedBookingCode] = useState<string | null>(null)
 
   const handleNavigateToUnitPortal = (unitCode?: string | null) => {
@@ -622,6 +641,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   const [isRevoking, setIsRevoking] = useState(false)
   const [detailQrCodeUrl, setDetailQrCodeUrl] = useState<string>('')
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
+  const [previewProofModal, setPreviewProofModal] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState<number>(() => Date.now())
 
   useEffect(() => {
@@ -723,6 +743,11 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   status: (r.status as any) || 'PENDING_CONTACT',
                   holdExpiresAt: r.holdExpiresAt || null,
                   holdGraceHours: r.holdGraceHours || 24,
+                  refundRequestCode: r.refundRequestCode || r.requestCode || null,
+                  refundStatus: r.refundStatus || null,
+                  refundTransferProofUrl: r.refundTransferProofUrl || r.transferProofUrl || null,
+                  refundProcessedAt: r.refundProcessedAt || r.refundTime || null,
+                  refundTransactionReference: r.refundTransactionReference || r.transactionReference || null,
                   createdAt: r.createdAt || new Date().toISOString(),
                 } as any)
               }
@@ -942,11 +967,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   useEffect(() => {
     if (!targetBookingCodeParam || bookings.length === 0) return
 
-    const cleanTarget = targetBookingCodeParam.trim().toLowerCase()
+    const cleanTarget = targetBookingCodeParam.trim().replace(/^#/, '').toLowerCase()
     const match = bookings.find(
       (b) =>
         b.bookingCode?.toLowerCase() === cleanTarget ||
-        b.id?.toLowerCase() === cleanTarget
+        b.bookingCode?.toLowerCase().replace(/^#/, '') === cleanTarget ||
+        b.id?.toLowerCase() === cleanTarget ||
+        b.unitCode?.toLowerCase() === cleanTarget
     )
 
     if (match) {
@@ -963,12 +990,18 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
       }
 
       // Smooth scroll to the booking card
-      setTimeout(() => {
-        const el = document.getElementById(`booking-card-${match.bookingCode}`)
+      const scrollToCard = () => {
+        const cleanCode = match.bookingCode?.replace(/^#/, '')
+        const el =
+          document.getElementById(`booking-card-${match.bookingCode}`) ||
+          document.getElementById(`booking-card-#${cleanCode}`) ||
+          document.getElementById(`booking-card-${cleanCode}`)
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
         }
-      }, 400)
+      }
+      setTimeout(scrollToCard, 350)
+      setTimeout(scrollToCard, 750)
     }
   }, [targetBookingCodeParam, bookings])
 
@@ -1219,7 +1252,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Tìm theo mã đơn (BX-...), loại kho, số điện thoại hoặc cơ sở..."
+                placeholder="Tìm theo mã đơn (BX-...), loại kho, hoặc cơ sở..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 transition-colors"
@@ -1346,16 +1379,25 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
               const isHighlighted = highlightedBookingCode === b.bookingCode
 
               const refundStatus = (b as any).refundStatus
+              const isRefunded =
+                b.paymentStatus === 'REFUNDED' ||
+                refundStatus === 'PROCESSED' ||
+                refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ||
+                refundStatus === 'COMPLETED' ||
+                refundStatus === 'RECONCILED' ||
+                stageInfo.label.toLowerCase().includes('đã hoàn tiền')
+
               const isPendingReturn =
+                !isRefunded &&
                 refundStatus !== 'REJECTED' &&
                 (b.paymentStatus === 'REFUND_PENDING' ||
                   refundStatus === 'PENDING_REVIEW' ||
                   refundStatus === 'APPROVED' ||
                   refundStatus === 'PROCESSING_TRANSFER' ||
                   (stageInfo.stage === 'CANCELLED' &&
-                    (stageInfo.label.toLowerCase().includes('chờ') ||
-                      b.paymentStatus === 'REFUND_PENDING' ||
-                      (Boolean(refundStatus) && refundStatus !== 'REJECTED') ||
+                    stageInfo.label.toLowerCase().includes('chờ') &&
+                    (b.paymentStatus === 'REFUND_PENDING' ||
+                      refundStatus === 'PENDING_REVIEW' ||
                       Boolean((b as any).refundRequestCode))))
 
               const showActionsBar = stageInfo.stage !== 'CANCELLED' || isPendingReturn
@@ -1364,11 +1406,19 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 <div
                   key={b.id}
                   id={`booking-card-${b.bookingCode}`}
-                  className={`rounded-2xl bg-white dark:bg-slate-900 border p-5 shadow-xs transition-all flex flex-col justify-between gap-4 ${
+                  className={`rounded-2xl bg-white dark:bg-slate-900 border p-5 transition-all duration-500 flex flex-col justify-between gap-4 ${
                     isHighlighted
-                      ? 'border-blue-500 ring-4 ring-blue-500/20 shadow-xl bg-blue-50/20 dark:bg-blue-950/20 relative'
-                      : 'border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-md'
+                      ? 'border-blue-500 ring-4 ring-blue-500/30 shadow-2xl shadow-blue-500/30 dark:shadow-blue-900/50 bg-blue-50/25 dark:bg-blue-950/25 relative scale-[1.01]'
+                      : 'border-slate-200/80 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-md shadow-xs'
                   }`}
+                  style={
+                    isHighlighted
+                      ? {
+                          boxShadow:
+                            '0 20px 45px -10px rgba(59, 130, 246, 0.4), 0 10px 25px -5px rgba(0, 0, 0, 0.15)',
+                        }
+                      : undefined
+                  }
                 >
                   <div className="space-y-4">
                     {/* Header: Storage Room Title & Status Badge */}
@@ -1389,9 +1439,9 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                                 : formatUnitTypeName(b)}
                             </h3>
                             {isHighlighted && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-2xs animate-pulse">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-sm animate-pulse">
                                 <Sparkles size={11} className="text-amber-300" />
-                                <span>Đơn vừa đặt</span>
+                                <span>{isRefunded ? 'Đơn hoàn tiền' : 'Đơn đang xem'}</span>
                               </span>
                             )}
                             {(!b.unitCode || (stageInfo.stage !== 'CONFIRMED' && stageInfo.stage !== 'ACTIVE')) && (
@@ -1636,6 +1686,82 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                     </div>
                   </div>
 
+                  {/* Khung hiển thị Chứng từ chuyển khoản & Thời gian đã hoàn tiền thành công */}
+                  {isRefunded && (
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2.5">
+                      <div className="p-3.5 rounded-2xl bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200/90 dark:border-emerald-800/60 space-y-2.5 shadow-2xs">
+                        <div className="flex items-center justify-between gap-2 border-b border-emerald-200/60 dark:border-emerald-800/40 pb-2">
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-emerald-900 dark:text-emerald-200">
+                            <CheckCircle2 size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>Chứng từ chuyển khoản hoàn tiền</span>
+                          </div>
+                          {b.refundTransactionReference && (
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-white/90 dark:bg-slate-900/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" title="Mã giao dịch ngân hàng">
+                              Mã GD: {b.refundTransactionReference}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Thời gian đã hoàn tiền */}
+                        <div className="flex items-center justify-between text-xs bg-white/80 dark:bg-slate-900/60 p-2 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                            <Clock size={13} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>Thời gian hoàn tiền:</span>
+                          </span>
+                          <strong className="text-emerald-900 dark:text-emerald-200 text-xs font-mono font-bold">
+                            {safeFormatDateTime(b.refundProcessedAt || (b as any).refundInitiatedAt || b.cancelledAt || (b as any).updatedAt)}
+                          </strong>
+                        </div>
+
+                        {/* Ảnh chứng từ chuyển khoản */}
+                        {b.refundTransferProofUrl ? (
+                          <div className="space-y-1.5">
+                            <div
+                              onClick={() => setPreviewProofModal(resolveReceiptUrl(b.refundTransferProofUrl))}
+                              className="relative h-44 rounded-xl overflow-hidden border border-emerald-300/80 dark:border-emerald-700/80 bg-white dark:bg-slate-900 cursor-pointer group shadow-2xs transition-all hover:border-emerald-500 hover:shadow-xs"
+                              title="Nhấp để xem ảnh chứng từ UNC kích thước lớn"
+                            >
+                              <img
+                                src={resolveReceiptUrl(b.refundTransferProofUrl)}
+                                alt="Biên lai chuyển khoản hoàn tiền"
+                                className="w-full h-full object-contain p-1.5 transition-transform duration-300 group-hover:scale-102"
+                                loading="lazy"
+                              />
+                              <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 text-white text-xs font-bold backdrop-blur-2xs">
+                                <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                                <span>Nhấp để phóng to</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between pt-0.5 px-0.5">
+                              <button
+                                type="button"
+                                onClick={() => setPreviewProofModal(resolveReceiptUrl(b.refundTransferProofUrl))}
+                                className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 flex items-center gap-1 hover:underline cursor-pointer"
+                              >
+                                <ExternalLink size={12} />
+                                <span>Xem chứng từ UNC</span>
+                              </button>
+                              <a
+                                href={resolveReceiptUrl(b.refundTransferProofUrl)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex items-center gap-1"
+                              >
+                                <span>Mở ảnh gốc</span>
+                                <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 text-center rounded-lg bg-white/70 dark:bg-slate-900/50 border border-dashed border-emerald-200 dark:border-emerald-800/60 text-slate-500 dark:text-slate-400 text-[11px] flex items-center justify-center gap-1.5">
+                            <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                            <span>Lệnh chuyển tiền đã được xác nhận hoàn tất thành công</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Actions Footer Bar */}
                   {showActionsBar && (
                     <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
@@ -1693,8 +1819,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           </button>
                         )}
 
-                        {/* Button Hủy yêu cầu trả kho / hoàn cọc */}
-                        {isPendingReturn && (
+                        {/* Button Hủy yêu cầu trả kho / hoàn cọc - chỉ hiển thị khi đang chờ hoàn tiền, ẩn hoàn toàn khi đã hoàn tất hoàn tiền */}
+                        {isPendingReturn && !isRefunded && (
                             <button
                               type="button"
                               onClick={() => setSelectedBookingForRevoke(b)}
@@ -1777,14 +1903,50 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
 
               if (isRefunded) {
                 return (
-                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-1">
-                    <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300">
-                      <CheckCircle2 size={15} className="shrink-0" />
-                      <span>Đã hoàn tất hoàn tiền cọc</span>
+                  <div className="p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-900 dark:text-emerald-200 space-y-2">
+                    <div className="flex items-center justify-between gap-2 border-b border-emerald-200/60 dark:border-emerald-800/40 pb-2">
+                      <div className="flex items-center gap-1.5 font-bold text-emerald-700 dark:text-emerald-300">
+                        <CheckCircle2 size={15} className="shrink-0 text-emerald-600" />
+                        <span>Đã hoàn tất hoàn tiền cọc</span>
+                      </div>
+                      {selectedBookingForDetail.refundTransactionReference && (
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          Mã GD: {selectedBookingForDetail.refundTransactionReference}
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] leading-relaxed">
                       Quản lý cơ sở đã hoàn tất chuyển khoản hoàn tiền vào tài khoản ngân hàng của quý khách.
                     </p>
+                    <div className="flex items-center justify-between text-xs bg-white/80 dark:bg-slate-900/60 p-2 rounded-xl border border-emerald-100 dark:border-emerald-900/40">
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        <Clock size={12} className="text-emerald-600 shrink-0" />
+                        <span>Thời gian hoàn tiền:</span>
+                      </span>
+                      <strong className="text-emerald-900 dark:text-emerald-200 text-xs font-mono font-bold">
+                        {safeFormatDateTime(selectedBookingForDetail.refundProcessedAt || (selectedBookingForDetail as any).refundInitiatedAt || selectedBookingForDetail.cancelledAt || (selectedBookingForDetail as any).updatedAt)}
+                      </strong>
+                    </div>
+                    {selectedBookingForDetail.refundTransferProofUrl && (
+                      <div className="space-y-1 pt-1">
+                        <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block">
+                          Ảnh chứng từ chuyển khoản:
+                        </span>
+                        <div
+                          onClick={() => setPreviewProofModal(resolveReceiptUrl(selectedBookingForDetail.refundTransferProofUrl))}
+                          className="relative h-36 rounded-xl overflow-hidden border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-slate-900 cursor-pointer group shadow-2xs"
+                        >
+                          <img
+                            src={resolveReceiptUrl(selectedBookingForDetail.refundTransferProofUrl)}
+                            alt="Biên lai chuyển khoản"
+                            className="w-full h-full object-contain p-1 transition-transform group-hover:scale-102"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                            🔍 Nhấp để xem kích thước lớn
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )
               }
@@ -1934,14 +2096,25 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                 const b = selectedBookingForDetail
                 const st = getBookingStage(b)
                 const refundStatus = (b as any).refundStatus
+                const isRefunded =
+                  b.paymentStatus === 'REFUNDED' ||
+                  refundStatus === 'PROCESSED' ||
+                  refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' ||
+                  refundStatus === 'COMPLETED' ||
+                  refundStatus === 'RECONCILED' ||
+                  st.label.toLowerCase().includes('đã hoàn tiền')
+
                 const isPendingReturn =
+                  !isRefunded &&
                   st.stage === 'CANCELLED' &&
                   refundStatus !== 'REJECTED' &&
-                  (st.label.includes('chờ') ||
-                    b.paymentStatus === 'REFUND_PENDING' ||
-                    (Boolean(refundStatus) && refundStatus !== 'REJECTED') ||
-                    Boolean((b as any).refundRequestCode))
-                if (isPendingReturn) {
+                  (st.label.includes('chờ') &&
+                    (b.paymentStatus === 'REFUND_PENDING' ||
+                      refundStatus === 'PENDING_REVIEW' ||
+                      refundStatus === 'APPROVED' ||
+                      refundStatus === 'PROCESSING_TRANSFER' ||
+                      Boolean((b as any).refundRequestCode)))
+                if (isPendingReturn && !isRefunded) {
                   return (
                     <button
                       type="button"
@@ -2080,6 +2253,64 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Proof UNC Image Lightbox Modal */}
+      {previewProofModal && (
+        <div
+          className="fixed inset-0 z-60 bg-black/85 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPreviewProofModal(null)}
+        >
+          <div
+            className="relative max-w-3xl w-full max-h-[92vh] bg-white dark:bg-slate-900 rounded-3xl overflow-hidden shadow-2xl p-5 border border-slate-200 dark:border-slate-800 space-y-4 animate-in zoom-in-95 flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shadow-xs">
+                  <CheckCircle2 size={18} />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 dark:text-white text-sm">
+                    Biên Lai / Chứng Từ UNC Chuyển Khoản Hoàn Tiền
+                  </h3>
+                  <span className="text-[11px] text-slate-400">Xác nhận chuyển tiền hoàn từ Quản lý cơ sở Boxora</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewProofModal(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors"
+                title="Đóng xem ảnh"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-950/60 rounded-2xl p-2 border border-slate-200/80 dark:border-slate-800 flex items-center justify-center min-h-[320px] max-h-[68vh] overflow-auto">
+              <img
+                src={previewProofModal}
+                alt="Biên lai chuyển khoản hoàn tiền"
+                className="max-h-[65vh] w-auto max-w-full mx-auto object-contain rounded-xl shadow-xs"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-1 text-xs shrink-0 flex-wrap gap-2">
+              <span className="text-slate-400 text-[11px]">
+                * Quý khách vui lòng kiểm tra số dư và thông báo tài khoản ngân hàng thụ hưởng.
+              </span>
+              <a
+                href={previewProofModal}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 py-2 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+              >
+                <span>Mở ảnh kích thước gốc</span>
+                <ExternalLink size={13} />
+              </a>
             </div>
           </div>
         </div>
