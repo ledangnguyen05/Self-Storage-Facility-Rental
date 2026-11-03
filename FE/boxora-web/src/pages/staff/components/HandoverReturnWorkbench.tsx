@@ -37,6 +37,7 @@ import {
 } from 'lucide-react'
 import { toast } from '../../../utils/toast'
 import { useAuth } from '../../../context/AuthContext'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import { getApiBaseUrl } from '../../../lib/axios'
 import { handoverService, ReturnCase, ReturnInspectionPayload, SettlementSnapshot } from '../../../services/handoverService'
 import type { Booking } from '../../../types'
@@ -424,8 +425,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   const [isConfirmingPhysical, setIsConfirmingPhysical] = useState(false)
 
   // 1. Fetch Real Cases from Backend API
-  const fetchReturnCases = useCallback(async (showToast: boolean = false) => {
-    setIsRefreshing(true)
+  const fetchReturnCases = useCallback(async (showToast: boolean = false, silent: boolean = false) => {
+    if (!silent) setIsRefreshing(true)
     try {
       const data = await handoverService.getReturnCases({
         facilityId: currentFacilityId
@@ -628,7 +629,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           })
         }
         setReturnCases(fallbackList)
-        setSelectedCaseId(fallbackList[0]?.id || '')
+        setSelectedCaseId((prev) => (prev && fallbackList.some((c) => c.id === prev) ? prev : fallbackList[0]?.id || ''))
       }
     } catch (err: any) {
       console.warn('Could not load return cases from backend:', err)
@@ -641,8 +642,12 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
   }, [currentFacilityId, facilityName, rawReturnRequests, activeRentals])
 
   useEffect(() => {
-    fetchReturnCases(false)
+    void fetchReturnCases(false, false)
   }, [fetchReturnCases])
+
+  useRealtimeSync(() => {
+    void fetchReturnCases(false, true)
+  }, { intervalMs: 5000 })
 
   const handleRefreshWorkbench = () => {
     fetchReturnCases(true)

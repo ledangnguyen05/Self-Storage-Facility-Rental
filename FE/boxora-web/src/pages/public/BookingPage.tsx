@@ -39,6 +39,7 @@ import {
   CalendarCheck,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility, StorageUnit, RentalContract, UnitType } from '../../types'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
@@ -795,16 +796,9 @@ export const BookingPage: React.FC = () => {
     }
   }, [])
 
-  useEffect(() => {
-    window.addEventListener('boxora:storage-units-refresh', refreshAvailableUnits)
-    window.addEventListener('boxora_reservation_updated', refreshAvailableUnits)
-    window.addEventListener('boxora_new_reservation', refreshAvailableUnits)
-    return () => {
-      window.removeEventListener('boxora:storage-units-refresh', refreshAvailableUnits)
-      window.removeEventListener('boxora_reservation_updated', refreshAvailableUnits)
-      window.removeEventListener('boxora_new_reservation', refreshAvailableUnits)
-    }
-  }, [refreshAvailableUnits])
+  useRealtimeSync(() => {
+    void refreshAvailableUnits()
+  }, { intervalMs: 6000 })
 
   useEffect(() => {
     if (currentStep === 2) {

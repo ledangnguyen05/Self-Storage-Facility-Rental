@@ -34,6 +34,7 @@ import { ContractDocumentModal } from '../../../components/modals/ContractDocume
 import { toast } from '../../../utils/toast'
 import { contractService, RentalContract } from '../../../services/contractService'
 import { useAuth } from '../../../context/AuthContext'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 
 export interface BookingChecklist {
   doorRoll: boolean
@@ -353,28 +354,45 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     return prerequisitesCache[selectedBookingId] || null
   }, [prerequisitesCache, selectedBookingId])
 
-  // Fetch prerequisites when booking selection changes
+  // Fetch prerequisites when booking selection or booking status changes
   const fetchPrerequisitesForBooking = useCallback(
-    async (bookingId: string) => {
+    async (bookingId: string, silent: boolean = false) => {
       if (!bookingId) return
-      setLoadingPrerequisites(true)
+      if (!silent) setLoadingPrerequisites(true)
       try {
         const prereq = await handoverService.getCheckInPrerequisites(bookingId)
         setPrerequisitesCache((prev) => ({ ...prev, [bookingId]: prereq }))
       } catch (err: any) {
         console.warn('Không thể tải điều kiện đối soát:', err)
       } finally {
-        setLoadingPrerequisites(false)
+        if (!silent) setLoadingPrerequisites(false)
       }
     },
     []
   )
 
   useEffect(() => {
-    if (selectedBookingId && !prerequisitesCache[selectedBookingId]) {
-      fetchPrerequisitesForBooking(selectedBookingId)
+    if (selectedBookingId) {
+      const alreadyCached = Boolean(prerequisitesCache[selectedBookingId])
+      void fetchPrerequisitesForBooking(selectedBookingId, alreadyCached)
     }
-  }, [selectedBookingId, prerequisitesCache, fetchPrerequisitesForBooking])
+  }, [
+    selectedBookingId,
+    currentBooking?.status,
+    currentBooking?.paymentStatus,
+    currentBooking?.contractSigned,
+    currentBooking?.unitCode,
+    fetchPrerequisitesForBooking
+  ])
+
+  useRealtimeSync(() => {
+    if (selectedBookingId) {
+      void fetchPrerequisitesForBooking(selectedBookingId, true)
+    }
+    if (onRefreshArrivals) {
+      onRefreshArrivals()
+    }
+  }, { intervalMs: 5000 })
 
   // Ensure session exists for current booking
   useEffect(() => {

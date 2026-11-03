@@ -1,3 +1,4 @@
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
@@ -147,9 +148,9 @@ export const OperationsDashboard: React.FC = () => {
   }, [selectedFacility])
 
   // Load Main Reports
-  const loadDashboardData = async (fDate = fromDate, tDate = toDate, targetScope?: string) => {
+  const loadDashboardData = async (fDate = fromDate, tDate = toDate, targetScope?: string, silent: boolean = false) => {
     const requestSequence = ++dashboardRequestSequence.current
-    setIsReportsLoading(true)
+    if (!silent) setIsReportsLoading(true)
     setReportsHaveError(false)
     try {
       const queryFrom = fDate || undefined
@@ -205,8 +206,8 @@ export const OperationsDashboard: React.FC = () => {
   }
 
   // Load Financial Payments Table
-  const loadPaymentsTable = async (fDate = fromDate, tDate = toDate, targetScope = selectedFacilityId, page = paymentsPage, size = paymentsPageSize) => {
-    setIsPaymentsLoading(true)
+  const loadPaymentsTable = async (fDate = fromDate, tDate = toDate, targetScope = selectedFacilityId, page = paymentsPage, size = paymentsPageSize, silent: boolean = false) => {
+    if (!silent) setIsPaymentsLoading(true)
     try {
       const queryFrom = fDate ? `${fDate}T00:00:00` : undefined
       const queryTo = tDate ? `${tDate}T23:59:59` : undefined
@@ -243,8 +244,13 @@ export const OperationsDashboard: React.FC = () => {
   }, [selectedFacilityId, fromDate, toDate])
 
   useEffect(() => {
-    void loadPaymentsTable(fromDate, toDate, selectedFacilityId, paymentsPage, paymentsPageSize)
+    void loadPaymentsTable(fromDate, toDate, selectedFacilityId, paymentsPage, paymentsPageSize, false)
   }, [selectedFacilityId, fromDate, toDate, paymentsPage, paymentsPageSize, tablePaymentStatus, tablePaymentType])
+
+  useRealtimeSync(() => {
+    void loadDashboardData(fromDate, toDate, selectedFacilityId, true)
+    void loadPaymentsTable(fromDate, toDate, selectedFacilityId, paymentsPage, paymentsPageSize, true)
+  }, { intervalMs: 6000 })
 
   // Preset Handlers
   const applyPreset = (presetKey: 'TODAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR') => {

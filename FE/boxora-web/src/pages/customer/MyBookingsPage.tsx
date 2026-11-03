@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { toast } from '../../utils/toast'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
 import { facilityService } from '../../services/facilityService'
@@ -661,8 +662,8 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   const [facilityFilter, setFacilityFilter] = useState<string>('ALL')
 
   // Fetch bookings from backend and merge with local guest reservations
-  const fetchBookings = useCallback(async () => {
-    setLoading(true)
+  const fetchBookings = useCallback(async (silent?: unknown) => {
+    if (silent !== true) setLoading(true)
     setError(null)
     try {
       let list: Booking[] = []
@@ -842,8 +843,12 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
   }, [])
 
   useEffect(() => {
-    fetchBookings()
+    void fetchBookings(false)
   }, [fetchBookings])
+
+  useRealtimeSync(() => {
+    void fetchBookings(true)
+  }, { intervalMs: 5000 })
 
   // Real-time synchronization event listener
   useEffect(() => {

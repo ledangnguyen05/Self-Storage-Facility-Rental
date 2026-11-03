@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { bookingService } from '../../services/bookingService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { handoverService, HandoverPrerequisites } from '../../services/handoverService'
@@ -415,6 +416,16 @@ export const StaffDashboard: React.FC = () => {
     }
   }, [staffActiveTab])
 
+  useRealtimeSync(() => {
+    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
+    void fetchArrivals(targetFacility)
+    void fetchOccupancy(targetFacility)
+    void loadTicketQueue()
+    void loadActiveRentals(targetFacility)
+    void loadRadarUnits(targetFacility)
+    void loadShiftPayments(targetFacility, true)
+  }, { intervalMs: 5000 })
+
   // Tự động kiểm tra và quét gửi email thông báo cho đơn quá hạn 24h chưa tiếp nhận
   useEffect(() => {
     try {
@@ -623,8 +634,8 @@ export const StaffDashboard: React.FC = () => {
 
   }
 
-  const loadShiftPayments = async (facilityId?: string) => {
-    setIsShiftPaymentsLoading(true)
+  const loadShiftPayments = async (facilityId?: string, silent: boolean = false) => {
+    if (!silent) setIsShiftPaymentsLoading(true)
     try {
       const res = await paymentService.getPayments({ size: 20, facilityId: facilityId || undefined })
       if (Array.isArray(res)) {

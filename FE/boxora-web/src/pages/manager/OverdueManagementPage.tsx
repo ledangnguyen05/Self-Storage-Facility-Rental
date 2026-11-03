@@ -3,6 +3,7 @@ import { useOutletContext, useNavigate } from 'react-router-dom'
 import { overdueService, OverdueSummary, OverdueContractItem, OverdueSettlementPayload } from '../../services/overdueService'
 import { facilityService } from '../../services/facilityService'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility } from '../../types'
 import { OverdueContractDetailModal } from './modals/OverdueContractDetailModal'
 import { toast } from '../../utils/toast'
@@ -152,8 +153,8 @@ export const OverdueManagementPage: React.FC = () => {
   }, [activeFacilityId])
 
   // Fetch Paginated Contracts
-  const fetchContracts = useCallback(async () => {
-    setIsLoading(true)
+  const fetchContracts = useCallback(async (silent?: unknown) => {
+    if (silent !== true) setIsLoading(true)
     try {
       const res = await overdueService.getContracts({
         facilityId: activeFacilityId,
@@ -307,12 +308,17 @@ export const OverdueManagementPage: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchSummary()
+    void fetchSummary()
   }, [fetchSummary])
 
   useEffect(() => {
-    fetchContracts()
+    void fetchContracts(false)
   }, [fetchContracts])
+
+  useRealtimeSync(() => {
+    void fetchSummary()
+    void fetchContracts(true)
+  }, { intervalMs: 5000 })
 
   const handleRefreshAll = () => {
     fetchSummary()

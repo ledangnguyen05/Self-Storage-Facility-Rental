@@ -9,6 +9,7 @@ import { contractService } from '../../services/contractService'
 import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, Booking } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
@@ -368,20 +369,12 @@ export const ManagerDashboard: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho
-  useEffect(() => {
-    const handleSync = () => {
-      const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
-      void fetchUpcomingHandovers(targetId)
-      void fetchUnits(targetId)
-    }
-    window.addEventListener('boxora:storage-units-refresh', handleSync)
-    window.addEventListener('boxora_reservation_updated', handleSync)
-    return () => {
-      window.removeEventListener('boxora:storage-units-refresh', handleSync)
-      window.removeEventListener('boxora_reservation_updated', handleSync)
-    }
-  }, [selectedFacilityId])
+  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho (kể cả từ tab/trình duyệt khác)
+  useRealtimeSync(() => {
+    const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
+    void fetchUpcomingHandovers(targetId)
+    void fetchUnits(targetId, true)
+  }, { intervalMs: 5000 })
 
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
@@ -416,8 +409,8 @@ export const ManagerDashboard: React.FC = () => {
     }
   }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, selectedFacilityId])
 
-  const fetchUnits = async (facId?: string) => {
-    setIsLoading(true)
+  const fetchUnits = async (facId?: string, silent: boolean = false) => {
+    if (!silent) setIsLoading(true)
     try {
       const targetId = (facId && facId !== 'ALL')
         ? facId

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { contractService, RentalContract } from '../../services/contractService'
 import { bookingService } from '../../services/bookingService'
 import { supportTicketService, SupportTicketRecord, SupportTicketCategory } from '../../services/supportTicketService'
@@ -1145,6 +1146,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     fetchMyRenewals()
     void fetchCustomerNotifications()
   }, [user?.id, fetchCustomerNotifications])
+
+  useRealtimeSync(() => {
+    void fetchContracts()
+    void fetchCustomerBookings()
+    void fetchCustomerPayments()
+    void fetchAvailableUnits()
+    void fetchMyRenewals()
+    void fetchCustomerNotifications()
+    void fetchBookingRequests()
+  }, { intervalMs: 5000 })
 
   useEffect(() => {
     let isCurrent = true

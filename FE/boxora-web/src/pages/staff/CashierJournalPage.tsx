@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { Facility } from '../../types'
 
@@ -80,9 +81,11 @@ export const CashierJournalPage: React.FC = () => {
     return 'Cơ sở chưa xác nhận'
   }, [user?.facilityName, activeFacilityId, contextFacilities])
 
-  const fetchPayments = async () => {
-    setIsLoading(true)
-    setFetchError(null)
+  const fetchPayments = async (silent?: unknown) => {
+    if (silent !== true) {
+      setIsLoading(true)
+      setFetchError(null)
+    }
     if ((user?.role?.name === 'STAFF' || user?.role?.name === 'FACILITY_MANAGER') && !user.facilityId) {
       setPayments([])
       setFetchError('No facility is assigned to this account.')
@@ -117,8 +120,12 @@ export const CashierJournalPage: React.FC = () => {
 
 
   useEffect(() => {
-    fetchPayments()
+    void fetchPayments(false)
   }, [activeFacilityId, periodStart, periodEnd, user?.role?.name, user?.facilityId])
+
+  useRealtimeSync(() => {
+    void fetchPayments(true)
+  }, { intervalMs: 5000 })
 
   // Reset page when filters change
   useEffect(() => {

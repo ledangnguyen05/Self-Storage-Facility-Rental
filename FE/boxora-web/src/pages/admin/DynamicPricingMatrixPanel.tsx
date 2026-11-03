@@ -4,6 +4,7 @@ import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { EditUnitTypeModal } from './components/EditUnitTypeModal'
 
 interface DynamicPricingMatrixPanelProps {
@@ -106,6 +107,15 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       void loadFacilityPolicy(selectedFacilityId)
     }
   }, [selectedFacilityId])
+
+  useRealtimeSync(() => {
+    if (!isEditModalOpen && editingDiscountTerm === null) {
+      void loadUnitTypes()
+      if (selectedFacilityId) {
+        void loadFacilityPolicy(selectedFacilityId)
+      }
+    }
+  }, { intervalMs: 6000 })
 
   // Save Duration Discounts to backend
   const handleSaveDiscounts = async (updated3M: number, updated6M: number, updated12M: number) => {
