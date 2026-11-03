@@ -31,6 +31,8 @@ public class FacilityPolicyResponse {
     private Integer overdueSealingDays;
 
     private Integer minimumRentalMonths;
+    private Integer minimumRentalDays;
+    private Double cancellationAfter48hRefundPercent;
 
     private List<FacilityPolicyPriceResponse> prices;
 }

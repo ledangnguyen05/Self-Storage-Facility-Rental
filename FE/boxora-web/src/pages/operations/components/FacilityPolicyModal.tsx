@@ -30,8 +30,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
   const [cancellationFullRefundHours, setCancellationFullRefundHours] = useState<number>(24)
   const [cancellationPartialRefundHours, setCancellationPartialRefundHours] = useState<number>(48)
   const [cancellationPartialRefundPercent, setCancellationPartialRefundPercent] = useState<number>(70)
+  const [cancellationAfter48hRefundPercent, setCancellationAfter48hRefundPercent] = useState<number>(50)
 
-  const [returnNoticeDays, setReturnNoticeDays] = useState<number>(3)
+  const [returnNoticeDays, setReturnNoticeDays] = useState<number>(0)
   const [depositRefundSlaDays, setDepositRefundSlaDays] = useState<number>(3)
 
   const [dailyLateFee, setDailyLateFee] = useState<number>(50000)

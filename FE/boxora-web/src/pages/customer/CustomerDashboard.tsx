@@ -7,7 +7,7 @@ import { supportTicketService, SupportTicketRecord, SupportTicketCategory } from
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
-import { Booking, Facility, StorageUnit, ContractRenewal } from '../../types'
+import { Booking, Facility, StorageUnit, ContractRenewal, FacilityPolicy } from '../../types'
 
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { RenewalAddendumModal } from '../../components/modals/RenewalAddendumModal'
@@ -1791,6 +1791,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     floorLevel?: string
   }
   const [selectedBookingUnit, setSelectedBookingUnit] = useState<SelectedBookingUnitData | null>(null)
+  const [bookingFacilityPolicy, setBookingFacilityPolicy] = useState<FacilityPolicy | null>(null)
   const [bookingSuccess, setBookingSuccess] = useState(false)
   const [createdBookingResult, setCreatedBookingResult] = useState<{ bookingCode: string; unitCode: string; facilityName: string } | null>(null)
   const [bookingPackage, setBookingPackage] = useState<'15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom'>('3m')
@@ -1806,6 +1807,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [bookingWorkflow, setBookingWorkflow] = useState<'HOLD_ONLY' | 'ONLINE_NOW'>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
   const [bookingError, setBookingError] = useState('')
+
+  useEffect(() => {
+    if (!selectedBookingUnit?.facilityId) {
+      setBookingFacilityPolicy(null)
+      return
+    }
+    let active = true
+    facilityService.getPolicyByFacilityId(selectedBookingUnit.facilityId)
+      .then(p => { if (active) setBookingFacilityPolicy(p) })
+      .catch(() => { if (active) setBookingFacilityPolicy(null) })
+    return () => { active = false }
+  }, [selectedBookingUnit?.facilityId])
 
   const bookingUnitParam = searchParams.get('unit')
   useEffect(() => {
@@ -3763,7 +3776,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       endDate,
       condition
     }
-  }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate])
+  }, [selectedBookingUnit, bookingPackage, bookingCustomDays, bookingStartDate, bookingFacilityPolicy])
 
   const handleConfirmBooking = async () => {
     if (!selectedBookingUnit) return

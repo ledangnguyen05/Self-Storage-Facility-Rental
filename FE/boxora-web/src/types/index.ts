@@ -467,6 +467,7 @@ export interface CancellationPolicyDetail {
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   holdGraceHours?: number
@@ -679,9 +680,11 @@ export interface FacilityPolicy {
   depositPercentage?: number
   renewalWindowDays?: number
   minimumRentalMonths?: number
+  minimumRentalDays?: number
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   dailyLateFee?: number
@@ -705,17 +708,19 @@ export interface FacilityPolicyCreateRequest {
   facilityId: string
   isActive?: boolean
   depositPercentage: number
-  renewalWindowDays: number
+  renewalWindowDays?: number
+  minimumRentalDays?: number
   cancellationFullRefundHours: number
   cancellationPartialRefundHours: number
   cancellationPartialRefundPercent: number
-  returnNoticeDays: number
+  cancellationAfter48hRefundPercent?: number
+  returnNoticeDays?: number
   depositRefundSlaDays: number
   dailyLateFee: number
   overdueGraceDays: number
   overdueAccessDisableDays: number
   overdueSealingDays: number
-  minimumRentalMonths: number
+  minimumRentalMonths?: number
   prices?: FacilityPolicyPrice[]
 }
 
@@ -723,6 +728,7 @@ export interface FacilityPolicyUpdateRequest {
   isActive?: boolean
   depositPercentage?: number
   renewalWindowDays?: number
+  minimumRentalDays?: number
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number

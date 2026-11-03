@@ -224,7 +224,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                     {depositPercent}%
                   </div>
                   <p className="text-[11px] text-amber-900/80 dark:text-amber-300/80 mt-1">
-                    Tương đương 1 tháng tiền thuê. Khoản tiền cọc được bảo lưu giữ hộ và hoàn trả 100% khi thanh lý hợp đồng đúng hạn.
+                    Tính theo tỷ lệ {depositPercent}% trên 1 tháng tiền thuê kho. Khoản tiền cọc được bảo lưu giữ hộ và hoàn trả theo quy định khi thanh lý hợp đồng.
                   </p>
                 </div>
 

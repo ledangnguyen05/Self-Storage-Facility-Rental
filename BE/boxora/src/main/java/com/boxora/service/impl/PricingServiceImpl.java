@@ -141,11 +141,13 @@ public class PricingServiceImpl implements PricingService {
             totalRentalFee = BigDecimal.ZERO;
         }
 
-        // 4. Tiền cọc (Theo SRS Boxora: bằng 1 tháng tiền thuê niêm yết)
-        BigDecimal depositAmount = (unit.getUnitType() != null && unit.getUnitType().getDepositAmount() != null
-                && unit.getUnitType().getDepositAmount().compareTo(BigDecimal.ZERO) > 0)
-                ? unit.getUnitType().getDepositAmount()
-                : monthlyRate;
+        // 4. Tiền cọc (Theo Task 2.1: depositAmount = monthlyRentalFee * depositPercentage / 100)
+        double depositPct = (policy != null && policy.getDepositPercentage() != null)
+                ? policy.getDepositPercentage()
+                : 100.0;
+        BigDecimal depositAmount = monthlyRate
+                .multiply(BigDecimal.valueOf(depositPct))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
 
         // 5. Khoản thanh toán ban đầu (Tháng đầu + Tiền cọc)
         BigDecimal firstMonthRent = totalRentalFee.divide(BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);

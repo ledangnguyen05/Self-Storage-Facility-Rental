@@ -50,6 +50,8 @@ public class BookingCreateRequest {
     @NotNull(message = "Start date is required")
     private LocalDate startDate;
 
+    private LocalDate endDate;
+
     private LocalDateTime expectedArrivalAt;
 
     private Boolean requiresManagerApproval;

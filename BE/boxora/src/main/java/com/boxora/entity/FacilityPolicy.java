@@ -39,6 +39,11 @@ public class FacilityPolicy extends BaseEntity {
     @Builder.Default
     private Integer minimumRentalMonths = 1;
 
+    // thời gian thuê tối thiểu theo ngày (thay thế minimum_rental_months theo Task 2.2)
+    @Column(name = "minimum_rental_days")
+    @Builder.Default
+    private Integer minimumRentalDays = 30;
+
     // --- Booking Hold & Reservation Policy ---
     // Số giờ gia hạn sau giờ hẹn nhận kho trước khi booking tự hết hạn giải phóng kho
     @Column(name = "hold_grace_hours", nullable = false)
@@ -65,6 +70,11 @@ public class FacilityPolicy extends BaseEntity {
     @Builder.Default
     // tỷ lệ hoàn cọc khi hủy trong khoảng 24h - 48h kể từ lúc đặt kho (70%)
     private Double cancellationPartialRefundPercent = 70.0;
+
+    @Column(name = "cancellation_after_48h_refund_percent")
+    @Builder.Default
+    // tỷ lệ hoàn cọc khi hủy sau 48h kể từ lúc đặt kho (50%)
+    private Double cancellationAfter48hRefundPercent = 50.0;
 
     // --- Unit Return ---
     @Column(name = "return_notice_days", nullable = false)
@@ -100,6 +110,23 @@ public class FacilityPolicy extends BaseEntity {
     @OneToMany(mappedBy = "facilityPolicy", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<FacilityPolicyPrice> prices = new ArrayList<>();
+
+    public int resolveMinimumRentalDays() {
+        if (minimumRentalDays != null && minimumRentalDays > 0) {
+            return minimumRentalDays;
+        }
+        if (minimumRentalMonths != null && minimumRentalMonths > 0) {
+            return minimumRentalMonths * 30;
+        }
+        return 30;
+    }
+
+    public double resolveAfter48hRefundPercent() {
+        if (cancellationAfter48hRefundPercent != null && cancellationAfter48hRefundPercent >= 0) {
+            return cancellationAfter48hRefundPercent;
+        }
+        return 50.0;
+    }
 
     public String getEffectiveVersion() {
         if (getUpdatedAt() != null) {
