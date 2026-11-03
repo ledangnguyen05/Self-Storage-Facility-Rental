@@ -205,6 +205,14 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
 
         {/* Footer actions */}
         <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={handleReset}
+            className="text-xs font-medium text-slate-500 hover:text-slate-800 transition-colors cursor-pointer flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[15px]">refresh</span>
+            <span>{t('Khôi phục mặc định')}</span>
+          </button>
           <div className="flex items-center gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={onClose}>
               {t('Đóng')}

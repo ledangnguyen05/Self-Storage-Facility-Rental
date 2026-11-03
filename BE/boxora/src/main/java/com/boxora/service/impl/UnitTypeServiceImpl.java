@@ -56,7 +56,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
 
         String dimensions = request.getDimensions() != null ? request.getDimensions().trim() : null;
         if ((dimensions == null || dimensions.isBlank()) && request.getLengthM() != null && request.getWidthM() != null && request.getHeightM() != null) {
-            dimensions = String.format("%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM());
+            dimensions = String.format(java.util.Locale.US, "%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM());
         }
 
         UnitType unitType = UnitType.builder()
@@ -144,7 +144,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
         }
 
         if (request.getLengthM() != null && request.getWidthM() != null && request.getHeightM() != null) {
-            unitType.setDimensions(String.format("%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM()));
+            unitType.setDimensions(String.format(java.util.Locale.US, "%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM()));
             if (request.getAreaSqm() == null) {
                 unitType.setAreaSqm(Math.round(request.getLengthM() * request.getWidthM() * 100.0) / 100.0);
             }

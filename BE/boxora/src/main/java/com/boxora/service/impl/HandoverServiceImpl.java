@@ -157,7 +157,7 @@ public class HandoverServiceImpl implements HandoverService {
                 contractVerificationStatus = "VERIFIED";
             }
             // TH2.5: Đã có bản scan hợp đồng giấy tại cơ sở
-            else if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
+            else if (isContractSignedOrActive && contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
                 contractSigned = true;
                 contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
                 contractVerificationStatus = "VERIFIED";
@@ -599,22 +599,7 @@ public class HandoverServiceImpl implements HandoverService {
             paymentRepository.save(p);
         }
 
-        // Tự động xác thực hợp đồng giấy tại cơ sở nếu nhân viên đã tải lên bản scan hợp đồng
-        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
-        if (contractOpt.isPresent()) {
-            RentalContract contract = contractOpt.get();
-            if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
-                if (contract.getPaperVerifiedAt() == null || contract.getStatus() == RentalContractStatus.PENDING_VERIFICATION) {
-                    contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
-                    contract.setPaperVerifiedBy(staff);
-                    contract.setPaperVerifiedAt(LocalDateTime.now());
-                    if (contract.getSignedAt() == null) {
-                        contract.setSignedAt(LocalDateTime.now());
-                    }
-                    rentalContractRepository.save(contract);
-                }
-            }
-        }
+        // Hợp đồng giấy cần được nhân viên quầy thẩm định và ký duyệt qua verifyPaperContract
 
         // =========================================================================
         // BR-RULE-005 & P0-02: BACKEND KIỂM TRA 4 ĐIỀU KIỆN TIÊN QUYẾT BẮT BUỘC TỪ DB
@@ -643,17 +628,13 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         // Điều kiện 3: Hợp đồng thuê kho (Electronic or Paper at Facility)
-        contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         boolean contractSigned = false;
         if (contractOpt.isPresent()) {
             RentalContract contract = contractOpt.get();
             boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
-            if (isContractSignedOrActive && contract.getSignedAt() != null) {
-                contractSigned = true;
-            } else if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
-                contractSigned = true;
-            } else if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
+            if (isContractSignedOrActive && (contract.getSignedAt() != null || contract.getPaperVerifiedAt() != null)) {
                 contractSigned = true;
             }
         }
@@ -1951,10 +1932,10 @@ public class HandoverServiceImpl implements HandoverService {
             contract.setPaperContractUrl(cleanPaperUrl);
             if (!wasOnlineSigned) {
                 contract.setSigningMethod("PAPER");
-                contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
-                contract.setPaperVerifiedAt(LocalDateTime.now());
-                contract.setPaperVerifiedBy(staff);
-                contract.setSignedAt(LocalDateTime.now());
+                contract.setStatus(RentalContractStatus.PENDING_VERIFICATION);
+                contract.setPaperVerifiedAt(null);
+                contract.setPaperVerifiedBy(null);
+                contract.setSignedAt(null);
 
                 booking.setSigningMethod("IN_PERSON");
                 bookingRepository.save(booking);
@@ -2162,9 +2143,9 @@ public class HandoverServiceImpl implements HandoverService {
                         .referenceCode(cleanRefCode)
                         .proofDocumentUrl(cleanProofUrl)
                         .paymentNotes(request.getNotes() != null ? request.getNotes().trim() : null)
-                        .status(PaymentStatus.PAID)
-                        .confirmedByStaff(staff)
-                        .confirmedAt(LocalDateTime.now())
+                        .status(PaymentStatus.PENDING)
+                        .confirmedByStaff(null)
+                        .confirmedAt(null)
                         .build();
             }
 

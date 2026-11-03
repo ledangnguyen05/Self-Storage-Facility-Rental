@@ -147,12 +147,16 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
         java.time.LocalTime startTime = standardStart;
         java.time.LocalTime endTime = standardEnd;
         validateShiftNotInPast(request.getAssignedDate(), startTime, endTime, request.getShift());
-        ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
-
-        // 7. Tạo thực thể phân công ca (tái sử dụng bản ghi đã hủy nếu có)
         Optional<StaffAssignment> cancelledRecord = staffAssignmentRepository.findFirstByStaff_IdAndAssignedDateAndShiftAndStatus(
                 staff.getId(), request.getAssignedDate(), request.getShift(), StaffAssignmentStatus.CANCELLED
         );
+        if (cancelledRecord.isEmpty() && staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShift(
+                staff.getId(), request.getAssignedDate(), request.getShift())) {
+            throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
+        }
+        ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
+
+        // 7. Tạo thực thể phân công ca (tái sử dụng bản ghi đã hủy nếu có)
         StaffAssignment assignment;
         if (cancelledRecord.isPresent()) {
             assignment = cancelledRecord.get();
@@ -556,7 +560,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             int priorCount = staffAssignmentRepository.markPriorToYesterdayUncheckedInAsAbsent(yesterday);
             int yesterdayCount = staffAssignmentRepository.markYesterdayEndedUncheckedInAsAbsent(yesterday, nowTime);
             int todayCount = staffAssignmentRepository.markTodayEndedUncheckedInAsAbsent(today, nowTime);
-            int overdueCheckedInCount = staffAssignmentRepository.markOverdueCheckedInAsAbsent(today, yesterday, nowTime);
+            int overdueCheckedInCount = staffAssignmentRepository.markOverdueCheckedInAsAbsent(today, yesterday, nowTime, java.time.LocalTime.of(12, 0));
             if (priorCount > 0 || yesterdayCount > 0 || todayCount > 0 || overdueCheckedInCount > 0) {
                 log.info("Auto-marked unchecked-in or overdue shifts as ABSENT: {} prior, {} yesterday, {} today, {} overdue checked-in",
                         priorCount, yesterdayCount, todayCount, overdueCheckedInCount);

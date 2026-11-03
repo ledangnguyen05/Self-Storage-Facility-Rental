@@ -918,21 +918,30 @@ public class PaymentServiceImpl implements PaymentService {
         // 1. Verify digital signature
         boolean isValid = vnPayService.verifySignature(params);
         if (!isValid) {
-            log.warn("VNPay return callback signature invalid - accepted for VNPay Sandbox demo environment");
+            log.error("VNPay return callback signature invalid for txnRef={}", params.get("vnp_TxnRef"));
+            throw new AppException(ErrorCode.INVALID_PAYMENT_SIGNATURE);
         }
 
         String txnRef = params.get("vnp_TxnRef");
         Payment payment = paymentRepository.findByTransactionIdForUpdate(txnRef)
+                .or(() -> paymentRepository.findByTransactionId(txnRef))
                 .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
 
         String amountStr = params.get("vnp_Amount");
+        if (amountStr == null || amountStr.isBlank()) {
+            throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
+        }
         if (amountStr != null && !amountStr.isBlank()) {
             try {
                 BigDecimal vnpAmount = new BigDecimal(amountStr).divide(BigDecimal.valueOf(100));
                 if (payment.getAmount().compareTo(vnpAmount) != 0) {
-                    log.warn("VNPay return amount mismatch (expected {}, got {}) - aligned for sandbox demo", payment.getAmount(), vnpAmount);
+                    log.warn("VNPay return amount mismatch (expected {}, got {})", payment.getAmount(), vnpAmount);
+                    throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
                 }
+            } catch (AppException e) {
+                throw e;
             } catch (Exception ignored) {
+                throw new AppException(ErrorCode.PAYMENT_AMOUNT_MISMATCH);
             }
         }
 
@@ -968,7 +977,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         // Với môi trường Sandbox VNPay demo: toàn bộ giao dịch thanh toán đều được coi là thành công (PAID)
-        boolean isSuccess = true;
+        boolean isSuccess = "00".equals(responseCode) && (transactionStatus == null || "00".equals(transactionStatus));
 
         if (isSuccess) {
             // Task 15: Nếu giao dịch cũ đã bị EXPIRED (do khách quay lại đổi thông tin đặt kho), không kích hoạt đơn mới
@@ -1207,7 +1216,7 @@ public class PaymentServiceImpl implements PaymentService {
         String responseCode = params.get("vnp_ResponseCode");
         String transactionStatus = params.get("vnp_TransactionStatus");
         // Với môi trường Sandbox VNPay demo: toàn bộ giao dịch thanh toán đều được coi là thành công (PAID)
-        boolean isSuccess = true;
+        boolean isSuccess = "00".equals(responseCode) && (transactionStatus == null || "00".equals(transactionStatus));
 
         String payDateStr = params.get("vnp_PayDate");
         if (payDateStr != null && payDateStr.length() == 14) {
@@ -1631,7 +1640,7 @@ public class PaymentServiceImpl implements PaymentService {
                         int port = uri.getPort();
                         return uri.getScheme() + "://" + uri.getHost() + (port > 0 ? ":" + port : "") + "/payment-result";
                     }
-                } catch (Exception ignored) {
+            } catch (Exception ignored) {
                 }
             }
         }

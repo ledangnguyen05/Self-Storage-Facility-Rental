@@ -149,8 +149,6 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     return []
   }, [settlement])
 
-  if (!isOpen) return null
-
   const snapshotsList: SettlementSnapshot[] = useMemo(() => {
     return settlement?.snapshots || []
   }, [settlement])
@@ -166,6 +164,8 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
 
   const currentViewingVersion = activeSnapshot?.settlementVersion || selectedVersion || settlement?.settlementVersion || 1
   const isViewingLatestVersion = settlement ? currentViewingVersion === (settlement.settlementVersion || 1) : true
+
+  if (!isOpen) return null
 
   // Dữ liệu đối soát hiển thị động theo phiên bản đang xem
   const displayDepositPaid = activeSnapshot != null ? Number(activeSnapshot.depositAmount || 0) : Number(settlement?.depositPaid || 0)

@@ -182,7 +182,8 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         }
 
         // Tổng tiền hoàn trả = 100% tiền thuê kho (do chưa nhận kho) + tiền cọc hoàn trả theo mốc
-        refundAmount = depositRefund.add(totalRentalFee);
+        BigDecimal paidRentalFee = calculatePaidRentalFee(booking);
+        refundAmount = depositRefund.add(paidRentalFee);
 
         boolean refundable = refundAmount.compareTo(BigDecimal.ZERO) > 0;
 
@@ -312,7 +313,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
 
             BigDecimal finalRefund = preview.getRefundAmount() != null ? preview.getRefundAmount() : BigDecimal.ZERO;
             BigDecimal penalty = preview.getPenaltyAmount() != null ? preview.getPenaltyAmount() : BigDecimal.ZERO;
-            BigDecimal rentPaid = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
+            BigDecimal rentPaid = calculatePaidRentalFee(booking);
             BigDecimal depPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
             BigDecimal requested = depPaid.add(rentPaid);
             if (requested.compareTo(BigDecimal.ZERO) <= 0) {
@@ -803,6 +804,34 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             return String.format("Còn khoảng %d ngày %d giờ đến lịch hẹn nhận kho", days, remainingHours);
         } else {
             return String.format("Còn khoảng %d ngày đến lịch hẹn nhận kho", days);
+        }
+    }
+
+    private BigDecimal calculatePaidRentalFee(Booking booking) {
+        if (booking == null || booking.getId() == null || paymentRepository == null) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            List<Payment> payments = paymentRepository.findAllByBooking_Id(booking.getId());
+            if (payments == null || payments.isEmpty()) {
+                return BigDecimal.ZERO;
+            }
+            return payments.stream()
+                    .filter(p -> p != null && p.getStatus() == PaymentStatus.PAID)
+                    .map(p -> {
+                        if (p.getPaymentType() == PaymentType.RENTAL_FEE) {
+                            return p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO;
+                        }
+                        if (p.getPaymentType() == PaymentType.BOOKING_PAYMENT) {
+                            BigDecimal depReq = booking.getDepositAmount() != null ? booking.getDepositAmount() : BigDecimal.ZERO;
+                            BigDecimal pAmt = p.getAmount() != null ? p.getAmount() : BigDecimal.ZERO;
+                            return pAmt.subtract(depReq).max(BigDecimal.ZERO);
+                        }
+                        return BigDecimal.ZERO;
+                    })
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        } catch (Exception e) {
+            return BigDecimal.ZERO;
         }
     }
 }

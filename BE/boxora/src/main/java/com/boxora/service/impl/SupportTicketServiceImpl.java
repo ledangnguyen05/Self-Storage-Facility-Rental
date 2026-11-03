@@ -236,7 +236,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 .refundStatus(initialRefundStatus)
                 .build();
 
-        ticket = supportTicketRepository.save(ticket);
+        SupportTicket savedTicket = supportTicketRepository.save(ticket);
+        if (savedTicket != null) { ticket = savedTicket; }
 
         // Audit log
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_CREATE, null, ticket.getStatus().name(),
@@ -687,13 +688,10 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             validateFacilityScope(ticket, manager);
         }
 
-        // Ticket must be in RESOLVED state to be closed, OR customer is cancelling their own OPEN / REOPENED ticket
+        // Ticket must be in RESOLVED state to be closed
         if (ticket.getStatus() != TicketStatus.RESOLVED) {
-            boolean isCustomerCancellingEarly = isCustomer && (ticket.getStatus() == TicketStatus.OPEN || ticket.getStatus() == TicketStatus.REOPENED);
-            if (!isCustomerCancellingEarly) {
-                throw new AppException(ErrorCode.TICKET_INVALID_STATUS_TRANSITION,
-                        "Chỉ có thể đóng ticket khi đã ở trạng thái ĐÃ XỬ LÝ (RESOLVED)");
-            }
+            throw new AppException(ErrorCode.TICKET_INVALID_STATUS_TRANSITION,
+                    "Chỉ có thể đóng ticket khi đã ở trạng thái ĐÃ XỬ LÝ (RESOLVED)");
         }
 
         TicketStatus oldStatus = ticket.getStatus();

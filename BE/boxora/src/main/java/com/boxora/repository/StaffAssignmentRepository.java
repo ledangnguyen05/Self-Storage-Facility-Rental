@@ -134,10 +134,15 @@ public interface StaffAssignmentRepository extends JpaRepository<StaffAssignment
                 OR
                 (a.shift = com.boxora.enums.StaffShift.NIGHT AND a.assignedDate < :yesterday)
                 OR
-                (a.shift = com.boxora.enums.StaffShift.NIGHT AND a.assignedDate = :yesterday AND :nowTime >= '12:00:00')
+                (a.shift = com.boxora.enums.StaffShift.NIGHT AND a.assignedDate = :yesterday AND :nowTime >= :noonTime)
               )
             """)
-    int markOverdueCheckedInAsAbsent(@Param("today") LocalDate today, @Param("yesterday") LocalDate yesterday, @Param("nowTime") java.time.LocalTime nowTime);
+    int markOverdueCheckedInAsAbsent(
+            @Param("today") LocalDate today,
+            @Param("yesterday") LocalDate yesterday,
+            @Param("nowTime") java.time.LocalTime nowTime,
+            @Param("noonTime") java.time.LocalTime noonTime
+    );
 
     @Deprecated
     @org.springframework.data.jpa.repository.Modifying(clearAutomatically = true)

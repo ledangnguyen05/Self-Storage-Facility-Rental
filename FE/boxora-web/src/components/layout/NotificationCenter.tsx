@@ -182,7 +182,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     setIsLoading(false)
   }, [userId])
 
-  const loadNotifications = useCallback(async (silent: boolean = false) => {
+  const loadNotifications = useCallback(async () => {
     if (!userId || !UUID_PATTERN.test(userId)) {
       requestIdRef.current += 1
       setItems([])
@@ -191,7 +191,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     }
 
     const requestId = ++requestIdRef.current
-    if (!silent) setIsLoading(true)
+    setIsLoading(true)
     setError('')
     try {
       const page = await notificationService.getRecent({ recipientId: userId, page: 0, size: 6 })
@@ -210,7 +210,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
   }, [userId, loadNotifications])
 
   useEffect(() => {
-    const refreshAfterBooking = () => { void loadNotifications(true) }
+    const refreshAfterBooking = () => { void loadNotifications() }
     window.addEventListener('boxora:notifications-refresh', refreshAfterBooking)
     return () => window.removeEventListener('boxora:notifications-refresh', refreshAfterBooking)
   }, [loadNotifications])
@@ -219,9 +219,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     if (!userId || !UUID_PATTERN.test(userId)) return
 
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void loadNotifications(true)
+      if (document.visibilityState === 'visible') void loadNotifications()
     }
-    const intervalId = window.setInterval(refreshWhenVisible, 6_000)
+    const intervalId = window.setInterval(refreshWhenVisible, 30_000)
     window.addEventListener('focus', refreshWhenVisible)
     document.addEventListener('visibilitychange', refreshWhenVisible)
 

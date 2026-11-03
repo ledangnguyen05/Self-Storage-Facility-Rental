@@ -479,8 +479,8 @@ class StaffAssignmentServiceTest {
                     .build();
 
             when(staffAssignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
-            when(staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShiftAndIdNot(
-                    staffId, date, StaffShift.AFTERNOON, assignmentId)).thenReturn(false);
+            when(staffAssignmentRepository.existsByStaff_IdAndAssignedDateAndShiftAndIdNotAndStatusNot(
+                    staffId, date, StaffShift.AFTERNOON, assignmentId, StaffAssignmentStatus.CANCELLED)).thenReturn(false);
             when(staffAssignmentRepository.save(any(StaffAssignment.class))).thenReturn(assignment);
 
             StaffAssignmentResponse response = StaffAssignmentResponse.builder()

@@ -185,7 +185,7 @@ class BookingServiceTest {
         }
 
         @Test
-        @DisplayName("Free in-person reservation remains CONFIRMED and creates no payment transaction")
+        @DisplayName("Free in-person reservation creates PENDING_CONTACT and creates no payment transaction")
         void createFreeInPersonReservationDoesNotCreatePayment() {
             BookingCreateRequest request = BookingCreateRequest.builder()
                     .storageUnitId(unitId)
@@ -204,7 +204,7 @@ class BookingServiceTest {
 
             BookingResponse response = bookingService.createBooking(request);
 
-            assertThat(response.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(response.getStatus()).isEqualTo(BookingStatus.PENDING_CONTACT);
             assertThat(response.getPaymentStatus()).isEqualTo("UNPAID");
             assertThat(response.getDepositPaid()).isEqualByComparingTo(BigDecimal.ZERO);
             assertThat(response.getAccessPin()).isNull();

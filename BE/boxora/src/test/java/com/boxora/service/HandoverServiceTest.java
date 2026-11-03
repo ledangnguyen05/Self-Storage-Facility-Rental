@@ -339,8 +339,20 @@ class HandoverServiceTest {
         }
 
         @Test
-        @DisplayName("Client checklist and photo URLs cannot bypass a missing persisted inspection")
+        @DisplayName("Client checklist and photo URLs cannot bypass a failed persisted inspection")
         void checkIn_ClientInspectionPayloadCannotBypassPersistedInspection() {
+            HandoverRecord failedInspection = HandoverRecord.builder()
+                    .booking(testBooking)
+                    .recordType("CHECK_IN_INSPECTION")
+                    .doorConditionPassed(false)
+                    .cleanlinessPassed(true)
+                    .smartLockPassed(true)
+                    .sensorPassed(true)
+                    .wallStructurePassed(true)
+                    .evidencePhotos("/uploads/door.jpg;/uploads/interior.jpg")
+                    .recordedAt(LocalDateTime.now())
+                    .build();
+
             HandoverRequest request = HandoverRequest.builder()
                     .bookingId(bookingId)
                     .identityVerified(true)
@@ -352,11 +364,11 @@ class HandoverServiceTest {
                     .evidencePhotos(List.of("/uploads/client-door.jpg", "/uploads/client-interior.jpg"))
                     .build();
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
-            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of());
+            when(handoverRecordRepository.findByBooking_Id(bookingId)).thenReturn(List.of(failedInspection));
 
             AppException ex = assertThrows(AppException.class, () -> handoverService.checkIn(request));
 
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE);
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CHECKIN_STEP_NOT_SATISFIED);
             verify(handoverRecordRepository, never()).save(any(HandoverRecord.class));
         }
 

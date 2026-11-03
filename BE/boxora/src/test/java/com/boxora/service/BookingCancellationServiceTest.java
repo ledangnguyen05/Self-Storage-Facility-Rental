@@ -382,22 +382,21 @@ class BookingCancellationServiceTest {
             BookingCancelResponse response = cancellationService.cancelBooking(bookingId, request);
 
             assertThat(response).isNotNull();
-            assertThat(response.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            assertThat(response.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
             assertThat(response.getMilestoneStage()).isEqualTo("STAGE_1_FULL_REFUND");
             assertThat(response.getRefundAmount()).isEqualByComparingTo(new BigDecimal("1000000.00"));
-            assertThat(response.isUnitReleased()).isTrue();
+            assertThat(response.isUnitReleased()).isFalse();
             assertThat(response.getRefundRequestId()).isEqualTo(generatedRefundId);
             assertThat(response.getRefundRequestCode()).startsWith("REF-");
             assertThat(response.getCancellationReason()).isEqualTo("Thay đổi kế hoạch kinh doanh");
 
-            // Verify entity updates
-            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.CANCELLED);
+            // Verify entity updates - holds until manager refund transfer
+            assertThat(testBooking.getStatus()).isEqualTo(BookingStatus.CONFIRMED);
+            assertThat(testBooking.getPaymentStatus()).isEqualTo("REFUND_PENDING");
             assertThat(testBooking.getCancellationReason()).isEqualTo("Thay đổi kế hoạch kinh doanh");
             assertThat(testBooking.getCancelledBy()).isEqualTo(testCustomer);
             assertThat(testBooking.getCancelledAt()).isNotNull();
-            assertThat(testBooking.getAccessPin()).isNull();
-            assertThat(testBooking.getQrAccessToken()).isEqualTo("REVOKED_CANCELLED");
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
 
             // Verify RefundRequest created in PENDING_REVIEW state
             verify(refundRequestRepository, times(1)).save(argThat(r ->
@@ -410,24 +409,14 @@ class BookingCancellationServiceTest {
             // Verify Activity Log calls
             verify(activityLogService).record(
                     eq(testFacility.getId()),
-                    eq(ActivityAction.RESERVATION_CANCEL),
+                    eq(ActivityAction.REFUND_REQUEST_CREATE),
                     eq("Booking"),
                     eq(bookingId),
                     anyString(),
                     eq(BookingStatus.CONFIRMED),
-                    eq(BookingStatus.CANCELLED)
-            );
-            verify(activityLogService).record(
-                    eq(testFacility.getId()),
-                    eq(ActivityAction.STORAGE_UNIT_RELEASE),
-                    eq("StorageUnit"),
-                    eq(testUnit.getId()),
-                    anyString(),
-                    isNull(),
-                    eq(UnitStatus.AVAILABLE)
+                    eq(BookingStatus.CONFIRMED)
             );
 
-            // Verify email dispatch to customer
             verify(emailService, times(1)).sendBookingCancellationEmail(
                     eq("customer@example.com"),
                     eq("Nguyen Van Khach"),
@@ -472,8 +461,8 @@ class BookingCancellationServiceTest {
             assertThat(response.getPenaltyAmount()).isEqualByComparingTo(new BigDecimal("500000.00"));
             assertThat(response.getRefundRequestId()).isEqualTo(generatedRefundId);
 
-            // Unit vẫn được giải phóng về AVAILABLE
-            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.AVAILABLE);
+            // Unit được giữ ở OCCUPIED đến khi Quản lý xử lý hoàn cọc
+            assertThat(testUnit.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
             // Tạo RefundRequest với 500.000đ
             verify(refundRequestRepository, times(1)).save(argThat(r ->
                     r.getFinalRefundAmount().compareTo(new BigDecimal("500000.00")) == 0

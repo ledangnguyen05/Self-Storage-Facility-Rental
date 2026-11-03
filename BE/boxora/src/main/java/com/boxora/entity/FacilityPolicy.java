@@ -124,13 +124,11 @@ public class FacilityPolicy extends BaseEntity {
     private List<FacilityPolicyPrice> prices = new ArrayList<>();
 
     public int resolveMinimumRentalDays() {
-        if (minimumRentalDays != null && minimumRentalDays > 0) {
-            return minimumRentalDays;
-        }
+        int days = minimumRentalDays != null && minimumRentalDays > 0 ? minimumRentalDays : 30;
         if (minimumRentalMonths != null && minimumRentalMonths > 0) {
-            return minimumRentalMonths * 30;
+            days = Math.max(days, minimumRentalMonths * 30);
         }
-        return 30;
+        return days;
     }
 
     public double resolveAfter48hRefundPercent() {

@@ -217,9 +217,11 @@ public class BookingServiceImpl implements BookingService {
             }
             try {
                 if (storageUnitLockService.isUnitLocked(unit.getId())) {
-                    log.warn("[SOFT_LOCK] Releasing stale Redis soft-lock for available unit {}", unit.getId());
-                    storageUnitLockService.releaseLock(unit.getId());
+                    log.warn("[SOFT_LOCK] Storage unit {} is already locked in Redis", unit.getId());
+                    throw new AppException(ErrorCode.STORAGE_UNIT_SOFT_LOCKED);
                 }
+            } catch (AppException e) {
+                throw e;
             } catch (Exception e) {
                 log.warn("[REDIS_OPTIMIZATION_BYPASS] Redis lock check error for unit {}: {}. Proceeding with authoritative DB pessimistic lock.",
                         unit.getId(), e.getMessage());
@@ -373,16 +375,24 @@ public class BookingServiceImpl implements BookingService {
             if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
                 totalFee = quote.getTotalRentalFee();
             }
-            deposit = quote.getDepositAmount();
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                deposit = quote.getDepositAmount();
+            }
         } else if (unitType != null) {
             BigDecimal baseMonthly = unitType.getBasePricePerMonth() != null ? unitType.getBasePricePerMonth() : BigDecimal.valueOf(1500000);
             if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
                 totalFee = baseMonthly.multiply(BigDecimal.valueOf(months));
             }
-            double depositPct = (activePolicy != null && activePolicy.getDepositPercentage() != null)
-                    ? activePolicy.getDepositPercentage()
-                    : 100.0;
-            deposit = baseMonthly.multiply(BigDecimal.valueOf(depositPct)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                if (unitType.getDepositAmount() != null && unitType.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+                    deposit = unitType.getDepositAmount();
+                } else {
+                    double depositPct = (activePolicy != null && activePolicy.getDepositPercentage() != null)
+                            ? activePolicy.getDepositPercentage()
+                            : 100.0;
+                    deposit = baseMonthly.multiply(BigDecimal.valueOf(depositPct)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+                }
+            }
         }
 
         String code = (request.getBookingCode() != null && !request.getBookingCode().isBlank())
@@ -453,8 +463,8 @@ public class BookingServiceImpl implements BookingService {
             if (fullName.length() > 100) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên người đặt không được vượt quá 100 ký tự.");
             }
-            if (!fullName.matches("^[\\p{L}\\s]+$")) {
-                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên chỉ được chứa chữ cái và khoảng trắng hợp lệ.");
+            if (!fullName.matches("^[\\p{L}\\s]+$") || fullName.split("\\s+").length < 2) {
+                throw new AppException(ErrorCode.INVALID_REQUEST, "Họ và tên chỉ được chứa chữ cái và khoảng trắng hợp lệ, phải bao gồm cả họ và tên (tối thiểu 2 từ).");
             }
         }
 
@@ -535,6 +545,11 @@ public class BookingServiceImpl implements BookingService {
         if (unit != null) {
             unit.setStatus(UnitStatus.RESERVED);
             storageUnitRepository.save(unit);
+            try {
+                storageUnitLockService.tryLockUnit(unit.getId(), booking.getId(), softLockHours);
+            } catch (Exception e) {
+                log.warn("[REDIS_LOCK_FAIL] Could not acquire Redis lock for unit {}: {}", unit.getId(), e.getMessage());
+            }
         }
 
         com.boxora.service.ContractSigningService contractSigningService = contractSigningServiceProvider != null
@@ -552,11 +567,11 @@ public class BookingServiceImpl implements BookingService {
         activityLogService.record(
                 facilityIdForLog,
                 ActivityAction.RESERVATION_CREATE,
-                "BOOKING",
+                "Booking",
                 booking.getId(),
                 "Tạo mới đặt chỗ " + booking.getBookingCode() + (unit != null ? " cho kho " + unit.getUnitCode() : ""),
                 null,
-                booking.getStatus().name()
+                booking.getStatus()
         );
 
         return mapToResponse(booking);
@@ -838,7 +853,12 @@ public class BookingServiceImpl implements BookingService {
         try {
             source = targetFacilityId == null
                     ? bookingRepository.findAll()
-                    : bookingRepository.findAllByFacilityIdIncludingNullUnit(targetFacilityId);
+                    : bookingRepository.findByStorageUnit_Facility_Id(targetFacilityId);
+            if (source == null || source.isEmpty()) {
+                if (targetFacilityId != null) {
+                    source = bookingRepository.findAllByFacilityIdIncludingNullUnit(targetFacilityId);
+                }
+            }
             if (source == null || source.isEmpty()) {
                 if (targetFacilityId != null) {
                     source = bookingRepository.findAll().stream()
@@ -878,6 +898,9 @@ public class BookingServiceImpl implements BookingService {
                             || b.getStatus() == BookingStatus.COMPLETED;
                 })
                 .filter(b -> {
+                    if (timeframe == null && fromDate == null && toDate == null) {
+                        return b.getExpectedCheckInAt() != null;
+                    }
                     LocalDate checkInDate = b.getExpectedCheckInAt() != null
                             ? b.getExpectedCheckInAt().toLocalDate()
                             : b.getStartDate();
@@ -1116,9 +1139,7 @@ public class BookingServiceImpl implements BookingService {
         User currentUser = (requestContext != null && requestContext.currentUserId() != null)
                 ? userRepository.findById(requestContext.currentUserId()).orElse(null)
                 : null;
-        if (currentUser != null) {
-            validateBookingAccess(booking, currentUser);
-        }
+        validateBookingAccess(booking, currentUser);
 
         return mapToResponse(booking);
     }
@@ -2674,7 +2695,9 @@ public class BookingServiceImpl implements BookingService {
                 totalFee = quote.getTotalRentalFee();
             }
             if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
+                if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
                 deposit = quote.getDepositAmount();
+            }
             }
         } else if (unitType != null) {
             BigDecimal baseMonthly = unitType.getBasePricePerMonth() != null
