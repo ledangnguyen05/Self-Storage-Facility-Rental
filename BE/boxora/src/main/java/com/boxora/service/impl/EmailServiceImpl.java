@@ -625,12 +625,10 @@ public class EmailServiceImpl implements EmailService {
         detailsBuilder.append(renderDetailRow("Mã hợp đồng", safeCode));
         detailsBuilder.append(renderDetailRow("Buồng kho / Vị trí", String.format("<strong>#%s</strong> (%s)", safeUnit, safeFacility)));
         detailsBuilder.append(renderDetailRow("Ngày đến hạn thanh toán", safeDueDate));
-        detailsBuilder.append(renderDetailRow("Số ngày quá hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">+%d ngày</span>", daysOverdue)));
-        detailsBuilder.append(renderDetailRow("Nợ gốc (Tiền thuê)", formatVnd(principalDebt != null ? principalDebt : BigDecimal.ZERO)));
+        detailsBuilder.append(renderDetailRow("Số ngày quá hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">+%d ngày</span>", daysOverdue)));   
+        detailsBuilder.append(renderDetailRow("Đơn giá phạt / ngày", formatVnd(dailyLateFee != null ? dailyLateFee : BigDecimal.ZERO) + "/ngày"));
         detailsBuilder.append(renderDetailRow("Phí phạt trễ hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(lateFee != null ? lateFee : BigDecimal.ZERO))));
         detailsBuilder.append(renderDetailRow("Tiền cọc đang giữ", formatVnd(depositHeld != null ? depositHeld : BigDecimal.ZERO)));
-        detailsBuilder.append(renderDetailRow("Đơn giá phạt / ngày", formatVnd(dailyLateFee != null ? dailyLateFee : BigDecimal.ZERO) + "/ngày"));
-        detailsBuilder.append(renderDetailRow("Công thức tính phạt minh bạch", String.format("<div style=\"font-family: monospace; font-size: 11px; background: #fff1f2; padding: 4px 8px; border-radius: 4px; color: #9f1239;\">%s</div>", safeFormula)));
 
         if (!safeNotes.isEmpty()) {
             detailsBuilder.append(renderDetailRow("Ghi chú từ BQL cơ sở", String.format("<em>%s</em>", safeNotes)));
@@ -653,7 +651,7 @@ public class EmailServiceImpl implements EmailService {
         );
 
         String paymentLink = resolveUrl("/portal/customer?tab=contracts");
-        String button = renderButton("Đăng Nhập Thanh Toán Cước Ngay", paymentLink, "#dc2626");
+        String button = renderButton("Kiểm tra kho ngay", paymentLink, "#dc2626");
 
         String note = renderSecurityNote(
                 "Bộ phận Quản lý Khách hàng Boxora • Tổng đài CSKH: 1900 6868 • Email hỗ trợ: support@boxora.vn"

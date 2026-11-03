@@ -1115,7 +1115,7 @@ export const OperationsDashboard: React.FC = () => {
                   <div className="flex items-center justify-between text-xs mb-1.5">
                     <span className="font-bold text-emerald-700 flex items-center gap-1.5">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-600"></span>
-                      {tr('Đã hoàn tiền thành công (Khách đã nhận)', 'Successfully refunded to customer')}
+                      {tr('Đã hoàn tiền thành công', 'Successfully refunded to customer')}
                     </span>
                     <span className="font-mono font-extrabold text-slate-900">{formatVnd(refundBreakdown.completedRefundAmount)}</span>
                   </div>

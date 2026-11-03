@@ -380,7 +380,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
           <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
               <span className="material-symbols-outlined text-[16px]">published_with_changes</span>
-              <span>3. Quy định Trả kho & Hoàn cọc (Return Inspection)</span>
+              <span>3. Quy định Trả kho & Hoàn cọc</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>

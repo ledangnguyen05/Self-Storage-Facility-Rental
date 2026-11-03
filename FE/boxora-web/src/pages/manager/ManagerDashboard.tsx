@@ -2074,31 +2074,6 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* SmartLock Telemetry */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-700">Khóa điện tử:</span>
-                  <span className="font-mono font-bold text-slate-900">
-                    {selectedUnit.smartlock === 'Not reported' ? 'No device ID reported' : selectedUnit.smartlock}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-2 bg-white rounded-lg border border-slate-200">
-                    <span className="text-[10px] text-slate-400 uppercase font-mono block">Pin SmartLock</span>
-                    <span className="font-mono font-bold text-emerald-700 mt-0.5 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">battery_full</span>
-                      {selectedUnit.battery || 'Not reported'}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-white rounded-lg border border-slate-200">
-                    <span className="text-[10px] text-slate-400 uppercase font-mono block">Truy cập gần nhất</span>
-                    <span className="font-mono text-[11px] font-bold text-slate-800 mt-0.5 truncate block">
-                      {selectedUnit.lastAccess}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
               {/* Manager Actions (Read-only / Exception Workflow) */}
               <div className="flex flex-col gap-2 pt-1">
                 

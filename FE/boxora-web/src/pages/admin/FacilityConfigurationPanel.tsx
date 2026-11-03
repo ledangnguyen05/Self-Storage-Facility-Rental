@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useLanguage } from '../../context/LanguageContext'
@@ -1301,18 +1301,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           })()}
                         </span>
                       </div>
-
-                      {hasFacilityCoordinates && (
-                        <a
-                          className="mt-2.5 inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 hover:underline dark:text-cyan-300"
-                          target="_blank"
-                          rel="noreferrer"
-                          href={`https://www.openstreetmap.org/?mlat=${facility.latitude}&mlon=${facility.longitude}#map=17/${facility.latitude}/${facility.longitude}`}
-                        >
-                          <span className="material-symbols-outlined text-[14px]">map</span>
-                          {t('Xem vị trí trên bản đồ OpenStreetMap', 'View location on map')}
-                        </a>
-                      )}
 
                       {/* DISPLAY POLICY IN CARD */}
                       {expandedPolicyFacilityId === facility.id && (

@@ -398,10 +398,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                {t('Cấu Hình Quy Tắc Kinh Doanh & Chính Sách Giá Động (Pricing Matrix)')}
+                {t('Cấu Hình Quy Tắc Kinh Doanh & Chính Sách Giá Động')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {t('Thiết lập đơn giá Tiêu Chuẩn & Máy Lạnh A/C cho 5 loại kho chuẩn và chính sách kinh doanh (áp dụng theo quy chuẩn BR-RULE-011).')}
+                {t('Thiết lập đơn giá Tiêu Chuẩn & Máy Lạnh A/C cho các loại kho chuẩn và chính sách kinh doanh ')}
               </p>
             </div>
           </div>
@@ -418,13 +418,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={handleResetDefaults}
-              className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
-            >
-              {t('Khôi phục mặc định')}
-            </button>
             {canManagePolicies && (
               <button
                 type="submit"
@@ -455,11 +448,8 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                 <div className="flex items-center gap-2">
                   <span className="material-symbols-outlined text-cyan-600 text-[20px]">sell</span>
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('5 Loại Kho (BR-RULE-011)')}</h3>
+                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{unitTypes.length}</h3>
                 </div>
-                <span className="text-[10px] bg-cyan-100 text-cyan-800 font-bold px-1.5 py-0.5 rounded font-mono">
-                  {unitTypes.length}/5 {t('loại kho')}
-                </span>
               </div>
               <p className="text-[11px] text-slate-500 mt-2 mb-2.5">
                 {selectedFacilityId === 'all'
@@ -698,7 +688,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-600 text-[18px]">table_chart</span>
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {t('Danh mục 5 loại kho chuẩn & giá niêm yết hiện hành (Tiêu chuẩn vs Máy lạnh A/C)')}
+                  {t('Danh mục các loại kho chuẩn & giá niêm yết hiện hành (Tiêu chuẩn vs Máy lạnh A/C)')}
                 </span>
               </div>
               <span className="text-[11px] text-slate-500 font-mono">

@@ -581,14 +581,6 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                 <div className="flex flex-col gap-4">
                   {/* Top 4 KPI Metrics */}
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Nợ gốc (Tiền thuê)</p>
-                      <p className="text-lg font-black text-slate-800 mt-1">{formatVND(detail.principalDebt)}</p>
-                    </div>
-                    <div className="p-3.5 bg-rose-50/70 rounded-xl border border-rose-200">
-                      <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Phí phạt trễ hạn</p>
-                      <p className="text-lg font-black text-rose-700 mt-1">{formatVND(detail.lateFee)}</p>
-                    </div>
                     <div className="p-3.5 bg-rose-600 text-white rounded-xl shadow-xs">
                       <p className="text-[11px] font-semibold text-rose-100 uppercase tracking-wider">Tổng công nợ</p>
                       <p className="text-lg font-black text-white mt-1">{formatVND(detail.totalDebt)}</p>
@@ -596,6 +588,10 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                     <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200">
                       <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">Tiền cọc giữ</p>
                       <p className="text-lg font-black text-emerald-800 mt-1">{formatVND(detail.depositHeld)}</p>
+                    </div>
+                    <div className="p-3.5 bg-rose-50/70 rounded-xl border border-rose-200">
+                      <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Phí phạt trễ hạn</p>
+                      <p className="text-lg font-black text-rose-700 mt-1">{formatVND(detail.lateFee)}</p>
                     </div>
                   </div>
 
@@ -607,7 +603,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                     </h4>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs bg-white p-3 rounded-lg border border-slate-200">
                       <div>
-                        <span className="text-slate-500 block">Ngày hết hạn (Due Date):</span>
+                        <span className="text-slate-500 block">Ngày hết hạn:</span>
                         <span className="font-bold text-slate-800">{detail.dueDate}</span>
                       </div>
                       <div>
