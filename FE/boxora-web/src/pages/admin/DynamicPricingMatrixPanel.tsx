@@ -338,48 +338,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               3 Kỳ hạn
             </span>
           </div>
-
-          {/* Card 2: Tiền cọc */}
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span className="material-symbols-outlined text-cyan-600 text-[20px]">account_balance_wallet</span>
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Quy định tiền cọc')}</h3>
-            </div>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="depositOption"
-                  disabled={!canManagePolicies}
-                  checked={depositOption === '1month'}
-                  onChange={() => setDepositOption('1month')}
-                  className="text-cyan-700"
-                />
-                <span>Cọc 01 tháng tiền thuê (100%)</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="depositOption"
-                  disabled={!canManagePolicies}
-                  checked={depositOption === '2months'}
-                  onChange={() => setDepositOption('2months')}
-                  className="text-cyan-700"
-                />
-                <span>Cọc 02 tháng tiền thuê (200%)</span>
-              </label>
-              <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
-                * Tiền cọc được giữ an toàn trên tài khoản ký quỹ trung gian và hoàn trả theo quy định SLA.
-              </p>
-            </div>
-          </div>
-
-
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span className="material-symbols-outlined text-cyan-600 text-[20px]">percent</span>
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Chiết khấu kỳ hạn')}</h3>
-            </div>
           <div className="space-y-3">
             {/* 3 Months Discount Row */}
             <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
