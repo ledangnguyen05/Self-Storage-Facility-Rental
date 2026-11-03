@@ -1,5 +1,6 @@
 package com.boxora.service.impl;
 
+import java.math.BigDecimal;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.FacilityPolicyCreateRequest;
 import com.boxora.dto.request.FacilityPolicyPriceRequest;
@@ -115,6 +116,9 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
                 .cancellationPartialRefundHours(request.getCancellationPartialRefundHours())
                 .cancellationPartialRefundPercent(request.getCancellationPartialRefundPercent())
                 .cancellationAfter48hRefundPercent(after48hPercent)
+                .discount3MonthPercent(request.getDiscount3MonthPercent() != null ? request.getDiscount3MonthPercent() : BigDecimal.valueOf(5.0))
+                .discount6MonthPercent(request.getDiscount6MonthPercent() != null ? request.getDiscount6MonthPercent() : BigDecimal.valueOf(10.0))
+                .discount12MonthPercent(request.getDiscount12MonthPercent() != null ? request.getDiscount12MonthPercent() : BigDecimal.valueOf(15.0))
                 .returnNoticeDays(request.getReturnNoticeDays() != null ? request.getReturnNoticeDays() : 0)
                 .depositRefundSlaDays(request.getDepositRefundSlaDays())
                 .dailyLateFee(request.getDailyLateFee())
@@ -171,6 +175,15 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
         }
         if (request.getCancellationAfter48hRefundPercent() != null) {
             policy.setCancellationAfter48hRefundPercent(request.getCancellationAfter48hRefundPercent());
+        }
+        if (request.getDiscount3MonthPercent() != null) {
+            policy.setDiscount3MonthPercent(request.getDiscount3MonthPercent());
+        }
+        if (request.getDiscount6MonthPercent() != null) {
+            policy.setDiscount6MonthPercent(request.getDiscount6MonthPercent());
+        }
+        if (request.getDiscount12MonthPercent() != null) {
+            policy.setDiscount12MonthPercent(request.getDiscount12MonthPercent());
         }
         if (request.getPrices() != null) {
             replacePrices(policy, request.getPrices());

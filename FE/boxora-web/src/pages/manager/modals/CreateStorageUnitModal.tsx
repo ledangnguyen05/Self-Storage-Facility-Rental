@@ -3,6 +3,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { Facility, StorageUnit, UnitType } from '../../../types'
 import { storageUnitService } from '../../../services/storageUnitService'
 import { useLanguage } from '../../../context/LanguageContext'
+import { parseFacilityFloorPlanConfig } from '../../../utils/facilityLayout'
 
 interface CreateStorageUnitModalProps {
   isOpen: boolean
@@ -12,7 +13,8 @@ interface CreateStorageUnitModalProps {
   onCreated: (unit: StorageUnit) => void
 }
 
-const fieldClassName = 'mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100'
+const fieldClassName =
+  'mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 font-medium'
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -31,79 +33,113 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
 }) => {
   const { role, user } = useAuth()
   const { language, t } = useLanguage()
+
   const [unitTypes, setUnitTypes] = useState<UnitType[]>([])
   const [isLoadingTypes, setIsLoadingTypes] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Form states
   const [unitCode, setUnitCode] = useState('')
-  const [facilityId, setFacilityId] = useState('')
   const [unitTypeId, setUnitTypeId] = useState('')
-  const [floorLevel, setFloorLevel] = useState('Tầng 1')
-  const [pricePerMonth, setPricePerMonth] = useState('')
+  const [selectedFloorName, setSelectedFloorName] = useState('')
+  const [selectedZoneCode, setSelectedZoneCode] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
-  const effectiveFacilityId = user?.facilityId || selectedFacilityId || ''
+  // Resolve assigned facility: FM only manages assigned facility
+  const effectiveFacilityId = user?.facilityId || selectedFacilityId || facilities[0]?.id || ''
+  const currentFacility = useMemo(() => {
+    return facilities.find((f) => f.id === effectiveFacilityId) || facilities[0] || null
+  }, [facilities, effectiveFacilityId])
+
+  // Parse Floor Plan / Layout Config dynamically
+  const floorPlanConfig = useMemo(() => {
+    return parseFacilityFloorPlanConfig(currentFacility?.layoutConfig)
+  }, [currentFacility?.layoutConfig])
+
+  // Only ACTIVE floors (Task 6.2)
+  const activeFloors = useMemo(() => {
+    if (!floorPlanConfig?.floors || floorPlanConfig.floors.length === 0) return []
+    return floorPlanConfig.floors.filter((fl) => fl.status === 'ACTIVE' || !fl.status)
+  }, [floorPlanConfig])
+
+  // Matched Floor object
+  const currentFloorObj = useMemo(() => {
+    if (activeFloors.length === 0) return null
+    return (
+      activeFloors.find(
+        (f) => f.name === selectedFloorName || f.code === selectedFloorName
+      ) || activeFloors[0]
+    )
+  }, [activeFloors, selectedFloorName])
+
+  // Only ACTIVE STORAGE ZONES (Task 6.2: Exclude functional areas like loading bay, restroom, office)
+  const activeStorageZones = useMemo(() => {
+    if (!currentFloorObj?.zones || currentFloorObj.zones.length === 0) return []
+    return currentFloorObj.zones.filter((zn) => zn.status === 'ACTIVE' || !zn.status)
+  }, [currentFloorObj])
+
+  // Matched Zone object
+  const currentZoneObj = useMemo(() => {
+    if (activeStorageZones.length === 0) return null
+    return (
+      activeStorageZones.find(
+        (z) => z.code === selectedZoneCode || z.id === selectedZoneCode
+      ) || activeStorageZones[0]
+    )
+  }, [activeStorageZones, selectedZoneCode])
 
   const selectedType = useMemo(
-    () => unitTypes.find(unitType => unitType.id === unitTypeId),
+    () => unitTypes.find((ut) => ut.id === unitTypeId),
     [unitTypes, unitTypeId]
   )
-  const availableFacilities = useMemo(() => {
-    if ((role === 'FACILITY_MANAGER' || role === 'STAFF') && effectiveFacilityId) {
-      const filtered = facilities.filter(facility => facility.id === effectiveFacilityId)
-      if (filtered.length > 0) return filtered
-      if (user?.facilityName) {
-        return [{
-          id: effectiveFacilityId,
-          name: user.facilityName,
-          code: user.facilityCode || 'HCM-D1',
-          address: '',
-          city: '',
-          status: 'ACTIVE' as const,
-          openTime: '',
-          closeTime: '',
-          createdAt: '',
-          updatedAt: ''
-        }]
-      }
-    }
-    return facilities.length > 0 ? facilities : []
-  }, [facilities, role, effectiveFacilityId, user?.facilityName, user?.facilityCode])
 
   useEffect(() => {
     if (!isOpen) return
 
     setUnitCode('')
-    setUnitTypeId('')
-    setFloorLevel('Tầng 1')
-    setPricePerMonth('')
     setErrorMessage('')
-    const initialFac = effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id || ''
-    setFacilityId(initialFac)
     setIsLoadingTypes(true)
 
-    storageUnitService.getUnitTypes()
-      .then(types => {
-        const availableTypes = Array.isArray(types) ? types : []
+    // Set initial floor
+    if (activeFloors.length > 0) {
+      const firstFl = activeFloors[0]
+      setSelectedFloorName(firstFl.name || firstFl.code)
+    }
+
+    // Load active unit types
+    storageUnitService
+      .getUnitTypes()
+      .then((types) => {
+        const availableTypes = Array.isArray(types)
+          ? types.filter((ut) => ut.isActive !== false) // Only show active unit types for new creation
+          : []
         setUnitTypes(availableTypes)
         if (availableTypes.length > 0) {
           setUnitTypeId(availableTypes[0].id)
         }
       })
-      .catch(error => {
+      .catch((error) => {
         setUnitTypes([])
-        setErrorMessage(getErrorMessage(error, t('Không thể tải danh sách loại kho.', 'Could not load storage types.')))
+        setErrorMessage(
+          getErrorMessage(error, t('Không thể tải danh sách loại kho.', 'Could not load storage types.'))
+        )
       })
       .finally(() => setIsLoadingTypes(false))
-  }, [isOpen, effectiveFacilityId])
+  }, [isOpen, activeFloors.length])
 
+  // Sync selected zone code when floor changes
   useEffect(() => {
-    if (isOpen && !facilityId) {
-      const resolved = effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id || ''
-      if (resolved) {
-        setFacilityId(resolved)
+    if (activeStorageZones.length > 0) {
+      const match = activeStorageZones.find(
+        (z) => z.code === selectedZoneCode || z.id === selectedZoneCode
+      )
+      if (!match) {
+        setSelectedZoneCode(activeStorageZones[0].code || activeStorageZones[0].id)
       }
+    } else {
+      setSelectedZoneCode('')
     }
-  }, [isOpen, facilityId, availableFacilities, effectiveFacilityId, facilities])
+  }, [currentFloorObj, activeStorageZones])
 
   const close = () => {
     if (!isSubmitting) onClose()
@@ -118,19 +154,36 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
       setErrorMessage(t('Vui lòng nhập mã kho.', 'Enter a storage unit code.'))
       return
     }
-    const targetFacility = facilityId || effectiveFacilityId || availableFacilities[0]?.id || facilities[0]?.id
-    if (!targetFacility) {
-      setErrorMessage(t('Chưa có cơ sở để thêm kho.', 'No facility is available for this storage unit.'))
+
+    if (!effectiveFacilityId) {
+      setErrorMessage(
+        t('Chưa xác định cơ sở để thêm kho.', 'No facility is available for this storage unit.')
+      )
       return
     }
+
     if (!unitTypeId) {
       setErrorMessage(t('Vui lòng chọn loại kho.', 'Select a storage type.'))
       return
     }
 
-    const customPrice = pricePerMonth.trim() ? Number(pricePerMonth) : undefined
-    if (customPrice !== undefined && (!Number.isFinite(customPrice) || customPrice <= 0)) {
-      setErrorMessage(t('Giá thuê phải lớn hơn 0.', 'Monthly rent must be greater than 0.'))
+    if (activeFloors.length === 0) {
+      setErrorMessage(
+        t(
+          'Cơ sở chưa có tầng hoạt động (ACTIVE). Vui lòng cấu hình Sơ đồ mặt bằng trước.',
+          'Facility has no active floors in Floor Plan.'
+        )
+      )
+      return
+    }
+
+    if (activeStorageZones.length === 0) {
+      setErrorMessage(
+        t(
+          'Tầng đã chọn chưa có phân khu lưu trữ hoạt động. Vui lòng thêm phân khu kho trong Sơ đồ mặt bằng.',
+          'Selected floor has no active storage zones.'
+        )
+      )
       return
     }
 
@@ -138,15 +191,22 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
     try {
       const createdUnit = await storageUnitService.createUnit({
         unitCode: trimmedCode,
-        floorLevel,
-        facilityId,
+        floorLevel: currentFloorObj?.name || selectedFloorName,
+        zoneCode: currentZoneObj?.code || selectedZoneCode,
+        zoneName: currentZoneObj?.name,
+        facilityId: effectiveFacilityId,
         unitTypeId,
-        ...(customPrice !== undefined ? { pricePerMonth: customPrice } : {}),
+        // Custom monthly price input removed per Task 6.2; price is resolved by backend from catalog/policy
       })
       onCreated(createdUnit)
       onClose()
     } catch (error) {
-      setErrorMessage(getErrorMessage(error, t('Không thể thêm kho. Vui lòng thử lại.', 'Could not add the storage unit. Please try again.')))
+      setErrorMessage(
+        getErrorMessage(
+          error,
+          t('Không thể thêm kho. Vui lòng thử lại.', 'Could not add the storage unit. Please try again.')
+        )
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -154,14 +214,15 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
 
   if (!isOpen) return null
 
-  const formatVnd = (amount: number) => new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US', {
-    maximumFractionDigits: 0,
-  }).format(amount) + (language === 'vi' ? ' ₫' : ' VND')
+  const formatVnd = (amount: number) =>
+    new Intl.NumberFormat(language === 'vi' ? 'vi-VN' : 'en-US', {
+      maximumFractionDigits: 0,
+    }).format(amount) + (language === 'vi' ? ' ₫' : ' VND')
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
-      onMouseDown={event => {
+      className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs"
+      onMouseDown={(event) => {
         if (event.target === event.currentTarget) close()
       }}
     >
@@ -169,17 +230,26 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-storage-unit-title"
-        className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+        className="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-scale-in"
       >
-        <header className="flex items-start justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-700">
+        {/* Header */}
+        <header className="flex items-start justify-between border-b border-slate-200 px-6 py-4 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <div className="flex items-start gap-3">
-            <span className="material-symbols-outlined rounded-xl bg-blue-50 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300">warehouse</span>
+            <span className="material-symbols-outlined rounded-xl bg-blue-50 p-2 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+              warehouse
+            </span>
             <div>
-              <h2 id="create-storage-unit-title" className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                {t('Thêm kho mới', 'Add a storage unit')}
+              <h2
+                id="create-storage-unit-title"
+                className="text-base font-bold text-slate-900 dark:text-slate-100"
+              >
+                {t('Thêm ngăn kho mới', 'Add a storage unit')}
               </h2>
-              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {t('Nhập thông tin kho để đưa vào danh sách của cơ sở.', 'Enter the unit details to add it to a facility.')}
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {t(
+                  'Khởi tạo ngăn kho vật lý gắn với Tầng & Phân khu trên Sơ đồ mặt bằng cơ sở.',
+                  'Create a storage unit attached to Floor & Zone in the facility floor plan.'
+                )}
               </p>
             </div>
           </div>
@@ -188,54 +258,65 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
             onClick={close}
             disabled={isSubmitting}
             aria-label={t('Đóng', 'Close')}
-            className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
           >
-            <span className="material-symbols-outlined">close</span>
+            <span className="material-symbols-outlined text-xl">close</span>
           </button>
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
           {errorMessage && (
-            <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200">
-              {errorMessage}
+            <div
+              role="alert"
+              className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-200 flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-rose-600 shrink-0">error</span>
+              <span>{errorMessage}</span>
             </div>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Task 6.2: Read-only Facility Badge */}
+          <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Mã kho', 'Storage unit code')} <span className="text-rose-600">*</span>
+              {t('Cơ sở lưu trữ')}
+            </label>
+            <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/70 border border-blue-200 text-blue-900 text-xs font-bold dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-200">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-blue-600">store</span>
+                <span>{currentFacility?.name || user?.facilityName || 'Cơ sở hiện tại'}</span>
+              </div>
+              <span className="text-[10px] bg-blue-200/80 dark:bg-blue-900 text-blue-800 dark:text-blue-200 font-mono px-2 py-0.5 rounded">
+                {currentFacility?.code || 'ACTIVE'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Unit Code */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t('Mã buồng kho', 'Storage unit code')} <span className="text-rose-600">*</span>
+              </label>
               <input
                 autoFocus
                 required
                 maxLength={40}
                 value={unitCode}
-                onChange={event => setUnitCode(event.target.value)}
-                placeholder={t('Ví dụ: A-101', 'Example: A-101')}
+                onChange={(event) => setUnitCode(event.target.value)}
+                placeholder={t('Ví dụ: TB-A-101', 'Example: TB-A-101')}
                 className={fieldClassName}
               />
-            </label>
+            </div>
 
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Cơ sở', 'Facility')} <span className="text-rose-600">*</span>
-              <select
-                required
-                value={facilityId}
-                onChange={event => setFacilityId(event.target.value)}
-                className={fieldClassName}
-              >
-                <option value="" disabled>{t('Chọn cơ sở', 'Select a facility')}</option>
-                {availableFacilities.map(facility => (
-                  <option key={facility.id} value={facility.id}>{facility.name}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Loại kho', 'Storage type')} <span className="text-rose-600">*</span>
+            {/* Storage Type */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t('Loại kho', 'Storage type')} <span className="text-rose-600">*</span>
+              </label>
               <select
                 required
                 value={unitTypeId}
-                onChange={event => setUnitTypeId(event.target.value)}
+                onChange={(event) => setUnitTypeId(event.target.value)}
                 disabled={isLoadingTypes || unitTypes.length === 0}
                 className={fieldClassName}
               >
@@ -244,74 +325,116 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                     ? t('Đang tải loại kho...', 'Loading storage types...')
                     : t('Chọn loại kho', 'Select a storage type')}
                 </option>
-                {unitTypes.map(unitType => (
-                  <option key={unitType.id} value={unitType.id}>{unitType.typeName}</option>
+                {unitTypes.map((unitType) => (
+                  <option key={unitType.id} value={unitType.id}>
+                    {unitType.typeName} ({unitType.dimensions})
+                  </option>
                 ))}
               </select>
-            </label>
+            </div>
 
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Tầng', 'Floor')} <span className="text-rose-600">*</span>
-              <select
-                required
-                value={floorLevel}
-                onChange={event => setFloorLevel(event.target.value)}
-                className={fieldClassName}
-              >
-                <option value="Tầng 1">{t('Tầng 1', 'Floor 1')}</option>
-                <option value="Tầng 2">{t('Tầng 2', 'Floor 2')}</option>
-              </select>
-            </label>
+            {/* Dynamic Floor Selector (Task 6.2: only ACTIVE floors) */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t('Tầng', 'Floor')} <span className="text-rose-600">*</span>
+              </label>
+              {activeFloors.length > 0 ? (
+                <select
+                  required
+                  value={selectedFloorName}
+                  onChange={(event) => setSelectedFloorName(event.target.value)}
+                  className={fieldClassName}
+                >
+                  {activeFloors.map((fl) => (
+                    <option key={fl.id || fl.code} value={fl.name || fl.code}>
+                      {fl.name} ({fl.code})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="p-2 rounded border border-amber-300 bg-amber-50 text-[11px] text-amber-800">
+                  {t('Chưa có tầng hoạt động. Vui lòng tạo tầng trong Sơ đồ mặt bằng.')}
+                </div>
+              )}
+            </div>
+
+            {/* Dynamic Storage Zone Selector (Task 6.2: only ACTIVE STORAGE zones, NO functional areas) */}
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t('Phân khu lưu trữ', 'Storage Zone')} <span className="text-rose-600">*</span>
+              </label>
+              {activeStorageZones.length > 0 ? (
+                <select
+                  required
+                  value={selectedZoneCode}
+                  onChange={(event) => setSelectedZoneCode(event.target.value)}
+                  className={fieldClassName}
+                >
+                  {activeStorageZones.map((zn) => (
+                    <option key={zn.id || zn.code} value={zn.code || zn.id}>
+                      {zn.name} ({zn.code})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="p-2 rounded border border-amber-300 bg-amber-50 text-[11px] text-amber-800">
+                  {t('Tầng này chưa có phân khu kho hoạt động. Vui lòng thêm trong Sơ đồ mặt bằng.')}
+                </div>
+              )}
+            </div>
           </div>
 
+          {/* Selected Type Specs & Standard Pricing Preview */}
           {selectedType && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 space-y-1.5 shadow-2xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-semibold text-slate-800 dark:text-slate-100">{selectedType.typeName}</span>
-                <span>{selectedType.areaSqm} m² · {selectedType.dimensions}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-cyan-600 text-[16px]">
+                    inventory_2
+                  </span>
+                  {selectedType.typeName}
+                </span>
+                <span className="font-mono text-slate-600 dark:text-slate-300">
+                  {selectedType.areaSqm} m² · {selectedType.dimensions}
+                </span>
               </div>
-              <p className="mt-1">{t('Giá chuẩn theo tháng:', 'Standard monthly price:')} <strong>{formatVnd(selectedType.basePricePerMonth)}</strong></p>
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[11px]">
+                <span className="text-slate-500">
+                  {t('Giá niêm yết chuẩn cơ sở:')}
+                </span>
+                <span className="font-mono font-bold text-cyan-700 dark:text-cyan-400">
+                  {formatVnd(selectedType.basePricePerMonth)} / tháng
+                </span>
+              </div>
             </div>
           )}
 
-          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            {t('Giá thuê riêng theo tháng (₫, không bắt buộc)', 'Custom monthly rent (VND, optional)')}
-            <input
-              type="number"
-              min="1"
-              step="1000"
-              value={pricePerMonth}
-              onChange={event => setPricePerMonth(event.target.value)}
-              placeholder={selectedType ? String(selectedType.basePricePerMonth) : t('Để trống để dùng giá chuẩn', 'Leave blank to use the standard price')}
-              className={fieldClassName}
-            />
-            <span className="mt-1 block font-normal text-slate-500 dark:text-slate-400">
-              {t('Để trống nếu áp dụng giá chuẩn của loại kho đã chọn.', 'Leave blank to use the selected storage type’s standard price.')}
-            </span>
-          </label>
-
-          {!isLoadingTypes && unitTypes.length === 0 && !errorMessage && (
-            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-              {t('Hiện chưa có loại kho để lựa chọn.', 'There are no storage types available to choose from.')}
-            </p>
-          )}
-
+          {/* Footer actions */}
           <footer className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end dark:border-slate-800">
             <button
               type="button"
               onClick={close}
               disabled={isSubmitting}
-              className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               {t('Hủy', 'Cancel')}
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || isLoadingTypes || !facilityId || !unitTypes.length}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={
+                isSubmitting ||
+                isLoadingTypes ||
+                !effectiveFacilityId ||
+                unitTypes.length === 0 ||
+                activeFloors.length === 0 ||
+                activeStorageZones.length === 0
+              }
+              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 shadow-xs"
             >
-              {isSubmitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-              {isSubmitting ? t('Đang lưu...', 'Saving...') : t('Thêm kho', 'Add unit')}
+              {isSubmitting && (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+              )}
+              {isSubmitting ? t('Đang lưu...', 'Saving...') : t('Tạo ngăn kho', 'Add unit')}
             </button>
           </footer>
         </form>

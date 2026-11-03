@@ -29,13 +29,15 @@ public class StorageUnitCreateRequest {
     @NotNull(message = "Unit type ID is required")
     private UUID unitTypeId;
 
-    @NotNull(message = "Giá thuê hàng tháng không được để trống")
     @PositiveOrZero(message = "Giá thuê hàng tháng phải lớn hơn hoặc bằng 0")
     private BigDecimal pricePerMonth;
 
-    @NotNull(message = "Diện tích ngăn kho không được để trống")
     @Positive(message = "Diện tích ngăn kho phải lớn hơn 0")
     private Double areaSqMeters;
+
+    private String zoneCode;
+
+    private String zoneName;
 
     private String imageUrl;
 }

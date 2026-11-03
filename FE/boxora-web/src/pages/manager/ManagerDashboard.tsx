@@ -1375,36 +1375,14 @@ export const ManagerDashboard: React.FC = () => {
             <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 font-mono text-xs text-slate-800 uppercase tracking-wider font-semibold">
               <span className="w-2 h-2 rounded-full bg-blue-600"></span> {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho' : 'Quản Lý Vận Hành Cơ Sở'}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold">
-              {currentShiftText}
-            </span>
+
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               {currentFacilityName} — {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng' : 'Bảng Tổng Quan Quản Lý'}
             </h1>
-            {isManagementRole && facilities.length > 1 && (
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl shadow-2xs">
-                <span className="material-symbols-outlined text-[16px] text-blue-600">store</span>
-                <span className="text-xs font-semibold text-slate-500">Chi nhánh:</span>
-                <select
-                  value={selectedFacilityId}
-                  onChange={(e) => {
-                    const newId = e.target.value
-                    setSelectedFacilityId(newId)
-                    if (setSelectedFacility) setSelectedFacility(newId)
-                  }}
-                  className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
-                >
-                  {facilities.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            
           </div>
 
           <p className="text-xs text-slate-500">

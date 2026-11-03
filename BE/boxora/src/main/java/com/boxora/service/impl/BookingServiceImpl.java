@@ -260,6 +260,11 @@ public class BookingServiceImpl implements BookingService {
                 unit = null;
             }
         }
+        if (unitType != null && Boolean.FALSE.equals(unitType.getIsActive())) {
+            log.warn("[UNIT_TYPE_INACTIVE] Booking rejected. UnitType {} ({}) is INACTIVE", unitType.getId(), unitType.getTypeName());
+            throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho đã chọn hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn loại kho khác.");
+        }
+
         LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now(BUSINESS_ZONE);
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
@@ -2513,6 +2518,9 @@ public class BookingServiceImpl implements BookingService {
                 unitType = unitTypeRepository.findByIdForUpdate(request.getUnitTypeId())
                         .orElseGet(() -> unitTypeRepository.findById(request.getUnitTypeId())
                                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND)));
+                if (Boolean.FALSE.equals(unitType.getIsActive())) {
+                    throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho đã chọn hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn loại kho khác.");
+                }
             } else {
                 unitType = existing.getUnitType();
             }

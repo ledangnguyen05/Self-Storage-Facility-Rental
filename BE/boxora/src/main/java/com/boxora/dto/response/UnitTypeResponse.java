@@ -24,6 +24,12 @@ public class UnitTypeResponse {
     private BigDecimal basePricePerMonth;
     private BigDecimal acPricePerMonth;
     private BigDecimal depositAmount;
+    private Boolean isActive;
+    private Double volumeM3;
+    private Double lengthM;
+    private Double widthM;
+    private Double heightM;
+    private Integer capacityBoxes;
     private Long activeUnitsCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

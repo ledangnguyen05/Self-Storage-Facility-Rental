@@ -31,4 +31,23 @@ public class UnitType extends BaseEntity {
 
     @Column(name = "deposit_amount", nullable = false, precision = 12, scale = 2)
     private BigDecimal depositAmount;
+
+    @Column(name = "is_active", nullable = false)
+    @Builder.Default
+    private Boolean isActive = true;
+
+    @Column(name = "volume_m3", precision = 6, scale = 2)
+    private Double volumeM3;
+
+    @Column(name = "length_m", precision = 5, scale = 2)
+    private Double lengthM;
+
+    @Column(name = "width_m", precision = 5, scale = 2)
+    private Double widthM;
+
+    @Column(name = "height_m", precision = 5, scale = 2)
+    private Double heightM;
+
+    @Column(name = "capacity_boxes")
+    private Integer capacityBoxes;
 }

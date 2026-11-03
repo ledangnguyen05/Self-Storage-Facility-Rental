@@ -35,14 +35,41 @@ public class UnitTypeCreateRequest {
     @Schema(description = "Diện tích sàn (m²)", example = "1.0")
     private Double areaSqm;
 
+    @Positive(message = "Volume must be greater than zero")
+    @Schema(description = "Thể tích (m³)", example = "1.0")
+    private Double volumeM3;
+
+    @Positive(message = "Length must be greater than zero")
+    @Schema(description = "Chiều dài (m)", example = "1.0")
+    private Double lengthM;
+
+    @Positive(message = "Width must be greater than zero")
+    @Schema(description = "Chiều rộng (m)", example = "1.0")
+    private Double widthM;
+
+    @Positive(message = "Height must be greater than zero")
+    @Schema(description = "Chiều cao (m)", example = "1.2")
+    private Double heightM;
+
+    @PositiveOrZero(message = "Capacity boxes cannot be negative")
+    @Schema(description = "Sức chứa ước tính (số thùng)", example = "6")
+    private Integer capacityBoxes;
+
+    @Builder.Default
+    @Schema(description = "Trạng thái hoạt động của loại kho", example = "true")
+    private Boolean isActive = true;
+
     @NotNull(message = "Base price per month is mandatory")
     @Positive(message = "Base price per month must be greater than zero")
     @Schema(description = "Đơn giá cơ bản thuê mỗi tháng (VNĐ)", example = "450000.00")
     private BigDecimal basePricePerMonth;
+
+    @Positive(message = "AC price per month must be greater than zero")
+    @Schema(description = "Đơn giá máy lạnh A/C mỗi tháng (VNĐ)", example = "540000.00")
+    private BigDecimal acPricePerMonth;
 
     @NotNull(message = "Deposit amount is mandatory")
     @PositiveOrZero(message = "Deposit amount cannot be negative")
     @Schema(description = "Tiền đặt cọc chuẩn (VNĐ)", example = "450000.00")
     private BigDecimal depositAmount;
 }
-

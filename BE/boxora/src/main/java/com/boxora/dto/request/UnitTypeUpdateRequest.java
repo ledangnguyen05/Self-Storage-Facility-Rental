@@ -30,6 +30,29 @@ public class UnitTypeUpdateRequest {
     @Schema(description = "Diện tích sàn cập nhật (m²)", example = "1.0")
     private Double areaSqm;
 
+    @Positive(message = "Volume must be greater than zero")
+    @Schema(description = "Thể tích cập nhật (m³)", example = "1.0")
+    private Double volumeM3;
+
+    @Positive(message = "Length must be greater than zero")
+    @Schema(description = "Chiều dài (m)", example = "1.0")
+    private Double lengthM;
+
+    @Positive(message = "Width must be greater than zero")
+    @Schema(description = "Chiều rộng (m)", example = "1.0")
+    private Double widthM;
+
+    @Positive(message = "Height must be greater than zero")
+    @Schema(description = "Chiều cao (m)", example = "1.2")
+    private Double heightM;
+
+    @PositiveOrZero(message = "Capacity boxes cannot be negative")
+    @Schema(description = "Sức chứa ước tính (số thùng)", example = "6")
+    private Integer capacityBoxes;
+
+    @Schema(description = "Trạng thái hoạt động của loại kho", example = "true")
+    private Boolean isActive;
+
     @Positive(message = "Base price per month must be greater than zero")
     @Schema(description = "Đơn giá tiêu chuẩn mới mỗi tháng (VNĐ)", example = "350000.00")
     private BigDecimal basePricePerMonth;

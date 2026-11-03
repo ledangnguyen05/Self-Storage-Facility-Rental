@@ -6,6 +6,8 @@ export interface StorageUnitCreateRequest {
   floorLevel: string
   facilityId: string
   unitTypeId: string
+  zoneCode?: string
+  zoneName?: string
   pricePerMonth?: number
   imageUrl?: string
 }
@@ -89,8 +91,15 @@ export const storageUnitService = {
       typeName?: string
       dimensions?: string
       areaSqm?: number
+      volumeM3?: number
+      lengthM?: number
+      widthM?: number
+      heightM?: number
+      capacityBoxes?: number
       depositAmount?: number
       basePricePerMonth?: number
+      acPricePerMonth?: number
+      isActive?: boolean
       priceChangeReason?: string
     }
   ) {

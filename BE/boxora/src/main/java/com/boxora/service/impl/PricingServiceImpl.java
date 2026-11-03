@@ -113,19 +113,28 @@ public class PricingServiceImpl implements PricingService {
         }
 
         // Tự động áp dụng chiết khấu theo kỳ hạn thuê nếu chưa có mã giảm giá hoặc chiết khấu kỳ hạn cao hơn
-        int termDiscountPct = 0;
+        BigDecimal termDiscountPctVal = BigDecimal.ZERO;
         if (months >= 24) {
-            termDiscountPct = 20;
+            termDiscountPctVal = (policy != null)
+                    ? policy.resolveDiscount12MonthPercent()
+                    : BigDecimal.valueOf(20.0);
         } else if (months >= 12) {
-            termDiscountPct = 15;
+            termDiscountPctVal = (policy != null)
+                    ? policy.resolveDiscount12MonthPercent()
+                    : BigDecimal.valueOf(15.0);
         } else if (months >= 6) {
-            termDiscountPct = 10;
+            termDiscountPctVal = (policy != null)
+                    ? policy.resolveDiscount6MonthPercent()
+                    : BigDecimal.valueOf(10.0);
         } else if (months >= 3) {
-            termDiscountPct = 5;
+            termDiscountPctVal = (policy != null)
+                    ? policy.resolveDiscount3MonthPercent()
+                    : BigDecimal.valueOf(5.0);
         }
 
-        if (termDiscountPct > 0) {
-            BigDecimal termDiscountAmount = subtotal.multiply(BigDecimal.valueOf(termDiscountPct))
+        int termDiscountPct = termDiscountPctVal.intValue();
+        if (termDiscountPctVal.compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal termDiscountAmount = subtotal.multiply(termDiscountPctVal)
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             if (termDiscountAmount.compareTo(discountAmount) > 0) {
                 discountPct = termDiscountPct;

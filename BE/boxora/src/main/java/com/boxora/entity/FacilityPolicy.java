@@ -107,6 +107,18 @@ public class FacilityPolicy extends BaseEntity {
     // sau bao nhiêu ngày overdue thì unit có thể bị niêm phong(sealing)
     private Integer overdueSealingDays = 7;
 
+    @Column(name = "discount_3_month_percent", precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal discount3MonthPercent = BigDecimal.valueOf(5.0);
+
+    @Column(name = "discount_6_month_percent", precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal discount6MonthPercent = BigDecimal.valueOf(10.0);
+
+    @Column(name = "discount_12_month_percent", precision = 5, scale = 2)
+    @Builder.Default
+    private BigDecimal discount12MonthPercent = BigDecimal.valueOf(15.0);
+
     @OneToMany(mappedBy = "facilityPolicy", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<FacilityPolicyPrice> prices = new ArrayList<>();
@@ -126,6 +138,18 @@ public class FacilityPolicy extends BaseEntity {
             return cancellationAfter48hRefundPercent;
         }
         return 50.0;
+    }
+
+    public BigDecimal resolveDiscount3MonthPercent() {
+        return discount3MonthPercent != null ? discount3MonthPercent : BigDecimal.valueOf(5.0);
+    }
+
+    public BigDecimal resolveDiscount6MonthPercent() {
+        return discount6MonthPercent != null ? discount6MonthPercent : BigDecimal.valueOf(10.0);
+    }
+
+    public BigDecimal resolveDiscount12MonthPercent() {
+        return discount12MonthPercent != null ? discount12MonthPercent : BigDecimal.valueOf(15.0);
     }
 
     public String getEffectiveVersion() {

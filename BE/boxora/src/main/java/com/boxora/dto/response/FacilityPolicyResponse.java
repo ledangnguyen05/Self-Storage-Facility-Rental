@@ -34,5 +34,9 @@ public class FacilityPolicyResponse {
     private Integer minimumRentalDays;
     private Double cancellationAfter48hRefundPercent;
 
+    private BigDecimal discount3MonthPercent;
+    private BigDecimal discount6MonthPercent;
+    private BigDecimal discount12MonthPercent;
+
     private List<FacilityPolicyPriceResponse> prices;
 }

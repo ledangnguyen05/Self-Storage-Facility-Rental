@@ -16,6 +16,8 @@ public class StorageUnitResponse {
     private UUID id;
     private String unitCode;
     private String floorLevel;
+    private String zoneCode;
+    private String zoneName;
     private String status;
     private UUID facilityId;
     private String facilityName;
