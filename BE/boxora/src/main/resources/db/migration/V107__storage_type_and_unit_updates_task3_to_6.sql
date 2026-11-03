@@ -34,11 +34,11 @@ WHERE id = '10000000-0000-0000-0000-000000000004';
 
 -- Fallback for any other unit types
 UPDATE unit_types
-SET volume_m3 = COALESCE(volume_m3, ROUND(area_sqm * 2.8, 1)),
+SET volume_m3 = COALESCE(volume_m3, ROUND((area_sqm * 2.8)::NUMERIC, 1)),
     length_m = COALESCE(length_m, 2.0),
-    width_m = COALESCE(width_m, ROUND(area_sqm / 2.0, 1)),
+    width_m = COALESCE(width_m, ROUND((area_sqm / 2.0)::NUMERIC, 1)),
     height_m = COALESCE(height_m, 2.8),
-    capacity_boxes = COALESCE(capacity_boxes, ROUND(area_sqm * 16)::INT),
+    capacity_boxes = COALESCE(capacity_boxes, ROUND((area_sqm * 16)::NUMERIC)::INT),
     is_active = TRUE
 WHERE volume_m3 IS NULL;
 

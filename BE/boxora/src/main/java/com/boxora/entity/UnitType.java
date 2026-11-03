@@ -36,16 +36,16 @@ public class UnitType extends BaseEntity {
     @Builder.Default
     private Boolean isActive = true;
 
-    @Column(name = "volume_m3", precision = 6, scale = 2)
+    @Column(name = "volume_m3")
     private Double volumeM3;
 
-    @Column(name = "length_m", precision = 5, scale = 2)
+    @Column(name = "length_m")
     private Double lengthM;
 
-    @Column(name = "width_m", precision = 5, scale = 2)
+    @Column(name = "width_m")
     private Double widthM;
 
-    @Column(name = "height_m", precision = 5, scale = 2)
+    @Column(name = "height_m")
     private Double heightM;
 
     @Column(name = "capacity_boxes")
