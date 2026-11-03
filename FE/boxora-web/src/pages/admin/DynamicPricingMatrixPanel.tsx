@@ -290,60 +290,48 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                {t('Cấu Hình Quy Tắc Kinh Doanh & Chính Sách Giá Động')}
+                {t('3. Quy Tắc Kinh Doanh & Giá Động (Pricing Matrix)')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                {t('Thiết lập đơn giá Tiêu Chuẩn & Máy Lạnh A/C cho các loại kho chuẩn và chính sách kinh doanh ')}
+                {t(
+                  'Quản lý chiết khấu kỳ hạn và danh mục loại kho chuẩn theo quy chuẩn vận hành Boxora.'
+                )}
               </p>
             </div>
           </div>
 
           {/* Facility Selector: Task 5.5 explicitly removes "Toàn cơ sở" / "all" */}
           <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <select
-              value={selectedFacilityId}
-              onChange={(e) => setSelectedFacilityId(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none cursor-pointer"
-            >
-              <option value="all">{t('Tất cả cơ sở (Toàn hệ thống)')}</option>
-              {facilities.map((fac) => (
-                <option key={fac.id} value={fac.id}>
-                  {fac.name}
-                </option>
-              ))}
-            </select>
-            {canManagePolicies && (
-              <button
-                type="submit"
-                disabled={isSaving}
-                className="px-4 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-2xs">
+              <span className="material-symbols-outlined text-slate-500 text-sm">store</span>
+              <span className="text-xs font-semibold text-slate-600">{t('Cơ sở:')}</span>
+              <select
+                value={selectedFacilityId}
+                onChange={(e) => setSelectedFacilityId(e.target.value)}
+                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
               >
-                {isSaving ? (
-                  <>
-                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-                    <span>{t('Đang lưu...')}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[16px]">save</span>
-                    <span>{t('Lưu quy tắc kinh doanh')}</span>
-                  </>
-                )}
-              </button>
-            )}
+                {facilities.map((fac) => (
+                  <option key={fac.id} value={fac.id}>
+                    {fac.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* 4 Feature Columns */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          {/* Card 1: Bảng giá niêm yết theo từng loại kho (Tiêu chuẩn & Máy lạnh A/C) */}
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-cyan-600 text-[20px]">sell</span>
-                  <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{unitTypes.length}</h3>
-                </div>
+        {/* Task 4: ONLY CARD 3 (Chiết khấu kỳ hạn) is kept. Cards 1, 2, 4 are removed. */}
+        <div className="max-w-2xl bg-slate-50/70 border border-slate-200 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-cyan-600 text-[22px]">percent</span>
+              <div>
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  {t('Chiết khấu kỳ hạn')}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {t('Tự động áp dụng chiết khấu khi khách hàng thanh toán trước theo kỳ hạn.')}
+                </p>
               </div>
             </div>
             <span className="text-[11px] font-mono font-bold text-cyan-700 bg-cyan-100/70 px-2 py-0.5 rounded border border-cyan-200">
@@ -351,158 +339,162 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             </span>
           </div>
 
-                      {/* 2 Price Inputs: Tiêu chuẩn vs Máy lạnh A/C */}
-                      <div className="grid grid-cols-2 gap-2 pt-0.5">
-                        {/* 1. Tiêu chuẩn (Non-AC) */}
-                        <div>
-                          <span className="text-[10px] font-semibold text-slate-500 block mb-0.5">
-                            {t('Tiêu chuẩn')}:
-                          </span>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              disabled={!canManagePolicies}
-                              value={currentVal}
-                              onChange={(e) => {
-                                const raw = e.target.value.replace(/\D/g, '')
-                                const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
-                                setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
-                              }}
-                              placeholder="0"
-                              className={`w-full bg-slate-50/50 border rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-slate-800 pr-5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-cyan-500 transition ${
-                                isStdModified ? 'border-amber-400 bg-amber-50/20' : 'border-slate-200'
-                              }`}
-                            />
-                            <span className="absolute right-1.5 top-1 text-[10px] text-slate-400 font-mono">đ</span>
-                          </div>
-                        </div>
-
-                        {/* 2. Máy lạnh A/C */}
-                        <div>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-[10px] font-semibold text-blue-700 flex items-center gap-0.5">
-                              <span className="material-symbols-outlined text-[12px]">ac_unit</span>
-                              {t('Máy lạnh A/C')}:
-                            </span>
-                            {canManagePolicies && (
-                              <button
-                                type="button"
-                                onClick={() => handleAutoCalcAc(ut.id)}
-                                title={t('Tự động tính +20% so với giá tiêu chuẩn')}
-                                className="text-[9px] text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                              >
-                                +20%
-                              </button>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              disabled={!canManagePolicies}
-                              value={currentAcVal}
-                              onChange={(e) => {
-                                const raw = e.target.value.replace(/\D/g, '')
-                                const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
-                                setUnitTypeAcPrices((prev) => ({ ...prev, [ut.id]: formatted }))
-                              }}
-                              placeholder="0"
-                              className={`w-full bg-blue-50/20 border rounded-lg px-2 py-1 text-[11px] font-mono font-bold text-blue-900 pr-5 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition ${
-                                isAcModified ? 'border-amber-400 bg-amber-50/20' : 'border-blue-200'
-                              }`}
-                            />
-                            <span className="absolute right-1.5 top-1 text-[10px] text-blue-400 font-mono">đ</span>
-                          </div>
-                        </div>
+          <div className="space-y-3">
+            {/* 3 Months Discount Row */}
+            <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-emerald-600 text-lg">calendar_today</span>
+                <div>
+                  <div className="text-xs font-bold text-slate-800">{t('Thuê 3 tháng')}</div>
+                  <div className="text-[10px] text-slate-400">Kỳ hạn ngắn tiêu chuẩn</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {editingDiscountTerm === 3 ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      value={tempDiscountVal}
+                      onChange={(e) => setTempDiscountVal(e.target.value)}
+                      className="w-16 px-2 py-1 text-xs font-mono font-bold rounded border border-cyan-400 outline-none text-center"
+                    />
+                    <span className="text-xs font-bold text-slate-600">%</span>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditDiscount}
+                      disabled={isSavingDiscounts}
+                      className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition"
+                      title="Lưu"
+                    >
+                      <span className="material-symbols-outlined text-sm">done</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingDiscountTerm(null)}
+                      className="p-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+                      title="Hủy"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        discount3M > 0
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      }`}
+                    >
+                      {discount3M > 0 ? `-${discount3M}%` : '0%'}
+                    </span>
+                    {canManagePolicies && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditDiscount(3)}
+                          className="p-1 rounded text-slate-400 hover:text-cyan-700 hover:bg-cyan-50 transition"
+                          title="Chỉnh sửa mức chiết khấu"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        {discount3M > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmTerm(3)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                            title="Xóa mức chiết khấu (áp dụng 0%)"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        )}
                       </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
-                      {/* Modification indicator */}
-                      {(isStdModified || isAcModified) && (
-                        <div className="flex items-center justify-between text-[9px] pt-0.5">
-                          <span className="text-slate-400">Gốc: {dbBase.toLocaleString('vi-VN')} đ | AC: {dbAc.toLocaleString('vi-VN')} đ</span>
-                          <span className="text-amber-600 font-semibold">{t('Chưa lưu')}</span>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+            {/* 6 Months Discount Row */}
+            <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-teal-600 text-lg">event_repeat</span>
+                <div>
+                  <div className="text-xs font-bold text-slate-800">{t('Thuê 6 tháng')}</div>
+                  <div className="text-[10px] text-slate-400">Kỳ hạn trung bình ưu đãi</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {editingDiscountTerm === 6 ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      value={tempDiscountVal}
+                      onChange={(e) => setTempDiscountVal(e.target.value)}
+                      className="w-16 px-2 py-1 text-xs font-mono font-bold rounded border border-cyan-400 outline-none text-center"
+                    />
+                    <span className="text-xs font-bold text-slate-600">%</span>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditDiscount}
+                      disabled={isSavingDiscounts}
+                      className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition"
+                      title="Lưu"
+                    >
+                      <span className="material-symbols-outlined text-sm">done</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingDiscountTerm(null)}
+                      className="p-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+                      title="Hủy"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        discount6M > 0
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      }`}
+                    >
+                      {discount6M > 0 ? `-${discount6M}%` : '0%'}
+                    </span>
+                    {canManagePolicies && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditDiscount(6)}
+                          className="p-1 rounded text-slate-400 hover:text-cyan-700 hover:bg-cyan-50 transition"
+                          title="Chỉnh sửa mức chiết khấu"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        {discount6M > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmTerm(6)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                            title="Xóa mức chiết khấu (áp dụng 0%)"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-
-          {/* Card 2: Tiền cọc */}
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span className="material-symbols-outlined text-cyan-600 text-[20px]">account_balance_wallet</span>
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Quy định tiền cọc')}</h3>
-            </div>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="depositOption"
-                  disabled={!canManagePolicies}
-                  checked={depositOption === '1month'}
-                  onChange={() => setDepositOption('1month')}
-                  className="text-cyan-700"
-                />
-                <span>Cọc 01 tháng tiền thuê (100%)</span>
-              </label>
-              <label className="flex items-center gap-2 p-2 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 cursor-pointer">
-                <input
-                  type="radio"
-                  name="depositOption"
-                  disabled={!canManagePolicies}
-                  checked={depositOption === '2months'}
-                  onChange={() => setDepositOption('2months')}
-                  className="text-cyan-700"
-                />
-                <span>Cọc 02 tháng tiền thuê (200%)</span>
-              </label>
-              <p className="text-[10px] text-slate-400 leading-relaxed pt-1">
-                * Tiền cọc được giữ an toàn trên tài khoản ký quỹ trung gian và hoàn trả theo quy định SLA.
-              </p>
-            </div>
-          </div>
-
-          {/* Card 3: Chiết khấu dài hạn */}
-          <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
-              <span className="material-symbols-outlined text-cyan-600 text-[20px]">percent</span>
-              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">{t('Chiết khấu kỳ hạn')}</h3>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 font-medium">Thuê 3 tháng:</span>
-                <input
-                  type="text"
-                  disabled={!canManagePolicies}
-                  value={discount3M}
-                  onChange={(e) => setDiscount3M(e.target.value)}
-                  className="w-16 bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono font-bold text-emerald-700 text-center"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 font-medium">Thuê 6 tháng:</span>
-                <input
-                  type="text"
-                  disabled={!canManagePolicies}
-                  value={discount6M}
-                  onChange={(e) => setDiscount6M(e.target.value)}
-                  className="w-16 bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono font-bold text-emerald-700 text-center"
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-600 font-medium">Thuê 12 tháng:</span>
-                <input
-                  type="text"
-                  disabled={!canManagePolicies}
-                  value={discount12M}
-                  onChange={(e) => setDiscount12M(e.target.value)}
-                  className="w-16 bg-white border border-slate-200 rounded-md px-2 py-1 text-xs font-mono font-bold text-emerald-700 text-center"
-                />
-              </div>
-            </div>
-          </div>
 
             {/* 12 Months Discount Row */}
             <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
@@ -513,25 +505,72 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                   <div className="text-[10px] text-slate-400">Kỳ hạn dài hạn tiết kiệm tối đa</div>
                 </div>
               </div>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">Phạt trễ hạn (VND/ngày):</label>
-                <input
-                  type="text"
-                  disabled={!canManagePolicies}
-                  value={lateFee}
-                  onChange={(e) => setLateFee(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-rose-600"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold text-slate-600 block mb-1">Khóa SmartLock tự động:</label>
-                <input
-                  type="text"
-                  disabled={!canManagePolicies}
-                  value={lockoutDay}
-                  onChange={(e) => setLockoutDay(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-800"
-                />
+              <div className="flex items-center gap-3">
+                {editingDiscountTerm === 12 ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      value={tempDiscountVal}
+                      onChange={(e) => setTempDiscountVal(e.target.value)}
+                      className="w-16 px-2 py-1 text-xs font-mono font-bold rounded border border-cyan-400 outline-none text-center"
+                    />
+                    <span className="text-xs font-bold text-slate-600">%</span>
+                    <button
+                      type="button"
+                      onClick={handleSaveEditDiscount}
+                      disabled={isSavingDiscounts}
+                      className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition"
+                      title="Lưu"
+                    >
+                      <span className="material-symbols-outlined text-sm">done</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingDiscountTerm(null)}
+                      className="p-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition"
+                      title="Hủy"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        discount12M > 0
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                      }`}
+                    >
+                      {discount12M > 0 ? `-${discount12M}%` : '0%'}
+                    </span>
+                    {canManagePolicies && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditDiscount(12)}
+                          className="p-1 rounded text-slate-400 hover:text-cyan-700 hover:bg-cyan-50 transition"
+                          title="Chỉnh sửa mức chiết khấu"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        {discount12M > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteConfirmTerm(12)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                            title="Xóa mức chiết khấu (áp dụng 0%)"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -546,7 +585,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                   view_in_ar
                 </span>
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  {t('Danh mục các loại kho chuẩn & giá niêm yết hiện hành (Tiêu chuẩn vs Máy lạnh A/C)')}
+                  {t('Danh mục các loại kho chuẩn & giá niêm yết hiện hành')}
                 </span>
               </div>
               {/* Task 3.1: Dynamic Count of Unit Types */}
@@ -620,82 +659,72 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                           <div className="text-[10px] text-slate-400">{spec.boxes}</div>
                         </td>
 
-                        {/* 5. Giá Tiêu chuẩn */}
-                        <td className="py-2.5 px-3">
-                          <div className="relative max-w-[140px]">
-                            <input
-                              type="text"
-                              disabled={!canManagePolicies}
-                              value={currentVal}
-                              onChange={(e) => {
-                                const raw = e.target.value.replace(/\D/g, '')
-                                const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
-                                setUnitTypePrices((prev) => ({ ...prev, [ut.id]: formatted }))
-                              }}
-                              className={`w-full bg-white border rounded-lg px-2 py-1 text-xs font-mono font-bold pr-5 ${
-                                isStdModified ? 'border-amber-400 bg-amber-50/30 text-amber-700' : 'border-slate-200 text-slate-800'
+                        {/* 5. Giá Tiêu chuẩn (Task 5.4: synchronized directly) */}
+                        <td className="py-3 px-3.5 font-mono font-bold text-slate-800">
+                          {dbBase.toLocaleString('vi-VN')} đ
+                        </td>
+
+                        {/* 6. Giá Máy lạnh A/C (Task 5.4: no double +20%) */}
+                        <td className="py-3 px-3.5 font-mono font-bold text-teal-700">
+                          {dbAc.toLocaleString('vi-VN')} đ
+                        </td>
+
+                        {/* 7. Trạng thái (Task 5.3) */}
+                        <td className="py-3 px-3.5 text-center">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                              isActive
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                isActive ? 'bg-emerald-500' : 'bg-rose-500'
                               }`}
                             />
-                            <span className="absolute right-1.5 top-1 text-[10px] text-slate-400 font-mono">đ</span>
-                          </div>
-                          {isStdModified && (
-                            <div className="text-[9px] text-slate-400 mt-0.5">Gốc: {dbBase.toLocaleString('vi-VN')} đ</div>
-                          )}
+                            {isActive ? t('Hoạt động') : t('Tạm ngưng')}
+                          </span>
                         </td>
 
-                        {/* 6. Giá Máy lạnh A/C */}
-                        <td className="py-2.5 px-3">
-                          <div className="flex items-center gap-1 max-w-[160px]">
-                            <div className="relative flex-1">
-                              <input
-                                type="text"
-                                disabled={!canManagePolicies}
-                                value={currentAcVal}
-                                onChange={(e) => {
-                                  const raw = e.target.value.replace(/\D/g, '')
-                                  const formatted = raw ? Number(raw).toLocaleString('vi-VN') : ''
-                                  setUnitTypeAcPrices((prev) => ({ ...prev, [ut.id]: formatted }))
-                                }}
-                                className={`w-full bg-blue-50/20 border rounded-lg px-2 py-1 text-xs font-mono font-bold pr-5 ${
-                                  isAcModified ? 'border-amber-400 bg-amber-50/30 text-amber-700' : 'border-blue-200 text-blue-900'
-                                }`}
-                              />
-                              <span className="absolute right-1.5 top-1 text-[10px] text-blue-400 font-mono">đ</span>
-                            </div>
+                        {/* 8. Thao tác: Task 5.1 "Lưu giá" -> "Edit" */}
+                        <td className="py-3 px-3.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
                             {canManagePolicies && (
-                              <button
-                                type="button"
-                                onClick={() => handleAutoCalcAc(ut.id)}
-                                title={t('Tự động tính +20% từ giá tiêu chuẩn')}
-                                className="px-1.5 py-1 text-[10px] rounded bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-mono font-semibold cursor-pointer shrink-0"
-                              >
-                                +20%
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedUnitTypeToEdit(ut)
+                                    setIsEditModalOpen(true)
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-semibold text-xs transition border border-cyan-200 flex items-center gap-1 cursor-pointer"
+                                  title={t('Chỉnh sửa thông tin loại kho')}
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">edit</span>
+                                  <span>{t('Chỉnh sửa')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setStatusConfirmUnitType(ut)}
+                                  className={`p-1 rounded-lg transition border cursor-pointer ${
+                                    isActive
+                                      ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 border-slate-200'
+                                      : 'text-emerald-600 hover:bg-emerald-50 border-emerald-200'
+                                  }`}
+                                  title={
+                                    isActive
+                                      ? t('Tạm ngưng loại kho này')
+                                      : t('Kích hoạt lại loại kho này')
+                                  }
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">
+                                    {isActive ? 'pause_circle' : 'play_circle'}
+                                  </span>
+                                </button>
+                              </>
                             )}
                           </div>
-                          {isAcModified && (
-                            <div className="text-[9px] text-slate-400 mt-0.5">Gốc: {dbAc.toLocaleString('vi-VN')} đ</div>
-                          )}
-                        </td>
-
-                        {/* 7. Thao tác */}
-                        <td className="py-2.5 px-3 text-right">
-                          {canManagePolicies && (
-                            <button
-                              type="button"
-                              disabled={!isModified || isBusy || isSaving}
-                              onClick={() => handleQuickUpdateSingleUnitType(ut)}
-                              className="px-2.5 py-1 rounded-md bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-semibold text-[11px] transition border border-cyan-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1"
-                              title={t('Cập nhật cả giá Tiêu chuẩn và Máy lạnh A/C cho loại kho này (BR-RULE-011)')}
-                            >
-                              {isBusy ? (
-                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-cyan-600 border-t-transparent" />
-                              ) : (
-                                <span className="material-symbols-outlined text-[14px]">price_change</span>
-                              )}
-                              <span>{t('Lưu giá')}</span>
-                            </button>
-                          )}
                         </td>
                       </tr>
                     )
