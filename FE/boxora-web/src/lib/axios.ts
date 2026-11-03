@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { broadcastDataSync } from '../hooks/useRealtimeSync'
 
 export const getApiBaseUrl = (): string => {
   const envUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '')
@@ -82,7 +83,16 @@ const processQueue = (error: any, token: string | null = null) => {
 }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const method = (response.config?.method || '').toLowerCase()
+    const url = response.config?.url || ''
+    const isAuthOnly = url.includes('/api/v1/auth/refresh-token') || url.includes('/api/v1/auth/login') || url.includes('/api/v1/auth/captcha')
+    const isVNPayVerify = url.includes('/vnpay-verify') || url.includes('/vnpay-return')
+    if ((!isAuthOnly && ['post', 'put', 'patch', 'delete'].includes(method)) || isVNPayVerify) {
+      broadcastDataSync(url, method)
+    }
+    return response
+  },
   async (error) => {
     const originalRequest = error.config
 

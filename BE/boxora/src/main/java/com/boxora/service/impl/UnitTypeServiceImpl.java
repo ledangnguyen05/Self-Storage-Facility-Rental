@@ -54,11 +54,23 @@ public class UnitTypeServiceImpl implements UnitTypeService {
             throw new AppException(ErrorCode.UNIT_TYPE_NAME_EXISTED);
         }
 
+        String dimensions = request.getDimensions() != null ? request.getDimensions().trim() : null;
+        if ((dimensions == null || dimensions.isBlank()) && request.getLengthM() != null && request.getWidthM() != null && request.getHeightM() != null) {
+            dimensions = String.format("%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM());
+        }
+
         UnitType unitType = UnitType.builder()
                 .typeName(trimmedName)
-                .dimensions(request.getDimensions().trim())
+                .dimensions(dimensions)
                 .areaSqm(request.getAreaSqm())
+                .volumeM3(request.getVolumeM3())
+                .lengthM(request.getLengthM())
+                .widthM(request.getWidthM())
+                .heightM(request.getHeightM())
+                .capacityBoxes(request.getCapacityBoxes())
+                .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .basePricePerMonth(request.getBasePricePerMonth())
+                .acPricePerMonth(request.getAcPricePerMonth())
                 .depositAmount(request.getDepositAmount())
                 .build();
 
@@ -107,6 +119,40 @@ public class UnitTypeServiceImpl implements UnitTypeService {
             unitType.setAreaSqm(request.getAreaSqm());
         }
 
+        if (request.getVolumeM3() != null) {
+            unitType.setVolumeM3(request.getVolumeM3());
+        }
+
+        if (request.getLengthM() != null) {
+            unitType.setLengthM(request.getLengthM());
+        }
+
+        if (request.getWidthM() != null) {
+            unitType.setWidthM(request.getWidthM());
+        }
+
+        if (request.getHeightM() != null) {
+            unitType.setHeightM(request.getHeightM());
+        }
+
+        if (request.getCapacityBoxes() != null) {
+            unitType.setCapacityBoxes(request.getCapacityBoxes());
+        }
+
+        if (request.getIsActive() != null) {
+            unitType.setIsActive(request.getIsActive());
+        }
+
+        if (request.getLengthM() != null && request.getWidthM() != null && request.getHeightM() != null) {
+            unitType.setDimensions(String.format("%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM()));
+            if (request.getAreaSqm() == null) {
+                unitType.setAreaSqm(Math.round(request.getLengthM() * request.getWidthM() * 100.0) / 100.0);
+            }
+            if (request.getVolumeM3() == null) {
+                unitType.setVolumeM3(Math.round(request.getLengthM() * request.getWidthM() * request.getHeightM() * 10.0) / 10.0);
+            }
+        }
+
         if (request.getDepositAmount() != null) {
             unitType.setDepositAmount(request.getDepositAmount());
         }
@@ -118,6 +164,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
         // BR-RULE-011: Nếu có cập nhật basePricePerMonth, lưu vào lịch sử giá
         if (request.getBasePricePerMonth() != null) {
             BigDecimal currentPrice = unitType.getBasePricePerMonth();
+            unitType.setBasePricePerMonth(request.getBasePricePerMonth());
             if (currentPrice == null || currentPrice.compareTo(request.getBasePricePerMonth()) != 0) {
                 String reason = request.getPriceChangeReason() != null && !request.getPriceChangeReason().isBlank()
                         ? request.getPriceChangeReason().trim()
@@ -235,4 +282,3 @@ public class UnitTypeServiceImpl implements UnitTypeService {
         return storageUnitPriceHistoryService.getPriceHistoryByUnitType(id);
     }
 }
-

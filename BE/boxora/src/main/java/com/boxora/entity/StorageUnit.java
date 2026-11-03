@@ -33,6 +33,12 @@ public class StorageUnit extends BaseEntity {
     @Column(name = "floor_level", length = 50)
     private String floorLevel;
 
+    @Column(name = "zone_code", length = 50)
+    private String zoneCode;
+
+    @Column(name = "zone_name", length = 100)
+    private String zoneName;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 30)
     private UnitStatus status;

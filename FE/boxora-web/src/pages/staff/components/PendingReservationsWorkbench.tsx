@@ -3,6 +3,7 @@ import { Booking, StorageUnit } from '../../../types'
 import { bookingService } from '../../../services/bookingService'
 import { reservationEmailService } from '../../../services/reservationEmailService'
 import { useAuth } from '../../../context/AuthContext'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import { toast } from '../../../utils/toast'
 import {
   EarlyCheckInConfirmModal,
@@ -112,13 +113,13 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
   }, [arrivals])
 
   // Fetch internal arrivals if not provided via props
-  const fetchInternalArrivals = useCallback(async () => {
+  const fetchInternalArrivals = useCallback(async (silent: boolean = false) => {
     if (propArrivals !== undefined && onRefresh) {
       onRefresh()
       return
     }
 
-    setIsInternalLoading(true)
+    if (!silent) setIsInternalLoading(true)
     try {
       const targetId = (!facilityId || facilityId === 'ALL') ? undefined : facilityId
       const data = await bookingService.getUpcomingArrivals(targetId, { timeframe: 'ALL' })
@@ -133,6 +134,16 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
       setIsInternalLoading(false)
     }
   }, [facilityId, propArrivals, onRefresh])
+
+  useEffect(() => {
+    if (propArrivals === undefined) {
+      void fetchInternalArrivals(false)
+    }
+  }, [propArrivals, fetchInternalArrivals])
+
+  useRealtimeSync(() => {
+    void fetchInternalArrivals(true)
+  }, { intervalMs: 5000 })
 
   // Counts
   const counts = useMemo(() => {

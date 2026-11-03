@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import {
   staffAssignmentService,
   StaffAssignmentResponse,
@@ -264,10 +265,12 @@ export const StaffMyShiftsPage: React.FC = () => {
   }
 
   // Fetch all staff data
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (silent?: unknown) => {
     if (!user) return
-    setIsLoading(true)
-    setErrorMsg(null)
+    if (silent !== true) {
+      setIsLoading(true)
+      setErrorMsg(null)
+    }
     try {
       // 1. Fetch staff assignments with date range
       const assignRes = await staffAssignmentService.getAllAssignments({
@@ -297,8 +300,12 @@ export const StaffMyShiftsPage: React.FC = () => {
   }, [user, fromDate, toDate])
 
   useEffect(() => {
-    fetchData()
+    void fetchData(false)
   }, [fetchData])
+
+  useRealtimeSync(() => {
+    void fetchData(true)
+  }, { intervalMs: 5000 })
 
   // Swap splits
   const incomingSwaps = useMemo(() => {

@@ -21,6 +21,8 @@ public class CancellationPolicyDetailResponse {
     private Integer cancellationFullRefundHours;
     private Integer cancellationPartialRefundHours;
     private Double cancellationPartialRefundPercent;
+    private Double cancellationAfter48hRefundPercent;
+    private Integer minimumRentalDays;
     private Integer returnNoticeDays;
     private Integer depositRefundSlaDays;
     private Integer holdGraceHours;

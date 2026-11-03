@@ -1,3 +1,4 @@
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, useSearchParams, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAuth, DEFAULT_PERMISSIONS_BY_ROLE } from '../../context/AuthContext'
@@ -202,8 +203,26 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [activeTab])
 
-  const fetchUsers = async (targetFacilityId?: string) => {
-    setIsLoadingUsers(true)
+  useRealtimeSync(() => {
+    if (activeTab === 'users') {
+      void fetchUsers(facilityFilter, true)
+    } else if (activeTab === 'roles') {
+      void fetchRolesAndPermissions()
+    } else if (activeTab === 'logs') {
+      void fetchLogs(isLoginHistoryMode, logsPage)
+    } else if (activeTab === 'facilities') {
+      facilityService.getFacilities()
+        .then(res => {
+          if (res?.content && res.content.length > 0) {
+            setFacilities(res.content)
+          }
+        })
+        .catch(() => {})
+    }
+  }, { intervalMs: 6000 })
+
+  const fetchUsers = async (targetFacilityId?: string, silent: boolean = false) => {
+    if (!silent) setIsLoadingUsers(true)
     const fac = targetFacilityId !== undefined ? targetFacilityId : facilityFilter
     const effectiveFacId = (fac && fac !== 'ALL' && fac.trim() !== '') ? fac : undefined
 

@@ -168,6 +168,12 @@ export interface UnitType {
   description?: string
   suitableFor?: string
   activeUnitsCount?: number
+  volumeM3?: number
+  lengthM?: number
+  widthM?: number
+  heightM?: number
+  capacityBoxes?: number
+  isActive?: boolean
 }
 
 export interface UnitTypePriceAdjustmentRequest {
@@ -467,6 +473,7 @@ export interface CancellationPolicyDetail {
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   holdGraceHours?: number
@@ -679,15 +686,20 @@ export interface FacilityPolicy {
   depositPercentage?: number
   renewalWindowDays?: number
   minimumRentalMonths?: number
+  minimumRentalDays?: number
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   dailyLateFee?: number
   overdueGraceDays?: number
   overdueAccessDisableDays?: number
   overdueSealingDays?: number
+  discount3MonthPercent?: number
+  discount6MonthPercent?: number
+  discount12MonthPercent?: number
   prices?: FacilityPolicyPrice[]
   // Legacy / UI helper aliases
   depositPercent?: number
@@ -703,26 +715,35 @@ export interface FacilityPolicy {
 
 export interface FacilityPolicyCreateRequest {
   facilityId: string
+  discount3MonthPercent?: number
+  discount6MonthPercent?: number
+  discount12MonthPercent?: number
   isActive?: boolean
   depositPercentage: number
-  renewalWindowDays: number
+  renewalWindowDays?: number
+  minimumRentalDays?: number
   cancellationFullRefundHours: number
   cancellationPartialRefundHours: number
   cancellationPartialRefundPercent: number
-  returnNoticeDays: number
+  cancellationAfter48hRefundPercent?: number
+  returnNoticeDays?: number
   depositRefundSlaDays: number
   dailyLateFee: number
   overdueGraceDays: number
   overdueAccessDisableDays: number
   overdueSealingDays: number
-  minimumRentalMonths: number
+  minimumRentalMonths?: number
   prices?: FacilityPolicyPrice[]
 }
 
 export interface FacilityPolicyUpdateRequest {
   isActive?: boolean
+  discount3MonthPercent?: number
+  discount6MonthPercent?: number
+  discount12MonthPercent?: number
   depositPercentage?: number
   renewalWindowDays?: number
+  minimumRentalDays?: number
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number

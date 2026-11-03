@@ -68,6 +68,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -259,6 +260,11 @@ public class BookingServiceImpl implements BookingService {
                 unit = null;
             }
         }
+        if (unitType != null && Boolean.FALSE.equals(unitType.getIsActive())) {
+            log.warn("[UNIT_TYPE_INACTIVE] Booking rejected. UnitType {} ({}) is INACTIVE", unitType.getId(), unitType.getTypeName());
+            throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho đã chọn hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn loại kho khác.");
+        }
+
         LocalDate startDate = request.getStartDate() != null ? request.getStartDate() : LocalDate.now(BUSINESS_ZONE);
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
 
@@ -282,12 +288,14 @@ public class BookingServiceImpl implements BookingService {
         FacilityPolicy activePolicy = effectiveFacilityId == null
                 ? null
                 : facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(effectiveFacilityId).orElse(null);
-        if (activePolicy != null && activePolicy.getMinimumRentalMonths() != null
-                && months < activePolicy.getMinimumRentalMonths()) {
-            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID);
-        }
 
-        LocalDate endDate = startDate.plusMonths(months);
+        LocalDate endDate = request.getEndDate() != null ? request.getEndDate() : startDate.plusMonths(months);
+        long rentalDays = ChronoUnit.DAYS.between(startDate, endDate);
+        int minRentalDays = activePolicy != null ? activePolicy.resolveMinimumRentalDays() : 30;
+        if (rentalDays < minRentalDays) {
+            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID,
+                    "Thời gian thuê tối thiểu tại cơ sở này là " + minRentalDays + " ngày. Vui lòng chọn thời hạn phù hợp.");
+        }
 
         User customer;
         boolean isStaffOrAdmin = requestContext != null && (
@@ -365,21 +373,16 @@ public class BookingServiceImpl implements BookingService {
             if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
                 totalFee = quote.getTotalRentalFee();
             }
-            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
-                deposit = (request.getDepositPaid() != null && request.getDepositPaid().compareTo(BigDecimal.ZERO) > 0)
-                        ? request.getDepositPaid()
-                        : quote.getDepositAmount();
-            }
+            deposit = quote.getDepositAmount();
         } else if (unitType != null) {
             BigDecimal baseMonthly = unitType.getBasePricePerMonth() != null ? unitType.getBasePricePerMonth() : BigDecimal.valueOf(1500000);
             if (totalFee == null || totalFee.compareTo(BigDecimal.ZERO) <= 0) {
                 totalFee = baseMonthly.multiply(BigDecimal.valueOf(months));
             }
-            if (deposit == null || deposit.compareTo(BigDecimal.ZERO) <= 0) {
-                deposit = unitType.getDepositAmount() != null && unitType.getDepositAmount().compareTo(BigDecimal.ZERO) > 0
-                        ? unitType.getDepositAmount()
-                        : baseMonthly;
-            }
+            double depositPct = (activePolicy != null && activePolicy.getDepositPercentage() != null)
+                    ? activePolicy.getDepositPercentage()
+                    : 100.0;
+            deposit = baseMonthly.multiply(BigDecimal.valueOf(depositPct)).divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
         }
 
         String code = (request.getBookingCode() != null && !request.getBookingCode().isBlank())
@@ -2515,6 +2518,9 @@ public class BookingServiceImpl implements BookingService {
                 unitType = unitTypeRepository.findByIdForUpdate(request.getUnitTypeId())
                         .orElseGet(() -> unitTypeRepository.findById(request.getUnitTypeId())
                                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND)));
+                if (Boolean.FALSE.equals(unitType.getIsActive())) {
+                    throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho đã chọn hiện đang tạm ngưng hoạt động. Quý khách vui lòng chọn loại kho khác.");
+                }
             } else {
                 unitType = existing.getUnitType();
             }

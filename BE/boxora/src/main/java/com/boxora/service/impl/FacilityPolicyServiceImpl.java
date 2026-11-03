@@ -1,5 +1,6 @@
 package com.boxora.service.impl;
 
+import java.math.BigDecimal;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.FacilityPolicyCreateRequest;
 import com.boxora.dto.request.FacilityPolicyPriceRequest;
@@ -96,21 +97,36 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
             throw new AppException(ErrorCode.FACILITY_POLICY_ALREADY_EXISTS);
         }
 
+        int minDays = request.getMinimumRentalDays() != null && request.getMinimumRentalDays() > 0
+                ? request.getMinimumRentalDays()
+                : (request.getMinimumRentalMonths() != null && request.getMinimumRentalMonths() > 0 ? request.getMinimumRentalMonths() * 30 : 30);
+        int minMonths = request.getMinimumRentalMonths() != null && request.getMinimumRentalMonths() > 0
+                ? request.getMinimumRentalMonths()
+                : Math.max(1, (int) Math.ceil(minDays / 30.0));
+        Double after48hPercent = request.getCancellationAfter48hRefundPercent() != null
+                ? request.getCancellationAfter48hRefundPercent()
+                : 50.0;
+
         FacilityPolicy policy = FacilityPolicy.builder()
                 .facility(facility)
                 .isActive(request.getIsActive() == null || request.getIsActive())
                 .depositPercentage(request.getDepositPercentage())
-                .renewalWindowDays(request.getRenewalWindowDays())
+                .renewalWindowDays(request.getRenewalWindowDays() != null ? request.getRenewalWindowDays() : 3)
                 .cancellationFullRefundHours(request.getCancellationFullRefundHours())
                 .cancellationPartialRefundHours(request.getCancellationPartialRefundHours())
                 .cancellationPartialRefundPercent(request.getCancellationPartialRefundPercent())
-                .returnNoticeDays(request.getReturnNoticeDays())
+                .cancellationAfter48hRefundPercent(after48hPercent)
+                .discount3MonthPercent(request.getDiscount3MonthPercent() != null ? request.getDiscount3MonthPercent() : BigDecimal.valueOf(5.0))
+                .discount6MonthPercent(request.getDiscount6MonthPercent() != null ? request.getDiscount6MonthPercent() : BigDecimal.valueOf(10.0))
+                .discount12MonthPercent(request.getDiscount12MonthPercent() != null ? request.getDiscount12MonthPercent() : BigDecimal.valueOf(15.0))
+                .returnNoticeDays(request.getReturnNoticeDays() != null ? request.getReturnNoticeDays() : 0)
                 .depositRefundSlaDays(request.getDepositRefundSlaDays())
                 .dailyLateFee(request.getDailyLateFee())
                 .overdueGraceDays(request.getOverdueGraceDays())
                 .overdueAccessDisableDays(request.getOverdueAccessDisableDays())
                 .overdueSealingDays(request.getOverdueSealingDays())
-                .minimumRentalMonths(request.getMinimumRentalMonths())
+                .minimumRentalMonths(minMonths)
+                .minimumRentalDays(minDays)
                 .build();
 
         replacePrices(policy, request.getPrices());
@@ -153,6 +169,22 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
         }
 
         facilityPolicyMapper.updateEntityFromRequest(request, policy);
+        if (request.getMinimumRentalDays() != null && request.getMinimumRentalDays() > 0) {
+            policy.setMinimumRentalDays(request.getMinimumRentalDays());
+            policy.setMinimumRentalMonths(Math.max(1, (int) Math.ceil(request.getMinimumRentalDays() / 30.0)));
+        }
+        if (request.getCancellationAfter48hRefundPercent() != null) {
+            policy.setCancellationAfter48hRefundPercent(request.getCancellationAfter48hRefundPercent());
+        }
+        if (request.getDiscount3MonthPercent() != null) {
+            policy.setDiscount3MonthPercent(request.getDiscount3MonthPercent());
+        }
+        if (request.getDiscount6MonthPercent() != null) {
+            policy.setDiscount6MonthPercent(request.getDiscount6MonthPercent());
+        }
+        if (request.getDiscount12MonthPercent() != null) {
+            policy.setDiscount12MonthPercent(request.getDiscount12MonthPercent());
+        }
         if (request.getPrices() != null) {
             replacePrices(policy, request.getPrices());
         }

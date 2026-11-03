@@ -170,14 +170,15 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             policyDescription = String.format("Mốc 2: Hủy trong khoảng từ %d đến %d giờ kể từ thời gian đặt kho. Hoàn %.0f%% tiền cọc (khấu trừ %.0f%%) và 100%% tiền thuê kho.",
                     fullRefundHours, partialRefundHours, partialRefundPercent, 100.0 - partialRefundPercent);
         } else {
-            // MỐC 3: Quá 48h kể từ thời gian đặt kho -> Hoàn 50% tiền cọc
+            // MỐC 3: Quá 48h kể từ thời gian đặt kho -> Hoàn % tiền cọc theo cấu hình cơ sở (mặc định 50%)
             milestoneStage = "STAGE_3_OVER_48H_REFUND";
-            refundPercentage = 50.0;
-            depositRefund = depositPaid.multiply(BigDecimal.valueOf(50.0 / 100.0))
+            double after48hPercent = (policy != null) ? policy.resolveAfter48hRefundPercent() : 50.0;
+            refundPercentage = after48hPercent;
+            depositRefund = depositPaid.multiply(BigDecimal.valueOf(after48hPercent / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
             penaltyAmount = depositPaid.subtract(depositRefund);
-            policyDescription = String.format("Mốc 3: Hủy quá %d giờ kể từ thời gian đặt kho. Hoàn 50%% tiền cọc (khấu trừ 50%%) và 100%% tiền thuê kho.",
-                    partialRefundHours);
+            policyDescription = String.format("Mốc 3: Hủy quá %d giờ kể từ thời gian đặt kho. Hoàn %.0f%% tiền cọc (khấu trừ %.0f%%) và 100%% tiền thuê kho.",
+                    partialRefundHours, after48hPercent, 100.0 - after48hPercent);
         }
 
         // Tổng tiền hoàn trả = 100% tiền thuê kho (do chưa nhận kho) + tiền cọc hoàn trả theo mốc

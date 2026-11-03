@@ -84,6 +84,8 @@ public enum ErrorCode {
     CONTRACT_RENEWAL_BEFORE_CHECKIN_TIME(734, "Đúng ngày nhưng chưa đến giờ hẹn tiếp đón gia hạn hợp đồng. Vui lòng chờ đến giờ hợp lệ.", HttpStatus.BAD_REQUEST),
     BOOKING_CANNOT_REVOKE_CANCEL(735, "Không thể hủy yêu cầu trả kho ở trạng thái hiện tại", HttpStatus.BAD_REQUEST),
     BOOKING_REFUND_ALREADY_PROCESSED(736, "Yêu cầu hoàn tiền đã được xử lý hoặc giải ngân, không thể thu hồi", HttpStatus.BAD_REQUEST),
+    UNIT_TYPE_INACTIVE(737, "Loại kho đã chọn hiện đang tạm ngưng hoạt động", HttpStatus.BAD_REQUEST),
+    STORAGE_UNIT_FLOOR_OR_ZONE_INVALID(738, "Phân khu hoặc tầng được chọn không hợp lệ cho cơ sở này", HttpStatus.BAD_REQUEST),
 
 
     // ========================= PAYMENT (750 - 799) =========================

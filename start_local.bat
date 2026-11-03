@@ -72,7 +72,8 @@ powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8080 -State 
 if %errorlevel% equ 0 goto BACKEND_ALREADY_UP
 
 set "JAR_FILE=%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar"
-if exist "!JAR_FILE!" goto START_BACKEND_JAR
+powershell -NoProfile -Command "if (!(Test-Path 'BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar')) { exit 1 }; $jarTime=(Get-Item 'BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar').LastWriteTime; $newer=Get-ChildItem 'BE\boxora\src' -Recurse -File | Where-Object { $_.LastWriteTime -gt $jarTime } | Select-Object -First 1; if ($newer) { exit 1 } else { exit 0 }"
+if %errorlevel% equ 0 goto START_BACKEND_JAR
 
 echo   - Chua co file JAR, dang build va chay Backend (lan dau co the mat vai phut)...
 start "BOXORA - BACKEND (8080)" /d "%~dp0BE\boxora" cmd /k "call setup_and_run_backend.bat 1"

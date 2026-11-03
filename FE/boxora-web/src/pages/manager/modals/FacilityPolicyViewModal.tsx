@@ -225,7 +225,7 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">Hủy quá {cancelPartHours ?? '48'}h:</span>
-                <span className="font-mono font-bold text-sky-700 dark:text-sky-400">Hoàn 50% tiền cọc</span>
+                <span className="font-mono font-bold text-sky-700 dark:text-sky-400">Hoàn {policy?.cancellationAfter48hRefundPercent ?? 50}% tiền cọc</span>
               </div>
             </div>
           </div>
@@ -265,7 +265,7 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">Phí phạt trễ hạn mỗi ngày:</span>
-                <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{lateFee == null ? '—' : `${Number(lateFee).toLocaleString('vi-VN')} đ/ngày`}</span>
+                <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{lateFee == null ? '—' : Number(lateFee) === 0 ? '0 đ/ngày (Miễn phí)' : `${Number(lateFee).toLocaleString('vi-VN')} đ/ngày`}</span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">Khóa quyền mở cửa SmartLock:</span>

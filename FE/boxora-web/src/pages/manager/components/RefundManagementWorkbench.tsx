@@ -1,3 +1,4 @@
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { refundService, RefundRequestItem, RefundStatusType } from '../../../services/refundService'
 import { toast } from '../../../utils/toast'
@@ -33,9 +34,9 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
   const fileInputRef = useRef<HTMLInputElement>(null)
 
 
-  const fetchRefunds = async () => {
+  const fetchRefunds = async (silent?: unknown) => {
     try {
-      setLoading(true)
+      if (silent !== true) setLoading(true)
       const data = await refundService.getAll({
         facilityId: facilityId && facilityId !== 'ALL' ? facilityId : undefined,
         size: 200
@@ -56,8 +57,12 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
   }
 
   useEffect(() => {
-    fetchRefunds()
+    void fetchRefunds(false)
   }, [facilityId])
+
+  useRealtimeSync(() => {
+    void fetchRefunds(true)
+  }, { intervalMs: 5000 })
 
   // Copy to clipboard helper
   const copyToClipboard = (text: string, label: string) => {

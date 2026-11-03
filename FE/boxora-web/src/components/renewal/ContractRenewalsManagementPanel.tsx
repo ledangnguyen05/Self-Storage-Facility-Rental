@@ -4,6 +4,7 @@ import { contractService } from '../../services/contractService'
 import { userService } from '../../services/userService'
 import { staffAssignmentService } from '../../services/staffAssignmentService'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { toast } from '../../utils/toast'
 import { RenewalAddendumModal } from '../modals/RenewalAddendumModal'
 
@@ -306,9 +307,11 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
   }
 
   // Fetch renewals from backend (loads full facility dataset so KPI counters remain accurate and unskewed)
-  const fetchRenewals = useCallback(async () => {
-    setIsLoading(true)
-    setErrorMsg(null)
+  const fetchRenewals = useCallback(async (silent?: unknown) => {
+    if (silent !== true) {
+      setIsLoading(true)
+      setErrorMsg(null)
+    }
     try {
       const facilityIdParam =
         selectedFacility !== 'all' && selectedFacility ? selectedFacility : (currentFacilityId && !showChainWideFilter ? currentFacilityId : undefined)
@@ -331,8 +334,12 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
   }, [selectedFacility, currentFacilityId, showChainWideFilter])
 
   useEffect(() => {
-    fetchRenewals()
+    void fetchRenewals(false)
   }, [fetchRenewals])
+
+  useRealtimeSync(() => {
+    void fetchRenewals(true)
+  }, { intervalMs: 5000 })
 
   // Shift & Attendance check for reception desk
   const checkUserShiftStatus = useCallback(async (facId?: string) => {

@@ -84,12 +84,12 @@ set "JAR_FILE=%~dp0BE\boxora\target\boxora-backend-0.0.1-SNAPSHOT.jar"
 if exist "%JAR_FILE%" goto :START_BACKEND_JAR
 
 echo   - Chua co file JAR, dang build va khoi dong Backend qua Maven...
-start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0" cmd /k "call setup_and_run_backend.bat 1"
+start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "call setup_and_run_backend.bat 1"
 goto :WAIT_BACKEND
 
 :START_BACKEND_JAR
 echo   - Tim thay JAR, khoi dong truc tiep...
-start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0" cmd /k "call setup_and_run_backend.bat 2"
+start "BOXORA - BACKEND (PORT 8080)" /d "%~dp0BE\boxora" cmd /k "call setup_and_run_backend.bat 2"
 
 :WAIT_BACKEND
 echo   - Dang cho Backend khoi dong tren Port 8080 (toi da 90 giay)...

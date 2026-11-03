@@ -14,6 +14,7 @@ import {
 } from '../../services/staffAssignmentService'
 import { AttendanceReportTab } from './components/AttendanceReportTab'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility, User } from '../../types'
 import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
 import { ShiftSwapModal } from './modals/ShiftSwapModal'
@@ -327,8 +328,8 @@ export const ShiftRosterPage: React.FC = () => {
   }
 
   // Fetch all operational data for selected facility & date range
-  const fetchData = useCallback(async () => {
-    setIsLoading(true)
+  const fetchData = useCallback(async (silent?: unknown) => {
+    if (silent !== true) setIsLoading(true)
     try {
       const targetFacilityId = (!selectedFacilityId || selectedFacilityId.toUpperCase() === 'ALL') ? undefined : selectedFacilityId
 
@@ -401,8 +402,12 @@ export const ShiftRosterPage: React.FC = () => {
   }, [selectedFacilityId, appliedStartDate, appliedEndDate, isBusinessManager])
 
   useEffect(() => {
-    fetchData()
+    void fetchData(false)
   }, [fetchData])
+
+  useRealtimeSync(() => {
+    void fetchData(true)
+  }, { intervalMs: 5000 })
 
   const currentFacilityName = useMemo(() => {
     if (selectedFacilityId === 'ALL') return 'Toàn chuỗi (Tất cả cơ sở)'

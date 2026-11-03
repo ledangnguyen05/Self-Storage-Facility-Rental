@@ -28,6 +28,9 @@ import com.boxora.repository.UnitTypeRepository;
 import com.boxora.security.FacilityAccessGuard;
 import com.boxora.service.ActivityLogService;
 import com.boxora.service.StorageUnitService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.boxora.entity.FacilityPolicyPrice;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -45,6 +48,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Transactional
 public class StorageUnitServiceImpl implements StorageUnitService {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final StorageUnitRepository storageUnitRepository;
     private final FacilityRepository facilityRepository;
@@ -316,13 +321,104 @@ public class StorageUnitServiceImpl implements StorageUnitService {
             throw new AppException(ErrorCode.STORAGE_UNIT_CODE_EXISTED);
         }
 
-        BigDecimal initialPrice = request.getPricePerMonth() != null
-                ? request.getPricePerMonth()
-                : unitType.getBasePricePerMonth();
+        String floorLevel = request.getFloorLevel() != null ? request.getFloorLevel().trim() : "";
+        String zoneCode = request.getZoneCode() != null ? request.getZoneCode().trim() : null;
+        String zoneName = request.getZoneName() != null ? request.getZoneName().trim() : null;
+
+        // Xác thực Sơ đồ mặt bằng (layoutConfig) của cơ sở nếu có
+        if (facility.getLayoutConfig() != null && !facility.getLayoutConfig().isBlank()) {
+            try {
+                JsonNode root = OBJECT_MAPPER.readTree(facility.getLayoutConfig());
+                JsonNode floors = root.get("floors");
+                if (floors != null && floors.isArray() && !floors.isEmpty()) {
+                    JsonNode matchedFloor = null;
+                    for (JsonNode fl : floors) {
+                        String flName = fl.has("name") ? fl.get("name").asText("") : "";
+                        String flCode = fl.has("code") ? fl.get("code").asText("") : "";
+                        if (floorLevel.equalsIgnoreCase(flName) || floorLevel.equalsIgnoreCase(flCode)) {
+                            matchedFloor = fl;
+                            break;
+                        }
+                    }
+
+                    if (matchedFloor == null) {
+                        throw new AppException(ErrorCode.STORAGE_UNIT_FLOOR_OR_ZONE_INVALID, "Tầng đã chọn không tồn tại trong cấu hình sơ đồ cơ sở");
+                    }
+
+                    String floorStatus = matchedFloor.has("status") ? matchedFloor.get("status").asText("ACTIVE") : "ACTIVE";
+                    if ("INACTIVE".equalsIgnoreCase(floorStatus) || "MAINTENANCE".equalsIgnoreCase(floorStatus)) {
+                        throw new AppException(ErrorCode.STORAGE_UNIT_FLOOR_OR_ZONE_INVALID, "Tầng đã chọn hiện không ở trạng thái hoạt động (ACTIVE)");
+                    }
+
+                    if (zoneCode != null && !zoneCode.isBlank()) {
+                        // Kiểm tra không được chọn khu vực chức năng (functional area)
+                        JsonNode funcAreas = matchedFloor.get("functionalAreas");
+                        if (funcAreas != null && funcAreas.isArray()) {
+                            for (JsonNode fa : funcAreas) {
+                                String faId = fa.has("id") ? fa.get("id").asText("") : "";
+                                String faCode = fa.has("code") ? fa.get("code").asText("") : "";
+                                String faType = fa.has("type") ? fa.get("type").asText("") : "";
+                                if (zoneCode.equalsIgnoreCase(faId) || zoneCode.equalsIgnoreCase(faCode) || zoneCode.equalsIgnoreCase(faType)) {
+                                    throw new AppException(ErrorCode.STORAGE_UNIT_FLOOR_OR_ZONE_INVALID, "Không được phép tạo ngăn kho trong khu vực chức năng (" + faType + ")");
+                                }
+                            }
+                        }
+
+                        // Tìm trong danh sách phân khu kho (zones)
+                        JsonNode zones = matchedFloor.get("zones");
+                        JsonNode matchedZone = null;
+                        if (zones != null && zones.isArray()) {
+                            for (JsonNode zn : zones) {
+                                String znId = zn.has("id") ? zn.get("id").asText("") : "";
+                                String znCode = zn.has("code") ? zn.get("code").asText("") : "";
+                                if (zoneCode.equalsIgnoreCase(znId) || zoneCode.equalsIgnoreCase(znCode)) {
+                                    matchedZone = zn;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (matchedZone == null) {
+                            throw new AppException(ErrorCode.STORAGE_UNIT_FLOOR_OR_ZONE_INVALID, "Phân khu đã chọn không tồn tại trên tầng này");
+                        }
+
+                        String znStatus = matchedZone.has("status") ? matchedZone.get("status").asText("ACTIVE") : "ACTIVE";
+                        if ("INACTIVE".equalsIgnoreCase(znStatus) || "MAINTENANCE".equalsIgnoreCase(znStatus)) {
+                            throw new AppException(ErrorCode.STORAGE_UNIT_FLOOR_OR_ZONE_INVALID, "Phân khu đã chọn hiện không ở trạng thái hoạt động (ACTIVE)");
+                        }
+
+                        if (zoneName == null || zoneName.isBlank()) {
+                            zoneName = matchedZone.has("name") ? matchedZone.get("name").asText(zoneCode) : zoneCode;
+                        }
+                    }
+                }
+            } catch (AppException e) {
+                throw e;
+            } catch (Exception e) {
+                log.warn("[STORAGE_UNIT_LAYOUT_PARSE_WARN] Failed to parse layoutConfig for facility {}: {}", facility.getId(), e.getMessage());
+            }
+        }
+
+        BigDecimal initialPrice = request.getPricePerMonth();
+        if (initialPrice == null) {
+            FacilityPolicy activePolicy = facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facility.getId()).orElse(null);
+            if (activePolicy != null && activePolicy.getPrices() != null) {
+                initialPrice = activePolicy.getPrices().stream()
+                        .filter(p -> p.getUnitType().getId().equals(unitType.getId()))
+                        .map(FacilityPolicyPrice::getMonthlyPrice)
+                        .findFirst()
+                        .orElse(null);
+            }
+            if (initialPrice == null) {
+                initialPrice = unitType.getBasePricePerMonth();
+            }
+        }
 
         StorageUnit unit = StorageUnit.builder()
                 .unitCode(trimmedCode)
-                .floorLevel(request.getFloorLevel().trim())
+                .floorLevel(floorLevel)
+                .zoneCode(zoneCode)
+                .zoneName(zoneName)
                 .status(UnitStatus.AVAILABLE)
                 .facility(facility)
                 .unitType(unitType)
@@ -604,6 +700,8 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .id(u.getId())
                 .unitCode(u.getUnitCode())
                 .floorLevel(u.getFloorLevel())
+                .zoneCode(u.getZoneCode())
+                .zoneName(u.getZoneName())
                 .status(u.getStatus() != null ? u.getStatus().name() : UnitStatus.AVAILABLE.name())
                 .facilityId(u.getFacility() != null ? u.getFacility().getId() : null)
                 .facilityName(u.getFacility() != null ? u.getFacility().getName() : null)

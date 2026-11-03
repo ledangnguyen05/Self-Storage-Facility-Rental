@@ -51,6 +51,21 @@ public class FacilityPolicyUpdateRequest {
     @Min(1)
     private Integer minimumRentalMonths;
 
+    @Min(1)
+    private Integer minimumRentalDays;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private Double cancellationAfter48hRefundPercent;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private BigDecimal discount3MonthPercent;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private BigDecimal discount6MonthPercent;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private BigDecimal discount12MonthPercent;
+
     @Valid
     private List<FacilityPolicyPriceRequest> prices;
 }

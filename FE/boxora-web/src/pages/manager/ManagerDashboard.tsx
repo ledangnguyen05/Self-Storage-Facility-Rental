@@ -9,6 +9,7 @@ import { contractService } from '../../services/contractService'
 import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, Booking } from '../../types'
 import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
@@ -368,20 +369,12 @@ export const ManagerDashboard: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho
-  useEffect(() => {
-    const handleSync = () => {
-      const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
-      void fetchUpcomingHandovers(targetId)
-      void fetchUnits(targetId)
-    }
-    window.addEventListener('boxora:storage-units-refresh', handleSync)
-    window.addEventListener('boxora_reservation_updated', handleSync)
-    return () => {
-      window.removeEventListener('boxora:storage-units-refresh', handleSync)
-      window.removeEventListener('boxora_reservation_updated', handleSync)
-    }
-  }, [selectedFacilityId])
+  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho (kể cả từ tab/trình duyệt khác)
+  useRealtimeSync(() => {
+    const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
+    void fetchUpcomingHandovers(targetId)
+    void fetchUnits(targetId, true)
+  }, { intervalMs: 5000 })
 
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
@@ -416,8 +409,8 @@ export const ManagerDashboard: React.FC = () => {
     }
   }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, selectedFacilityId])
 
-  const fetchUnits = async (facId?: string) => {
-    setIsLoading(true)
+  const fetchUnits = async (facId?: string, silent: boolean = false) => {
+    if (!silent) setIsLoading(true)
     try {
       const targetId = (facId && facId !== 'ALL')
         ? facId
@@ -1375,36 +1368,14 @@ export const ManagerDashboard: React.FC = () => {
             <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-slate-100 font-mono text-xs text-slate-800 uppercase tracking-wider font-semibold">
               <span className="w-2 h-2 rounded-full bg-blue-600"></span> {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho' : 'Quản Lý Vận Hành Cơ Sở'}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-mono font-bold">
-              {currentShiftText}
-            </span>
+
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
               {currentFacilityName} — {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng' : 'Bảng Tổng Quan Quản Lý'}
             </h1>
-            {isManagementRole && facilities.length > 1 && (
-              <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 border border-slate-200 rounded-xl shadow-2xs">
-                <span className="material-symbols-outlined text-[16px] text-blue-600">store</span>
-                <span className="text-xs font-semibold text-slate-500">Chi nhánh:</span>
-                <select
-                  value={selectedFacilityId}
-                  onChange={(e) => {
-                    const newId = e.target.value
-                    setSelectedFacilityId(newId)
-                    if (setSelectedFacility) setSelectedFacility(newId)
-                  }}
-                  className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
-                >
-                  {facilities.map(f => (
-                    <option key={f.id} value={f.id}>
-                      {f.name.replace(/StoreHub\s*/gi, 'Boxora ')} ({f.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            
           </div>
 
           <p className="text-xs text-slate-500">

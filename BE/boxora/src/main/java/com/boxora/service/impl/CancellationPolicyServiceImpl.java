@@ -72,6 +72,8 @@ public class CancellationPolicyServiceImpl implements CancellationPolicyService 
                 .cancellationFullRefundHours(policy.getCancellationFullRefundHours())
                 .cancellationPartialRefundHours(policy.getCancellationPartialRefundHours())
                 .cancellationPartialRefundPercent(policy.getCancellationPartialRefundPercent())
+                .cancellationAfter48hRefundPercent(policy.resolveAfter48hRefundPercent())
+                .minimumRentalDays(policy.resolveMinimumRentalDays())
                 .returnNoticeDays(policy.getReturnNoticeDays())
                 .depositRefundSlaDays(policy.getDepositRefundSlaDays())
                 .holdGraceHours(policy.getHoldGraceHours())

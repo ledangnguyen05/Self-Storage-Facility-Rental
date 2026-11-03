@@ -6,9 +6,11 @@ export type FacilityPolicyValues = Required<Pick<
   | 'depositPercentage'
   | 'renewalWindowDays'
   | 'minimumRentalMonths'
+  | 'minimumRentalDays'
   | 'cancellationFullRefundHours'
   | 'cancellationPartialRefundHours'
   | 'cancellationPartialRefundPercent'
+  | 'cancellationAfter48hRefundPercent'
   | 'returnNoticeDays'
   | 'depositRefundSlaDays'
   | 'dailyLateFee'
@@ -22,9 +24,11 @@ export const FACILITY_POLICY_DEFAULTS: FacilityPolicyValues = {
   depositPercentage: 100,
   renewalWindowDays: 3,
   minimumRentalMonths: 1,
+  minimumRentalDays: 30,
   cancellationFullRefundHours: 24,
   cancellationPartialRefundHours: 48,
   cancellationPartialRefundPercent: 70,
+  cancellationAfter48hRefundPercent: 50,
   returnNoticeDays: 0,
   depositRefundSlaDays: 5,
   dailyLateFee: 200000,

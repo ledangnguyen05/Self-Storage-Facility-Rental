@@ -10,6 +10,7 @@ import { userService } from '../../services/userService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { User, Facility, StorageUnit } from '../../types'
 import { toast } from '../../utils/toast'
 
@@ -156,11 +157,13 @@ export const IncidentTicketsPage: React.FC = () => {
   const [messageContent, setMessageContent] = useState('')
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false)
 
-  const fetchTicketsAndData = useCallback(async (facilityIdOverride?: string) => {
-    setIsLoading(true)
-    setFetchError(null)
-    setTickets([])
-    setStats(null)
+  const fetchTicketsAndData = useCallback(async (facilityIdOverride?: string, silent: boolean = false) => {
+    if (silent !== true) {
+      setIsLoading(true)
+      setFetchError(null)
+      setTickets([])
+      setStats(null)
+    }
     try {
       const activeFilter = facilityIdOverride !== undefined ? facilityIdOverride : selectedFacilityFilter
       let effectiveFacilityId: string | undefined = undefined
@@ -206,8 +209,12 @@ export const IncidentTicketsPage: React.FC = () => {
 
   // Initial load and reload whenever selected facility filter changes
   useEffect(() => {
-    fetchTicketsAndData(selectedFacilityFilter)
+    void fetchTicketsAndData(selectedFacilityFilter, false)
   }, [selectedFacilityFilter, fetchTicketsAndData])
+
+  useRealtimeSync(() => {
+    void fetchTicketsAndData(selectedFacilityFilter, true)
+  }, { intervalMs: 5000 })
 
   // Reset pagination on filter change
   useEffect(() => {

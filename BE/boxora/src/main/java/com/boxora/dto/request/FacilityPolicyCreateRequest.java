@@ -21,7 +21,7 @@ public class FacilityPolicyCreateRequest {
     @NotNull @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
     private Double depositPercentage;
 
-    @NotNull @Min(0)
+    @Min(0)
     private Integer renewalWindowDays;
 
 
@@ -34,7 +34,7 @@ public class FacilityPolicyCreateRequest {
     @NotNull @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
     private Double cancellationPartialRefundPercent;
 
-    @NotNull @Min(0)
+    @Min(0)
     private Integer returnNoticeDays;
 
     @NotNull @Min(0)
@@ -52,8 +52,23 @@ public class FacilityPolicyCreateRequest {
     @NotNull @Min(0)
     private Integer overdueSealingDays;
 
-    @NotNull @Min(1)
+    @Min(1)
     private Integer minimumRentalMonths;
+
+    @Min(1)
+    private Integer minimumRentalDays;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private Double cancellationAfter48hRefundPercent;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private BigDecimal discount3MonthPercent;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private BigDecimal discount6MonthPercent;
+
+    @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    private BigDecimal discount12MonthPercent;
 
     @Valid
     private List<FacilityPolicyPriceRequest> prices;
