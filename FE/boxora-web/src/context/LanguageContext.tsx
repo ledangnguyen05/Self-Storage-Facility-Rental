@@ -6,7 +6,7 @@ export type Language = 'vi' | 'en'
 interface LanguageContextType {
   language: Language
   setLanguage: (lang: Language) => void
-  t: (key: string, fallback?: string) => string
+  t: (key: string, fallback?: string | Record<string, any>, params?: Record<string, any>) => string
 }
 
 // ============================================================================
@@ -1677,37 +1677,65 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     saveWebSettings({ language: newLang })
   }
 
-  const t = (key: string, fallback?: string): string => {
+  const t = (key: string, fallbackOrParams?: string | Record<string, any>, params?: Record<string, any>): string => {
     if (!key) return ''
-    const trimmed = key.trim()
-    if (language === 'en') {
-      if (DICTIONARY[trimmed]) return DICTIONARY[trimmed]
-      if (REVERSE_DICTIONARY[trimmed]) return trimmed
-      if (fallback) {
-        if (DICTIONARY[fallback.trim()]) return DICTIONARY[fallback.trim()]
-        return fallback
-      }
-      // Partial replace for dynamic strings
-      let res = key
-      for (const phrase of SORTED_KEYS) {
-        if (res.includes(phrase)) {
-          res = res.split(phrase).join(DICTIONARY[phrase])
-        }
-      }
-      return res
+    let fallback: string | undefined = undefined
+    let interpolations: Record<string, any> | undefined = params
+
+    if (typeof fallbackOrParams === 'string') {
+      fallback = fallbackOrParams
+    } else if (fallbackOrParams && typeof fallbackOrParams === 'object') {
+      interpolations = fallbackOrParams
     }
 
-    // language === 'vi'
-    if (REVERSE_DICTIONARY[trimmed]) return REVERSE_DICTIONARY[trimmed]
-    if (fallback && DICTIONARY[fallback.trim()]) return fallback
-    // If key has English phrases, translate them
-    let res = key
-    for (const phrase of SORTED_REVERSE_KEYS) {
-      if (phrase.length > 2 && res.includes(phrase)) {
-        res = res.split(phrase).join(REVERSE_DICTIONARY[phrase])
+    const trimmed = typeof key === 'string' ? key.trim() : String(key || '').trim()
+    let result = key
+
+    if (language === 'en') {
+      if (DICTIONARY[trimmed]) {
+        result = DICTIONARY[trimmed]
+      } else if (REVERSE_DICTIONARY[trimmed]) {
+        result = trimmed
+      } else if (fallback && typeof fallback === 'string') {
+        const trimmedFallback = fallback.trim()
+        result = DICTIONARY[trimmedFallback] || fallback
+      } else {
+        // Partial replace for dynamic strings
+        let res = key
+        for (const phrase of SORTED_KEYS) {
+          if (res.includes(phrase)) {
+            res = res.split(phrase).join(DICTIONARY[phrase])
+          }
+        }
+        result = res
+      }
+    } else {
+      // language === 'vi'
+      if (REVERSE_DICTIONARY[trimmed]) {
+        result = REVERSE_DICTIONARY[trimmed]
+      } else if (fallback && typeof fallback === 'string' && DICTIONARY[fallback.trim()]) {
+        result = fallback
+      } else {
+        // If key has English phrases, translate them
+        let res = key
+        for (const phrase of SORTED_REVERSE_KEYS) {
+          if (phrase.length > 2 && res.includes(phrase)) {
+            res = res.split(phrase).join(REVERSE_DICTIONARY[phrase])
+          }
+        }
+        result = res
       }
     }
-    return res
+
+    // Safely interpolate {variable} or {{variable}}
+    if (interpolations && typeof interpolations === 'object') {
+      Object.entries(interpolations).forEach(([k, v]) => {
+        result = result.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v ?? ''))
+        result = result.replace(new RegExp(`\\{\\{${k}\\}\\}`, 'g'), String(v ?? ''))
+      })
+    }
+
+    return result
   }
 
   return (
