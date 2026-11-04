@@ -173,8 +173,8 @@ class StorageUnitPriceHistoryServiceTest {
         }
 
         @Test
-        @DisplayName("BR-RULE-011.4: Thất bại khi newPrice trùng với giá hiện tại")
-        void adjustUnitPrice_SamePrice_ThrowsException() {
+        @DisplayName("BR-RULE-011.4: Cho phép cập nhật khi newPrice trùng với giá hiện tại")
+        void adjustUnitPrice_SamePrice_Succeeds() {
             StorageUnitPriceAdjustmentRequest request = StorageUnitPriceAdjustmentRequest.builder()
                     .newPrice(new BigDecimal("1000000.00"))
                     .reason("Không thay đổi giá")
@@ -184,12 +184,11 @@ class StorageUnitPriceHistoryServiceTest {
             when(requestContext.currentUserRole()).thenReturn("ADMIN");
             when(requestContext.currentUserId()).thenReturn(managerUser.getId());
             when(userRepository.findById(managerUser.getId())).thenReturn(Optional.of(managerUser));
+            when(storageUnitPriceHistoryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(storageUnitRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-            AppException ex = assertThrows(AppException.class, () ->
-                    storageUnitPriceHistoryService.adjustUnitPrice(unitId, request));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.PRICE_UNCHANGED);
-            verify(storageUnitPriceHistoryRepository, never()).save(any());
+            com.boxora.dto.response.StorageUnitPriceHistoryResponse res = storageUnitPriceHistoryService.adjustUnitPrice(unitId, request);
+            assertThat(res).isNotNull();
         }
 
         @Test

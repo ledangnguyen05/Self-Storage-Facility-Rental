@@ -85,6 +85,24 @@ export const storageUnitService = {
     return response.data?.data
   },
 
+  async createUnitType(data: {
+    typeName: string
+    dimensions: string
+    areaSqm: number
+    volumeM3?: number
+    lengthM?: number
+    widthM?: number
+    heightM?: number
+    capacityBoxes?: number
+    depositAmount: number
+    basePricePerMonth: number
+    acPricePerMonth?: number
+    isActive?: boolean
+  }): Promise<UnitType> {
+    const response = await api.post('/api/v1/unit-types', data)
+    return response.data?.data as UnitType
+  },
+
   async updateUnitType(
     id: string,
     data: {

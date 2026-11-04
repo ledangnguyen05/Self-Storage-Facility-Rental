@@ -44,6 +44,13 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   // Status toggle confirmation modal state (Task 5.3)
   const [statusConfirmUnitType, setStatusConfirmUnitType] = useState<UnitType | null>(null)
 
+  // Configure new discount modal states
+  const [isAddDiscountModalOpen, setIsAddDiscountModalOpen] = useState(false)
+  const [newDiscountMonths, setNewDiscountMonths] = useState<number>(9)
+  const [newDiscountPercent, setNewDiscountPercent] = useState<number>(10)
+  const [newDiscountLabel, setNewDiscountLabel] = useState<string>('')
+  const [customDiscounts, setCustomDiscounts] = useState<{ id: string; months: number; percent: number; label: string }[]>([])
+
   const [isSavingDiscounts, setIsSavingDiscounts] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
   const [toastIsError, setToastIsError] = useState(false)
@@ -105,6 +112,16 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   useEffect(() => {
     if (selectedFacilityId) {
       void loadFacilityPolicy(selectedFacilityId)
+      try {
+        const saved = localStorage.getItem(`boxora_custom_discounts_${selectedFacilityId}`)
+        if (saved) {
+          setCustomDiscounts(JSON.parse(saved))
+        } else {
+          setCustomDiscounts([])
+        }
+      } catch {
+        setCustomDiscounts([])
+      }
     }
   }, [selectedFacilityId])
 
@@ -116,6 +133,53 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       }
     }
   }, { intervalMs: 6000 })
+
+  // Create or configure a new discount term
+  const handleCreateDiscountTerm = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const months = Number(newDiscountMonths)
+    const percent = Number(newDiscountPercent)
+    if (!months || months <= 0) {
+      showToast('Kỳ hạn thuê phải là số tháng lớn hơn 0.', true)
+      return
+    }
+    if (isNaN(percent) || percent < 0 || percent > 100) {
+      showToast('Mức chiết khấu phải từ 0% đến 100%.', true)
+      return
+    }
+
+    if (months === 3 || months === 6 || months === 12) {
+      const u3 = months === 3 ? percent : discount3M
+      const u6 = months === 6 ? percent : discount6M
+      const u12 = months === 12 ? percent : discount12M
+      await handleSaveDiscounts(u3, u6, u12)
+      showToast(`Đã lưu chiết khấu ${percent}% cho kỳ hạn chuẩn ${months} tháng.`)
+    } else {
+      const newCustom = {
+        id: `disc_${Date.now()}`,
+        months,
+        percent,
+        label: newDiscountLabel.trim() || `Kỳ hạn ưu đãi ${months} tháng`,
+      }
+      const updated = [...customDiscounts.filter(c => c.months !== months), newCustom].sort((a, b) => a.months - b.months)
+      setCustomDiscounts(updated)
+      try {
+        localStorage.setItem(`boxora_custom_discounts_${selectedFacilityId}`, JSON.stringify(updated))
+      } catch {}
+      showToast(`Đã cấu hình thêm kỳ hạn ${months} tháng với chiết khấu ${percent}%.`)
+    }
+    setIsAddDiscountModalOpen(false)
+    setNewDiscountLabel('')
+  }
+
+  const handleDeleteCustomDiscount = (id: string) => {
+    const updated = customDiscounts.filter(c => c.id !== id)
+    setCustomDiscounts(updated)
+    try {
+      localStorage.setItem(`boxora_custom_discounts_${selectedFacilityId}`, JSON.stringify(updated))
+    } catch {}
+    showToast('Đã xóa kỳ hạn chiết khấu.')
+  }
 
   // Save Duration Discounts to backend
   const handleSaveDiscounts = async (updated3M: number, updated6M: number, updated12M: number) => {
@@ -137,6 +201,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
           cancellationFullRefundHours: 24,
           cancellationPartialRefundHours: 48,
           cancellationPartialRefundPercent: 70,
+          cancellationAfter48hRefundPercent: 50,
           depositRefundSlaDays: 5,
           dailyLateFee: 50000,
           overdueGraceDays: 1,
@@ -215,50 +280,36 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   }
 
   const getUnitTypeSpec = (ut: UnitType) => {
-    const area = ut.areaSqm || 0
+    const area = ut.areaSqm || (ut.lengthM && ut.widthM ? Math.round(ut.lengthM * ut.widthM * 100) / 100 : 0)
+    const volume = ut.volumeM3 || (ut.lengthM && ut.widthM && ut.heightM ? Math.round(ut.lengthM * ut.widthM * ut.heightM * 100) / 100 : 0)
     const name = (ut.typeName || '').toLowerCase()
-    if (name.includes('cold') || name.includes('mát') || (area >= 4.5 && area <= 5.5)) {
-      return {
-        volume: ut.volumeM3 ? `${ut.volumeM3} m³` : '14 m³',
-        areaLabel: ut.areaSqm ? `${ut.areaSqm} m²` : '5.0 m²',
-        boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : '85 boxes (Căn hộ 2PN lớn)',
-        category: 'Kho Mát A/C (18-22°C)',
-        badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
-      }
+
+    let category = 'Kho Tiêu Chuẩn'
+    let badgeClass = 'bg-slate-100 text-slate-800 border-slate-200'
+
+    if (name.includes('cold') || name.includes('mát') || name.includes('lạnh')) {
+      category = 'Kho Mát A/C (18-22°C)'
+      badgeClass = 'bg-blue-100 text-blue-800 border-blue-200'
+    } else if (volume <= 4 || area <= 1.5) {
+      category = 'Tủ cá nhân (Mini)'
+      badgeClass = 'bg-slate-100 text-slate-800 border-slate-200'
+    } else if (volume <= 10 || area <= 3.5) {
+      category = 'Studio (Vừa)'
+      badgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200'
+    } else if (volume <= 25 || area <= 7.0) {
+      category = 'Tiêu chuẩn 3PN'
+      badgeClass = 'bg-cyan-100 text-cyan-800 border-cyan-200'
+    } else {
+      category = 'Logistics / Thương mại lớn'
+      badgeClass = 'bg-purple-100 text-purple-800 border-purple-200'
     }
-    if (area <= 1.5) {
-      return {
-        volume: ut.volumeM3 ? `${ut.volumeM3} m³` : '1 m³',
-        areaLabel: ut.areaSqm ? `${ut.areaSqm} m²` : '1.0 m²',
-        boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : '6 boxes',
-        category: 'Tủ cá nhân (Mini)',
-        badgeClass: 'bg-slate-100 text-slate-800 border-slate-200',
-      }
-    }
-    if (area <= 3.5) {
-      return {
-        volume: ut.volumeM3 ? `${ut.volumeM3} m³` : '8 m³',
-        areaLabel: ut.areaSqm ? `${ut.areaSqm} m²` : '3.0 m²',
-        boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : '48 boxes',
-        category: 'Studio (Vừa)',
-        badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-      }
-    }
-    if (area <= 7.0) {
-      return {
-        volume: ut.volumeM3 ? `${ut.volumeM3} m³` : '16 m³',
-        areaLabel: ut.areaSqm ? `${ut.areaSqm} m²` : '6.0 m²',
-        boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : '100 boxes (Căn hộ 3PN)',
-        category: 'Tiêu chuẩn 3PN',
-        badgeClass: 'bg-cyan-100 text-cyan-800 border-cyan-200',
-      }
-    }
+
     return {
-      volume: ut.volumeM3 ? `${ut.volumeM3} m³` : '24 m³',
-      areaLabel: ut.areaSqm ? `${ut.areaSqm} m²` : '12.0 m²',
-      boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : '160 boxes (Kho logistics lớn)',
-      category: 'Logistics / Thương mại lớn',
-      badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+      volume: volume ? `${volume} m³` : '—',
+      areaLabel: area ? `${area} m²` : '—',
+      boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : `${Math.round(area * 8)} boxes`,
+      category,
+      badgeClass,
     }
   }
 
@@ -290,7 +341,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                {t('3. Quy Tắc Kinh Doanh & Giá Động (Pricing Matrix)')}
+                {t('3. Quy Tắc Kinh Doanh & Giá Động')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 {t(
@@ -334,9 +385,22 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 </p>
               </div>
             </div>
-            <span className="text-[11px] font-mono font-bold text-cyan-700 bg-cyan-100/70 px-2 py-0.5 rounded border border-cyan-200">
-              3 Kỳ hạn
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono font-bold text-cyan-700 bg-cyan-100/70 px-2 py-0.5 rounded border border-cyan-200">
+                {3 + customDiscounts.length} {t('Kỳ hạn')}
+              </span>
+              {canManagePolicies && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddDiscountModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white font-semibold text-xs transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                  title={t('Cấu hình kỳ hạn mới')}
+                >
+                  <span className="material-symbols-outlined text-[15px]">add_circle</span>
+                  <span>{t('Cấu hình kỳ hạn mới')}</span>
+                </button>
+              )}
+            </div>
           </div>
           <div className="space-y-3">
             {/* 3 Months Discount Row */}
@@ -572,6 +636,45 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 )}
               </div>
             </div>
+
+            {/* Custom Configured Discounts */}
+            {customDiscounts.map((cd) => (
+              <div
+                key={cd.id}
+                className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs"
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-purple-600 text-lg">loyalty</span>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">
+                      {t('Thuê')} {cd.months} {t('tháng')}
+                    </div>
+                    <div className="text-[10px] text-slate-400">{cd.label}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                      cd.percent > 0
+                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                        : 'bg-slate-100 text-slate-500 border border-slate-200'
+                    }`}
+                  >
+                    {cd.percent > 0 ? `-${cd.percent}%` : '0%'}
+                  </span>
+                  {canManagePolicies && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCustomDiscount(cd.id)}
+                      className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                      title={t('Xóa kỳ hạn')}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">delete</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -587,10 +690,26 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                   {t('Danh mục các loại kho chuẩn & giá niêm yết hiện hành')}
                 </span>
               </div>
-              {/* Task 3.1: Dynamic Count of Unit Types */}
-              <span className="text-[11px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2.5 py-0.5 rounded-full border border-cyan-200">
-                {unitTypes.length} {t('Loại kho')}
-              </span>
+              <div className="flex items-center gap-2.5">
+                {/* Task 3.1: Dynamic Count of Unit Types */}
+                <span className="text-[11px] font-mono font-bold text-cyan-800 bg-cyan-100 px-2.5 py-0.5 rounded-full border border-cyan-200">
+                  {unitTypes.length} {t('Loại kho')}
+                </span>
+                {canManagePolicies && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedUnitTypeToEdit(null)
+                      setIsEditModalOpen(true)
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                    title={t('Thêm loại kho mới')}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add_box</span>
+                    <span>{t('Thêm loại kho mới')}</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -735,8 +854,8 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         </div>
       </div>
 
-      {/* Edit Unit Type Modal (Task 3.3 & Task 5.1-5.4) */}
-      {isEditModalOpen && selectedUnitTypeToEdit && (
+      {/* Edit / Create Unit Type Modal (Task 3.3 & Task 5.1-5.4) */}
+      {isEditModalOpen && (
         <EditUnitTypeModal
           unitType={selectedUnitTypeToEdit}
           isOpen={isEditModalOpen}
@@ -745,7 +864,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             setSelectedUnitTypeToEdit(null)
           }}
           onSuccess={() => {
-            showToast('Đã lưu thông tin loại kho thành công!')
+            showToast(selectedUnitTypeToEdit ? 'Đã lưu thông tin loại kho thành công!' : 'Đã tạo mới loại kho chuẩn thành công!')
             void loadUnitTypes()
           }}
         />
@@ -828,6 +947,101 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 {t('Xác nhận')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Cấu hình kỳ hạn mới */}
+      {isAddDiscountModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-2xs">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-md w-full space-y-4 animate-scale-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-cyan-600">
+                <span className="material-symbols-outlined text-2xl">more_time</span>
+                <h4 className="text-sm font-bold text-slate-900">
+                  {t('Cấu hình kỳ hạn chiết khấu mới')}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddDiscountModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDiscountTerm} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {t('Kỳ hạn thuê (Tháng)')} <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="60"
+                  step="1"
+                  required
+                  value={newDiscountMonths}
+                  onChange={(e) => setNewDiscountMonths(Number(e.target.value))}
+                  placeholder="Ví dụ: 9 hoặc 24"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {t('Nếu chọn 3, 6, hoặc 12 tháng, hệ thống sẽ lưu trực tiếp vào chính sách cơ sở.')}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {t('Mức chiết khấu (%)')} <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    required
+                    value={newDiscountPercent}
+                    onChange={(e) => setNewDiscountPercent(Number(e.target.value))}
+                    placeholder="Ví dụ: 12.5"
+                    className="w-full pl-3 pr-8 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-cyan-500 font-mono font-bold"
+                  />
+                  <span className="absolute right-3 top-2 text-xs font-bold text-slate-400">%</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  {t('Tên hiển thị / Ghi chú ưu đãi')}
+                </label>
+                <input
+                  type="text"
+                  value={newDiscountLabel}
+                  onChange={(e) => setNewDiscountLabel(e.target.value)}
+                  placeholder="Ví dụ: Kỳ hạn dài hạn tiết kiệm"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddDiscountModalOpen(false)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  {t('Hủy bỏ')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingDiscounts}
+                  className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-sm">check</span>
+                  <span>{t('Lưu kỳ hạn')}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

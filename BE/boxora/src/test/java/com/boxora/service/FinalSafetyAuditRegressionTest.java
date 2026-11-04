@@ -393,9 +393,9 @@ public class FinalSafetyAuditRegressionTest {
 
         // 45 days overdue:
         assertThat(result.overdueDays()).isEqualTo(45L);
-        // Late fee: billable days = 45 - 1 = 44 days * 33,333 đ/ngày = 1,466,652 VND
-        assertThat(result.lateFee()).isEqualByComparingTo("1466652");
-        assertThat(result.totalDebt()).isEqualByComparingTo("1466652");
+        // Late fee: billable days = 45 - 1 = 44 days * 34,000 đ/ngày (1,000,000 / 30 rounded up to thousands) = 1,496,000 VND
+        assertThat(result.lateFee()).isEqualByComparingTo("1496000");
+        assertThat(result.totalDebt()).isEqualByComparingTo("1496000");
 
         // Now test partial payment: customer paid 500,000 VND
         Payment paidPart = Payment.builder()
@@ -405,9 +405,9 @@ public class FinalSafetyAuditRegressionTest {
         when(paymentRepository.findByContract_Id(multiContract.getId())).thenReturn(List.of(paidPart));
 
         var resultAfterPartial = calcImpl.calculateOverdueDebt(multiContract, policyA, refDate);
-        // Late fee reduced after partial payment: 1,466,652 - 500,000 = 966,652
-        assertThat(resultAfterPartial.totalDebt()).isEqualByComparingTo("966652");
-        assertThat(resultAfterPartial.lateFee()).isEqualByComparingTo("966652");
+        // Late fee reduced after partial payment: 1,496,000 - 500,000 = 996,000
+        assertThat(resultAfterPartial.totalDebt()).isEqualByComparingTo("996000");
+        assertThat(resultAfterPartial.lateFee()).isEqualByComparingTo("996000");
     }
 
     // -------------------------------------------------------------------------

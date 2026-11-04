@@ -573,20 +573,57 @@ public class EmailServiceImpl implements EmailService {
             String templateType,
             String notes
     ) {
+        sendDetailedOverdueNoticeEmail(
+                toEmail, fullName, contractCode, unitCode, null, facilityName,
+                daysOverdue, principalDebt, dailyLateFee, lateFee, totalDebt, depositHeld,
+                dueDate, feeFormulaExplanation, overdueStage, templateType, notes,
+                null, null, null, null
+        );
+    }
+
+    @Override
+    @Async
+    public void sendDetailedOverdueNoticeEmail(
+            String toEmail,
+            String fullName,
+            String contractCode,
+            String unitCode,
+            String unitTypeName,
+            String facilityName,
+            long daysOverdue,
+            BigDecimal principalDebt,
+            BigDecimal dailyLateFee,
+            BigDecimal lateFee,
+            BigDecimal totalDebt,
+            BigDecimal depositHeld,
+            LocalDate dueDate,
+            String feeFormulaExplanation,
+            String overdueStage,
+            String templateType,
+            String notes,
+            BigDecimal totalLiquidationValue,
+            Long estimatedHoldingDays,
+            Integer inventoryItemCount,
+            BigDecimal dailyRentalPrice
+    ) {
         String safeName = escape(fullName != null && !fullName.isBlank() ? fullName : "Quý khách");
         String safeCode = escape(contractCode != null ? contractCode : "N/A");
         String safeUnit = escape(unitCode != null ? unitCode : "N/A");
+        String safeUnitType = escape(unitTypeName != null && !unitTypeName.isBlank() ? unitTypeName : "Kho");
         String safeFacility = escape(facilityName != null ? facilityName : "Boxora");
         String safeDueDate = dueDate != null ? dueDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")) : "N/A";
-        String safeFormula = escape(feeFormulaExplanation != null && !feeFormulaExplanation.isBlank() ? feeFormulaExplanation : "Theo quy chế tính phạt quá hạn cơ sở");
         String safeNotes = escape(notes != null ? notes.trim() : "");
 
+        boolean isLiquidationMode = "LIQUIDATION_HOLDING_WARNING".equalsIgnoreCase(templateType)
+                || (totalLiquidationValue != null && totalLiquidationValue.compareTo(BigDecimal.ZERO) > 0);
+
         String badgeText = switch (templateType != null ? templateType : "") {
-            case "REMINDER" -> "NHẮC CƯỚC THUÊ KHO (ÂN HẠN)";
-            case "WARNING" -> "CẢNH BÁO QUÁ HẠN & PHÁT SINH PHÍ PHẠT";
-            case "LOCKOUT_NOTICE" -> "CẢNH BÁO TẠM KHÓA SMARTLOCK & THU HỒI PIN";
-            case "SEAL_WARNING" -> "CẢNH BÁO CHUẨN BỊ NIÊM PHONG KHO";
-            default -> "THÔNG BÁO CÔNG NỢ QUÁ HẠN";
+            case "REMINDER" -> "NHẮC CƯỚC THUÊ KHO (ÂN HẠN 1 NGÀY)";
+            case "WARNING" -> "CẢNH BÁO QUÁ HẠN & PHÁT SINH PHÍ PHẠT (2 NGÀY)";
+            case "LOCKOUT_NOTICE" -> "CẢNH BÁO TẠM KHÓA SMARTLOCK & THU HỒI PIN (3-6 NGÀY)";
+            case "SEAL_WARNING" -> "CẢNH BÁO CHUẨN BỊ NIÊM PHONG KHO (>= 7 NGÀY)";
+            case "LIQUIDATION_HOLDING_WARNING" -> "THÔNG BÁO CÔNG NỢ & KẾ HOẠCH XỬ LÝ TÀI SẢN THANH LÝ";
+            default -> isLiquidationMode ? "THÔNG BÁO CÔNG NỢ & KẾ HOẠCH XỬ LÝ TÀI SẢN THANH LÝ" : "THÔNG BÁO CÔNG NỢ QUÁ HẠN";
         };
 
         String badgeBg = switch (templateType != null ? templateType : "") {
@@ -594,7 +631,8 @@ public class EmailServiceImpl implements EmailService {
             case "WARNING" -> "#fffbeb";
             case "LOCKOUT_NOTICE" -> "#fef2f2";
             case "SEAL_WARNING" -> "#faf5ff";
-            default -> "#fef2f2";
+            case "LIQUIDATION_HOLDING_WARNING" -> "#fdf2f8";
+            default -> isLiquidationMode ? "#fdf2f8" : "#fef2f2";
         };
 
         String badgeColor = switch (templateType != null ? templateType : "") {
@@ -602,7 +640,8 @@ public class EmailServiceImpl implements EmailService {
             case "WARNING" -> "#b45309";
             case "LOCKOUT_NOTICE" -> "#b91c1c";
             case "SEAL_WARNING" -> "#7e22ce";
-            default -> "#b91c1c";
+            case "LIQUIDATION_HOLDING_WARNING" -> "#9d174d";
+            default -> isLiquidationMode ? "#9d174d" : "#b91c1c";
         };
 
         String subject = String.format("[Boxora] %s - Hợp đồng %s (Kho %s)", badgeText, safeCode, safeUnit);
@@ -617,8 +656,8 @@ public class EmailServiceImpl implements EmailService {
         String highlightBox;
         if (!hasRemainingDebt) {
             intro = String.format(
-                    "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho từ ngày <strong>%s</strong> (+%d ngày). Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho và nhận lại số tiền cọc còn lại.",
-                    safeCode, safeUnit, safeFacility, safeDueDate, daysOverdue
+                    "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s - %s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho từ ngày <strong>%s</strong> (+%d ngày). Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho và nhận lại số tiền cọc còn lại.",
+                    safeCode, safeUnit, safeUnitType, safeFacility, safeDueDate, daysOverdue
             );
             highlightBox = renderHighlightBox(
                     "SỐ TIỀN HOÀN KHÁCH DỰ KIẾN KHI TRẢ KHO",
@@ -627,10 +666,22 @@ public class EmailServiceImpl implements EmailService {
                     "#059669",
                     "#a7f3d0"
             );
+        } else if (isLiquidationMode) {
+            intro = String.format(
+                    "Hệ thống Boxora thông báo hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s - %s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho <strong>+%d ngày</strong>. Do phí phạt trễ hạn vượt quá tiền cọc giữ, kho đã được niêm phong và lập biên bản kiểm kê tài sản. Quý khách vui lòng xem chi tiết định giá tài sản và thời gian giữ hàng ước tính bên dưới.",
+                    safeCode, safeUnit, safeUnitType, safeFacility, daysOverdue
+            );
+            highlightBox = renderHighlightBox(
+                    "TỔNG CÔNG NỢ CẦN THANH TOÁN (PHÍ PHẠT VƯỢT CỌC GIỮ)",
+                    formatVnd(effectiveTotalDebt),
+                    "#fef2f2",
+                    "#b91c1c",
+                    "#fca5a5"
+            );
         } else {
             intro = String.format(
-                    "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho (+%d ngày). Do phí phạt trễ hạn đã vượt quá số tiền cọc giữ, quý khách vui lòng thanh toán khoản công nợ phát sinh và làm thủ tục bàn giao kho.",
-                    safeCode, safeUnit, safeFacility, daysOverdue
+                    "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s - %s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho (+%d ngày). Do phí phạt trễ hạn đã vượt quá số tiền cọc giữ, quý khách vui lòng thanh toán khoản công nợ phát sinh và làm thủ tục bàn giao kho.",
+                    safeCode, safeUnit, safeUnitType, safeFacility, daysOverdue
             );
             highlightBox = renderHighlightBox(
                     "TỔNG CÔNG NỢ CẦN THANH TOÁN",
@@ -642,21 +693,23 @@ public class EmailServiceImpl implements EmailService {
         }
 
         StringBuilder detailsBuilder = new StringBuilder();
-        detailsBuilder.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">");
+        detailsBuilder.append("""
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;">
+                """);
         detailsBuilder.append(renderDetailRow("Mã hợp đồng", safeCode));
-        detailsBuilder.append(renderDetailRow("Buồng kho / Vị trí", String.format("<strong>#%s</strong> (%s)", safeUnit, safeFacility)));
+        detailsBuilder.append(renderDetailRow("Buồng kho / Vị trí", String.format("<strong>#%s</strong> (%s - %s)", safeUnit, safeUnitType, safeFacility)));
         detailsBuilder.append(renderDetailRow("Ngày hết hạn hợp đồng", safeDueDate));
-        detailsBuilder.append(renderDetailRow("Số ngày quá hạn trả kho", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">+%d ngày</span>", daysOverdue)));
+        detailsBuilder.append(renderDetailRow("Số ngày quá hạn trả kho", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%dngày</span>", daysOverdue)));
         detailsBuilder.append(renderDetailRow("Đơn giá phạt / ngày", formatVnd(dailyLateFee != null ? dailyLateFee : BigDecimal.ZERO) + "/ngày"));
         detailsBuilder.append(renderDetailRow("Phí phạt trễ hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(safeLateFee))));
-        detailsBuilder.append(renderDetailRow("Tiền cọc đang giữ", formatVnd(safeDeposit)));
+        detailsBuilder.append(renderDetailRow("Tiền cọc bảo đảm giữ", formatVnd(safeDeposit)));
 
         if (!hasRemainingDebt) {
             detailsBuilder.append(renderDetailRow("Khấu trừ phạt vào cọc", String.format("<span style=\"color: #b91c1c;\">-%s</span>", formatVnd(safeLateFee))));
             detailsBuilder.append(renderDetailRow("Số tiền hoàn lại khi trả kho", String.format("<span style=\"color: #059669; font-weight: 700;\">%s</span>", formatVnd(refundAmount))));
         } else {
-            detailsBuilder.append(renderDetailRow("Khấu trừ toàn bộ cọc", String.format("<span style=\"color: #b91c1c;\">-%s</span>", formatVnd(safeDeposit))));
-            detailsBuilder.append(renderDetailRow("Công nợ còn lại phải nộp", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(effectiveTotalDebt))));
+            detailsBuilder.append(renderDetailRow("Khấu trừ toàn bộ cọc giữ", String.format("<span style=\"color: #b91c1c;\">-%s</span>", formatVnd(safeDeposit))));
+            detailsBuilder.append(renderDetailRow("Tổng công nợ khách phải nộp", String.format("<span style=\"color: #b91c1c; font-weight: 800; font-size: 14px;\">%s</span>", formatVnd(effectiveTotalDebt))));
         }
 
         if (!safeNotes.isEmpty()) {
@@ -664,9 +717,60 @@ public class EmailServiceImpl implements EmailService {
         }
         detailsBuilder.append("</table>");
 
+        // Inventory Card if Liquidation Mode
+        String inventorySection = "";
+        if (isLiquidationMode && totalLiquidationValue != null) {
+            BigDecimal safeLiq = totalLiquidationValue;
+            BigDecimal remainingVal = safeLiq.subtract(effectiveTotalDebt).max(BigDecimal.ZERO);
+            long daysHold = estimatedHoldingDays != null ? estimatedHoldingDays : 0L;
+            int count = inventoryItemCount != null ? inventoryItemCount : 1;
+            BigDecimal dailyRent = dailyRentalPrice != null ? dailyRentalPrice : BigDecimal.ZERO;
+
+            String formulaText = String.format(
+                    "(Tổng thanh lý: %s - Công nợ: %s) / %s/ngày = <strong>%d ngày</strong>",
+                    formatVnd(safeLiq), formatVnd(effectiveTotalDebt), formatVnd(dailyRent), daysHold
+            );
+
+            inventorySection = String.format("""
+                <div style="background: #fdf4ff; border: 1px solid #f0abfc; border-radius: 10px; padding: 16px; margin: 16px 0;">
+                    <div style="font-weight: 700; color: #701a75; font-size: 14px; margin-bottom: 6px;">
+                        📦 ĐỊNH GIÁ TÀI SẢN KIỂM KÊ & THỜI GIAN GIỮ HÀNG ƯỚC TÍNH
+                    </div>
+                    <div style="font-size: 12px; color: #86198f; margin-bottom: 12px;">
+                        Danh mục kiểm kê (<strong>%d mục</strong>) • Đơn giá phạt: <strong>%s/ngày</strong>
+                    </div>
+                    <table width="100%%" cellpadding="6" cellspacing="0" style="font-size: 13px; border-collapse: collapse; background: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #f5d0fe;">
+                        <tr style="border-bottom: 1px solid #fdf2f8;">
+                            <td style="color: #64748b;">Tổng giá trị đồ thanh lý:</td>
+                            <td style="text-align: right; font-weight: 700; color: #4338ca;">%s</td>
+                        </tr>
+                        <tr style="border-bottom: 1px solid #fdf2f8;">
+                            <td style="color: #64748b;">Sau khi bù công nợ (%s):</td>
+                            <td style="text-align: right; font-weight: 700; color: #047857;">%s</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #64748b; font-weight: 600;">Thời gian ước tính tối đa giữ kho:</td>
+                            <td style="text-align: right; font-weight: 800; font-size: 15px; color: %s;">%d ngày</td>
+                        </tr>
+                    </table>
+                    <div style="margin-top: 10px; padding: 8px 12px; background: #ffffff; border-radius: 6px; font-size: 11px; color: #475569; border-left: 3px solid #a855f7;">
+                        <strong>Công thức:</strong> %s
+                    </div>
+                </div>
+                """,
+                count, formatVnd(dailyRent),
+                formatVnd(safeLiq), formatVnd(effectiveTotalDebt), formatVnd(remainingVal),
+                daysHold == 0 ? "#b91c1c" : "#047857", daysHold,
+                formulaText
+            );
+        }
+
         String alertWarningText = switch (templateType != null ? templateType : "") {
             case "LOCKOUT_NOTICE" -> "<strong>CẢNH BÁO TẠM KHÓA KHO:</strong> Hệ thống đã đến ngưỡng tạm khóa mã PIN/QR SmartLock do quá hạn ngày trả kho. Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao kho.";
             case "SEAL_WARNING" -> "<strong>CẢNH BÁO NIÊM PHONG KHO:</strong> Hợp đồng đã quá hạn trả kho trên 7 ngày. Nếu quý khách không đến làm thủ tục bàn giao kho, cơ sở sẽ tiến hành niêm phong buồng kho và kiểm kê tài sản theo quy chế vận hành.";
+            case "LIQUIDATION_HOLDING_WARNING" -> (estimatedHoldingDays != null && estimatedHoldingDays == 0)
+                    ? "<strong>CẢNH BÁO KHẨN CẤP:</strong> Giá trị tài sản kiểm kê đã không còn đủ bù công nợ và cước lưu giữ kho (0 ngày). Quý khách cần liên hệ BQL cơ sở ngay để tất toán công nợ và nhận lại tài sản trước khi Boxora thực hiện giải phóng buồng kho thanh lý."
+                    : String.format("<strong>LƯU Ý THỜI HẠN GIỮ KHO:</strong> Quý khách có thời hạn ước tính tối đa <strong>%d ngày</strong> để hoàn tất thanh toán công nợ và nhận lại tài sản. Quá thời hạn trên, cơ sở sẽ tiến hành thủ tục thanh lý giải phóng buồng kho theo quy chế vận hành.", estimatedHoldingDays != null ? estimatedHoldingDays : 0L);
             case "WARNING" -> "<strong>LƯU Ý PHÍ PHẠT TRỄ HẠN:</strong> Hợp đồng đã quá hạn ngày trả kho. Phí phạt sẽ được tính cộng dồn theo từng ngày và khấu trừ vào tiền cọc giữ cho đến khi quý khách bàn giao trả kho.";
             default -> "<strong>NHẮC HẸN BÀN GIAO TRẢ KHO:</strong> Quý khách vui lòng thu xếp liên hệ BQL cơ sở sớm để bàn giao kho và nhận lại số tiền cọc còn lại.";
         };
@@ -693,11 +797,12 @@ public class EmailServiceImpl implements EmailService {
                 "Kính gửi <strong>" + safeName + "</strong>,",
                 intro,
                 detailsBuilder.toString(),
-                highlightBox + alert,
+                highlightBox + inventorySection + alert,
                 button,
                 note
         );
 
+        String noteLine = !safeNotes.isEmpty() ? ("- Ghi chú nhân viên: " + safeNotes + "\n") : "";
         String plainText = String.format("""
                 BOXORA - %s
                 ============================================================
@@ -710,7 +815,7 @@ public class EmailServiceImpl implements EmailService {
                 - Phí phạt trễ hạn: %s
                 - Tiền cọc đang giữ: %s
                 - %s: %s
-                - Diễn giải: %s
+                %s
                 %s
 
                 Vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho:
@@ -726,8 +831,8 @@ public class EmailServiceImpl implements EmailService {
                 formatVnd(safeDeposit),
                 !hasRemainingDebt ? "SỐ TIỀN HOÀN KHÁCH DỰ KIẾN KHI TRẢ KHO" : "TỔNG CÔNG NỢ CẦN THANH TOÁN",
                 formatVnd(!hasRemainingDebt ? refundAmount : effectiveTotalDebt),
-                feeFormulaExplanation != null ? feeFormulaExplanation : "",
-                !safeNotes.isEmpty() ? ("- Ghi chú nhân viên: " + notes + "\n") : "",
+                isLiquidationMode && totalLiquidationValue != null ? String.format("- Định giá thanh lý: %s | Giữ kho ước tính: %d ngày", formatVnd(totalLiquidationValue), estimatedHoldingDays != null ? estimatedHoldingDays : 0L) : "",
+                noteLine,
                 paymentLink
         );
 

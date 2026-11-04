@@ -154,7 +154,7 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 staff.getId(), request.getAssignedDate(), request.getShift())) {
             throw new AppException(ErrorCode.STAFF_ALREADY_ASSIGNED_SHIFT);
         }
-        ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), startTime, endTime, null);
+        ensureNoOverlappingAssignment(staff.getId(), request.getAssignedDate(), standardStart, standardEnd, null);
 
         // 7. Tạo thực thể phân công ca (tái sử dụng bản ghi đã hủy nếu có)
         StaffAssignment assignment;
@@ -167,8 +167,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             assignment.setStatus(StaffAssignmentStatus.ASSIGNED);
             assignment.setAssignedBy(assignedBy);
             assignment.setNotes(request.getNotes());
-            assignment.setStartTime(startTime);
-            assignment.setEndTime(endTime);
+            assignment.setStartTime(standardStart);
+            assignment.setEndTime(standardEnd);
             assignment.setCheckedInAt(null);
             assignment.setCheckedOutAt(null);
             assignment.setCheckInNote(null);
@@ -179,8 +179,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                     .facility(facility)
                     .assignedDate(request.getAssignedDate())
                     .shift(request.getShift())
-                    .startTime(startTime)
-                    .endTime(endTime)
+                    .startTime(standardStart)
+                    .endTime(standardEnd)
                     .assignedZone(request.getAssignedZone())
                     .roleInShift(request.getRoleInShift() != null && !request.getRoleInShift().isBlank()
                             ? request.getRoleInShift() : "PRIMARY_STAFF")
@@ -283,8 +283,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             assignment.setShift(request.getShift());
         }
 
-        assignment.setStartTime(effectiveStartTime);
-        assignment.setEndTime(effectiveEndTime);
+        assignment.setStartTime(standardStart);
+        assignment.setEndTime(standardEnd);
 
         if (request.getAssignedZone() != null) {
             assignment.setAssignedZone(request.getAssignedZone());
@@ -748,5 +748,22 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
             return new java.time.LocalTime[]{java.time.LocalTime.of(6, 0), java.time.LocalTime.of(14, 0)};
         }
         return new java.time.LocalTime[]{shift.getDefaultStartTime(), shift.getDefaultEndTime()};
+    }
+    private java.time.LocalTime[] resolveStandardTimes(StaffShift shift, java.time.LocalTime requestedStart, java.time.LocalTime requestedEnd) {
+        if (shift == StaffShift.FULL_DAY) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Hệ thống chỉ cho phép phân công 3 ca chuẩn: Ca Sáng (06:00 - 14:00), Ca Chiều (14:00 - 22:00), Ca Đêm (22:00 - 06:00)");
+        }
+        java.time.LocalTime standardStart = shift.getDefaultStartTime();
+        java.time.LocalTime standardEnd = shift.getDefaultEndTime();
+        if (requestedStart != null && !requestedStart.equals(standardStart)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    String.format("Giờ bắt đầu cho ca %s phải là %s", shift.getDisplayName(), standardStart));
+        }
+        if (requestedEnd != null && !requestedEnd.equals(standardEnd)) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    String.format("Giờ kết thúc cho ca %s phải là %s", shift.getDisplayName(), standardEnd));
+        }
+        return new java.time.LocalTime[]{standardStart, standardEnd};
     }
 }

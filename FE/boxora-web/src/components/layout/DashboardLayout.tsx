@@ -214,16 +214,6 @@ export const DashboardLayout: React.FC = () => {
                     </select>
                   )}
                 </div>
-                {!isFacilityScopedRole && (
-                  <button
-                    type="button"
-                    onClick={() => setIsScopingModalOpen(true)}
-                    title={t('Mở bảng phân công cơ sở')}
-                    className="ml-1 p-1 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">domain_verification</span>
-                  </button>
-                )}
               </div>
             )}
           </div>

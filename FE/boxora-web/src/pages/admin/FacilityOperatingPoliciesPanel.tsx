@@ -163,25 +163,13 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                {t('Chính Sách Vận Hành Cơ Sở (Facility Operating Policies)')}
+                {t('Chính Sách Vận Hành Cơ Sở ')}
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
                 {t('Quản lý các quy định tiền cọc, điều kiện hủy hoàn tiền, SLA hoàn cọc và quy trình xử lý nợ quá hạn của từng cơ sở theo phân quyền.')}
               </p>
             </div>
           </div>
-          {canManagePolicies && (
-            <div className="flex items-center gap-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleOpenCreatePolicy()}
-                className="px-4 py-2 rounded-lg bg-cyan-700 hover:bg-cyan-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                <span>{t('Tạo chính sách cơ sở mới')}</span>
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Policies Table */}
@@ -233,7 +221,7 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                               {policy?.depositPercentage ?? policy?.depositPercent ?? '—'}%
                             </span>
                             <span className="text-[10px] text-slate-500">
-                              {t('Tối thiểu', 'Minimum')} {policy?.minimumRentalMonths ?? '—'} {t('tháng')}
+                              {t('Tiền cọc', 'Deposit')}
                             </span>
                           </div>
                         ) : (
@@ -242,15 +230,15 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                       </td>
                       <td className="py-3.5 px-3 text-center">
                         {hasPolicy ? (
-                          <div className="flex flex-col items-center">
+                          <div className="flex flex-col items-center gap-0.5">
                             <span className="font-bold text-emerald-700">
                               100% (&le; {policy?.cancellationFullRefundHours ?? 24}h)
                             </span>
-                            <span className="text-[10px] text-amber-600">
-                              {policy?.cancellationPartialRefundPercent ?? 70}% ({policy?.cancellationFullRefundHours ?? 24}h - {policy?.cancellationPartialRefundHours ?? 48}h)
+                            <span className="text-[10px] text-amber-600 font-medium">
+                              {policy?.cancellationPartialRefundPercent ?? 70}% (24h - 48h)
                             </span>
-                            <span className="text-[10px] text-sky-600">
-                              50% (&gt; {policy?.cancellationPartialRefundHours ?? 48}h)
+                            <span className="text-[10px] text-slate-500 font-medium">
+                              {policy?.cancellationAfter48hRefundPercent ?? 50}% (&gt; 48h)
                             </span>
                           </div>
                         ) : (

@@ -228,7 +228,7 @@ class OverdueDebtCalculationServiceTest {
     }
 
     @Test
-    @DisplayName("User Case: Kho lạnh 3.100.000 đ/tháng, cọc 3.100.000 đ, quá hạn 2 ngày -> Làm tròn 103.333 đ/ngày, Số tiền hoàn khách = 2.996.667 đ, Tổng nợ = 0")
+    @DisplayName("User Case: Kho lạnh 3.100.000 đ/tháng, cọc 3.100.000 đ, quá hạn 2 ngày -> Làm tròn lên 104.000 đ/ngày, Số tiền hoàn khách = 2.996.000 đ, Tổng nợ = 0")
     void testUserCaseKhoLanhLateCheckoutRefund() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-Q2-EXPTODAY-05")
@@ -242,12 +242,36 @@ class OverdueDebtCalculationServiceTest {
 
         var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
 
-        // Daily rate: 3,100,000 / 30 = 103,333.33 -> rounded to integer: 103,333 đ/ngày
-        assertEquals(0, result.dailyLateFee().compareTo(new BigDecimal("103333")));
-        assertEquals(0, result.lateFee().compareTo(new BigDecimal("103333")));
-        // Customer refund amount = 3,100,000 - 103,333 = 2,996,667 đ
-        assertEquals(0, result.customerRefundAmount().compareTo(new BigDecimal("2996667")));
+        // Daily rate: 3,100,000 / 30 = 103,333.33 -> rounded up to thousands: 104,000 đ/ngày
+        assertEquals(0, result.dailyLateFee().compareTo(new BigDecimal("104000")));
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("104000")));
+        // Customer refund amount = 3,100,000 - 104,000 = 2,996,000 đ
+        assertEquals(0, result.customerRefundAmount().compareTo(new BigDecimal("2996000")));
         // Deposit covers late fee, so totalDebt = 0
+        assertEquals(0, result.totalDebt().compareTo(BigDecimal.ZERO));
+    }
+
+    @Test
+    @DisplayName("User Example: Tiêu chuẩn (căn một phòng ngủ) 3.500.000 đ/tháng -> làm tròn lên tiền chẵn 117.000 đ/ngày")
+    void testUserExampleTieuChuanCanMotPhongNguRoundingUp() {
+        RentalContract contract = RentalContract.builder()
+                .contractCode("CTR-TIEU-CHUAN-01")
+                .monthlyFee(new BigDecimal("3500000.00"))
+                .depositHeld(new BigDecimal("3500000.00"))
+                .endDate(refDate.minusDays(2)) // 2 days overdue - 1 grace = 1 day billable
+                .build();
+        contract.setId(UUID.randomUUID());
+
+        when(paymentRepository.findByContract_Id(any())).thenReturn(Collections.emptyList());
+
+        var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
+
+        // Daily rate: 3,500,000 / 30 = 116,666.666... -> rounded up to thousands: 117,000 đ/ngày
+        assertEquals(0, result.dailyRentalPrice().compareTo(new BigDecimal("117000")));
+        assertEquals(0, result.dailyLateFee().compareTo(new BigDecimal("117000")));
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("117000")));
+        // Customer refund amount = 3,500,000 - 117,000 = 3,383,000 đ
+        assertEquals(0, result.customerRefundAmount().compareTo(new BigDecimal("3383000")));
         assertEquals(0, result.totalDebt().compareTo(BigDecimal.ZERO));
     }
 

@@ -201,6 +201,8 @@ public class ReportServiceImpl implements ReportService {
         Map<UUID, BigDecimal> facilityCompletedRefunds = new HashMap<>();
         Map<UUID, BigDecimal> facilityCompletedRentalRefunds = new HashMap<>();
         Map<UUID, BigDecimal> facilityPendingRefunds = new HashMap<>();
+        Map<String, BigDecimal> monthlyCompletedRefunds = new HashMap<>();
+        Map<String, BigDecimal> monthlyCompletedRentalRefunds = new HashMap<>();
 
         for (com.boxora.entity.RefundRequest r : scopedRefunds) {
             BigDecimal amt = r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : (r.getRequestedAmount() != null ? r.getRequestedAmount() : BigDecimal.ZERO);
@@ -222,6 +224,12 @@ public class ReportServiceImpl implements ReportService {
                         if (facId != null) facilityCompletedRentalRefunds.merge(facId, amt, BigDecimal::add);
                     }
                     if (facId != null) facilityCompletedRefunds.merge(facId, amt, BigDecimal::add);
+
+                    String mKey = String.format(Locale.ROOT, "%04d-%02d", refTime.getYear(), refTime.getMonthValue());
+                    monthlyCompletedRefunds.merge(mKey, amt, BigDecimal::add);
+                    if (isRentalRefund) {
+                        monthlyCompletedRentalRefunds.merge(mKey, amt, BigDecimal::add);
+                    }
                 }
             } else if (r.getStatus() == com.boxora.enums.RefundStatus.PENDING_REVIEW) {
                 pendingReviewAmount = pendingReviewAmount.add(amt);
@@ -433,12 +441,47 @@ public class ReportServiceImpl implements ReportService {
             enrichedByFacility.add(row);
         }
 
+        List<RevenueMonthSummaryResponse> enrichedMonthlyRevenue = new ArrayList<>(monthlyRevenue);
+        for (RevenueMonthSummaryResponse m : enrichedMonthlyRevenue) {
+            if (m.getMonth() != null) {
+                BigDecimal refAmt = monthlyCompletedRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
+                BigDecimal rentalRefAmt = monthlyCompletedRentalRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
+                m.setRefundAmount(refAmt);
+                m.setRentalRefundAmount(rentalRefAmt);
+                BigDecimal mGrossRev = safe(m.getRentalFeeRevenue()).add(safe(m.getRenewalFeeRevenue())).add(safe(m.getExtraChargeRevenue()));
+                m.setNetRevenue(mGrossRev.subtract(rentalRefAmt).max(BigDecimal.ZERO));
+                m.setNetCashFlow(safe(m.getTotalRevenue()).subtract(refAmt));
+            }
+        }
+        for (Map.Entry<String, BigDecimal> entry : monthlyCompletedRefunds.entrySet()) {
+            boolean exists = enrichedMonthlyRevenue.stream().anyMatch(m -> entry.getKey().equals(m.getMonth()));
+            if (!exists) {
+                BigDecimal refAmt = entry.getValue();
+                BigDecimal rentalRefAmt = monthlyCompletedRentalRefunds.getOrDefault(entry.getKey(), BigDecimal.ZERO);
+                enrichedMonthlyRevenue.add(RevenueMonthSummaryResponse.builder()
+                        .month(entry.getKey())
+                        .totalRevenue(BigDecimal.ZERO)
+                        .rentalFeeRevenue(BigDecimal.ZERO)
+                        .depositRevenue(BigDecimal.ZERO)
+                        .renewalFeeRevenue(BigDecimal.ZERO)
+                        .extraChargeRevenue(BigDecimal.ZERO)
+                        .bookingPaymentRevenue(BigDecimal.ZERO)
+                        .refundAmount(refAmt)
+                        .rentalRefundAmount(rentalRefAmt)
+                        .netCashFlow(BigDecimal.ZERO.subtract(refAmt))
+                        .netRevenue(BigDecimal.ZERO)
+                        .paymentCount(0L)
+                        .build());
+            }
+        }
+        enrichedMonthlyRevenue.sort(Comparator.comparing(RevenueMonthSummaryResponse::getMonth, Comparator.nullsLast(String::compareTo)));
+
         return RevenueReportResponse.builder()
                 .fromDate(fromDate)
                 .toDate(toDate)
                 .systemSummary(systemSummary)
                 .byFacility(enrichedByFacility)
-                .monthlyRevenue(monthlyRevenue)
+                .monthlyRevenue(enrichedMonthlyRevenue)
                 .paymentsByMethod(paymentsByMethod)
                 .debtBreakdown(debtBreakdown)
                 .refundBreakdown(refundBreakdown)
@@ -735,7 +778,7 @@ public class ReportServiceImpl implements ReportService {
             BigDecimal bMonthlyFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee()
                     : (booking.getStorageUnit() != null ? booking.getStorageUnit().getEffectiveBasePrice() : BigDecimal.ZERO);
             BigDecimal bDailyRent = (bMonthlyFee != null && bMonthlyFee.compareTo(BigDecimal.ZERO) > 0)
-                    ? bMonthlyFee.divide(BigDecimal.valueOf(30), 2, java.math.RoundingMode.HALF_UP)
+                    ? OverdueDebtCalculationServiceImpl.roundUpToThousand(bMonthlyFee.divide(BigDecimal.valueOf(30), 4, java.math.RoundingMode.HALF_UP))
                     : BigDecimal.ZERO;
             BigDecimal bLateFeePercentage = BigDecimal.valueOf(100);
             if (policy != null && policy.getDailyLateFee() != null && policy.getDailyLateFee().compareTo(BigDecimal.valueOf(500)) <= 0) {
@@ -745,7 +788,9 @@ public class ReportServiceImpl implements ReportService {
             BigDecimal dailyLateFee = configuredDailyLateFee(policy);
             BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
             if (bDailyRent.compareTo(BigDecimal.ZERO) > 0) {
-                dailyLateFee = bDailyRent.multiply(bLateFeePercentage).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                dailyLateFee = OverdueDebtCalculationServiceImpl.roundUpToThousand(
+                        bDailyRent.multiply(bLateFeePercentage).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)
+                );
                 long billableDays = policy != null && policy.getOverdueGraceDays() != null ? Math.max(0, daysOverdue - policy.getOverdueGraceDays()) : daysOverdue;
                 totalLateFee = dailyLateFee.multiply(BigDecimal.valueOf(billableDays));
             }

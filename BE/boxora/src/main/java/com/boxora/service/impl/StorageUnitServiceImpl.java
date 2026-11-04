@@ -645,6 +645,8 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                         .orElse(null);
         if (price == null) price = u.getEffectiveBasePrice();
         Double area = (u.getUnitType() != null) ? u.getUnitType().getAreaSqm() : null;
+        Double volume = (u.getUnitType() != null) ? u.getUnitType().getVolumeM3() : null;
+        String dimensions = (u.getUnitType() != null) ? u.getUnitType().getDimensions() : null;
 
         UUID bookingId = null;
         String tenantName = null;
@@ -711,6 +713,8 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .pricePerMonth(price)
                 .depositAmount(u.getUnitType() != null ? u.getUnitType().getDepositAmount() : price)
                 .areaSqMeters(area)
+                .volumeM3(volume)
+                .dimensions(dimensions)
                 .batteryLevel(null)
                 .smartLockSerial(null)
                 .lastAccessTime(null)

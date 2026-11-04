@@ -23,6 +23,14 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
 
     private final PaymentRepository paymentRepository;
 
+    public static BigDecimal roundUpToThousand(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        return amount.divide(BigDecimal.valueOf(1000), 0, java.math.RoundingMode.CEILING)
+                .multiply(BigDecimal.valueOf(1000));
+    }
+
     @Override
     public CalculationResult calculateOverdueDebt(RentalContract contract, FacilityPolicy policy, LocalDate referenceDate) {
         LocalDate today = (referenceDate != null) ? referenceDate : LocalDate.now(VN_ZONE);
@@ -54,9 +62,10 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
             }
         }
 
-        // Đơn giá thuê 1 ngày làm tròn số nguyên không có phần thập phân (VND)
+        // Đơn giá thuê 1 ngày làm tròn lên tiền chẵn nghìn (VND)
+        // Ví dụ: 3.500.000 / 30 = 116.666,666... -> làm tròn lên thành 117.000 đ/ngày
         BigDecimal dailyRentalPrice = monthlyFee.compareTo(BigDecimal.ZERO) > 0
-                ? monthlyFee.divide(BigDecimal.valueOf(30), 0, java.math.RoundingMode.HALF_UP)
+                ? roundUpToThousand(monthlyFee.divide(BigDecimal.valueOf(30), 4, java.math.RoundingMode.HALF_UP))
                 : BigDecimal.ZERO;
 
         BigDecimal depositHeld = contract.getDepositHeld() != null
@@ -136,20 +145,22 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
             }
         }
 
-        // Đơn giá phạt trễ 1 ngày: Đơn giá ngày của loại kho * (Tỷ lệ % / 100), làm tròn số nguyên VND không có số lẻ thập phân
+        // Đơn giá phạt trễ 1 ngày: Đơn giá ngày của loại kho * (Tỷ lệ % / 100), làm tròn lên tiền chẵn nghìn (VND)
         BigDecimal dailyRate;
         if (dailyRentalPrice.compareTo(BigDecimal.ZERO) > 0) {
-            dailyRate = dailyRentalPrice.multiply(lateFeePercentage)
-                    .divide(BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP);
+            dailyRate = roundUpToThousand(
+                    dailyRentalPrice.multiply(lateFeePercentage)
+                            .divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)
+            );
         } else if (policy.getDailyLateFee() != null && policy.getDailyLateFee().compareTo(BigDecimal.valueOf(500)) > 0) {
-            dailyRate = policy.getDailyLateFee().setScale(0, java.math.RoundingMode.HALF_UP);
+            dailyRate = roundUpToThousand(policy.getDailyLateFee());
         } else {
             dailyRate = BigDecimal.ZERO;
         }
 
         long billableDays = Math.max(0, overdueDays - graceDays);
-        BigDecimal grossLateFee = dailyRate.multiply(BigDecimal.valueOf(billableDays)).setScale(0, java.math.RoundingMode.HALF_UP);
-        BigDecimal netLateFee = grossLateFee.subtract(paidTowardsDebt).max(BigDecimal.ZERO);
+        BigDecimal grossLateFee = dailyRate.multiply(BigDecimal.valueOf(billableDays));
+        BigDecimal netLateFee = roundUpToThousand(grossLateFee.subtract(paidTowardsDebt).max(BigDecimal.ZERO));
 
         // Xử lý trường hợp khách trả kho muộn:
         // Cấn trừ tiền phạt vào tiền cọc giữ:

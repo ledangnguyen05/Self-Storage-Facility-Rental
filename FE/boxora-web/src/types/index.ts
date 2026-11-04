@@ -205,6 +205,8 @@ export interface StorageUnit {
   id: string
   unitCode: string // e.g. "A-102"
   floorLevel: string // e.g. "Floor 1"
+  zoneCode?: string
+  zoneName?: string
   status: UnitStatusType
   facilityId: string
   facilityName: string
@@ -216,6 +218,8 @@ export interface StorageUnit {
   imageUrl?: string
   images?: string[]
   areaSqMeters?: number
+  volumeM3?: number
+  dimensions?: string
   batteryLevel?: string
   smartLockSerial?: string
   lastAccessTime?: string
@@ -474,6 +478,7 @@ export interface CancellationPolicyDetail {
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
   cancellationAfter48hRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   holdGraceHours?: number
@@ -691,6 +696,7 @@ export interface FacilityPolicy {
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
   cancellationAfter48hRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   dailyLateFee?: number
@@ -747,6 +753,7 @@ export interface FacilityPolicyUpdateRequest {
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   dailyLateFee?: number
@@ -847,6 +854,10 @@ export interface RevenueReport {
     extraChargeRevenue: number
     bookingPaymentRevenue: number
     returnCompensationRevenue?: number
+    refundAmount?: number
+    rentalRefundAmount?: number
+    netCashFlow?: number
+    netRevenue?: number
     paymentCount: number
   }>
   paymentsByMethod?: Array<{

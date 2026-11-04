@@ -35,20 +35,18 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
   const [code, setCode] = useState('')
   const [zoneType, setZoneType] = useState<ZoneType>('STANDARD_STORAGE')
   const [customTypeLabel, setCustomTypeLabel] = useState('')
-  const [area, setArea] = useState<number | ''>(50)
+  const [area, setArea] = useState<number | ''>('')
   const [description, setDescription] = useState('')
   const [status, setStatus] = useState<'ACTIVE' | 'MAINTENANCE' | 'INACTIVE'>('ACTIVE')
   const [formError, setFormError] = useState<string | null>(null)
 
   const openCreateModal = () => {
     setEditingZoneId(null)
-    const nextIdx = floor.zones.length + 1
-    const defaultCode = `Z-${floor.code.replace(/[^a-zA-Z0-9]/g, '')}-${String.fromCharCode(64 + Math.min(26, nextIdx))}`
-    setName(`Phân khu ${String.fromCharCode(64 + Math.min(26, nextIdx))}`)
-    setCode(defaultCode)
+    setName('')
+    setCode('')
     setZoneType('STANDARD_STORAGE')
     setCustomTypeLabel('')
-    setArea(60)
+    setArea('')
     setDescription('')
     setStatus('ACTIVE')
     setFormError(null)
@@ -377,7 +375,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
       {/* Modal Thêm / Chỉnh sửa Phân khu */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <span className="material-symbols-outlined text-cyan-600">grid_view</span>
@@ -411,7 +409,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="VD: Phân khu A - Mini Lockers"
+                    placeholder="VD: Phân khu B, Phân khu Mini Lockers..."
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -424,7 +422,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
                     required
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="VD: Z-FL01-A"
+                    placeholder="VD: Z-FLG-B, Z-FL01-A..."
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -434,13 +432,13 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Loại phân khu *
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 border border-slate-200 dark:border-slate-800 rounded-xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-64 overflow-y-auto p-1.5 border border-slate-200 dark:border-slate-800 rounded-xl">
                   {ZONE_TYPE_OPTIONS.map((opt) => (
                     <label
                       key={opt.type}
-                      className={`flex items-start gap-2 p-2 rounded-lg border text-left cursor-pointer transition-all ${
+                      className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
                         zoneType === opt.type
-                          ? 'border-cyan-600 bg-cyan-50/80 text-cyan-900 dark:bg-cyan-950/60 dark:text-cyan-200'
+                          ? 'border-cyan-600 bg-cyan-50/80 text-cyan-900 shadow-2xs dark:bg-cyan-950/60 dark:text-cyan-200 ring-1 ring-cyan-600/30'
                           : 'border-slate-200/80 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-300'
                       }`}
                     >
@@ -450,14 +448,16 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
                         value={opt.type}
                         checked={zoneType === opt.type}
                         onChange={() => setZoneType(opt.type)}
-                        className="mt-0.5 text-cyan-600 focus:ring-cyan-500"
+                        className="mt-0.5 text-cyan-600 focus:ring-cyan-500 shrink-0"
                       />
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-bold flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px]">{opt.icon}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-bold flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-[15px] shrink-0">{opt.icon}</span>
                           <span>{opt.label}</span>
                         </div>
-                        <p className="text-[10px] text-slate-500 dark:text-slate-400 line-clamp-1">{opt.description}</p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed whitespace-normal break-words">
+                          {opt.description}
+                        </p>
                       </div>
                     </label>
                   ))}
@@ -490,7 +490,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
                     required
                     value={area}
                     onChange={(e) => setArea(e.target.value === '' ? '' : Number(e.target.value))}
-                    placeholder="60"
+                    placeholder="VD: 60"
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>

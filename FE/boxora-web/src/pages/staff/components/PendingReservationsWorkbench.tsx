@@ -39,7 +39,9 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
   onRefresh,
   onProceedToReception,
 }) => {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
+  const roleName = (role || user?.roleName || user?.role?.name || (typeof user?.role === 'string' ? user.role : '') || '').toUpperCase()
+  const isBusinessManager = roleName === 'BUSINESS_MANAGER'
 
   // Local state for arrivals if not provided or when local refresh needed
   const [internalArrivals, setInternalArrivals] = useState<Booking[]>([])
@@ -406,6 +408,25 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
         </button>
       </div>
 
+      {isBusinessManager && (
+        <div className="p-3.5 rounded-2xl bg-amber-50/90 border border-amber-200 text-amber-900 flex items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-[20px]">visibility</span>
+            </div>
+            <div>
+              <div className="font-bold text-xs uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
+                <span>Chế độ giám sát chỉ xem (Business Manager)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200 text-amber-900 font-bold">Chỉ xem</span>
+              </div>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Tài khoản <strong>Quản Lý Kinh Doanh (Business Manager)</strong> đang theo dõi danh sách đơn đặt kho ở chế độ giám sát. Mọi thao tác xác nhận, từ chối, hủy đơn và check-in do <strong>Quản lý cơ sở (Facility Manager)</strong> và <strong>Nhân viên quầy (Staff)</strong> thực hiện.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 3 Thẻ thống kê: Chờ liên hệ, Đơn đã hủy, Tổng đơn */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Thẻ 1: Chờ liên hệ */}
@@ -642,31 +663,27 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                       </td>
 
                       <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-800 text-xs flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px] text-blue-500">calendar_today</span>
-                          <span>
-                            {b.expectedCheckInAt
-                              ? new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')
-                              : ((b as any).checkInDate || b.startDate)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          {(() => {
-                            if (isCancelled || isActiveOrCompleted) return null
-                            const sched = getBookingScheduleInfo(b)
-                            if (!sched.relativeText) return null
-                            return (
-                              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
-                                {sched.relativeText}
-                              </span>
-                            )
-                          })()}
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {b.expectedCheckInAt
-                              ? new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-                              : ((b as any).checkInTime || 'Giờ tiếp đón')}
-                          </span>
-                        </div>
+                        {(() => {
+                          const sched = getBookingScheduleInfo(b)
+                          return (
+                            <>
+                              <div className="font-semibold text-slate-800 text-xs flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-blue-500">calendar_today</span>
+                                <span>{sched.dateFormatted}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {!isCancelled && !isActiveOrCompleted && sched.relativeText && (
+                                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
+                                    {sched.relativeText}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {sched.timeFormatted}
+                                </span>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -752,7 +769,17 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
 
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                          {isPending ? (
+                          {isBusinessManager ? (
+                            <button
+                              type="button"
+                              onClick={() => setReviewDetailBooking(b)}
+                              className="px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                              title="Xem chi tiết đơn & hợp đồng"
+                            >
+                              <span className="material-symbols-outlined text-[15px]">visibility</span>
+                              <span>Xem chi tiết</span>
+                            </button>
+                          ) : isPending ? (
                             <>
                               <button
                                 type="button"
@@ -966,7 +993,7 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                   <div>Email: <strong className="font-sans text-slate-700 dark:text-slate-300">{confirmingBooking.customerEmail}</strong></div>
                 )}
                 <div>Cơ sở: <strong className="text-slate-900 dark:text-white">{confirmingBooking.facilityName}</strong> · {confirmingBooking.unitCode ? `Kho #${confirmingBooking.unitCode}` : 'Chưa gán ô kho vật lý'}</div>
-                <div>Lịch hẹn nhận kho: <strong className="text-emerald-700 dark:text-emerald-400">{(confirmingBooking as any).checkInDate || confirmingBooking.startDate}</strong> ({(confirmingBooking as any).checkInTime || (confirmingBooking.expectedCheckInAt ? confirmingBooking.expectedCheckInAt.slice(11, 16) : '09:00')})</div>
+                <div>Lịch hẹn nhận kho: <strong className="text-emerald-700 dark:text-emerald-400">{getBookingScheduleInfo(confirmingBooking).dateFormatted}</strong> ({getBookingScheduleInfo(confirmingBooking).timeFormatted})</div>
                 <div>Thời hạn thuê: <strong>{confirmingBooking.rentalMonths || 1} tháng</strong> · Tiền thuê: <strong>{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Number(confirmingBooking.totalRentalFee || 0))}</strong></div>
               </div>
 
@@ -1263,8 +1290,8 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                   <div className="grid grid-cols-2 gap-2 text-slate-700 dark:text-slate-300">
                     <div>Cơ sở: <strong className="text-slate-900 dark:text-white">{reviewDetailBooking.facilityName}</strong></div>
                     <div>Loại kho: <strong className="text-slate-900 dark:text-white">{reviewDetailBooking.unitTypeName || 'Tiêu chuẩn'}</strong></div>
-                    <div>Ngày bắt đầu: <strong>{(reviewDetailBooking as any).checkInDate || reviewDetailBooking.startDate}</strong></div>
-                    <div>Giờ hẹn: <strong>{(reviewDetailBooking as any).checkInTime || (reviewDetailBooking.expectedCheckInAt ? reviewDetailBooking.expectedCheckInAt.slice(11, 16) : '09:00')}</strong></div>
+                    <div>Ngày nhận kho: <strong>{sched.dateFormatted}</strong></div>
+                    <div>Giờ hẹn: <strong>{sched.timeFormatted}</strong></div>
                     <div>Thời hạn thuê: <strong>{reviewDetailBooking.rentalMonths || 1} tháng</strong></div>
                     <div>Ô kho gán: <strong className="font-mono text-blue-600">{reviewDetailBooking.unitCode ? `#${reviewDetailBooking.unitCode}` : 'Chưa gán ô kho'}</strong></div>
                   </div>
@@ -1350,7 +1377,7 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                     Đóng
                   </button>
 
-                  {!isCancelled && ((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE' || (reviewDetailBooking.status as string) === 'PENDING_APPROVAL' || (reviewDetailBooking.status as string) === 'PENDING') ? (
+                  {!isBusinessManager && !isCancelled && ((reviewDetailBooking.status as string) === 'PENDING_CONTACT' || (reviewDetailBooking.status as string) === 'PENDING_CONFIRMATION' || (reviewDetailBooking.status as string) === 'PENDING_SIGNATURE' || (reviewDetailBooking.status as string) === 'PENDING_APPROVAL' || (reviewDetailBooking.status as string) === 'PENDING') ? (
                     <button
                       type="button"
                       onClick={() => {

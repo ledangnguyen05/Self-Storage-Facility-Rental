@@ -54,19 +54,32 @@ public class UnitTypeServiceImpl implements UnitTypeService {
             throw new AppException(ErrorCode.UNIT_TYPE_NAME_EXISTED);
         }
 
+        Double lengthM = request.getLengthM();
+        Double widthM = request.getWidthM();
+        Double heightM = request.getHeightM();
+        Double areaSqm = request.getAreaSqm();
+        Double volumeM3 = request.getVolumeM3();
+
+        if (lengthM != null && widthM != null) {
+            areaSqm = Math.round(lengthM * widthM * 100.0) / 100.0;
+        }
+        if (lengthM != null && widthM != null && heightM != null) {
+            volumeM3 = Math.round(lengthM * widthM * heightM * 100.0) / 100.0;
+        }
+
         String dimensions = request.getDimensions() != null ? request.getDimensions().trim() : null;
-        if ((dimensions == null || dimensions.isBlank()) && request.getLengthM() != null && request.getWidthM() != null && request.getHeightM() != null) {
-            dimensions = String.format(java.util.Locale.US, "%.1fm x %.1fm x %.1fm", request.getLengthM(), request.getWidthM(), request.getHeightM());
+        if ((dimensions == null || dimensions.isBlank()) && lengthM != null && widthM != null && heightM != null) {
+            dimensions = String.format(java.util.Locale.US, "%.1fm x %.1fm x %.1fm", lengthM, widthM, heightM);
         }
 
         UnitType unitType = UnitType.builder()
                 .typeName(trimmedName)
                 .dimensions(dimensions)
-                .areaSqm(request.getAreaSqm())
-                .volumeM3(request.getVolumeM3())
-                .lengthM(request.getLengthM())
-                .widthM(request.getWidthM())
-                .heightM(request.getHeightM())
+                .areaSqm(areaSqm)
+                .volumeM3(volumeM3)
+                .lengthM(lengthM)
+                .widthM(widthM)
+                .heightM(heightM)
                 .capacityBoxes(request.getCapacityBoxes())
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .basePricePerMonth(request.getBasePricePerMonth())
@@ -115,24 +128,30 @@ public class UnitTypeServiceImpl implements UnitTypeService {
             unitType.setDimensions(request.getDimensions().trim());
         }
 
-        if (request.getAreaSqm() != null) {
-            unitType.setAreaSqm(request.getAreaSqm());
-        }
-
-        if (request.getVolumeM3() != null) {
-            unitType.setVolumeM3(request.getVolumeM3());
-        }
-
         if (request.getLengthM() != null) {
             unitType.setLengthM(request.getLengthM());
         }
-
         if (request.getWidthM() != null) {
             unitType.setWidthM(request.getWidthM());
         }
-
         if (request.getHeightM() != null) {
             unitType.setHeightM(request.getHeightM());
+        }
+
+        // Standardize area & volume calculation: area = length * width; volume = length * width * height
+        if (unitType.getLengthM() != null && unitType.getWidthM() != null) {
+            unitType.setAreaSqm(Math.round(unitType.getLengthM() * unitType.getWidthM() * 100.0) / 100.0);
+        } else if (request.getAreaSqm() != null) {
+            unitType.setAreaSqm(request.getAreaSqm());
+        }
+
+        if (unitType.getLengthM() != null && unitType.getWidthM() != null && unitType.getHeightM() != null) {
+            unitType.setVolumeM3(Math.round(unitType.getLengthM() * unitType.getWidthM() * unitType.getHeightM() * 100.0) / 100.0);
+            if (request.getDimensions() == null || request.getDimensions().isBlank()) {
+                unitType.setDimensions(String.format(java.util.Locale.US, "%.1fm x %.1fm x %.1fm", unitType.getLengthM(), unitType.getWidthM(), unitType.getHeightM()));
+            }
+        } else if (request.getVolumeM3() != null) {
+            unitType.setVolumeM3(request.getVolumeM3());
         }
 
         if (request.getCapacityBoxes() != null) {
@@ -163,9 +182,8 @@ public class UnitTypeServiceImpl implements UnitTypeService {
 
         // BR-RULE-011: Nếu có cập nhật basePricePerMonth, lưu vào lịch sử giá
         if (request.getBasePricePerMonth() != null) {
-            BigDecimal currentPrice = unitType.getBasePricePerMonth();
-            unitType.setBasePricePerMonth(request.getBasePricePerMonth());
-            if (currentPrice == null || currentPrice.compareTo(request.getBasePricePerMonth()) != 0) {
+            BigDecimal oldPrice = unitType.getBasePricePerMonth();
+            if (oldPrice == null || oldPrice.compareTo(request.getBasePricePerMonth()) != 0) {
                 String reason = request.getPriceChangeReason() != null && !request.getPriceChangeReason().isBlank()
                         ? request.getPriceChangeReason().trim()
                         : "Cập nhật đơn giá niêm yết khi chỉnh sửa thông tin loại kho";
@@ -175,6 +193,8 @@ public class UnitTypeServiceImpl implements UnitTypeService {
                         .reason(reason)
                         .effectiveFrom(LocalDateTime.now())
                         .build());
+            } else {
+                unitType.setBasePricePerMonth(request.getBasePricePerMonth());
             }
         }
 

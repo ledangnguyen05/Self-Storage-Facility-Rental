@@ -1331,7 +1331,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                             (() => {
                               const pol = facilityPoliciesMap[facility.id]
                               const depositPct = pol.depositPercentage ?? pol.depositPercent
-                              const minMonths = pol.minimumRentalMonths
                               const cancelFullHours = pol.cancellationFullRefundHours
                               const cancelPartHours = pol.cancellationPartialRefundHours
                               const cancelPartPct = pol.cancellationPartialRefundPercent
@@ -1347,10 +1346,10 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                   <div className="grid grid-cols-2 gap-2">
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                       <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                                        {t('Tiền cọc & Thuê min', 'Deposit & Min Term')}
+                                        {t('Tiền cọc', 'Deposit')}
                                       </div>
                                       <div className="mt-0.5 font-bold text-slate-900 dark:text-slate-100">
-                                        {depositPct == null ? '—' : `${depositPct}%`} · {minMonths == null ? '—' : `${minMonths} ${t('tháng', 'mo')}`}
+                                        {depositPct == null ? '—' : `${depositPct}%`}
                                       </div>
                                     </div>
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
@@ -1358,7 +1357,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                         {t('Hủy đơn & Hoàn cọc', 'Cancellation & Refund')}
                                       </div>
                                       <div className="mt-0.5 font-bold text-emerald-700 dark:text-emerald-400">
-                                        100% (&le;{cancelFullHours ?? 24}h) · {cancelPartPct ?? 70}% ({cancelFullHours ?? 24}h-{cancelPartHours ?? 48}h) · 50% (&gt;{cancelPartHours ?? 48}h)
+                                        100% (&le;{cancelFullHours ?? 24}h) · {cancelPartPct ?? 70}% (24h-48h) · {pol.cancellationAfter48hRefundPercent ?? 50}% (&gt;48h)
                                       </div>
                                     </div>
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">

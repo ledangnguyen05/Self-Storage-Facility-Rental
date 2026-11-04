@@ -60,7 +60,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/assign-unit")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN') or hasAuthority('BOOKING_MANAGE') or isAuthenticated()")
+    @PreAuthorize("(hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER') or hasAuthority('BOOKING_MANAGE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Nhân viên gán ô kho vật lý và kích hoạt phát hành mã PIN/QR IoT cho khách hàng")
     public ResponseEntity<ApiResponse<BookingResponse>> assignUnit(
             @PathVariable UUID id,
@@ -71,7 +71,7 @@ public class BookingController {
     }
 
     @PostMapping("/code/{bookingCode}/assign-unit")
-    @PreAuthorize("hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN') or hasAuthority('BOOKING_MANAGE') or isAuthenticated()")
+    @PreAuthorize("(hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER') or hasAuthority('BOOKING_MANAGE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Nhân viên gán ô kho vật lý theo mã đặt chỗ (bookingCode)")
     public ResponseEntity<ApiResponse<BookingResponse>> assignUnitByCode(
             @PathVariable String bookingCode,
@@ -82,6 +82,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/confirm")
+    @PreAuthorize("(hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER') or hasAuthority('BOOKING_MANAGE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Nhân viên xác nhận đơn đặt giữ chỗ (chuyển trạng thái sang CONFIRMED)")
     public ResponseEntity<ApiResponse<BookingResponse>> confirmBooking(
             @PathVariable UUID id,
@@ -93,6 +94,7 @@ public class BookingController {
     }
 
     @PostMapping("/code/{bookingCode}/confirm")
+    @PreAuthorize("(hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER') or hasAuthority('BOOKING_MANAGE')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Nhân viên xác nhận đơn đặt giữ chỗ theo mã đặt chỗ (bookingCode)")
     public ResponseEntity<ApiResponse<BookingResponse>> confirmBookingByCode(
             @PathVariable String bookingCode,
@@ -124,7 +126,7 @@ public class BookingController {
     }
 
     @PostMapping("/{id}/decision")
-    @PreAuthorize("hasAuthority('BOOKING_UPDATE')")
+    @PreAuthorize("hasAuthority('BOOKING_UPDATE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Duyệt hoặc từ chối yêu cầu thuê kho và phân công nhân viên chuẩn bị")
     public ResponseEntity<ApiResponse<BookingResponse>> decideRequest(
             @PathVariable UUID id,

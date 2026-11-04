@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { overdueService, OverdueContractDetail, SealingWorkflowPayload } from '../../../services/overdueService'
 import { userService } from '../../../services/userService'
 import { useAuth } from '../../../context/AuthContext'
@@ -12,6 +12,7 @@ interface OverdueContractDetailModalProps {
   onRefreshParent: () => void
   initialTab?: 'debt' | 'smartlock' | 'sealing' | 'notices' | 'payments' | 'audit'
   openInventoryDirectly?: boolean
+  onSettled?: () => void
 }
 
 export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProps> = ({
@@ -20,7 +21,8 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
   contractId,
   onRefreshParent,
   initialTab,
-  openInventoryDirectly
+  openInventoryDirectly,
+  onSettled
 }) => {
   const { user: currentUser } = useAuth()
   const [detail, setDetail] = useState<OverdueContractDetail | null>(null)
@@ -107,6 +109,8 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
   ])
 
   const [simulateOfflineRevocation, setSimulateOfflineRevocation] = useState(false)
+  const [showLiquidationReleaseModal, setShowLiquidationReleaseModal] = useState(false)
+  const [liquidationNotes, setLiquidationNotes] = useState('Thanh lý tài sản giải phóng buồng kho do hết hạn mức giữ kho (0 ngày)')
 
   const rawRole = (currentUser?.role?.name || currentUser?.roleName || (typeof (currentUser as any)?.role === 'string' ? (currentUser as any).role : '') || '').replace(/^ROLE_/, '')
   const isAdmin = rawRole === 'ADMIN'
@@ -211,9 +215,137 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
       new Date(detail.tempPinGrantedUntil).getTime() > Date.now()
   )
 
+  // Liquidation calculations for inventory items
+  const dossierItems = detail?.sealingDossier?.items || []
+  const totalLiquidationValue = useMemo(() => {
+    return dossierItems.reduce((sum, item) => {
+      const val = Number(item.estimatedValue) || 0
+      const qty = Number(item.quantity) || 1
+      return sum + val * qty
+    }, 0)
+  }, [dossierItems])
+
+  // Đơn giá phạt trễ hạn / ngày (dùng để tính toán hạn mức và số ngày giữ hàng ước tính)
+  const dailyPenaltyRate = useMemo(() => {
+    if (!detail) return 0
+    if (detail.dailyLateFee && Number(detail.dailyLateFee) > 0) {
+      return Number(detail.dailyLateFee)
+    }
+    if (detail.dailyRentalPrice && Number(detail.dailyRentalPrice) > 0) {
+      return Number(detail.dailyRentalPrice)
+    }
+    const monthly = Number(detail.monthlyFee) || 0
+    return Math.ceil(monthly / 30 / 1000) * 1000
+  }, [detail])
+
+  const dailyRentalPrice = dailyPenaltyRate
+
+  const estimatedHoldingDays = useMemo(() => {
+    if (dailyPenaltyRate <= 0) return 0
+    // Quy tắc: ước tính ngày giữ kho = (tổng tiền thanh lý - tổng công nợ) / đơn giá phạt ngày của kho
+    const currentDebt = Math.max(0, Number(detail?.totalDebt) || 0)
+    const remainingValue = totalLiquidationValue - currentDebt
+    if (remainingValue <= 0) return 0
+    return Math.floor(remainingValue / dailyPenaltyRate)
+  }, [totalLiquidationValue, detail?.totalDebt, dailyPenaltyRate])
+
+  const hasInventory = dossierItems.length > 0
+
+  // Tự động phân loại mẫu thông báo theo hồ sơ nợ cước
+  const autoClassifiedTemplate = useMemo(() => {
+    if (!detail) {
+      return {
+        key: 'REMINDER',
+        label: 'Ân hạn (1 ngày)',
+        subLabel: 'Nhắc cước nhẹ nhàng, chưa tính phí phạt',
+        badgeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        badgePill: 'bg-emerald-100 text-emerald-800',
+        icon: 'schedule',
+        isLiquidation: false
+      }
+    }
+
+    // Trường hợp 5: Đủ điều kiện niêm phong (>= 7 ngày) / Nợ vượt tiền cọc giữ VÀ có Danh mục kiểm kê tài sản
+    const isLiquidation = detail.totalDebt > 0 && (dossierItems.length > 0 || detail.sealingStatus === 'SEALING_COMPLETED' || detail.sealingStatus === 'SEALING_ELIGIBLE')
+    if (isLiquidation) {
+      return {
+        key: 'LIQUIDATION_HOLDING_WARNING',
+        label: 'Xử lý nợ vượt cọc & Định giá tài sản giữ kho',
+        subLabel: `Đủ ĐK Niêm phong (>= 7 ngày) • ${dossierItems.length} mục kiểm kê • Ước tính giữ: ${estimatedHoldingDays} ngày`,
+        badgeBg: 'bg-purple-50 text-purple-900 border-purple-200',
+        badgePill: 'bg-purple-100 text-purple-800',
+        icon: 'inventory_2',
+        isLiquidation: true
+      }
+    }
+
+    switch (detail.stage) {
+      case 'GRACE_PERIOD':
+        return {
+          key: 'REMINDER',
+          label: 'Ân hạn (1 ngày)',
+          subLabel: 'Nhắc cước nhẹ nhàng, chưa tính phí phạt',
+          badgeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+          badgePill: 'bg-emerald-100 text-emerald-800',
+          icon: 'schedule',
+          isLiquidation: false
+        }
+      case 'WARNING':
+        return {
+          key: 'WARNING',
+          label: 'Cảnh báo (2 ngày)',
+          subLabel: 'Cảnh báo phát sinh phạt theo ngày & nhắc trả kho',
+          badgeBg: 'bg-amber-50 text-amber-800 border-amber-200',
+          badgePill: 'bg-amber-100 text-amber-800',
+          icon: 'warning',
+          isLiquidation: false
+        }
+      case 'PIN_REVOCATION':
+        return {
+          key: 'LOCKOUT_NOTICE',
+          label: 'Thu hồi PIN (3-6 ngày)',
+          subLabel: 'Cảnh báo tạm khóa quyền truy cập SmartLock IoT',
+          badgeBg: 'bg-rose-50 text-rose-800 border-rose-200',
+          badgePill: 'bg-rose-100 text-rose-800',
+          icon: 'pin',
+          isLiquidation: false
+        }
+      case 'SEALING_ELIGIBLE':
+      default:
+        return {
+          key: 'SEAL_WARNING',
+          label: 'Đủ ĐK Niêm phong (>= 7 ngày)',
+          subLabel: 'Cảnh báo niêm phong kho & tiến hành kiểm kê tài sản',
+          badgeBg: 'bg-purple-50 text-purple-800 border-purple-200',
+          badgePill: 'bg-purple-100 text-purple-800',
+          icon: 'lock',
+          isLiquidation: false
+        }
+    }
+  }, [detail, dossierItems.length, estimatedHoldingDays])
+
   if (!isOpen) return null
 
   // Action handlers
+  const handleLiquidateRelease = async () => {
+    if (!detail) return
+    setIsSubmitting(true)
+    try {
+      await overdueService.liquidateReleaseStorageUnit(contractId, {
+        notes: liquidationNotes
+      })
+      toast.success('Đã giải phóng buồng kho về trạng thái AVAILABLE!')
+      setShowLiquidationReleaseModal(false)
+      fetchDetail()
+      onRefreshParent()
+      onSettled?.()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Lỗi khi giải phóng kho thanh lý')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
   const handleSendReminder = async () => {
     if (isContractSettled) {
       toast.error('Hợp đồng đã hoàn tất thanh toán và trả kho, không thể thực hiện thao tác.')
@@ -223,11 +355,12 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
     try {
       await overdueService.sendReminder(contractId, {
         channel: 'MULTI',
-        templateType: remindTemplate,
+        templateType: autoClassifiedTemplate.key,
         notes: remindNotes
       })
-      toast.success('Đã gửi thông báo nhắc cước thành công!')
+      toast.success(`Đã phát thông báo nhắc cước thành công theo mẫu [${autoClassifiedTemplate.label}] qua Web & Email!`)
       setShowRemindDialog(false)
+      setRemindNotes('')
       fetchDetail()
       onRefreshParent()
     } catch (err: any) {
@@ -446,17 +579,31 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
         {/* Settled Notice Banner */}
         {isContractSettled && (
-          <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900 shadow-xs">
+          <div className={`p-3.5 border rounded-xl flex items-center justify-between text-xs shadow-xs ${
+            detail?.stageLabel?.includes('thanh lý')
+              ? 'bg-purple-50 border-purple-200 text-purple-900'
+              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+          }`}>
             <div className="flex items-center gap-2.5">
-              <span className="material-symbols-outlined text-emerald-600 text-[22px]">verified</span>
+              <span className={`material-symbols-outlined text-[22px] ${
+                detail?.stageLabel?.includes('thanh lý') ? 'text-purple-600' : 'text-emerald-600'
+              }`}>
+                {detail?.stageLabel?.includes('thanh lý') ? 'gavel' : 'verified'}
+              </span>
               <div>
-                <span className="font-bold text-[13px] block">Hồ sơ đã hoàn tất quyết toán &amp; khách hàng đã bàn giao trả kho</span>
-                <span className="text-emerald-700">
-                  Thời gian hoàn tất: <strong>{detail?.settledAt && detail.settledAt !== 'Vừa xong' ? detail.settledAt : (detail?.dueDate ? `09:09 02/11/2026` : 'Đã ghi nhận')}</strong> {detail?.settledByName ? `• Người duyệt: ${detail.settledByName}` : ''}. Tất cả thao tác chế tài, gửi thông báo và niêm phong đã được đóng.
+                <span className="font-bold text-[13px] block">
+                  {detail?.stageLabel?.includes('thanh lý')
+                    ? 'Hồ sơ đã hoàn tất thanh lý tài sản & buồng kho đã giải phóng về trạng thái AVAILABLE'
+                    : 'Hồ sơ đã hoàn tất quyết toán & khách hàng đã bàn giao trả kho'}
+                </span>
+                <span className={detail?.stageLabel?.includes('thanh lý') ? 'text-purple-700' : 'text-emerald-700'}>
+                  Thời gian hoàn tất: <strong>{detail?.settledAt && detail.settledAt !== 'Vừa xong' ? detail.settledAt : 'Đã ghi nhận'}</strong> {detail?.settledByName ? `• Người duyệt: ${detail.settledByName}` : ''}. Tất cả thao tác chế tài, gửi thông báo và niêm phong đã được đóng.
                 </span>
               </div>
             </div>
-            <span className="px-3 py-1 bg-emerald-600 text-white font-bold rounded-lg text-xs shrink-0 flex items-center gap-1">
+            <span className={`px-3 py-1 font-bold rounded-lg text-xs shrink-0 flex items-center gap-1 text-white ${
+              detail?.stageLabel?.includes('thanh lý') ? 'bg-purple-700' : 'bg-emerald-600'
+            }`}>
               <span className="material-symbols-outlined text-[15px]">lock</span>
               ĐÃ ĐÓNG HỒ SƠ
             </span>
@@ -611,6 +758,100 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                     </div>
                   </div>
 
+                  {/* Quản lý lưu kho & Thanh lý tài sản khi vượt hạn mức nợ */}
+                  {detail.totalDebt > 0 && (
+                    !hasInventory ? (
+                      <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
+                        <div className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-amber-600 text-[24px] shrink-0 mt-0.5">assignment_late</span>
+                          <div>
+                            <p className="font-bold text-amber-900 text-sm">Kho chưa thực hiện kiểm kê tài sản</p>
+                            <p className="text-amber-700 mt-0.5 leading-relaxed">
+                              Đơn nợ cước này đã bị trừ hết cọc và đang nợ Boxora <strong>{formatVND(detail.totalDebt)}</strong>. Cần kiểm kê danh mục tài sản trong kho để tính toán tổng giá trị thanh lý và số ngày ước tính có thể tiếp tục giữ hàng.
+                            </p>
+                          </div>
+                        </div>
+                        {!isContractSettled && (
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('sealing')}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shadow-xs shrink-0 self-start sm:self-center"
+                          >
+                            <span className="material-symbols-outlined text-[17px]">inventory_2</span>
+                            <span>Kiểm kê ngay</span>
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-3 text-xs shadow-xs">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <span className="material-symbols-outlined text-indigo-600 text-[24px]">inventory_2</span>
+                            <div>
+                              <div>
+                                <span className="font-bold text-slate-800 text-sm block">Định giá tài sản &amp; Thời gian giữ hàng ước tính</span>
+                                <span className="text-slate-500 block text-xs">
+                                  Danh mục kiểm kê ({dossierItems.length} mục) • Đơn giá phạt: <strong className="text-slate-700">{formatVND(dailyPenaltyRate)}/ngày</strong>
+                                </span>
+                                {detail && detail.totalDebt > 0 && totalLiquidationValue > 0 && (
+                                  <span className="text-[11px] text-slate-500 block mt-0.5">
+                                    Ước tính ngày = (Tổng thanh lý: <strong className="text-indigo-700">{formatVND(totalLiquidationValue)}</strong> - Công nợ: <strong className="text-rose-600">{formatVND(detail.totalDebt)}</strong>) / <strong className="text-slate-700">{formatVND(dailyPenaltyRate)}/ngày</strong> = <strong className={`${estimatedHoldingDays === 0 ? 'text-rose-600' : 'text-emerald-700'} font-bold`}>{estimatedHoldingDays} ngày</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2.5">
+                            <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Tổng tiền thanh lý</span>
+                              <span className="font-black text-indigo-700 text-base">{formatVND(totalLiquidationValue)}</span>
+                            </div>
+                            {detail && detail.totalDebt > 0 && (
+                              <div className="bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-slate-500 block text-[10px] uppercase font-semibold">Sau bù công nợ</span>
+                                <span className="font-bold text-slate-800 text-sm">{formatVND(Math.max(0, totalLiquidationValue - detail.totalDebt))}</span>
+                              </div>
+                            )}
+                            <div className={`px-3.5 py-1.5 rounded-xl border shadow-2xs ${
+                              estimatedHoldingDays === 0
+                                ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                            }`}>
+                              <span className="block text-[10px] uppercase font-semibold">Ước tính giữ kho</span>
+                              <span className="font-black text-base">{estimatedHoldingDays} ngày</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {estimatedHoldingDays === 0 && (
+                          isContractSettled ? (
+                            <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex items-center gap-2 text-purple-900 text-xs">
+                              <span className="material-symbols-outlined text-purple-600 text-[20px]">check_circle</span>
+                              <span><strong>Đã giải phóng buồng kho:</strong> Toàn bộ tài sản kiểm kê đã được thanh lý giải phóng và buồng kho đã về trạng thái AVAILABLE sẵn sàng cho thuê mới.</span>
+                            </div>
+                          ) : (
+                            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-rose-900">
+                              <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-rose-600 text-[20px]">warning</span>
+                                <span className="text-xs">
+                                  <strong>Hết hạn mức giữ kho (0 ngày):</strong> Giá trị tài sản thanh lý đã hết/không còn đủ bù cước ngày. Cần trực tiếp giải phóng buồng kho về trạng thái AVAILABLE.
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowLiquidationReleaseModal(true)}
+                                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg whitespace-nowrap transition cursor-pointer flex items-center gap-1 shadow-xs shrink-0 self-start sm:self-center text-xs"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">meeting_room</span>
+                                <span>Giải phóng kho ngay (Available)</span>
+                              </button>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )
+                  )}
+
                   {/* Formula Breakdown Card */}
                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3">
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -638,27 +879,21 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                         </span>
                       </div>
                     </div>
-                    <div className={`p-3 border rounded-lg text-xs font-mono font-bold flex items-center gap-2 ${
-                      detail.totalDebt > 0
-                        ? 'bg-rose-50 border-rose-200 text-rose-900'
-                        : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                    }`}>
-                      <span className="material-symbols-outlined text-[18px]">info</span>
-                      {detail.feeFormulaExplanation}
-                    </div>
                   </div>
 
                   {/* Actions for Tab 1 */}
-                  <div className="flex items-center justify-end gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowRemindDialog(true)}
-                      className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 shadow-sm flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">forward_to_inbox</span>
-                      Gửi thông báo nhắc nợ
-                    </button>
-                  </div>
+                  {!isContractSettled ? (
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowRemindDialog(true)}
+                        className="px-4 py-2 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 shadow-sm flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">forward_to_inbox</span>
+                        Gửi thông báo nhắc nợ
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -1065,7 +1300,41 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
                       {/* Itemized Asset Inventory Table */}
                       <div className="mt-2 flex flex-col gap-1.5">
-                        <span className="text-xs font-bold text-slate-700">Danh mục tài sản kiểm kê trong kho:</span>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[18px] text-indigo-600">inventory_2</span>
+                            Danh mục tài sản kiểm kê trong kho:
+                          </span>
+
+                          {/* Thẻ tổng hợp tiền đồ thanh lý & số ngày ước tính giữ hàng */}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs px-3 py-1 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-lg font-bold">
+                              Tổng tiền đồ thanh lý: {formatVND(totalLiquidationValue)}
+                            </span>
+                            {detail && detail.totalDebt > 0 && (
+                              <span className="text-xs px-3 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg font-medium">
+                                Sau bù nợ ({formatVND(detail.totalDebt)}): còn {formatVND(Math.max(0, totalLiquidationValue - detail.totalDebt))}
+                              </span>
+                            )}
+                            <span className={`text-xs px-3 py-1 rounded-lg border font-bold ${
+                              estimatedHoldingDays === 0
+                                ? 'bg-rose-50 border-rose-200 text-rose-700'
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            }`}>
+                              Ước tính giữ hàng: {estimatedHoldingDays} ngày ({formatVND(dailyRentalPrice)}/ngày)
+                            </span>
+                            {detail.totalDebt > 0 && estimatedHoldingDays === 0 && !isContractSettled && (
+                              <button
+                                type="button"
+                                onClick={() => setShowLiquidationReleaseModal(true)}
+                                className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">meeting_room</span>
+                                Giải phóng kho ngay (Available)
+                              </button>
+                            )}
+                          </div>
+                        </div>
                         <div className="overflow-x-auto border border-slate-200 rounded-lg bg-white">
                           <table className="w-full text-xs text-left">
                             <thead className="bg-slate-100 text-slate-700 border-b border-slate-200">
@@ -1277,65 +1546,186 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
       </div>
 
-      {/* Sub-Dialog: Send Reminder Notice */}
+      {/* Sub-Dialog: Send Reminder Notice - Tự Động Phân Loại Mẫu Thông Báo */}
       {showRemindDialog && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Phát thông báo nhắc cước</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Thông báo sẽ được gửi đồng thời qua Web Boxora và Email khách hàng.
-              </p>
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-3.5 animate-scaleUp">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                  <span className="material-symbols-outlined text-lg">campaign</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Phát thông báo nhắc cước</h3>
+                  <p className="text-[11px] text-slate-500">
+                    Tự động đồng bộ gửi qua Web Dashboard &amp; Email chi tiết của khách hàng
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRemindDialog(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-lg">close</span>
+              </button>
             </div>
 
             {/* Recipient Brief Card */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1 text-xs">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-1.5 text-xs">
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">Khách hàng:</span>
                 <span className="font-bold text-slate-800">{detail?.customerName || '-'} ({detail?.customerPhone || '-'})</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">Hộp thư Email:</span>
-                <span className="font-semibold text-slate-800">{detail?.customerEmail || '-'}</span>
+                <span className="font-semibold text-slate-800 font-mono text-[11px]">{detail?.customerEmail || '-'}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Kho &amp; Cơ sở:</span>
+                <span className="font-bold text-slate-800">
+                  #{detail?.unitCode} ({detail?.unitTypeName || 'Kho'}) • {detail?.facilityName || 'Boxora'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-500">Tổng công nợ:</span>
-                <span className="font-black text-rose-600">{formatVND(detail?.totalDebt)}</span>
-              </div>
-              <div className="mt-1 pt-1.5 border-t border-slate-200 flex items-center gap-1.5 text-[11px] text-emerald-700 font-semibold">
-                <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                Tự động phát đa kênh: Web Dashboard &amp; Email chi tiết
+                <span className="font-black text-rose-600 text-sm">{formatVND(detail?.totalDebt)}</span>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 text-xs">
-              <label className="font-semibold text-slate-700">Mẫu thông báo:</label>
-              <select
-                value={remindTemplate}
-                onChange={e => setRemindTemplate(e.target.value as any)}
-                className="p-2 border border-slate-300 rounded-lg text-xs"
-              >
-                <option value="REMINDER">Nhắc cước nhẹ nhàng (Ân hạn)</option>
-                <option value="WARNING">Cảnh báo phát sinh phạt &amp; nguy cơ thu hồi PIN</option>
-                <option value="LOCKOUT_NOTICE">Thông báo thu hồi quyền truy cập SmartLock</option>
-                <option value="SEAL_WARNING">Thông báo chuẩn bị niêm phong tài sản</option>
-              </select>
+            {/* Mẫu thông báo: Tự động phân loại (Không cần manager chọn thủ công) */}
+            <div className="flex flex-col gap-1.5 text-xs">
+              <span className="font-bold text-slate-700 flex items-center justify-between">
+                <span>Mẫu thông báo phát gửi:</span>
+                <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[13px]">auto_awesome</span>
+                  Tự động phân loại theo hồ sơ
+                </span>
+              </span>
+              <div className={`p-3 rounded-xl border flex items-center justify-between shadow-2xs ${autoClassifiedTemplate.badgeBg}`}>
+                <div className="flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-[22px]">{autoClassifiedTemplate.icon}</span>
+                  <div>
+                    <span className="font-bold block text-sm">{autoClassifiedTemplate.label}</span>
+                    <span className="text-[11px] opacity-90 block mt-0.5">{autoClassifiedTemplate.subLabel}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-              <label className="font-semibold text-slate-700 mt-1">Ghi chú thêm:</label>
+            {/* Xem trước thiết kế thông báo tương ứng */}
+            {autoClassifiedTemplate.isLiquidation ? (
+              /* Thiết kế Trường Hợp: Đủ ĐK Niêm Phong / Nợ Vượt Cọc & Có Định Giá Tài Sản Kiểm Kê */
+              <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-xl flex flex-col gap-2.5 text-xs max-h-64 overflow-y-auto">
+                <div className="flex justify-between items-center pb-1.5 border-b border-purple-200/80">
+                  <span className="font-bold text-purple-950 flex items-center gap-1 text-[11px]">
+                    <span className="material-symbols-outlined text-[15px] text-purple-700">preview</span>
+                    Xem trước thiết kế thông báo gửi khách:
+                  </span>
+                  <span className="text-[10px] font-mono text-purple-800 bg-white px-2 py-0.5 rounded border border-purple-200">
+                    #{detail?.contractCode}
+                  </span>
+                </div>
+
+                {/* 3 Thẻ tài chính: Tổng công nợ, Tiền cọc giữ, Phí phạt trễ hạn */}
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2 bg-white border border-rose-200 rounded-lg shadow-2xs">
+                    <span className="text-[9px] text-rose-600 block font-semibold uppercase">Tổng công nợ</span>
+                    <span className="font-black text-rose-700 text-xs block mt-0.5">{formatVND(detail?.totalDebt)}</span>
+                    <span className="text-[8px] text-rose-500 block leading-tight mt-0.5">Phí phạt vượt cọc giữ</span>
+                  </div>
+                  <div className="p-2 bg-white border border-slate-200 rounded-lg shadow-2xs">
+                    <span className="text-[9px] text-slate-500 block font-semibold uppercase">Tiền cọc giữ</span>
+                    <span className="font-bold text-slate-800 text-xs block mt-0.5">{formatVND(detail?.depositHeld)}</span>
+                    <span className="text-[8px] text-slate-400 block leading-tight mt-0.5">Bảo đảm hợp đồng</span>
+                  </div>
+                  <div className="p-2 bg-white border border-amber-200 rounded-lg shadow-2xs">
+                    <span className="text-[9px] text-amber-700 block font-semibold uppercase">Phí phạt trễ</span>
+                    <span className="font-black text-amber-800 text-xs block mt-0.5">{formatVND(detail?.lateFee)}</span>
+                    <span className="text-[8px] text-amber-600 block leading-tight mt-0.5">Khấu trừ vào cọc</span>
+                  </div>
+                </div>
+
+                {/* Khung Định giá tài sản & Thời gian giữ hàng ước tính */}
+                <div className="p-2.5 bg-white border border-purple-200 rounded-lg space-y-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-purple-900 text-[11px] flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px] text-purple-600">inventory_2</span>
+                      Định giá tài sản &amp; Thời gian giữ hàng ước tính
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Đơn giá phạt: <strong className="text-slate-700">{formatVND(dailyPenaltyRate)}/ngày</strong>
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5 text-center pt-0.5">
+                    <div className="p-1.5 bg-indigo-50/70 border border-indigo-100 rounded">
+                      <span className="text-[9px] text-indigo-700 block uppercase font-medium">Tổng thanh lý</span>
+                      <span className="font-bold text-indigo-900 text-xs block">{formatVND(totalLiquidationValue)}</span>
+                    </div>
+                    <div className="p-1.5 bg-emerald-50/70 border border-emerald-100 rounded">
+                      <span className="text-[9px] text-emerald-700 block uppercase font-medium">Sau bù công nợ</span>
+                      <span className="font-bold text-emerald-800 text-xs block">{formatVND(Math.max(0, totalLiquidationValue - (detail?.totalDebt || 0)))}</span>
+                    </div>
+                    <div className={`p-1.5 rounded border ${estimatedHoldingDays === 0 ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-purple-50 border-purple-200 text-purple-800'}`}>
+                      <span className="text-[9px] block uppercase font-medium">Ước tính giữ kho</span>
+                      <span className="font-black text-xs block">{estimatedHoldingDays} ngày</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-600 bg-slate-50 p-1.5 rounded border border-slate-200">
+                    Ước tính ngày = ({formatVND(totalLiquidationValue)} - {formatVND(detail?.totalDebt)}) / {formatVND(dailyPenaltyRate)}/ngày = <strong className="text-purple-700">{estimatedHoldingDays} ngày</strong>
+                  </div>
+                </div>
+
+              </div>
+            ) : (
+              /* Thiết kế các trường hợp chuẩn: Ân hạn, Cảnh báo, Thu hồi PIN, Đủ ĐK Niêm phong */
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2 text-xs">
+                <div className="flex justify-between items-center pb-1 border-b border-slate-200">
+                  <span className="font-bold text-slate-800 text-[11px]">Nội dung phát thông báo tóm tắt:</span>
+                  <span className="font-mono text-[10px] text-slate-500">+{detail?.daysOverdue} ngày quá hạn</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-white border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 block">Tiền cọc giữ:</span>
+                    <span className="font-bold text-slate-800 text-xs">{formatVND(detail?.depositHeld)}</span>
+                  </div>
+                  <div className="p-2 bg-white border border-slate-200 rounded-lg">
+                    <span className="text-[10px] text-slate-500 block">Phí phạt trễ hạn:</span>
+                    <span className="font-bold text-rose-600 text-xs">+{formatVND(detail?.lateFee)}</span>
+                  </div>
+                </div>
+                <div className="p-2 bg-white border border-slate-200 rounded-lg text-[11px] text-slate-600 leading-relaxed">
+                  {detail?.totalDebt && detail.totalDebt > 0 ? (
+                    <span className="text-rose-700 font-medium">
+                      Phí phạt đã vượt cọc giữ. Khách hàng cần thanh toán tổng công nợ <strong>{formatVND(detail.totalDebt)}</strong> và làm thủ tục bàn giao kho.
+                    </span>
+                  ) : (
+                    <span className="text-emerald-700 font-medium">
+                      Phí phạt được khấu trừ vào tiền cọc giữ. Số tiền hoàn dự kiến khi trả kho: <strong>{formatVND(detail?.customerRefundAmount)}</strong>.
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Ghi chú thêm của nhân viên */}
+            <div className="flex flex-col gap-1 text-xs">
+              <label className="font-semibold text-slate-700">Ghi chú nhân viên / Lời nhắn gửi kèm:</label>
               <textarea
                 value={remindNotes}
                 onChange={e => setRemindNotes(e.target.value)}
-                placeholder="Ghi chú nhân viên hoặc lưu ý cho khách..."
+                placeholder="Nhập ghi chú hoặc nhắc nhở riêng cho khách hàng nếu có..."
                 rows={2}
-                className="p-2 border border-slate-300 rounded-lg text-xs"
+                className="p-2 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setShowRemindDialog(false)}
-                className="px-3.5 py-1.5 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
               >
                 Hủy
               </button>
@@ -1343,10 +1733,19 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                 type="button"
                 onClick={handleSendReminder}
                 disabled={isSubmitting}
-                className="px-4 py-1.5 bg-rose-600 text-white text-xs font-bold rounded-xl hover:bg-rose-700 transition cursor-pointer flex items-center gap-1 shadow-sm"
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-[16px]">send</span>
-                Gửi thông báo
+                {isSubmitting ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                    Đang gửi thông báo...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">send</span>
+                    Gửi thông báo ngay
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1773,6 +2172,98 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* Sub-Dialog: Giải phóng kho do hết hạn mức giữ kho (Liquidation Release) */}
+      {showLiquidationReleaseModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">meeting_room</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900">
+                  Giải phóng buồng kho #{detail?.unitCode}
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Thanh lý tài sản kiểm kê &amp; chuyển buồng kho về trạng thái AVAILABLE
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-rose-50/70 border border-rose-200 rounded-xl text-xs space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Buồng kho:</span>
+                <span className="font-bold text-slate-900">{detail?.unitCode} ({detail?.unitTypeName || 'Kho'})</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Khách hàng:</span>
+                <span className="font-semibold text-slate-900">{detail?.customerName} ({detail?.customerPhone})</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Tổng công nợ hiện tại:</span>
+                <span className="font-bold text-rose-700">{formatVND(detail?.totalDebt)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Tổng tiền đồ thanh lý:</span>
+                <span className="font-black text-indigo-700">{formatVND(totalLiquidationValue)}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-600">Thời gian ước tính giữ hàng:</span>
+                <span className="font-black text-rose-600">{estimatedHoldingDays} ngày (Đã hết hạn mức)</span>
+              </div>
+              <div className="pt-2 border-t border-rose-200/80 text-[11px] text-rose-900 leading-relaxed space-y-1">
+                <p>
+                  ✓ Buồng kho sẽ được chuyển trực tiếp sang trạng thái <strong>SẴN SÀNG (AVAILABLE)</strong> để khai thác cho thuê.
+                </p>
+                <p>
+                  ✓ Mã PIN / quyền truy cập SmartLock IoT bị thu hồi toàn bộ.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5 text-xs">
+              <label className="font-semibold text-slate-700">Ghi chú biên bản giải phóng kho:</label>
+              <textarea
+                value={liquidationNotes}
+                onChange={e => setLiquidationNotes(e.target.value)}
+                rows={2}
+                placeholder="Nhập ghi chú hoặc lý do giải phóng..."
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowLiquidationReleaseModal(false)}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleLiquidateRelease}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                    Đang giải phóng kho...
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                    Xác nhận giải phóng kho (AVAILABLE)
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

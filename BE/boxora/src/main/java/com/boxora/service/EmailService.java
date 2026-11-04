@@ -17,7 +17,7 @@ public interface EmailService {
 
     void sendOverdueNoticeEmail(String toEmail, String fullName, String contractCode, String unitCode, long daysOverdue, java.math.BigDecimal totalDebt, String overdueStage);
 
-    void sendDetailedOverdueNoticeEmail(
+    default void sendDetailedOverdueNoticeEmail(
             String toEmail,
             String fullName,
             String contractCode,
@@ -34,6 +34,37 @@ public interface EmailService {
             String overdueStage,
             String templateType,
             String notes
+    ) {
+        sendDetailedOverdueNoticeEmail(
+                toEmail, fullName, contractCode, unitCode, null, facilityName,
+                daysOverdue, principalDebt, dailyLateFee, lateFee, totalDebt, depositHeld,
+                dueDate, feeFormulaExplanation, overdueStage, templateType, notes,
+                null, null, null, null
+        );
+    }
+
+    void sendDetailedOverdueNoticeEmail(
+            String toEmail,
+            String fullName,
+            String contractCode,
+            String unitCode,
+            String unitTypeName,
+            String facilityName,
+            long daysOverdue,
+            java.math.BigDecimal principalDebt,
+            java.math.BigDecimal dailyLateFee,
+            java.math.BigDecimal lateFee,
+            java.math.BigDecimal totalDebt,
+            java.math.BigDecimal depositHeld,
+            java.time.LocalDate dueDate,
+            String feeFormulaExplanation,
+            String overdueStage,
+            String templateType,
+            String notes,
+            java.math.BigDecimal totalLiquidationValue,
+            Long estimatedHoldingDays,
+            Integer inventoryItemCount,
+            java.math.BigDecimal dailyRentalPrice
     );
 
     void sendSealingNoticeEmail(String toEmail, String fullName, String contractCode, String unitCode, String protocolNumber, String sealTagNumber, long overdueDays, java.math.BigDecimal totalDebt, String reason);

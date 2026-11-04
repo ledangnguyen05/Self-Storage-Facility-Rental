@@ -549,10 +549,14 @@ export const StaffDashboard: React.FC = () => {
                 unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
                 unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
                 storageUnitId: r.storageUnitId || '',
-                startDate: r.startDate || new Date().toISOString().slice(0, 10),
+                startDate: r.startDate && !r.startDate.includes('undefined') ? r.startDate : new Date().toISOString().slice(0, 10),
                 endDate: r.rentalEndDate || '',
-                expectedCheckInAt: r.expectedCheckInAt || (r.checkInDate ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00` : undefined),
-                checkInTime: r.checkInTime,
+                expectedCheckInAt: r.expectedCheckInAt && !r.expectedCheckInAt.includes('undefined') && !isNaN(new Date(r.expectedCheckInAt).getTime())
+                  ? r.expectedCheckInAt
+                  : (r.checkInDate && !r.checkInDate.includes('undefined')
+                    ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00`
+                    : (r.startDate && !r.startDate.includes('undefined') ? `${r.startDate}T09:00:00` : undefined)),
+                checkInTime: r.checkInTime || '09:00',
                 status: (r.status || 'PENDING_CONTACT') as any,
                 customerId: r.customerId || 'guest',
                 accessCode: r.accessCode || r.bookingCode || '',

@@ -126,7 +126,7 @@ public class FacilityPolicy extends BaseEntity {
     public int resolveMinimumRentalDays() {
         int days = minimumRentalDays != null && minimumRentalDays > 0 ? minimumRentalDays : 30;
         if (minimumRentalMonths != null && minimumRentalMonths > 0) {
-            days = Math.max(days, minimumRentalMonths * 30);
+            days = Math.max(days, 30);
         }
         return days;
     }

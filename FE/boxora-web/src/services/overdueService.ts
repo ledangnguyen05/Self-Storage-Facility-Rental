@@ -6,6 +6,8 @@ export interface OverdueSummary {
   totalOverdueDebt: number
   totalPrincipalDebt: number
   totalLateFees: number
+  totalCustomerRefundAmount?: number
+  totalDepositHeld?: number
   unverifiedPaymentsAmount: number
   unverifiedPaymentsCount: number
   graceCount: number
@@ -15,6 +17,7 @@ export interface OverdueSummary {
   policyUnconfiguredCount: number
   pendingPinRevocationsCount: number
   pendingSealingApprovalsCount: number
+  eligibleLiquidationReleaseCount?: number
   settledCount?: number
 }
 
@@ -266,6 +269,10 @@ export const overdueService = {
 
   completeSettlement: async (contractId: string, payload?: OverdueSettlementPayload): Promise<void> => {
     await api.post(`/api/v1/overdue/contracts/${contractId}/complete-settlement`, payload)
+  },
+
+  liquidateReleaseStorageUnit: async (contractId: string, payload?: { liquidationAmount?: number; notes?: string }): Promise<void> => {
+    await api.post(`/api/v1/overdue/contracts/${contractId}/liquidate-release`, payload)
   },
 
   // Legacy compatibility

@@ -256,7 +256,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       effectiveRole === 'FACILITY_MANAGER' ||
       effectiveRole === 'ADMIN')
   const canViewFullBankAccount = isFacilityManager || isBusinessManager || isAdmin
-  const canExecutePayout = isFacilityManager || isBusinessManager || isAdmin
+  const canExecutePayout = !isBusinessManager && (isFacilityManager || isAdmin)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [returnCases, setReturnCases] = useState<ReturnCaseItem[]>([])
@@ -2123,29 +2123,16 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-headline font-bold">
-                Quy Trình Nghiệm Thu &amp; Trả Kho Thực Địa (Boxora Warehouse Return)
+                Quy Trình Nghiệm Thu &amp; Trả Kho Thực Địa
               </h2>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                SLA HOÀN CỌC CHUẨN BOXORA
+                QUY TRÌNH HOÀN CỌC CHUẨN BOXORA
               </span>
             </div>
             <p className="text-xs text-slate-300 mt-1">
               Thẩm định 7 tiêu chí hiện trường, phân tách trách nhiệm IoT, quyết toán chống cọc âm, nhận lại ô kho và thu hồi SmartLock.
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
-          <button
-            type="button"
-            onClick={handleRequestRefresh}
-            disabled={isRefreshing}
-            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold border border-white/20 text-white flex items-center gap-1.5 cursor-pointer transition shadow-2xs disabled:opacity-50"
-            title="Làm mới danh sách hồ sơ trả kho từ máy chủ"
-          >
-            <RotateCcw size={14} className={isRefreshing ? 'animate-spin' : ''} />
-            <span>{isRefreshing ? 'Đang nạp...' : 'Làm mới'}</span>
-          </button>
         </div>
       </div>
 
@@ -2158,11 +2145,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             </div>
             <div>
               <div className="font-bold text-xs uppercase tracking-wider text-amber-950 flex items-center gap-1.5">
-                <span>Chế độ giám sát chỉ xem (Business Manager)</span>
+                <span>Chế độ giám sát chỉ xem</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-200 text-amber-900 font-bold">Chỉ xem</span>
               </div>
               <p className="text-xs text-amber-800 mt-0.5">
-                Tài khoản <strong>Quản Lý Kinh Doanh (Business Manager)</strong> chỉ có quyền tra cứu, theo dõi hồ sơ trả kho và đối soát tài chính. Mọi thao tác tiếp nhận, kiểm định hiện trường và quyết toán hoàn cọc do <strong>Nhân viên ca trực (Staff)</strong> và <strong>Quản lý cơ sở (Facility Manager)</strong> phụ trách.
+                Tài khoản <strong>Quản Lý Kinh Doanh</strong> chỉ có quyền tra cứu, theo dõi hồ sơ trả kho và đối soát tài chính. Mọi thao tác tiếp nhận, kiểm định hiện trường và quyết toán hoàn cọc do <strong>Nhân viên ca trực</strong> và <strong>Quản lý cơ sở</strong> phụ trách.
               </p>
             </div>
           </div>

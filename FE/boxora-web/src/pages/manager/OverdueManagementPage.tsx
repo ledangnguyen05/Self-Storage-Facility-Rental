@@ -382,7 +382,7 @@ export const OverdueManagementPage: React.FC = () => {
       </div>
 
       {/* KPI Dashboard Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {/* Card 1: Total Overdue Debt */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
@@ -398,12 +398,8 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
             <div className="flex justify-between">
-              <span>Nợ gốc tiền thuê:</span>
-              <span className="font-bold text-slate-800">{formatVND(summary?.totalPrincipalDebt)}</span>
-            </div>
-            <div className="flex justify-between">
               <span>Phí phạt tích lũy:</span>
-              <span className="font-bold text-rose-700">+{formatVND(summary?.totalLateFees)}</span>
+              <span className="font-bold text-rose-700">{formatVND(summary?.totalLateFees)}</span>
             </div>
             {summary && summary.unverifiedPaymentsAmount > 0 && (
               <div className="flex justify-between text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
@@ -414,7 +410,34 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Card 2: Total Overdue Contracts */}
+        {/* Card 2: Total Deposit Refund */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tổng Tiền Cọc Cần Hoàn</span>
+              <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 material-symbols-outlined text-[20px]">
+                account_balance_wallet
+              </span>
+            </div>
+            <p className="text-2xl font-black text-emerald-600 mt-2">
+              {formatVND(summary?.totalCustomerRefundAmount)}
+            </p>
+          </div>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
+            <div className="flex justify-between">
+              <span>Tổng tiền cọc giữ:</span>
+              <span className="font-bold text-slate-800">{formatVND(summary?.totalDepositHeld)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Đã cấn trừ phí phạt:</span>
+              <span className="font-bold text-rose-600">
+                -{formatVND(Math.max(0, (summary?.totalDepositHeld ?? 0) - (summary?.totalCustomerRefundAmount ?? 0)))}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Total Overdue Contracts */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
@@ -429,17 +452,17 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
             <div className="flex justify-between">
-              <span>Ân hạn miễn phạt (Nhóm 1):</span>
+              <span>Ân hạn miễn phạt:</span>
               <span className="font-bold text-emerald-700">{summary?.graceCount ?? 0}</span>
             </div>
             <div className="flex justify-between">
-              <span>Cảnh báo quá hạn (Nhóm 2):</span>
+              <span>Cảnh báo quá hạn:</span>
               <span className="font-bold text-amber-700">{summary?.warningCount ?? 0}</span>
             </div>
           </div>
         </div>
 
-        {/* Card 3: PIN Revocation Threshold */}
+        {/* Card 4: PIN Revocation Threshold */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
@@ -453,18 +476,11 @@ export const OverdueManagementPage: React.FC = () => {
             </p>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Chờ Quản lý thu hồi:</span>
-            {summary && summary.pendingPinRevocationsCount > 0 ? (
-              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold animate-pulse">
-                {summary.pendingPinRevocationsCount} chờ xử lý
-              </span>
-            ) : (
-              <span className="font-bold text-slate-700">0 chờ xử lý</span>
-            )}
+            <span className="text-slate-500">Có thể thực hiện thu hồi</span>
           </div>
         </div>
 
-        {/* Card 4: Sealing Threshold */}
+        {/* Card 5: Sealing Threshold */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
@@ -477,14 +493,29 @@ export const OverdueManagementPage: React.FC = () => {
               {summary?.sealingThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">buồng kho</span>
             </p>
           </div>
-          <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Chờ duyệt niêm phong:</span>
-            {summary && summary.pendingSealingApprovalsCount > 0 ? (
-              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold animate-pulse">
-                {summary.pendingSealingApprovalsCount} chờ duyệt
-              </span>
-            ) : (
-              <span className="font-bold text-slate-700">0 chờ duyệt</span>
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1.5 text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">Chờ duyệt niêm phong:</span>
+              {summary && summary.pendingSealingApprovalsCount > 0 ? (
+                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold animate-pulse">
+                  {summary.pendingSealingApprovalsCount} chờ duyệt
+                </span>
+              ) : (
+                <span className="font-bold text-slate-700">0 chờ duyệt</span>
+              )}
+            </div>
+
+            {/* Thông báo nhỏ khi có trường hợp có thể giải phóng kho */}
+            {summary && (summary.eligibleLiquidationReleaseCount ?? 0) > 0 && (
+              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                <span className="text-rose-600 font-semibold flex items-center gap-1">
+                  <span className="material-symbols-outlined text-[14px] text-rose-500">meeting_room</span>
+                  Có thể giải phóng kho:
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold animate-pulse">
+                  {summary.eligibleLiquidationReleaseCount} sẵn sàng
+                </span>
+              </div>
             )}
           </div>
         </div>
@@ -493,107 +524,111 @@ export const OverdueManagementPage: React.FC = () => {
       {/* Advanced Filter Toolbar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col gap-4">
         
-        {/* Top Filter Row: 5 Group Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => { setFilterStage('ALL'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
-              filterStage === 'ALL'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Tất cả ({summary?.totalOverdueContracts ?? 0})
-          </button>
+        {/* Top Filter Row: Tabs on Left + Action Button on Far Right */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2 overflow-x-auto py-1 text-xs font-semibold min-w-0 flex-1 pr-4 sm:pr-6">
+            <button
+              type="button"
+              onClick={() => { setFilterStage('ALL'); setCurrentPage(0) }}
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                filterStage === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Tất cả ({summary?.totalOverdueContracts ?? 0})
+            </button>
 
-          <button
-            type="button"
-            onClick={() => { setFilterStage('GRACE_PERIOD'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              filterStage === 'GRACE_PERIOD'
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-            Ân hạn (1 ngày) ({summary?.graceCount ?? 0})
-          </button>
+            <button
+              type="button"
+              onClick={() => { setFilterStage('GRACE_PERIOD'); setCurrentPage(0) }}
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                filterStage === 'GRACE_PERIOD'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              Ân hạn (1 ngày)
+            </button>
 
-          <button
-            type="button"
-            onClick={() => { setFilterStage('WARNING'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              filterStage === 'WARNING'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-            Cảnh báo (2 ngày) ({summary?.warningCount ?? 0})
-          </button>
+            <button
+              type="button"
+              onClick={() => { setFilterStage('WARNING'); setCurrentPage(0) }}
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                filterStage === 'WARNING'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+              Cảnh báo (2 ngày)
+            </button>
 
-          <button
-            type="button"
-            onClick={() => { setFilterStage('PIN_REVOCATION'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              filterStage === 'PIN_REVOCATION'
-                ? 'bg-rose-600 text-white shadow-xs'
-                : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-            Thu hồi PIN (3-6 ngày) ({summary?.pinThresholdCount ?? 0})
-          </button>
+            <button
+              type="button"
+              onClick={() => { setFilterStage('PIN_REVOCATION'); setCurrentPage(0) }}
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                filterStage === 'PIN_REVOCATION'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-rose-400"></span>
+              Thu hồi PIN (3-6 ngày)
+            </button>
 
-          <button
-            type="button"
-            onClick={() => { setFilterStage('SEALING_ELIGIBLE'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              filterStage === 'SEALING_ELIGIBLE'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-            Đủ ĐK Niêm phong (&gt;= 7 ngày) ({summary?.sealingThresholdCount ?? 0})
-          </button>
+            <button
+              type="button"
+              onClick={() => { setFilterStage('SEALING_ELIGIBLE'); setCurrentPage(0) }}
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                filterStage === 'SEALING_ELIGIBLE'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-purple-400"></span>
+              Đủ ĐK Niêm phong (&gt;= 7 ngày)
+            </button>
 
-          {/* Filter Đã thanh toán & trả kho (nằm giữa Đủ ĐK Niêm phong và button Khách đã tới hoàn tất) */}
-          <button
-            type="button"
-            onClick={() => { setFilterStage('SETTLED'); setCurrentPage(0) }}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-              filterStage === 'SETTLED'
-                ? 'bg-teal-600 text-white shadow-xs'
-                : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
-            }`}
-          >
-            <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-            Đã thanh toán &amp; trả kho ({summary?.settledCount ?? settledContracts.length})
-          </button>
+            {/* Filter Đã thanh toán & trả kho */}
+            <button
+              type="button"
+              onClick={() => { setFilterStage('SETTLED'); setCurrentPage(0) }}
+              className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                filterStage === 'SETTLED'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'bg-teal-50 text-teal-800 hover:bg-teal-100 border border-teal-200'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+              Đã thanh toán &amp; trả kho ({summary?.settledCount ?? settledContracts.length})
+            </button>
+          </div>
 
-          {/* Button: Khách đã tới hoàn tất (nằm ở phía bên phải) */}
-          <button
-            type="button"
-            onClick={() => setIsCustomerArrivalMode(prev => !prev)}
-            className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 text-xs font-bold shadow-xs ${
-              isCustomerArrivalMode
-                ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-sm'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-            title={isCustomerArrivalMode ? 'Nhấn để tắt chế độ Khách đã tới hoàn tất' : 'Nhấn để bật chế độ Khách đã tới hoàn tất'}
-          >
-            <span className="material-symbols-outlined text-[17px]">
-              {isCustomerArrivalMode ? 'check_circle' : 'how_to_reg'}
-            </span>
-            <span>Khách đã tới hoàn tất</span>
-            {isCustomerArrivalMode && (
-              <span className="text-[10px] bg-emerald-800/80 text-emerald-100 px-1.5 py-0.2 rounded-full font-normal">
-                Đang bật
+          {/* Action Button: Khách đã tới hoàn tất (nằm tách biệt hẳn ở góc bên phải, cách xa các tab filter) */}
+          <div className="shrink-0 flex items-center justify-end sm:ml-auto pl-4 sm:pl-8 sm:border-l-2 border-slate-200">
+            <button
+              type="button"
+              onClick={() => setIsCustomerArrivalMode(prev => !prev)}
+              className={`px-4 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap flex items-center gap-2 text-xs font-bold shadow-sm ${
+                isCustomerArrivalMode
+                  ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-md'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow'
+              }`}
+              title={isCustomerArrivalMode ? 'Nhấn để tắt chế độ Khách đã tới hoàn tất' : 'Nhấn để bật chế độ Khách đã tới hoàn tất'}
+            >
+              <span className="material-symbols-outlined text-[18px]">
+                {isCustomerArrivalMode ? 'check_circle' : 'how_to_reg'}
               </span>
-            )}
-          </button>
+              <span>Khách đã tới hoàn tất</span>
+              {isCustomerArrivalMode && (
+                <span className="text-[10px] bg-emerald-800/80 text-emerald-100 px-1.5 py-0.5 rounded-full font-normal">
+                  Đang bật
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Bottom Filter Controls */}
@@ -762,16 +797,33 @@ export const OverdueManagementPage: React.FC = () => {
                       {/* Debt Status */}
                       <td className="p-3.5">
                         <div className="flex flex-col">
-                          <span className="font-mono font-bold text-emerald-700 text-xs">0 ₫</span>
-                          <span className="text-[11px] text-emerald-600 font-medium">Đã thanh toán đủ</span>
+                          {item.stageLabel?.includes('thanh lý') ? (
+                            <>
+                              <span className="font-mono font-bold text-indigo-700 text-xs">
+                                {item.totalDebt > 0 ? formatVND(item.totalDebt) : '0 ₫'}
+                              </span>
+                              <span className="text-[11px] text-purple-700 font-medium">Đã thanh lý tài sản</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-mono font-bold text-emerald-700 text-xs">0 ₫</span>
+                              <span className="text-[11px] text-emerald-600 font-medium">Đã thanh toán đủ</span>
+                            </>
+                          )}
                         </div>
                       </td>
 
                       {/* Order Status */}
                       <td className="p-3.5">
-                        <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 w-fit">
-                          <span className="material-symbols-outlined text-[13px]">check_circle</span>
-                          Đã xong (Khách trả kho)
+                        <span className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border flex items-center gap-1 w-fit ${
+                          item.stageLabel?.includes('thanh lý')
+                            ? 'bg-purple-100 text-purple-800 border-purple-300'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        }`}>
+                          <span className="material-symbols-outlined text-[13px]">
+                            {item.stageLabel?.includes('thanh lý') ? 'gavel' : 'check_circle'}
+                          </span>
+                          {item.stageLabel || 'Đã xong (Khách trả kho)'}
                         </span>
                       </td>
 
@@ -1247,6 +1299,7 @@ export const OverdueManagementPage: React.FC = () => {
           onRefreshParent={handleRefreshAll}
           initialTab={modalInitialTab}
           openInventoryDirectly={modalDirectInventory}
+          onSettled={handleRefreshAll}
         />
       )}
 

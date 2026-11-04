@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
 import { reportService } from '../../services/reportService'
+import { downloadExcel, downloadCsv, ExcelColumn, ExcelCell } from '../../utils/exportUtils'
 import { facilityService } from '../../services/facilityService'
 import { contractService } from '../../services/contractService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
@@ -115,6 +116,8 @@ export const OperationsDashboard: React.FC = () => {
 
   // Table Filters
   const [tableSearch, setTableSearch] = useState('')
+  const [selectedChartMonth, setSelectedChartMonth] = useState<string>('ALL')
+  const [isChart1Expanded, setIsChart1Expanded] = useState<boolean>(false)
   const [tableFinancialCategory, setTableFinancialCategory] = useState<string>('ALL')
   const [tablePaymentType, setTablePaymentType] = useState<string>('ALL')
   const [tablePaymentMethod, setTablePaymentMethod] = useState<string>('ALL')
@@ -306,29 +309,56 @@ export const OperationsDashboard: React.FC = () => {
   const pendingReconCount = summary?.pendingReconciliationCount ?? 0
   const paymentCount = summary?.paymentCount ?? 0
 
-  // Chart 1: Monthly Recognized Net Revenue Series (EXCLUDING deposits and booking holds)
+  // Chart 1: Monthly Recognized Net Revenue & Full Inflow/Outflow Series
   const monthlyRevenueData = useMemo(() => {
     return (revenueData?.monthlyRevenue ?? []).map((item) => {
       const rental = item.rentalFeeRevenue || 0
       const renewal = item.renewalFeeRevenue || 0
       const extra = item.extraChargeRevenue || 0
-      const netMonthRevenue = rental + renewal + extra
+      const deposit = item.depositRevenue || 0
+      const booking = item.bookingPaymentRevenue || 0
+      const refund = item.refundAmount || 0
+      const rentalRefund = item.rentalRefundAmount || 0
+
+      const totalIn = item.totalRevenue || (rental + renewal + extra + deposit + booking)
+      const totalOut = refund
+      const netCashFlow = item.netCashFlow != null ? item.netCashFlow : (totalIn - totalOut)
+      const netRevenue = item.netRevenue != null ? item.netRevenue : Math.max(0, rental + renewal + extra - rentalRefund)
+
+      const y = item.month ? item.month.slice(0, 4) : ''
+      const m = item.month ? item.month.slice(5, 7) : ''
+
       return {
         monthKey: item.month ?? 'unknown',
-        label: item.month ? `T${item.month.slice(5)}/${item.month.slice(2, 4)}` : tr('Chưa rõ', 'N/A'),
+        label: item.month ? `T${m}/${y.slice(2)}` : tr('Chưa rõ', 'N/A'),
+        fullLabel: item.month ? `Tháng ${m}/${y}` : tr('Chưa rõ', 'N/A'),
+        year: y,
+        monthNum: m,
+        // Nguồn vào
         rental,
         renewal,
         extra,
-        netMonthRevenue,
-        paymentCount: item.paymentCount,
+        deposit,
+        booking,
+        totalIn,
+        // Nguồn ra
+        refund,
+        rentalRefund,
+        totalOut,
+        // Cân đối ròng
+        netCashFlow,
+        netRevenue,
+        paymentCount: item.paymentCount || 0,
       }
     })
   }, [revenueData, language])
 
-  const maxMonthlyNet = useMemo(() => {
-    if (monthlyRevenueData.length === 0) return 1
-    return Math.max(...monthlyRevenueData.map((m) => m.netMonthRevenue), 1)
-  }, [monthlyRevenueData])
+  const displayedChartMonths = useMemo(() => {
+    if (selectedChartMonth === 'ALL' || !monthlyRevenueData.some(m => m.monthKey === selectedChartMonth)) {
+      return monthlyRevenueData
+    }
+    return monthlyRevenueData.filter(m => m.monthKey === selectedChartMonth)
+  }, [monthlyRevenueData, selectedChartMonth])
 
   // Chart 2: Cash-in Breakdown (Cơ cấu tiền thực thu)
   const cashInBreakdown = useMemo(() => {
@@ -484,30 +514,138 @@ export const OperationsDashboard: React.FC = () => {
     })
   }, [payments, tableSearch, tableFinancialCategory, tablePaymentMethod, tableReconStatus])
 
-  // CSV Export Handlers
+  // Excel & CSV Export Handlers
+  const handleExportSystemExcel = async () => {
+    try {
+      let data = revenueData
+      if (!data) {
+        data = await reportService.getRevenueReport(fromDate, toDate, selectedFacilityId)
+      }
+      if (!data) {
+        showToast(tr('Không có dữ liệu báo cáo để xuất.', 'No report data to export.'), true)
+        return
+      }
+
+      const summary = data.systemSummary
+      const facilitiesList = data.byFacility || []
+      const dateRangeStr = `${fromDate || tr('Toàn bộ', 'All')} - ${toDate || tr('Hiện tại', 'Present')}`
+      const exportDateStr = new Date().toLocaleDateString('vi-VN')
+
+      const columns: ExcelColumn[] = [
+        { width: 220 }, // Cơ sở
+        { width: 140 }, // Doanh thu thuần
+        { width: 140 }, // Tiền thực thu
+        { width: 140 }, // Doanh thu thuê
+        { width: 140 }, // Tiền cọc giữ
+        { width: 140 }, // Công nợ quá hạn
+        { width: 130 }, // Tiền hoàn trả
+        { width: 90 },  // Số giao dịch
+      ]
+
+      const rows: ExcelCell[][] = [
+        [{ val: 'BÁO CÁO DOANH THU & TÀI CHÍNH BOXORA', style: 'Title' }],
+        [{ val: `Kỳ báo cáo: ${dateRangeStr} • Ngày xuất: ${exportDateStr}`, style: 'Subtitle' }],
+        [],
+        [
+          { val: 'TỔNG QUAN CHỈ SỐ KPI (VND)', style: 'Section' },
+          { val: 'GIÁ TRỊ (VND)', style: 'Section', align: 'Right' }
+        ],
+        [
+          { val: 'Tổng doanh thu thuần' },
+          { val: summary?.netRevenue || 0, type: 'Number', style: 'BoldNumber' }
+        ],
+        [
+          { val: 'Tổng tiền thực thu (Cash In)' },
+          { val: summary?.totalCashIn || 0, type: 'Number', style: 'BoldNumber' }
+        ],
+        [
+          { val: 'Doanh thu tiền thuê kho' },
+          { val: summary?.rentalRevenue || 0, type: 'Number', style: 'Number' }
+        ],
+        [
+          { val: 'Công nợ quá hạn phải thu' },
+          { val: summary?.totalOverdueDebt || 0, type: 'Number', style: 'Number' }
+        ],
+        [
+          { val: 'Tiền ký quỹ cọc đang giữ' },
+          { val: summary?.depositsHeld || 0, type: 'Number', style: 'Number' }
+        ],
+        [
+          { val: 'Tiền hoàn trả khách đã giải ngân' },
+          { val: summary?.refundedAmount || 0, type: 'Number', style: 'Number' }
+        ],
+        [
+          { val: 'Tiền hoàn trả đang chờ xử lý' },
+          { val: summary?.pendingRefundAmount || 0, type: 'Number', style: 'Number' }
+        ],
+        [],
+        [
+          { val: 'Cơ sở Boxora', style: 'Header' },
+          { val: 'Doanh thu thuần', style: 'Header' },
+          { val: 'Tiền thực thu', style: 'Header' },
+          { val: 'Doanh thu thuê', style: 'Header' },
+          { val: 'Tiền cọc giữ', style: 'Header' },
+          { val: 'Công nợ quá hạn', style: 'Header' },
+          { val: 'Tiền hoàn trả', style: 'Header' },
+          { val: 'Số GD', style: 'Header' }
+        ]
+      ]
+
+      facilitiesList.forEach((f) => {
+        rows.push([
+          { val: f.facilityName || 'N/A' },
+          { val: f.netRevenue || 0, type: 'Number', style: 'Number' },
+          { val: f.totalCashIn || 0, type: 'Number', style: 'Number' },
+          { val: f.rentalRevenue || 0, type: 'Number', style: 'Number' },
+          { val: f.depositsHeld || 0, type: 'Number', style: 'Number' },
+          { val: f.totalOverdueDebt || 0, type: 'Number', style: 'Number' },
+          { val: f.refundedAmount || 0, type: 'Number', style: 'Number' },
+          { val: f.paymentCount || 0, type: 'Number', style: 'Number' }
+        ])
+      })
+
+      rows.push([
+        { val: 'TỔNG CỘNG HỆ THỐNG', style: 'Total' },
+        { val: summary?.netRevenue || 0, type: 'Number', style: 'Total' },
+        { val: summary?.totalCashIn || 0, type: 'Number', style: 'Total' },
+        { val: summary?.rentalRevenue || 0, type: 'Number', style: 'Total' },
+        { val: summary?.depositsHeld || 0, type: 'Number', style: 'Total' },
+        { val: summary?.totalOverdueDebt || 0, type: 'Number', style: 'Total' },
+        { val: summary?.refundedAmount || 0, type: 'Number', style: 'Total' },
+        { val: facilitiesList.reduce((sum, item) => sum + (item.paymentCount || 0), 0), type: 'Number', style: 'Total' }
+      ])
+
+      downloadExcel(`boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.xls`, 'DoanhThuBoxora', columns, rows)
+      showToast(tr('Đã tải xuống file Excel báo cáo doanh thu chuẩn tiếng Việt.', 'Revenue report Excel downloaded successfully.'))
+    } catch (err) {
+      console.error('Failed to export system excel:', err)
+      showToast(tr('Lỗi xuất file Excel báo cáo.', 'Failed to export Excel report.'), true)
+    }
+  }
+
   const handleExportSystemCsv = async () => {
     try {
       const blob = await reportService.exportRevenueCsv(fromDate, toDate, selectedFacilityId)
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`
-      link.click()
-      URL.revokeObjectURL(url)
-      showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora.', 'Boxora financial report CSV downloaded.'))
+      const text = await blob.text()
+      let finalCsv = text.replace(/^\uFEFF/, '')
+      if (!finalCsv.startsWith('sep=')) {
+        finalCsv = 'sep=,\r\n' + finalCsv
+      }
+      const withBom = '\uFEFF' + finalCsv
+      const utf8Blob = new Blob([withBom], { type: 'text/csv;charset=utf-8;' })
+      downloadFile(utf8Blob, `boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`)
+      showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora (UTF-8 BOM).', 'Boxora financial report CSV downloaded.'))
     } catch (err) {
       console.warn('Server CSV export failed, falling back to local dataset export:', err)
-      // Fallback: Generate CSV directly from loaded revenueData or fetch live
-      let fallbackData = revenueData;
+      let fallbackData = revenueData
       if (!fallbackData) {
         try {
-          fallbackData = await reportService.getRevenueReport(fromDate, toDate, selectedFacilityId);
+          fallbackData = await reportService.getRevenueReport(fromDate, toDate, selectedFacilityId)
         } catch {}
       }
       if (fallbackData) {
-        const revenueData = fallbackData;
-        const summary = revenueData.systemSummary
-        const facilitiesList = revenueData.byFacility || []
+        const summary = fallbackData.systemSummary
+        const facilitiesList = fallbackData.byFacility || []
         const dateRangeStr = `${fromDate || 'Toàn bộ'} - ${toDate || 'Hiện tại'}`
         const lines: string[] = []
         lines.push('BÁO CÁO DOANH THU & TÀI CHÍNH BOXORA')
@@ -531,20 +669,82 @@ export const OperationsDashboard: React.FC = () => {
           lines.push(`"${name}",${f.netRevenue || 0},${f.totalCashIn || 0},${f.rentalRevenue || 0},${f.depositsHeld || 0},${f.totalOverdueDebt || 0},${f.refundedAmount || 0},${f.paymentCount || 0}`)
         })
 
-        const csvContent = '﻿' + lines.join('\r\n')
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-        const url = URL.createObjectURL(blob)
-        const link = document.createElement('a')
-        link.href = url
-        link.download = `boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`
-        link.click()
-        URL.revokeObjectURL(url)
+        downloadCsv(`boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`, lines.join('\r\n'))
         showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora.', 'Boxora financial report CSV downloaded.'))
         return
       }
 
       showToast(tr('Lỗi xuất file CSV từ máy chủ.', 'Failed to export CSV from server.'), true)
     }
+  }
+
+  const handleExportTableExcel = () => {
+    if (filteredPayments.length === 0) {
+      showToast(tr('Không có dữ liệu giao dịch để xuất.', 'No transaction records to export.'), true)
+      return
+    }
+
+    const columns: ExcelColumn[] = [
+      { width: 140 }, // Mã GD
+      { width: 130 }, // Thời gian
+      { width: 160 }, // Khách hàng
+      { width: 130 }, // Mã HĐ / Booking
+      { width: 180 }, // Cơ sở
+      { width: 130 }, // Nghiệp vụ
+      { width: 130 }, // Phân nhóm
+      { width: 120 }, // Số tiền (VND)
+      { width: 100 }, // Kênh TT
+      { width: 110 }, // Trạng thái TT
+      { width: 110 }, // Đối soát
+      { width: 140 }, // Người xử lý
+      { width: 110 }, // Mã phiếu thu
+    ]
+
+    const headers: ExcelCell[] = [
+      { val: 'Mã giao dịch', style: 'Header' },
+      { val: 'Thời gian', style: 'Header' },
+      { val: 'Khách hàng', style: 'Header' },
+      { val: 'Hợp đồng / Booking', style: 'Header' },
+      { val: 'Cơ sở', style: 'Header' },
+      { val: 'Loại nghiệp vụ', style: 'Header' },
+      { val: 'Nhóm tài chính', style: 'Header' },
+      { val: 'Số tiền (VND)', style: 'Header' },
+      { val: 'Kênh thanh toán', style: 'Header' },
+      { val: 'Trạng thái TT', style: 'Header' },
+      { val: 'Trạng thái đối soát', style: 'Header' },
+      { val: 'Người xử lý', style: 'Header' },
+      { val: 'Mã phiếu thu', style: 'Header' }
+    ]
+
+    const rows: ExcelCell[][] = [
+      [{ val: 'BẢNG KÊ CHI TIẾT GIAO DỊCH THANH TOÁN BOXORA', style: 'Title' }],
+      [{ val: `Kỳ báo cáo: ${fromDate || 'Toàn bộ'} - ${toDate || 'Hiện tại'} • Tổng số giao dịch: ${filteredPayments.length}`, style: 'Subtitle' }],
+      [],
+      headers
+    ]
+
+    filteredPayments.forEach((p) => {
+      const finCat = getFinancialCategory(p.paymentType)
+      const typeBadge = getPaymentTypeBadge(p.paymentType)
+      rows.push([
+        { val: p.transactionId || p.receiptVoucherCode || p.id },
+        { val: p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : (p.createdAt ? new Date(p.createdAt).toLocaleString('vi-VN') : '') },
+        { val: p.customerName || 'N/A' },
+        { val: p.contractCode || p.bookingCode || '—' },
+        { val: p.facilityName || '—' },
+        { val: language === 'vi' ? typeBadge.labelVi : typeBadge.labelEn },
+        { val: language === 'vi' ? finCat.labelVi : finCat.labelEn },
+        { val: p.amount || 0, type: 'Number', style: 'Number' },
+        { val: p.paymentMethod || '—' },
+        { val: p.status || '—' },
+        { val: p.reconciliationStatus || 'UNRECONCILED' },
+        { val: p.confirmedByName || p.collectedByName || 'Hệ thống' },
+        { val: p.receiptVoucherCode || '—' }
+      ])
+    })
+
+    downloadExcel(`boxora-chi-tiet-giao-dich-${new Date().toISOString().slice(0, 10)}.xls`, 'GiaoDichBoxora', columns, rows)
+    showToast(tr('Đã tải xuống bảng chi tiết giao dịch Excel.', 'Transaction details Excel downloaded.'))
   }
 
   const handleExportTableCsv = () => {
@@ -589,7 +789,7 @@ export const OperationsDashboard: React.FC = () => {
       ]
     })
 
-    const csvContent = '\uFEFF' + [headers, ...rows].map((row) =>
+    const csvContent = [headers, ...rows].map((row) =>
       row.map((val) => {
         const cell = String(val ?? '')
         const safe = /^[=+@-]/.test(cell) ? `'${cell}` : cell
@@ -597,13 +797,7 @@ export const OperationsDashboard: React.FC = () => {
       }).join(',')
     ).join('\r\n')
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `boxora-chi-tiet-giao-dich-${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`boxora-chi-tiet-giao-dich-${new Date().toISOString().slice(0, 10)}.csv`, csvContent)
     showToast(tr('Đã tải bảng chi tiết giao dịch CSV.', 'Transaction table CSV downloaded.'))
   }
 
@@ -770,15 +964,26 @@ export const OperationsDashboard: React.FC = () => {
 
               {/* CSV & PDF Buttons */}
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleExportSystemCsv}
-                  title={tr('Tải file CSV tổng quan tài chính Boxora', 'Download financial overview CSV')}
-                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold transition-all border border-slate-200 shadow-xs cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px] text-emerald-600">table_chart</span>
-                  {tr('Xuất CSV', 'Export CSV')}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleExportSystemExcel}
+                    title={tr('Tải file Excel báo cáo doanh thu (Khuyên dùng cho Excel, tiếng Việt chuẩn 100%, tự động chia cột)', 'Download revenue Excel report (Recommended)')}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[17px]">table_view</span>
+                    {tr('Xuất Excel', 'Export Excel')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportSystemCsv}
+                    title={tr('Tải file CSV báo cáo tài chính Boxora (UTF-8 BOM)', 'Download financial overview CSV')}
+                    className="flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px] text-slate-500">csv</span>
+                    {tr('CSV', 'CSV')}
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -831,9 +1036,6 @@ export const OperationsDashboard: React.FC = () => {
               <div className="text-xl xl:text-2xl font-black font-mono text-blue-700 tracking-tight">
                 {formatVnd(totalCashIn)}
               </div>
-              <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                {tr('Dòng tiền vào thực tế từ tất cả nguồn thu', 'Actual cash inflows across all income streams')}
-              </p>
             </div>
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-medium">
               <span>{tr('Số giao dịch:', 'Payments:')}</span>
@@ -941,126 +1143,321 @@ export const OperationsDashboard: React.FC = () => {
         </div>
 
         {/* 3. CHARTS ROW 1: XU HƯỚNG DOANH THU & CƠ CẤU TIỀN THỰC THU */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Biểu đồ 1: Xu hướng doanh thu theo kỳ (8 cols) */}
-          <div className="lg:col-span-8 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-emerald-600 text-[22px]">bar_chart</span>
-                  <h2 className="text-base font-bold text-slate-900">{tr('Biểu đồ 1: Xu hướng doanh thu theo kỳ', 'Chart 1: Revenue Trend by Period')}</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Biểu đồ 1: Xu hướng doanh thu & Dòng tiền theo từng tháng (8 cols hoặc 12 cols khi mở rộng) */}
+          <div className={`${isChart1Expanded ? 'lg:col-span-12' : 'lg:col-span-8'} bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between transition-all duration-300`}>
+            <div>
+              {/* Header: Title, Description & Actions */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="material-symbols-outlined text-emerald-600 text-[22px]">stacked_bar_chart</span>
+                    <h2 className="text-base font-bold text-slate-900">
+                      {tr('Biểu đồ 1: Xu hướng doanh thu & Dòng tiền theo kỳ', 'Chart 1: Revenue & Cash Flow Trend by Period')}
+                    </h2>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      {monthlyRevenueData.length} {tr('tháng trong kỳ', 'months in period')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {tr(
+                      'Tạo biểu đồ riêng cho từng tháng theo bộ lọc kỳ báo cáo: Mô tả đầy đủ tất cả nguồn vào (thuê kho, gia hạn, phụ phí dịch vụ, cọc, giữ chỗ) và nguồn ra (hoàn tiền).',
+                      'Monthly dedicated charts based on report period filter: Full breakdown of inflows (rental, renewal, extra services, deposit, booking) and outflows (refunds).'
+                    )}
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {tr('Chỉ tính doanh thu thuần (thuê kho, gia hạn, phụ phí). Tuyệt đối không tính tiền cọc và tiền giữ chỗ.', 'Net recognized revenue only (Rental, Renewal, Extra). Excludes deposits and holds.')}
-                </p>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Fullscreen / Expand Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setIsChart1Expanded(!isChart1Expanded)}
+                    title={isChart1Expanded ? tr('Thu gọn lại', 'Collapse chart') : tr('Mở rộng toàn màn hình', 'Expand full width')}
+                    className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 transition flex items-center justify-center cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">
+                      {isChart1Expanded ? 'close_fullscreen' : 'open_in_full'}
+                    </span>
+                  </button>
+                </div>
               </div>
 
-              {/* Legends */}
-              <div className="flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-600">
-                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-slate-900"></span>{tr('Tiền thuê', 'Rental')}</span>
-                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-600"></span>{tr('Gia hạn', 'Renewal')}</span>
-                <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-500"></span>{tr('Phụ phí', 'Extra')}</span>
+              {/* Month Selector Tabs (Khi kỳ báo cáo có nhiều hơn 1 tháng) */}
+              {monthlyRevenueData.length > 1 && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase mr-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[15px]">filter_alt</span>
+                      {tr('Chọn tháng:', 'Select Month:')}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChartMonth('ALL')}
+                      className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                        selectedChartMonth === 'ALL'
+                          ? 'bg-slate-900 text-white shadow-xs'
+                          : 'bg-white text-slate-600 hover:bg-slate-200/70 border border-slate-200'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[14px]">grid_view</span>
+                      <span>{tr('Tất cả các tháng (Lưới biểu đồ)', 'All Months (Grid)')}</span>
+                    </button>
+                    {monthlyRevenueData.map((m) => (
+                      <button
+                        key={m.monthKey}
+                        type="button"
+                        onClick={() => setSelectedChartMonth(m.monthKey)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                          selectedChartMonth === m.monthKey
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white text-slate-700 hover:bg-slate-200/70 border border-slate-200'
+                        }`}
+                      >
+                        <span>{m.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedChartMonth !== 'ALL' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChartMonth('ALL')}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span>{tr('Xem toàn bộ các tháng', 'View all months')}</span>
+                      <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Legends Bar: Hiển thị trên 1 hàng duy nhất */}
+              <div className="mb-4 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2.5 text-[10.5px] sm:text-[11px] text-slate-600 whitespace-nowrap overflow-x-auto scrollbar-none">
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-slate-900 shrink-0"></span>{tr('Tiền thuê kho', 'Rental')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></span>{tr('Gia hạn HĐ', 'Renewal')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('Phụ phí & Dịch vụ', 'Extra Fees')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('Ký quỹ đặt cọc', 'Deposit')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('Cọc giữ chỗ', 'Booking')}</span>
+                <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
+                <span className="flex items-center gap-1 shrink-0">
+                  <span className="h-2 w-2 rounded-full bg-rose-500 ring-1 ring-rose-400 shrink-0"></span>
+                  <span className="font-semibold text-rose-700">{tr('Hoàn tiền khách', 'Refund')}</span>
+                </span>
+                <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
+                <span className="flex items-center gap-1 shrink-0">
+                  <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0"></span>
+                  <span className="font-semibold text-indigo-700">{tr('Dòng tiền ròng', 'Net Flow')}</span>
+                </span>
               </div>
-            </div>
 
-            {/* Bars container */}
-            <div className="w-full h-64 flex items-end justify-between gap-3 pt-6 pb-2 px-2 border-b border-slate-200 overflow-x-auto">
-              {monthlyRevenueData.length > 0 ? (
-                monthlyRevenueData.map((m) => {
-                  const heightPercent = Math.max(14, Math.min(100, Math.round((m.netMonthRevenue / maxMonthlyNet) * 100)))
-                  const rentalPct = m.netMonthRevenue > 0 ? (m.rental / m.netMonthRevenue) * 100 : 0
-                  const renewalPct = m.netMonthRevenue > 0 ? (m.renewal / m.netMonthRevenue) * 100 : 0
-                  const extraPct = m.netMonthRevenue > 0 ? (m.extra / m.netMonthRevenue) * 100 : 0
+              {/* Monthly Charts Container: MỖI THÁNG 1 BIỂU ĐỒ HOÀN CHỈNH */}
+              {displayedChartMonths.length > 0 ? (
+                <div className={`grid ${displayedChartMonths.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4`}>
+                  {displayedChartMonths.map((m) => {
+                    const sources = [
+                      { id: 'rental', label: tr('Tiền thuê kho mới', 'New Rental'), shortLabel: tr('Thuê kho', 'Rental'), amount: m.rental, icon: 'storefront', color: '#0f172a', bgClass: 'bg-slate-900', type: 'IN' },
+                      { id: 'renewal', label: tr('Phí gia hạn hợp đồng', 'Contract Renewal'), shortLabel: tr('Gia hạn', 'Renewal'), amount: m.renewal, icon: 'autorenew', color: '#059669', bgClass: 'bg-emerald-600', type: 'IN' },
+                      { id: 'extra', label: tr('Phụ phí dịch vụ phát sinh', 'Extra Services & Penalties'), shortLabel: tr('Phụ phí & Dịch vụ', 'Extra Fees'), amount: m.extra, icon: 'receipt_long', color: '#f59e0b', bgClass: 'bg-amber-500', type: 'IN' },
+                      { id: 'deposit', label: tr('Tiền ký quỹ đặt cọc', 'Security Deposit'), shortLabel: tr('Cọc kho', 'Deposit'), amount: m.deposit, icon: 'shield_with_heart', color: '#0891b2', bgClass: 'bg-cyan-600', type: 'IN' },
+                      { id: 'booking', label: tr('Tiền đặt cọc giữ chỗ', 'Booking Reserve Fee'), shortLabel: tr('Giữ chỗ', 'Booking'), amount: m.booking, icon: 'bookmark', color: '#9333ea', bgClass: 'bg-purple-600', type: 'IN' },
+                      { id: 'refund', label: tr('Tiền hoàn trả khách hàng', 'Customer Refund (Outflow)'), shortLabel: tr('Hoàn tiền (Ra)', 'Refund (Out)'), amount: m.refund, icon: 'assignment_return', color: '#e11d48', bgClass: 'bg-rose-500', type: 'OUT' },
+                    ]
 
-                  return (
-                    <div key={m.monthKey} className="flex-1 min-w-[56px] flex flex-col items-center gap-2 h-full justify-end group">
-                      <div className="w-full flex flex-col items-center gap-0.5 transition-all duration-300 group-hover:scale-105" style={{ height: `${heightPercent}%` }}>
-                        {extraPct > 0 && (
-                          <div className="w-full max-w-[46px] bg-amber-500 rounded-t" style={{ height: `${extraPct}%` }} title={`${tr('Phụ phí', 'Extra')}: ${formatVnd(m.extra)}`} />
-                        )}
-                        {renewalPct > 0 && (
-                          <div className={`w-full max-w-[46px] bg-emerald-600 ${extraPct === 0 ? 'rounded-t' : ''}`} style={{ height: `${renewalPct}%` }} title={`${tr('Gia hạn', 'Renewal')}: ${formatVnd(m.renewal)}`} />
-                        )}
-                        {rentalPct > 0 && (
-                          <div className={`w-full max-w-[46px] bg-slate-900 rounded-b ${extraPct === 0 && renewalPct === 0 ? 'rounded-t' : ''}`} style={{ height: `${rentalPct}%` }} title={`${tr('Tiền thuê', 'Rental')}: ${formatVnd(m.rental)}`} />
-                        )}
+                    const maxVal = Math.max(m.totalIn, m.refund, m.rental, m.deposit, m.renewal, m.extra, 1)
+
+                    return (
+                      <div
+                        key={m.monthKey}
+                        className="bg-slate-50/70 rounded-2xl p-4 sm:p-5 border border-slate-200/90 flex flex-col justify-between gap-4 shadow-2xs hover:shadow-sm transition-all"
+                      >
+                        {/* Month Card Header */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                              {m.monthNum ? `T${m.monthNum}` : 'M'}
+                            </div>
+                            <div>
+                              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                                <span>{m.fullLabel}</span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-700">
+                                  {m.paymentCount} {tr('giao dịch', 'txns')}
+                                </span>
+                              </h3>
+                              <span className="text-[11px] text-slate-500 font-mono">
+                                {tr('Doanh thu thuần:', 'Net Revenue:')} <strong className="text-slate-800">{formatVnd(m.netRevenue)}</strong>
+                              </span>
+                            </div>
+                          </div>
+
+                        </div>
+
+                        {/* Visual Multi-Column Chart */}
+                        <div className="mt-2.5">
+
+                          <div className="w-full h-44 flex items-end justify-between gap-1.5 sm:gap-2 pt-6 pb-2 px-1 border-b border-slate-200 bg-white rounded-xl p-3 border">
+                            {sources.map((s) => {
+                              const heightPct = Math.max(s.amount > 0 ? 12 : 3, Math.min(100, Math.round((s.amount / maxVal) * 100)))
+                              const pctOfIn = m.totalIn > 0 ? Math.round((s.amount / m.totalIn) * 100) : 0
+
+                              return (
+                                <div key={s.id} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
+                                  {/* Amount label on top */}
+                                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-700 text-center leading-none">
+                                    {s.amount >= 1_000_000
+                                      ? `${(s.amount / 1_000_000).toFixed(1)}M`
+                                      : s.amount >= 1_000
+                                      ? `${(s.amount / 1_000).toFixed(0)}k`
+                                      : s.amount > 0
+                                      ? `${s.amount}`
+                                      : '0'}
+                                  </span>
+
+                                  {/* Vertical Bar */}
+                                  <div
+                                    className={`w-full max-w-[28px] sm:max-w-[36px] rounded-t-md transition-all duration-300 group-hover:scale-105 cursor-pointer ${s.bgClass} ${
+                                      s.type === 'OUT' ? 'ring-1 ring-rose-400' : ''
+                                    }`}
+                                    style={{ height: `${heightPct}%` }}
+                                    title={`${s.label}: ${formatVnd(s.amount)} (${pctOfIn}% ${tr('tổng vào', 'of inflow')})`}
+                                  />
+
+                                  {/* Icon & Label below */}
+                                  <div className="flex flex-col items-center">
+                                    <span className="material-symbols-outlined text-[13px] text-slate-500">{s.icon}</span>
+                                    <span className="text-[9px] sm:text-[10px] text-slate-600 font-semibold truncate max-w-[46px] text-center" title={s.label}>
+                                      {s.shortLabel}
+                                    </span>
+                                  </div>
+                                </div>
+                              )
+                            })}
+
+                            {/* Dòng tiền ròng (Net) Bar */}
+                            <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group border-l border-slate-200 pl-1">
+                              <span className={`text-[9px] sm:text-[10px] font-mono font-extrabold text-center leading-none ${m.netCashFlow >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>
+                                {Math.abs(m.netCashFlow) >= 1_000_000
+                                  ? `${(m.netCashFlow / 1_000_000).toFixed(1)}M`
+                                  : `${(m.netCashFlow / 1_000).toFixed(0)}k`}
+                              </span>
+                              <div
+                                className={`w-full max-w-[28px] sm:max-w-[36px] rounded-t-md transition-all duration-300 group-hover:scale-105 cursor-pointer ${
+                                  m.netCashFlow >= 0 ? 'bg-indigo-600' : 'bg-rose-600'
+                                }`}
+                                style={{ height: `${Math.max(12, Math.min(100, Math.round((Math.abs(m.netCashFlow) / maxVal) * 100)))}%` }}
+                                title={`${tr('Dòng tiền ròng thực nhận:', 'Net Cash Flow:')} ${formatVnd(m.netCashFlow)}`}
+                              />
+                              <div className="flex flex-col items-center">
+                                <span className="material-symbols-outlined text-[13px] text-indigo-600">account_balance</span>
+                                <span className="text-[9px] sm:text-[10px] text-indigo-700 font-bold truncate max-w-[46px] text-center">
+                                  {tr('Ròng', 'Net')}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Breakdown 6-cell Matrix */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-xs">
+                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Tiền thuê kho mới', 'New Rental')}</span>
+                            <span className="font-mono font-bold text-slate-900 text-xs">{formatVnd(m.rental)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Phí gia hạn kho', 'Renewal')}</span>
+                            <span className="font-mono font-bold text-emerald-700 text-xs">{formatVnd(m.renewal)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Phụ phí dịch vụ', 'Extra Fees')}</span>
+                            <span className="font-mono font-bold text-amber-700 text-xs">{formatVnd(m.extra)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Ký quỹ đặt cọc', 'Deposit')}</span>
+                            <span className="font-mono font-bold text-cyan-800 text-xs">{formatVnd(m.deposit)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
+                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Cọc giữ chỗ', 'Booking')}</span>
+                            <span className="font-mono font-bold text-purple-700 text-xs">{formatVnd(m.booking)}</span>
+                          </div>
+                          <div className="p-2 rounded-lg bg-rose-50/70 border border-rose-200">
+                            <span className="text-[10px] text-rose-600 font-bold block">{tr('Tiền hoàn', 'Refund Outflow')}</span>
+                            <span className="font-mono font-bold text-rose-700 text-xs">-{formatVnd(m.refund)}</span>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-[11px] text-slate-700 font-bold">{m.label}</span>
-                      <span className="font-mono text-[11px] text-slate-900 font-extrabold">
-                        {m.netMonthRevenue >= 1_000_000 ? `${(m.netMonthRevenue / 1_000_000).toFixed(1)}M` : `${(m.netMonthRevenue / 1_000).toFixed(0)}k`}
-                      </span>
-                    </div>
-                  )
-                })
+                    )
+                  })}
+                </div>
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
-                  {isReportsLoading ? tr('Đang tải dữ liệu biểu đồ...', 'Loading chart data...') : tr('Không có giao dịch doanh thu thuần trong kỳ đã chọn.', 'No net revenue data for this period.')}
+                <div className="w-full h-48 flex items-center justify-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  {isReportsLoading
+                    ? tr('Đang tải dữ liệu biểu đồ doanh thu...', 'Loading revenue chart data...')
+                    : tr('Không có giao dịch doanh thu hay dòng tiền nào trong kỳ đã chọn.', 'No revenue or cash flow transactions in selected period.')}
                 </div>
               )}
             </div>
 
-            <div className="mt-4 p-3 bg-slate-50 rounded-xl flex flex-wrap items-center justify-between gap-2 border border-slate-200">
-              <span className="text-xs text-slate-600 font-medium">
-                {tr('Phân bổ doanh thu thuần theo ngày ghi nhận hóa đơn/thanh toán thực tế.', 'Breakdown of net revenue by actual invoice/payment dates.')}
-              </span>
-              <span className="text-xs font-mono font-bold text-slate-900">
-                {tr('Tổng doanh thu thuần kỳ này:', 'Period Net Revenue:')} {formatVnd(netRevenue)}
-              </span>
+            {/* Footer Summary of Period */}
+            <div className="mt-4 p-3 bg-slate-50 rounded-xl flex flex-wrap items-center justify-between gap-3 border border-slate-200 text-xs">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-medium text-slate-600">
+                <span>{tr('Kỳ báo cáo:', 'Report Period:')} <strong className="text-slate-900">{periodLabel}</strong></span>
+                <span>•</span>
+                <span>{tr('Tổng thực thu (Vào):', 'Total Inflow:')} <strong className="text-emerald-700 font-mono">+{formatVnd(totalCashIn)}</strong></span>
+                <span>•</span>
+                <span>{tr('Tổng hoàn trả (Ra):', 'Total Outflow:')} <strong className="text-rose-700 font-mono">-{formatVnd(refundedAmount)}</strong></span>
+              </div>
+              <div className="font-mono font-bold text-slate-900">
+                {tr('Tổng doanh thu thuần kỳ:', 'Period Net Revenue:')} <span className="text-sm text-slate-900 font-extrabold">{formatVnd(netRevenue)}</span>
+              </div>
             </div>
           </div>
 
-          {/* Biểu đồ 2: Cơ cấu tiền thực thu (Donut) (4 cols) */}
-          <div className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">{tr('Biểu đồ 2: Cơ cấu tiền thực thu', 'Chart 2: Cash-In Structure')}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5">{tr('Phân loại các luồng tiền thực tế đã thu', 'Actual cash inflow categories')}</p>
-                </div>
-                <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
-                  DÒNG TIỀN VÀO
-                </span>
-              </div>
-
-              {/* Donut Chart Display */}
-              <div className="relative flex items-center justify-center my-6">
-                <svg className="w-44 h-44 -rotate-90" viewBox="0 0 160 160">
-                  <circle className="text-slate-100" cx="80" cy="80" fill="transparent" r="62" stroke="currentColor" strokeWidth="16"></circle>
-                  {(() => {
-                    let cumulativePct = 0
-                    const circumference = 389.5 // 2 * PI * 62
-                    return cashInBreakdown.map((item) => {
-                      const strokeDash = (circumference * item.pct) / 100
-                      const strokeOffset = -((circumference * cumulativePct) / 100)
-                      cumulativePct += item.pct
-                      return (
-                        <circle
-                          key={item.id}
-                          cx="80"
-                          cy="80"
-                          fill="transparent"
-                          r="62"
-                          stroke={item.color}
-                          strokeDasharray={`${strokeDash} ${circumference}`}
-                          strokeDashoffset={strokeOffset}
-                          strokeWidth="16"
-                        />
-                      )
-                    })
-                  })()}
-                </svg>
-                <div className="absolute flex flex-col items-center justify-center text-center">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tr('Tổng thực thu', 'Total Cash-In')}</span>
-                  <span className="text-lg font-black font-mono text-slate-900 mt-0.5">
-                    {totalCashIn >= 1_000_000 ? `${(totalCashIn / 1_000_000).toFixed(1)}M ₫` : formatVnd(totalCashIn)}
-                  </span>
-                  <span className="text-[11px] font-semibold text-slate-500">{paymentCount} {tr('giao dịch', 'payments')}</span>
-                </div>
+          {/* Biểu đồ 2: Cơ cấu tiền thực thu (Donut) (4 cols) - Sát cạnh Donut Chart dù Biểu đồ 1 dài */}
+          <div className={`${isChart1Expanded ? 'hidden' : 'lg:col-span-4'} bg-white rounded-2xl p-6 shadow-md border border-slate-200/90 flex flex-col self-start lg:sticky lg:top-6 transition-all duration-300`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">{tr('Biểu đồ 2: Cơ cấu tiền thực thu', 'Chart 2: Cash-In Structure')}</h2>
+                <p className="text-xs text-slate-500 mt-0.5">{tr('Phân loại các luồng tiền thực tế đã thu', 'Actual cash inflow categories')}</p>
               </div>
             </div>
 
-            {/* List breakdown */}
-            <div className="space-y-1.5 text-xs">
+            {/* Donut Chart Display */}
+            <div className="relative flex items-center justify-center my-4">
+              <svg className="w-44 h-44 -rotate-90" viewBox="0 0 160 160">
+                <circle className="text-slate-100" cx="80" cy="80" fill="transparent" r="62" stroke="currentColor" strokeWidth="16"></circle>
+                {(() => {
+                  let cumulativePct = 0
+                  const circumference = 389.5 // 2 * PI * 62
+                  return cashInBreakdown.map((item) => {
+                    const strokeDash = (circumference * item.pct) / 100
+                    const strokeOffset = -((circumference * cumulativePct) / 100)
+                    cumulativePct += item.pct
+                    return (
+                      <circle
+                        key={item.id}
+                        cx="80"
+                        cy="80"
+                        fill="transparent"
+                        r="62"
+                        stroke={item.color}
+                        strokeDasharray={`${strokeDash} ${circumference}`}
+                        strokeDashoffset={strokeOffset}
+                        strokeWidth="16"
+                      />
+                    )
+                  })
+                })()}
+              </svg>
+              <div className="absolute flex flex-col items-center justify-center text-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tr('Tổng thực thu', 'Total Cash-In')}</span>
+                <span className="text-lg font-black font-mono text-slate-900 mt-0.5">
+                  {totalCashIn >= 1_000_000 ? `${(totalCashIn / 1_000_000).toFixed(1)}M ₫` : formatVnd(totalCashIn)}
+                </span>
+                <span className="text-[11px] font-semibold text-slate-500">{paymentCount} {tr('giao dịch', 'payments')}</span>
+              </div>
+            </div>
+
+            {/* List breakdown - Ngay sát bên dưới Donut Chart */}
+            <div className="space-y-1.5 text-xs mt-1">
               {cashInBreakdown.map((item) => (
                 <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-100">
                   <span className="flex items-center gap-2 font-medium text-slate-700">
@@ -1412,14 +1809,26 @@ export const OperationsDashboard: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleExportTableCsv}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[16px]">file_download</span>
-                {tr('Xuất bảng này ra CSV', 'Export Table CSV')}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleExportTableExcel}
+                  title={tr('Xuất bảng giao dịch này ra Excel chuẩn tiếng Việt', 'Export transaction table to Excel')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[16px]">table_view</span>
+                  {tr('Xuất Excel', 'Export Excel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportTableCsv}
+                  title={tr('Xuất bảng này ra CSV', 'Export Table CSV')}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-slate-500">csv</span>
+                  {tr('CSV', 'CSV')}
+                </button>
+              </div>
             </div>
           </div>
 

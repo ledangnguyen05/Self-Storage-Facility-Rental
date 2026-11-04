@@ -9,6 +9,8 @@ interface CreateStorageUnitModalProps {
   isOpen: boolean
   facilities: Facility[]
   selectedFacilityId: string
+  initialFloorId?: string
+  initialFloorName?: string
   onClose: () => void
   onCreated: (unit: StorageUnit) => void
 }
@@ -28,6 +30,8 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
   isOpen,
   facilities,
   selectedFacilityId,
+  initialFloorId,
+  initialFloorName,
   onClose,
   onCreated,
 }) => {
@@ -46,7 +50,8 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
   const [errorMessage, setErrorMessage] = useState('')
 
   // Resolve assigned facility: FM only manages assigned facility
-  const effectiveFacilityId = user?.facilityId || selectedFacilityId || facilities[0]?.id || ''
+  const isFacilityScoped = role === 'FACILITY_MANAGER' || role === 'STAFF'
+  const effectiveFacilityId = (isFacilityScoped && user?.facilityId) ? user.facilityId : (selectedFacilityId || user?.facilityId || facilities[0]?.id || '')
   const currentFacility = useMemo(() => {
     return facilities.find((f) => f.id === effectiveFacilityId) || facilities[0] || null
   }, [facilities, effectiveFacilityId])
@@ -102,7 +107,16 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
 
     // Set initial floor
     if (activeFloors.length > 0) {
-      const firstFl = activeFloors[0]
+      const firstFl =
+        (initialFloorId ? activeFloors.find((f) => f.id === initialFloorId) : null) ||
+        (initialFloorName
+          ? activeFloors.find(
+              (f) =>
+                (f.name && f.name.trim().toLowerCase() === initialFloorName.trim().toLowerCase()) ||
+                (f.code && f.code.trim().toLowerCase() === initialFloorName.trim().toLowerCase())
+            )
+          : null) ||
+        activeFloors[0]
       setSelectedFloorName(firstFl.name || firstFl.code)
     }
 
@@ -125,7 +139,7 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
         )
       })
       .finally(() => setIsLoadingTypes(false))
-  }, [isOpen, activeFloors.length])
+  }, [isOpen, activeFloors, initialFloorId, initialFloorName])
 
   // Sync selected zone code when floor changes
   useEffect(() => {

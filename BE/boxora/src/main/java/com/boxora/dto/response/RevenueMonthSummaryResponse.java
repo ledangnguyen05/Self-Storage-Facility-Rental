@@ -20,5 +20,9 @@ public class RevenueMonthSummaryResponse {
     private BigDecimal renewalFeeRevenue;
     private BigDecimal extraChargeRevenue;
     private BigDecimal bookingPaymentRevenue;
+    private BigDecimal refundAmount;
+    private BigDecimal rentalRefundAmount;
+    private BigDecimal netCashFlow;
+    private BigDecimal netRevenue;
     private Long paymentCount;
 }

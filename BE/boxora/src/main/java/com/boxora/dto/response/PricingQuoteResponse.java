@@ -34,6 +34,7 @@ public class PricingQuoteResponse {
     /** Mã giảm giá và số tiền chiết khấu */
     private String discountCode;
     private Integer discountPercentage;
+    private BigDecimal discountPercent;
     private BigDecimal discountAmount;
 
     /** Tổng tiền thuê sau chiết khấu */

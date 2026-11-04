@@ -2886,13 +2886,27 @@ public class HandoverServiceImpl implements HandoverService {
         BigDecimal dailyLateFee = policy.getDailyLateFee() != null ? policy.getDailyLateFee() : BigDecimal.ZERO;
         int overdueGraceDays = policy.getOverdueGraceDays() != null ? policy.getOverdueGraceDays() : 0;
 
+        BigDecimal dailyRate = dailyLateFee;
+        if (dailyLateFee.compareTo(BigDecimal.valueOf(500)) <= 0) {
+            BigDecimal monthlyFee = unit != null && unit.getEffectiveBasePrice() != null ? unit.getEffectiveBasePrice()
+                    : (booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO);
+            BigDecimal dailyRentalPrice = monthlyFee.compareTo(BigDecimal.ZERO) > 0
+                    ? OverdueDebtCalculationServiceImpl.roundUpToThousand(monthlyFee.divide(BigDecimal.valueOf(30), 4, java.math.RoundingMode.HALF_UP))
+                    : BigDecimal.ZERO;
+            dailyRate = OverdueDebtCalculationServiceImpl.roundUpToThousand(
+                    dailyRentalPrice.multiply(dailyLateFee).divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP)
+            );
+        } else {
+            dailyRate = OverdueDebtCalculationServiceImpl.roundUpToThousand(dailyRate);
+        }
+
         LocalDate today = LocalDate.now();
         LocalDate endDate = booking.getEndDate();
         if (endDate != null && today.isAfter(endDate)) {
             long overdueDays = ChronoUnit.DAYS.between(endDate, today);
             long billableDays = Math.max(0, overdueDays - overdueGraceDays);
             if (billableDays > 0) {
-                return dailyLateFee.multiply(BigDecimal.valueOf(billableDays));
+                return dailyRate.multiply(BigDecimal.valueOf(billableDays));
             }
         }
         return BigDecimal.ZERO;

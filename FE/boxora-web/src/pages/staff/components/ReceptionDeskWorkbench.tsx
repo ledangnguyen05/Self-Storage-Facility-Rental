@@ -89,7 +89,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
   onMetricsChange,
 }) => {
   const { user } = useAuth()
-  const resolvedRole = userRole || user?.role || 'STAFF'
+  const resolvedRole = (userRole || role || user?.roleName || user?.role?.name || (typeof user?.role === 'string' ? user?.role : 'STAFF')).toUpperCase()
   const isManagementRole = resolvedRole === 'ADMIN' || resolvedRole === 'BUSINESS_MANAGER'
 
   // Internal state when arrivals / radarUnits are not passed
@@ -636,7 +636,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
               <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-200 text-blue-800">CHỈ ĐỌC</span>
             </div>
             <p className="text-blue-800">
-              Tài khoản <strong>{resolvedRole === 'ADMIN' ? 'Quản Trị Viên (Admin)' : 'Quản Lý Kinh Doanh (Business Manager)'}</strong> đang theo dõi danh sách lịch hẹn và đối soát điều kiện check-in ở chế độ giám sát chỉ đọc. Quy trình 4 bước tiếp nhận khách hàng (Xác thực CCCD, Gán kho vật lý, Hợp đồng &amp; Thanh toán, Cấp PIN SmartLock) được thực hiện trực tiếp bởi <strong>Nhân viên quầy (Facility Staff)</strong> và <strong>Quản lý cơ sở (Facility Manager)</strong> tại quầy tiếp đón. Bấm <em>"Xem chi tiết"</em> tại từng đơn trong bảng bên dưới để đối soát 3 điều kiện bàn giao.
+              Tài khoản <strong>{resolvedRole === 'ADMIN' ? 'Quản Trị Viên (Admin)' : 'Quản Lý Kinh Doanh'}</strong> đang theo dõi danh sách lịch hẹn và đối soát điều kiện check-in ở chế độ giám sát chỉ đọc.Quy trình tiếp nhận khách tới nhận kho do <strong>Nhân viên quầy</strong> và <strong>Quản lý cơ sở</strong> thực hiện tại quầy tiếp đón. 
             </p>
           </div>
         </div>
@@ -793,32 +793,29 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
 
                       {/* Cột 3: Thời gian tiếp đón */}
                       <td className="py-3.5 px-3">
-                        <div className="font-semibold text-slate-800 text-xs flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[14px] text-blue-500">calendar_today</span>
-                          <span>
-                            {b.expectedCheckInAt
-                              ? new Date(b.expectedCheckInAt).toLocaleDateString('vi-VN')
-                              : ((b as any).checkInDate || b.startDate)}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          {(() => {
-                            const statusUpper = String(b.status || '').toUpperCase()
-                            if (['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(statusUpper)) return null
-                            const sched = getBookingScheduleInfo(b)
-                            if (!sched.relativeText) return null
-                            return (
-                              <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
-                                {sched.relativeText}
-                              </span>
-                            )
-                          })()}
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {b.expectedCheckInAt
-                              ? new Date(b.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
-                              : ((b as any).checkInTime || '09:00')}
-                          </span>
-                        </div>
+                        {(() => {
+                          const sched = getBookingScheduleInfo(b)
+                          const statusUpper = String(b.status || '').toUpperCase()
+                          const isFinished = ['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(statusUpper)
+                          return (
+                            <>
+                              <div className="font-semibold text-slate-800 text-xs flex items-center gap-1">
+                                <span className="material-symbols-outlined text-[14px] text-blue-500">calendar_today</span>
+                                <span>{sched.dateFormatted}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {!isFinished && sched.relativeText && (
+                                  <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>
+                                    {sched.relativeText}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {sched.timeFormatted}
+                                </span>
+                              </div>
+                            </>
+                          )
+                        })()}
                       </td>
 
                       {/* Cột 4: Trạng Thái & Chữ Ký */}
@@ -892,44 +889,46 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                             <span>Xem chi tiết</span>
                           </button>
 
-                          {b.status === 'ACTIVE' || b.status === 'COMPLETED' ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleSetActiveBookingId(b.id)
-                                document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                              }}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
-                              title="Xem hồ sơ bàn giao & thông tin mã PIN"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">inventory_2</span>
-                              <span>Hồ Sơ Bàn Giao</span>
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const proceed = () => {
+                          {!isManagementRole && (
+                            b.status === 'ACTIVE' || b.status === 'COMPLETED' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
                                   handleSetActiveBookingId(b.id)
                                   document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
-                                }
-                                const { isPremature } = isBookingBeforeCheckInTime(b)
-                                if (isPremature) {
-                                  setEarlyConfirmState({
-                                    booking: b,
-                                    actionType: 'ENTER_RECEPTION',
-                                    onConfirm: proceed,
-                                  })
-                                } else {
-                                  proceed()
-                                }
-                              }}
-                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
-                              title="Tiến hành thủ tục tiếp nhận và bàn giao kho"
-                            >
-                              <span className="material-symbols-outlined text-[14px]">desk</span>
-                              <span>Tiếp nhận</span>
-                            </button>
+                                }}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                title="Xem hồ sơ bàn giao & thông tin mã PIN"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">inventory_2</span>
+                                <span>Hồ Sơ Bàn Giao</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const proceed = () => {
+                                    handleSetActiveBookingId(b.id)
+                                    document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
+                                  }
+                                  const { isPremature } = isBookingBeforeCheckInTime(b)
+                                  if (isPremature) {
+                                    setEarlyConfirmState({
+                                      booking: b,
+                                      actionType: 'ENTER_RECEPTION',
+                                      onConfirm: proceed,
+                                    })
+                                  } else {
+                                    proceed()
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] transition cursor-pointer flex items-center gap-1 shadow-xs"
+                                title="Tiến hành thủ tục tiếp nhận và bàn giao kho"
+                              >
+                                <span className="material-symbols-outlined text-[14px]">desk</span>
+                                <span>Tiếp nhận</span>
+                              </button>
+                            )
                           )}
                         </div>
                       </td>
@@ -1097,9 +1096,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
                     <span className="text-[10px] text-slate-400 block uppercase font-bold">Thời gian sẽ tiếp đón khách hàng:</span>
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <strong className="text-emerald-600 dark:text-emerald-400 text-xs">
-                        {reviewDetailBooking.expectedCheckInAt
-                          ? `${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleDateString('vi-VN')} ${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
-                          : `${(reviewDetailBooking as any).checkInDate || reviewDetailBooking.startDate} (${(reviewDetailBooking as any).checkInTime || 'Giờ tiếp đón'})`}
+                        {sched.dateFormatted} {sched.timeFormatted}
                       </strong>
                       {sched.relativeText && !['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(s) && (
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${sched.badgeClass}`}>

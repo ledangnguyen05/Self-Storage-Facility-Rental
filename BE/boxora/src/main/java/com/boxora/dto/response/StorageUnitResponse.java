@@ -27,6 +27,8 @@ public class StorageUnitResponse {
     private BigDecimal pricePerMonth;
     private BigDecimal depositAmount;
     private Double areaSqMeters;
+    private Double volumeM3;
+    private String dimensions;
     private String batteryLevel;
     private String smartLockSerial;
     private String lastAccessTime;

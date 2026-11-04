@@ -408,7 +408,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/confirm-physical-return")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Xác nhận nhận lại kho vật lý & đồ đạc đã dọn sạch")
     public ResponseEntity<ApiResponse<HandoverResponse>> confirmPhysicalReturn(
             @PathVariable UUID bookingId,
@@ -422,7 +422,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/revoke-access")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER', 'ADMIN')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Thu hồi mã PIN SmartLock và quyền truy cập kho của khách hàng")
     public ResponseEntity<ApiResponse<HandoverResponse>> revokeAccess(
             @PathVariable UUID bookingId) {
@@ -431,7 +431,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/complete")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN', 'STAFF', 'FACILITY_STAFF')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN', 'STAFF', 'FACILITY_STAFF')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Hoàn tất toàn bộ hồ sơ trả kho, thanh lý hợp đồng và chuyển trạng thái kho")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> completeReturn(
             @PathVariable UUID bookingId) {
@@ -440,7 +440,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/confirm-settlement")
-    @PreAuthorize("hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')")
+    @PreAuthorize("(hasAuthority('HANDOVER_CREATE') or hasAnyRole('STAFF', 'FACILITY_STAFF', 'FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Task 16.1: Nhân viên xác nhận đã kiểm tra & tính phí đối soát gửi cho khách hàng")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> confirmSettlement(
             @PathVariable UUID bookingId,
@@ -469,7 +469,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/resolve-dispute")
-    @PreAuthorize("hasAuthority('HANDOVER_APPROVE') or hasRole('FACILITY_MANAGER')")
+    @PreAuthorize("(hasAuthority('HANDOVER_APPROVE') or hasRole('FACILITY_MANAGER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Task 16.3: Quản lý cơ sở (FACILITY_MANAGER) giải quyết khiếu nại quyết toán")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> resolveDispute(
             @PathVariable UUID bookingId,
@@ -479,7 +479,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/payout")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Task 16.4: Kế toán / Quản lý kinh doanh (BUSINESS_MANAGER/ADMIN) xác nhận giải ngân hoàn tiền")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> executePayout(
             @PathVariable UUID bookingId,
@@ -489,7 +489,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/reopen-inspection")
-    @PreAuthorize("hasAuthority('HANDOVER_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("(hasAuthority('HANDOVER_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Quản lý cơ sở (FACILITY_MANAGER) mở lại hồ sơ nghiệm thu hiện trường 7 bước để chỉnh sửa lại")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> reopenInspection(
             @PathVariable UUID bookingId,

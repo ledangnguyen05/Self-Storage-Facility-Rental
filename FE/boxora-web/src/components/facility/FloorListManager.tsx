@@ -659,7 +659,7 @@ export const FloorListManager: React.FC<FloorListManagerProps> = ({
       {/* Modal: Create / Edit Floor */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+          <div className="w-full max-w-3xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
@@ -742,7 +742,7 @@ export const FloorListManager: React.FC<FloorListManagerProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Tổng diện tích sàn (m²) <span className="text-rose-500">*</span>
+                    Tổng diện tích sàn (m²) <span className="text-rose-500 font-bold">*</span>
                   </label>
                   <input
                     type="number"

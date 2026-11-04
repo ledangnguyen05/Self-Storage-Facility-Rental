@@ -543,7 +543,7 @@ export const IncidentTicketsPage: React.FC = () => {
 
   // Copy Ticket Details for Escalation
   const handleCopyTicketForEscalation = (ticket: SupportTicketRecord) => {
-    const text = `[BOXORA SUPPORT ESCALATION]\nMã ticket: #${ticket.ticketCode || ticket.id.substring(0, 8)}\nCơ sở: ${ticket.facilityName || 'N/A'}\nKho: ${ticket.unitCode ? `#${ticket.unitCode}` : 'Khu vực cơ sở'}\nƯu tiên: ${ticket.priority}\nTrạng thái: ${ticket.status}\nTiêu đề: ${ticket.title}\nMô tả: ${ticket.description}\nThời điểm phát sinh: ${ticket.createdAt ? new Date(ticket.createdAt).toLocaleString('vi-VN') : 'N/A'}`
+    const text = `[BOXORA SUPPORT ESCALATION]\nMã ticket: #${ticket.ticketCode || ticket.id.substring(0, 8)}\nCơ sở: ${ticket.facilityName || 'N/A'}\nKho: ${ticket.unitCode ? `#${ticket.unitCode}` : 'Khu vực cơ sở'}\nƯu tiên: ${getPriorityLabel(ticket.priority)}\nTrạng thái: ${getStatusBadge(ticket.status).label}\nTiêu đề: ${ticket.title}\nMô tả: ${ticket.description}\nThời điểm phát sinh: ${ticket.createdAt ? new Date(ticket.createdAt).toLocaleString('vi-VN') : 'N/A'}`
     navigator.clipboard.writeText(text)
     setCopySuccess(true)
     setTimeout(() => setCopySuccess(false), 2000)
@@ -650,21 +650,24 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
-  // Priority Badge Helper
-  const getPriorityBadge = (p?: string) => {
+  // Priority Badge & Label Helper
+  const getPriorityMeta = (p?: string) => {
     switch (p) {
       case 'CRITICAL':
       case 'URGENT':
-        return 'bg-rose-50 text-rose-700 border-rose-300 ring-1 ring-rose-200'
+        return { label: 'Khẩn cấp', badge: 'bg-rose-50 text-rose-700 border-rose-300 ring-1 ring-rose-200' }
       case 'HIGH':
-        return 'bg-orange-50 text-orange-700 border-orange-200'
+        return { label: 'Ưu tiên cao', badge: 'bg-orange-50 text-orange-700 border-orange-200' }
       case 'MEDIUM':
-        return 'bg-amber-50 text-amber-800 border-amber-200'
+        return { label: 'Trung bình', badge: 'bg-amber-50 text-amber-800 border-amber-200' }
       case 'LOW':
       default:
-        return 'bg-slate-100 text-slate-700 border-slate-200'
+        return { label: p === 'LOW' ? 'Thấp' : (p || 'Trung bình'), badge: 'bg-slate-100 text-slate-700 border-slate-200' }
     }
   }
+
+  const getPriorityBadge = (p?: string) => getPriorityMeta(p).badge
+  const getPriorityLabel = (p?: string) => getPriorityMeta(p).label
 
   // Status Badge Helper
   const getStatusBadge = (s?: string) => {
@@ -1018,7 +1021,7 @@ export const IncidentTicketsPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-3.5 text-center">
                         <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold border ${getPriorityBadge(t.priority)}`}>
-                          {t.priority}
+                          {getPriorityLabel(t.priority)}
                         </span>
                       </td>
                       <td className="py-3 px-3.5">
@@ -1041,10 +1044,10 @@ export const IncidentTicketsPage: React.FC = () => {
                         {t.isOverdue || t.isOverdueSla ? (
                           <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-rose-100 text-rose-700 border border-rose-300 rounded text-[9px] font-bold mt-0.5">
                             <span className="material-symbols-outlined text-[10px]">alarm</span>
-                            <span>SLA overdue</span>
+                            <span>Quá hạn SLA</span>
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400">{t.slaDueAt ? `Due ${new Date(t.slaDueAt).toLocaleString('vi-VN')}` : 'SLA not set'}</span>
+                          <span className="text-[10px] text-slate-400">{t.slaDueAt ? `Hạn: ${new Date(t.slaDueAt).toLocaleString('vi-VN')}` : 'Chưa đặt SLA'}</span>
                         )}
                       </td>
                       <td className="py-3 px-3.5 text-center">
@@ -1271,10 +1274,10 @@ export const IncidentTicketsPage: React.FC = () => {
                   onChange={(e) => setAssignPriority(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none cursor-pointer"
                 >
-                  <option value="LOW">Thấp (Low - trong 24h)</option>
-                  <option value="MEDIUM">Bình thường (Medium - trong ca)</option>
-                  <option value="HIGH">Cao (High - trong 2h)</option>
-                  <option value="CRITICAL">Nguy cấp (Critical - xử lý ngay)</option>
+                  <option value="LOW">Thấp (trong 24h)</option>
+                  <option value="MEDIUM">Trung bình (trong ca trực)</option>
+                  <option value="HIGH">Ưu tiên cao (trong 2h)</option>
+                  <option value="CRITICAL">Khẩn cấp (xử lý ngay lập tức)</option>
                 </select>
               </div>
 
@@ -1431,12 +1434,12 @@ export const IncidentTicketsPage: React.FC = () => {
                   <div>
                     <span className="text-slate-400 block text-[10px]">Mức độ:</span>
                     <span className={`inline-block px-1.5 py-0.2 rounded text-[10px] font-bold border ${getPriorityBadge(contactBomTicket.priority)}`}>
-                      {contactBomTicket.priority}
+                      {getPriorityLabel(contactBomTicket.priority)}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">Trạng thái:</span>
-                    <strong className="text-slate-800">{contactBomTicket.status}</strong>
+                    <strong className="text-slate-800">{getStatusBadge(contactBomTicket.status).label}</strong>
                   </div>
                 </div>
 
@@ -1766,7 +1769,7 @@ export const IncidentTicketsPage: React.FC = () => {
                       </span>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">
-                      Trạng thái: {detailTicket.status}
+                      Trạng thái: {getStatusBadge(detailTicket.status).label}
                     </span>
                   </div>
 
@@ -1853,7 +1856,7 @@ export const IncidentTicketsPage: React.FC = () => {
                     >
                       <span className="material-symbols-outlined text-indigo-400 text-[18px]">swap_horiz</span>
                       <div>
-                        <div className="font-bold text-[11px]">Điều chuyển sang ô kho khác (Unit Transfer)</div>
+                        <div className="font-bold text-[11px]">Điều chuyển sang ô kho khác</div>
                         <div className="text-[10px] text-indigo-300/80">Chuyển sang ô kho trống cùng loại trong cơ sở khi kho cũ gặp sự cố</div>
                       </div>
                     </button>
@@ -2320,7 +2323,7 @@ export const IncidentTicketsPage: React.FC = () => {
                 <span className="material-symbols-outlined text-2xl">swap_horiz</span>
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">Điều Chuyển Ô Kho (Unit Transfer)</h3>
+                <h3 className="text-base font-bold text-slate-900">Điều Chuyển Ô Kho</h3>
                 <p className="mt-0.5 text-xs text-slate-500">
                   Chuyển hợp đồng của khách hàng từ kho <strong>#{detailTicket.unitCode || 'cũ'}</strong> sang một ô kho trống khả dụng khác tại cơ sở.
                 </p>
@@ -2330,7 +2333,7 @@ export const IncidentTicketsPage: React.FC = () => {
             <form onSubmit={handleSubmitTransfer} className="space-y-3 text-xs">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Chọn ô kho mới khả dụng (Status: AVAILABLE) *
+                  Chọn ô kho mới khả dụng (Trạng thái: Sẵn sàng) *
                 </label>
                 {isLoadingAvailableUnits ? (
                   <div className="py-4 text-center text-slate-400 flex items-center justify-center gap-2">
@@ -2339,7 +2342,7 @@ export const IncidentTicketsPage: React.FC = () => {
                   </div>
                 ) : availableUnitsForTransfer.length === 0 ? (
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
-                    Hiện không còn ô kho nào ở trạng thái AVAILABLE tại cơ sở này.
+                    Hiện không còn ô kho nào ở trạng thái Sẵn sàng sử dụng tại cơ sở này.
                   </div>
                 ) : (
                   <select

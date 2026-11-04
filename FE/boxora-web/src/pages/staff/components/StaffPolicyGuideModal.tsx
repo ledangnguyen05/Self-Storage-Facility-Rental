@@ -54,7 +54,6 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
   if (!isOpen) return null
 
   const depositPct = policy?.depositPercentage ?? policy?.depositPercent ?? 100
-  const minMonths = policy?.minimumRentalMonths ?? 1
   const cancelFullHours = policy?.cancellationFullRefundHours ?? 24
   const cancelPartHours = policy?.cancellationPartialRefundHours ?? 48
   const cancelPartPct = policy?.cancellationPartialRefundPercent ?? 70
@@ -138,7 +137,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
             </div>
             <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
               <li>Mức thu tiền cọc bắt buộc: <strong className="text-slate-900 font-mono">{depositPct}% tiền thuê</strong>.</li>
-              <li>Thời gian thuê tối thiểu hợp đồng: <strong className="text-slate-900">{minMonths} tháng</strong>.</li>
+              <li>Thời hạn thuê hợp đồng linh hoạt theo nhu cầu khách hàng, hỗ trợ gia hạn chủ động.</li>
               <li>Chính sách gia hạn: <strong className="text-slate-900">Khách hàng có thể chủ động thao tác gia hạn linh hoạt trên hệ thống</strong>.</li>
               <li>Sau khi backend xác nhận đủ điều kiện, lập biên bản bàn giao và đối chiếu CCCD gốc. PIN phần mềm chưa được đồng bộ với khóa vật lý; không xác nhận khách đã mở được khóa nếu chưa kiểm tra trực tiếp tại cơ sở.</li>
             </ul>
@@ -166,8 +165,8 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
             </div>
             <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
               <li>Hủy trong vòng &le; <strong>{cancelFullHours} giờ</strong> kể từ lúc đặt kho: Hoàn 100% tiền cọc tự động qua quy trình đối soát hoàn tiền.</li>
-              <li>Hủy trong khoảng {cancelFullHours}h - {cancelPartHours}h kể từ lúc đặt kho: Hoàn <strong>{cancelPartPct}% tiền cọc</strong> (khấu trừ {100 - cancelPartPct}% phí giữ chỗ).</li>
-              <li>Hủy quá <strong>{cancelPartHours} giờ</strong> kể từ lúc đặt kho: Hoàn <strong>50% tiền cọc</strong> (khấu trừ 50% phí cam kết giữ chỗ).</li>
+              <li>Hủy trong khoảng 24h - 48h kể từ lúc đặt kho: Hoàn <strong>{cancelPartPct}% tiền cọc</strong> (khấu trừ {100 - cancelPartPct}% phí giữ chỗ).</li>
+              <li>Hủy sau <strong>48 giờ</strong> kể từ lúc đặt kho: Hoàn <strong>{policy?.cancellationAfter48hRefundPercent ?? 50}% tiền cọc</strong> (khấu trừ {100 - (policy?.cancellationAfter48hRefundPercent ?? 50)}% phí).</li>
             </ul>
           </div>
 

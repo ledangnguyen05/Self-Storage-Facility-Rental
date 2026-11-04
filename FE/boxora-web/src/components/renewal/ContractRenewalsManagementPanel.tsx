@@ -155,12 +155,13 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
   userRole,
   showChainWideFilter = false,
 }) => {
-  const { user } = useAuth()
-  const roleName = (userRole || user?.role?.name || (typeof user?.role === 'string' ? user?.role : '') || '').toUpperCase()
+  const { user, role } = useAuth()
+  const roleName = (userRole || role || user?.roleName || user?.role?.name || (typeof user?.role === 'string' ? user?.role : '') || '').toUpperCase()
   const isAdmin = roleName === 'ADMIN' || roleName === 'SYSTEM_ADMIN'
-  const isManager = !isAdmin && (roleName === 'FACILITY_MANAGER' || roleName === 'BUSINESS_MANAGER')
-  const isStaff = !isAdmin && roleName === 'STAFF'
-  const isBusinessManager = !isAdmin && roleName === 'BUSINESS_MANAGER'
+  const isBusinessManager = roleName === 'BUSINESS_MANAGER'
+  const isFacilityManager = !isAdmin && !isBusinessManager && roleName === 'FACILITY_MANAGER'
+  const isManager = isFacilityManager
+  const isStaff = !isAdmin && !isBusinessManager && roleName === 'STAFF'
 
   // Query & Filter States
   const [selectedFacility, setSelectedFacility] = useState<string>(currentFacilityId || 'all')

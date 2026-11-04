@@ -132,15 +132,16 @@ public class PricingServiceImpl implements PricingService {
                     : BigDecimal.valueOf(5.0);
         }
 
-        int termDiscountPct = termDiscountPctVal.intValue();
+        BigDecimal discountPctDecimal = null;
         if (termDiscountPctVal.compareTo(BigDecimal.ZERO) > 0) {
             BigDecimal termDiscountAmount = subtotal.multiply(termDiscountPctVal)
                     .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
             if (termDiscountAmount.compareTo(discountAmount) > 0) {
-                discountPct = termDiscountPct;
+                discountPct = termDiscountPctVal.intValue();
+                discountPctDecimal = termDiscountPctVal;
                 discountAmount = termDiscountAmount;
                 if (appliedDiscountCode == null) {
-                    appliedDiscountCode = "TERM_" + termDiscountPct + "PCT";
+                    appliedDiscountCode = "TERM_" + termDiscountPctVal.stripTrailingZeros().toPlainString() + "PCT";
                 }
             }
         }
@@ -193,6 +194,7 @@ public class PricingServiceImpl implements PricingService {
                 .subtotalRentalFee(subtotal)
                 .discountCode(appliedDiscountCode)
                 .discountPercentage(discountPct)
+                .discountPercent(discountPctDecimal != null ? discountPctDecimal : (discountPct != null ? BigDecimal.valueOf(discountPct) : null))
                 .discountAmount(discountAmount)
                 .totalRentalFee(totalRentalFee)
                 .depositAmount(depositAmount)

@@ -69,6 +69,7 @@ public class ReportController {
         RevenueReportResponse report = reportService.getRevenueReport(fromDate, toDate, facilityId);
         StringBuilder sb = new StringBuilder();
         sb.append('\uFEFF'); // UTF-8 BOM
+        sb.append("sep=,\r\n"); // Excel delimiter directive
         sb.append("BÁO CÁO DOANH THU & TÀI CHÍNH BOXORA\r\n");
         sb.append("Kỳ báo cáo,").append(fromDate != null ? fromDate : "Toàn bộ").append(" - ").append(toDate != null ? toDate : "Hiện tại").append("\r\n\r\n");
         sb.append("TỔNG QUAN KPI (VND)\r\n");

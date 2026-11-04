@@ -39,48 +39,57 @@ export const getBookingScheduleInfo = (
 
   let targetDate: Date | null = null
 
-  // 1. Try expectedCheckInAt
-  if (booking.expectedCheckInAt) {
-    const parsed = new Date(booking.expectedCheckInAt)
-    if (!isNaN(parsed.getTime())) {
-      targetDate = parsed
-    }
+  const parseSafeDate = (val?: any): Date | null => {
+    if (!val || typeof val !== 'string') return null
+    if (val.includes('undefined') || val.includes('Invalid') || val.includes('null')) return null
+    const parsed = new Date(val)
+    if (!isNaN(parsed.getTime())) return parsed
+    return null
   }
 
-  // 2. Try checkInDate or startDate combined with checkInTime
+  // 1. Try expectedCheckInAt
+  targetDate = parseSafeDate(booking.expectedCheckInAt)
+
+  // 2. Try expectedArrivalAt
+  if (!targetDate) {
+    targetDate = parseSafeDate((booking as any).expectedArrivalAt)
+  }
+
+  // 3. Try checkInDate or startDate combined with checkInTime
   if (!targetDate) {
     const rawDate = (booking as any).checkInDate || booking.startDate
     const rawTime = (booking as any).checkInTime || '09:00'
     const timeClean = String(rawTime).split(' - ')[0].trim() || '09:00'
 
-    if (rawDate) {
+    if (rawDate && typeof rawDate === 'string' && !rawDate.includes('undefined')) {
       if (rawDate.includes('T')) {
-        const parsed = new Date(rawDate)
-        if (!isNaN(parsed.getTime())) {
-          targetDate = parsed
-        }
+        targetDate = parseSafeDate(rawDate)
       } else {
         const timePart = timeClean.length === 5 ? `${timeClean}:00` : timeClean
-        const parsed = new Date(`${rawDate}T${timePart}`)
-        if (!isNaN(parsed.getTime())) {
-          targetDate = parsed
-        } else {
-          const fallbackDate = new Date(rawDate)
-          if (!isNaN(fallbackDate.getTime())) {
-            targetDate = fallbackDate
-          }
-        }
+        targetDate = parseSafeDate(`${rawDate}T${timePart}`) || parseSafeDate(rawDate)
       }
     }
   }
 
   if (!targetDate) {
+    const rawStart = booking.startDate && typeof booking.startDate === 'string' && !booking.startDate.includes('undefined')
+      ? booking.startDate
+      : ''
+    let fallbackFormatted = 'Chưa xác định'
+    if (rawStart) {
+      const d = parseSafeDate(rawStart)
+      if (d) {
+        fallbackFormatted = d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      } else {
+        fallbackFormatted = rawStart
+      }
+    }
     return {
       targetDate: null,
       isPremature: false,
-      dateFormatted: booking.startDate || 'Chưa xác định',
-      timeFormatted: 'Giờ hẹn',
-      fullAppointmentText: booking.startDate || 'Lịch hẹn chưa xác định',
+      dateFormatted: fallbackFormatted,
+      timeFormatted: (booking as any).checkInTime || '09:00',
+      fullAppointmentText: `${(booking as any).checkInTime || '09:00'} ngày ${fallbackFormatted}`,
       relativeText: '',
       badgeClass: 'bg-slate-100 text-slate-700 border-slate-200',
       diffDays: 0,

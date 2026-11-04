@@ -139,6 +139,17 @@ public class OverdueProcessingController {
         return ResponseEntity.ok(ApiResponse.success("Đã cập nhật quy trình niêm phong thành công"));
     }
 
+    @PostMapping("/overdue/contracts/{contractId}/liquidate-release")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_BUSINESS_MANAGER', 'ROLE_FACILITY_MANAGER')")
+    @Operation(summary = "Giải phóng buồng kho nợ cước thanh lý tài sản kiểm kê về trạng thái AVAILABLE")
+    public ResponseEntity<ApiResponse<String>> releaseLiquidatedStorageUnit(
+            @PathVariable UUID contractId,
+            @RequestBody(required = false) com.boxora.dto.request.OverdueLiquidateReleaseRequest request
+    ) {
+        overdueManagementService.releaseLiquidatedStorageUnit(contractId, request);
+        return ResponseEntity.ok(ApiResponse.success("Đã giải phóng buồng kho về trạng thái Sẵn sàng sử dụng (AVAILABLE) và ghi nhận thanh lý tài sản."));
+    }
+
     @PostMapping("/overdue/contracts/{contractId}/complete-settlement")
     @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ROLE_ADMIN', 'ROLE_FACILITY_MANAGER', 'ROLE_BUSINESS_MANAGER', 'ROLE_STAFF')")
     @Operation(summary = "Xác nhận khách hàng đã tới thanh toán công nợ và hoàn tất trả kho")

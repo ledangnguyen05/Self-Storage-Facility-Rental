@@ -853,7 +853,7 @@ public class BookingServiceImpl implements BookingService {
         try {
             source = targetFacilityId == null
                     ? bookingRepository.findAll()
-                    : bookingRepository.findByStorageUnit_Facility_Id(targetFacilityId);
+                    : bookingRepository.findAllByFacilityIdIncludingNullUnit(targetFacilityId);
             if (source == null || source.isEmpty()) {
                 if (targetFacilityId != null) {
                     source = bookingRepository.findAllByFacilityIdIncludingNullUnit(targetFacilityId);
@@ -898,13 +898,14 @@ public class BookingServiceImpl implements BookingService {
                             || b.getStatus() == BookingStatus.COMPLETED;
                 })
                 .filter(b -> {
-                    if (timeframe == null && fromDate == null && toDate == null) {
-                        return b.getExpectedCheckInAt() != null;
-                    }
                     LocalDate checkInDate = b.getExpectedCheckInAt() != null
                             ? b.getExpectedCheckInAt().toLocalDate()
                             : b.getStartDate();
                     if (checkInDate == null) return false;
+
+                    if (timeframe == null && fromDate == null && toDate == null) {
+                        return true;
+                    }
 
                     if ("TODAY".equalsIgnoreCase(timeframe) || "CURRENT".equalsIgnoreCase(timeframe)) {
                         if (!checkInDate.isEqual(today)) return false;
@@ -2206,7 +2207,7 @@ public class BookingServiceImpl implements BookingService {
                 .paymentExpiresAt(b.getPaymentExpiresAt())
                 .holdStartedAt(b.getHoldStartedAt())
                 .holdExpiresAt(b.getHoldExpiresAt() != null ? b.getHoldExpiresAt() : b.getPaymentExpiresAt())
-                .expectedCheckInAt(b.getExpectedCheckInAt())
+                .expectedCheckInAt(b.getExpectedCheckInAt() != null ? b.getExpectedCheckInAt() : (b.getStartDate() != null ? b.getStartDate().atTime(9, 0) : null))
                 .paymentStatus(paymentStatus)
                 .holdGraceHours(policyHoldGraceHours != null ? policyHoldGraceHours : 24)
                 .status(effectiveStatus)

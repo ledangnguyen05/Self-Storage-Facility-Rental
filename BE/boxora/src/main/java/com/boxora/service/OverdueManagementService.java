@@ -1,10 +1,12 @@
 package com.boxora.service;
 
 import com.boxora.common.response.PageResponse;
+import com.boxora.dto.request.OverdueLiquidateReleaseRequest;
 import com.boxora.dto.request.OverduePinActionRequest;
 import com.boxora.dto.request.OverduePinTempGrantRequest;
 import com.boxora.dto.request.OverdueSealingWorkflowRequest;
 import com.boxora.dto.request.OverdueSendReminderRequest;
+import com.boxora.dto.request.OverdueSettlementRequest;
 import com.boxora.dto.response.OverdueContractDetailResponse;
 import com.boxora.dto.response.OverdueContractItemResponse;
 import com.boxora.dto.response.OverdueSummaryResponse;
@@ -46,6 +48,7 @@ public interface OverdueManagementService {
         completeSettlement(contractId, null);
     }
 
-    void completeSettlement(UUID contractId, com.boxora.dto.request.OverdueSettlementRequest request);
-}
+    void completeSettlement(UUID contractId, OverdueSettlementRequest request);
 
+    void releaseLiquidatedStorageUnit(UUID contractId, OverdueLiquidateReleaseRequest request);
+}

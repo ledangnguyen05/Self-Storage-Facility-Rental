@@ -3,6 +3,7 @@ package com.boxora.service.impl;
 import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.OverduePinActionRequest;
 import com.boxora.dto.request.OverduePinTempGrantRequest;
+import com.boxora.dto.request.OverdueLiquidateReleaseRequest;
 import com.boxora.dto.request.OverdueSettlementRequest;
 import com.boxora.dto.request.OverdueSealingWorkflowRequest;
 import com.boxora.dto.request.OverdueSendReminderRequest;
@@ -29,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -75,6 +77,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         BigDecimal totalOverdueDebt = BigDecimal.ZERO;
         BigDecimal totalPrincipalDebt = BigDecimal.ZERO;
         BigDecimal totalLateFees = BigDecimal.ZERO;
+        BigDecimal totalCustomerRefundAmount = BigDecimal.ZERO;
+        BigDecimal totalDepositHeld = BigDecimal.ZERO;
         BigDecimal unverifiedPaymentsAmount = BigDecimal.ZERO;
         long unverifiedPaymentsCount = 0;
 
@@ -86,6 +90,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
 
         long pendingPinRevocationsCount = 0;
         long pendingSealingApprovalsCount = 0;
+        long eligibleLiquidationReleaseCount = 0;
 
         for (RentalContract contract : contracts) {
             UUID facId = contract.getFacility() != null ? contract.getFacility().getId() : null;
@@ -102,6 +107,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             totalPrincipalDebt = totalPrincipalDebt.add(calc.principalDebt());
             totalLateFees = totalLateFees.add(calc.lateFee());
             totalOverdueDebt = totalOverdueDebt.add(calc.totalDebt());
+            if (calc.customerRefundAmount() != null) {
+                totalCustomerRefundAmount = totalCustomerRefundAmount.add(calc.customerRefundAmount());
+            }
+            if (calc.depositHeld() != null) {
+                totalDepositHeld = totalDepositHeld.add(calc.depositHeld());
+            }
 
             if (calc.unverifiedAmount() != null && calc.unverifiedAmount().compareTo(BigDecimal.ZERO) > 0) {
                 unverifiedPaymentsAmount = unverifiedPaymentsAmount.add(calc.unverifiedAmount());
@@ -122,11 +133,40 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             if (contract.getOverdueSealingStatus() == OverdueSealingStatus.SEALING_REQUESTED) {
                 pendingSealingApprovalsCount++;
             }
+
+            // Kiểm tra buồng kho có thể giải phóng do hết hạn mức giữ kho (0 ngày)
+            if (calc.totalDebt() != null && calc.totalDebt().compareTo(BigDecimal.ZERO) > 0) {
+                var sealingOpt = sealingRecordRepository.findFirstByContract_IdOrderByCreatedAtDesc(contract.getId());
+                if (sealingOpt.isPresent()) {
+                    var items = assetInventoryItemRepository.findBySealingRecord_Id(sealingOpt.get().getId());
+                    if (items != null && !items.isEmpty()) {
+                        BigDecimal totalLiq = BigDecimal.ZERO;
+                        for (var it : items) {
+                            BigDecimal val = it.getEstimatedValue() != null ? it.getEstimatedValue() : BigDecimal.ZERO;
+                            int qty = it.getQuantity() != null ? it.getQuantity() : 1;
+                            totalLiq = totalLiq.add(val.multiply(BigDecimal.valueOf(qty)));
+                        }
+                        BigDecimal dailyPenalty = calc.dailyLateFee() != null && calc.dailyLateFee().compareTo(BigDecimal.ZERO) > 0
+                                ? calc.dailyLateFee()
+                                : (calc.dailyRentalPrice() != null ? calc.dailyRentalPrice() : BigDecimal.ZERO);
+                        BigDecimal remainingVal = totalLiq.subtract(calc.totalDebt());
+                        long estDays = 0L;
+                        if (dailyPenalty.compareTo(BigDecimal.ZERO) > 0 && remainingVal.compareTo(BigDecimal.ZERO) > 0) {
+                            estDays = remainingVal.divide(dailyPenalty, 0, RoundingMode.FLOOR).longValue();
+                        }
+                        if (estDays == 0L) {
+                            eligibleLiquidationReleaseCount++;
+                        }
+                    }
+                }
+            }
         }
 
         long settledCount = 0;
         try {
-            List<OverdueAuditLog> settledLogs = overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_SETTLED_COMPLETED");
+            List<OverdueAuditLog> settledLogs = new ArrayList<>();
+            settledLogs.addAll(overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_SETTLED_COMPLETED"));
+            settledLogs.addAll(overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_LIQUIDATION_RELEASE"));
             if (effectiveFacilityId != null) {
                 settledCount = settledLogs.stream()
                         .filter(l -> l.getContract() != null && l.getContract().getFacility() != null && effectiveFacilityId.equals(l.getContract().getFacility().getId()))
@@ -148,6 +188,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .totalOverdueDebt(totalOverdueDebt)
                 .totalPrincipalDebt(totalPrincipalDebt)
                 .totalLateFees(totalLateFees)
+                .totalCustomerRefundAmount(totalCustomerRefundAmount)
+                .totalDepositHeld(totalDepositHeld)
                 .unverifiedPaymentsAmount(unverifiedPaymentsAmount)
                 .unverifiedPaymentsCount(unverifiedPaymentsCount)
                 .graceCount(graceCount)
@@ -157,6 +199,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .policyUnconfiguredCount(policyUnconfiguredCount)
                 .pendingPinRevocationsCount(pendingPinRevocationsCount)
                 .pendingSealingApprovalsCount(pendingSealingApprovalsCount)
+                .eligibleLiquidationReleaseCount(eligibleLiquidationReleaseCount)
                 .settledCount(settledCount)
                 .build();
     }
@@ -179,7 +222,9 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
 
         if ("SETTLED".equalsIgnoreCase(stage)) {
-            List<OverdueAuditLog> settledLogs = overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_SETTLED_COMPLETED");
+            List<OverdueAuditLog> settledLogs = new ArrayList<>();
+            settledLogs.addAll(overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_SETTLED_COMPLETED"));
+            settledLogs.addAll(overdueAuditLogRepository.findByActionOrderByCreatedAtDesc("OVERDUE_LIQUIDATION_RELEASE"));
             List<OverdueContractItemResponse> settledItems = new ArrayList<>();
             Set<UUID> seenContracts = new HashSet<>();
             for (OverdueAuditLog logItem : settledLogs) {
@@ -207,6 +252,11 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 LocalDateTime settledTime = logItem.getCreatedAt() != null ? logItem.getCreatedAt()
                         : (c.getUpdatedAt() != null ? c.getUpdatedAt() : LocalDateTime.now());
                 String settledAtStr = settledTime.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
+                FacilityPolicy policy = c.getFacility() != null
+                        ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(c.getFacility().getId()).orElse(null)
+                        : null;
+                var calc = overdueDebtCalculationService.calculateOverdueDebt(c, policy, today);
+
                 settledItems.add(OverdueContractItemResponse.builder()
                         .contractId(c.getId())
                         .contractCode(c.getContractCode())
@@ -214,10 +264,10 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                         .bookingCode(c.getBooking() != null ? c.getBooking().getBookingCode() : null)
                         .unitId(c.getUnit() != null ? c.getUnit().getId() : null)
                         .unitCode(c.getUnit() != null ? c.getUnit().getUnitCode() : "N/A")
-                        .unitTypeName(c.getUnit() != null && c.getUnit().getUnitType() != null ? c.getUnit().getUnitType().getTypeName() : "Kho")
-                        .monthlyFee(c.getMonthlyFee())
-                        .dailyRentalPrice(c.getMonthlyFee() != null ? c.getMonthlyFee().divide(BigDecimal.valueOf(30), 2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO)
-                        .lateFeePercentage(BigDecimal.valueOf(100))
+                        .unitTypeName(calc.unitTypeName())
+                        .monthlyFee(calc.monthlyFee())
+                        .dailyRentalPrice(calc.dailyRentalPrice())
+                        .lateFeePercentage(calc.lateFeePercentage())
                         .facilityId(c.getFacility() != null ? c.getFacility().getId() : null)
                         .facilityName(c.getFacility() != null ? c.getFacility().getName() : "N/A")
                         .customerId(c.getCustomer() != null ? c.getCustomer().getId() : null)
@@ -226,14 +276,14 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                         .customerEmail(c.getCustomer() != null ? c.getCustomer().getEmail() : "")
                         .startDate(c.getStartDate())
                         .dueDate(c.getEndDate())
-                        .daysOverdue(0)
-                        .principalDebt(BigDecimal.ZERO)
-                        .dailyLateFee(BigDecimal.ZERO)
-                        .lateFee(BigDecimal.ZERO)
-                        .totalDebt(BigDecimal.ZERO)
-                        .unverifiedAmount(BigDecimal.ZERO)
-                        .stage(null)
-                        .stageLabel("Đã xong (Khách trả kho)")
+                        .daysOverdue(calc.overdueDays())
+                        .principalDebt(calc.principalDebt())
+                        .dailyLateFee(calc.dailyLateFee())
+                        .lateFee(calc.lateFee())
+                        .totalDebt(calc.totalDebt())
+                        .unverifiedAmount(calc.unverifiedAmount())
+                        .stage(calc.stage())
+                        .stageLabel("OVERDUE_LIQUIDATION_RELEASE".equals(logItem.getAction()) ? "Đã thanh lý & giải phóng kho" : "Đã xong (Khách trả kho)")
                         .pinStatus(c.getOverduePinStatus() != null ? c.getOverduePinStatus() : OverduePinStatus.PIN_REVOKED)
                         .sealingStatus(OverdueSealingStatus.NONE)
                         .smartLockOnlineStatus("OFFLINE")
@@ -404,12 +454,14 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         boolean isSettled = contract.getStatus() == RentalContractStatus.TERMINATED;
         String settledAtStr = null;
         String settledByName = null;
+        String settledAction = null;
         if (isSettled) {
             var settlementAuditOpt = overdueAuditLogRepository.findByContract_IdOrderByCreatedAtDesc(contractId).stream()
-                    .filter(a -> "OVERDUE_SETTLED_COMPLETED".equals(a.getAction()))
+                    .filter(a -> "OVERDUE_SETTLED_COMPLETED".equals(a.getAction()) || "OVERDUE_LIQUIDATION_RELEASE".equals(a.getAction()))
                     .findFirst();
             if (settlementAuditOpt.isPresent()) {
                 var audit = settlementAuditOpt.get();
+                settledAction = audit.getAction();
                 LocalDateTime settledTime = audit.getCreatedAt() != null ? audit.getCreatedAt()
                         : (contract.getUpdatedAt() != null ? contract.getUpdatedAt() : LocalDateTime.now());
                 settledAtStr = settledTime.format(DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy"));
@@ -585,17 +637,17 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : "")
                 .startDate(contract.getStartDate())
                 .dueDate(contract.getEndDate())
-                .daysOverdue(isSettled ? 0 : calc.overdueDays())
-                .principalDebt(isSettled ? BigDecimal.ZERO : calc.principalDebt())
-                .dailyLateFee(isSettled ? BigDecimal.ZERO : calc.dailyLateFee())
-                .lateFee(isSettled ? BigDecimal.ZERO : calc.lateFee())
-                .totalDebt(isSettled ? BigDecimal.ZERO : calc.totalDebt())
-                .customerRefundAmount(isSettled ? BigDecimal.ZERO : calc.customerRefundAmount())
-                .unverifiedAmount(isSettled ? BigDecimal.ZERO : calc.unverifiedAmount())
+                .daysOverdue(calc.overdueDays())
+                .principalDebt(calc.principalDebt())
+                .dailyLateFee(calc.dailyLateFee())
+                .lateFee(calc.lateFee())
+                .totalDebt(calc.totalDebt())
+                .customerRefundAmount(calc.customerRefundAmount())
+                .unverifiedAmount(calc.unverifiedAmount())
                 .depositHeld(calc.depositHeld())
-                .stage(isSettled ? null : calc.stage())
-                .stageLabel(isSettled ? "Đã xong (Khách trả kho)" : resolveStageLabel(calc.stage()))
-                .feeFormulaExplanation(isSettled ? "Hợp đồng đã hoàn tất thanh toán nợ cước và thủ tục trả kho." : calc.feeFormulaExplanation())
+                .stage(calc.stage())
+                .stageLabel(isSettled ? ("OVERDUE_LIQUIDATION_RELEASE".equals(settledAction) ? "Đã thanh lý & giải phóng kho" : "Đã xong (Khách trả kho)") : resolveStageLabel(calc.stage()))
+                .feeFormulaExplanation(calc.feeFormulaExplanation())
                 .pinStatus(effectivePinStatus)
                 .sealingStatus(isSettled ? OverdueSealingStatus.NONE : (contract.getOverdueSealingStatus() != null ? contract.getOverdueSealingStatus() : OverdueSealingStatus.NONE))
                 .smartLockOnlineStatus(isSettled ? "OFFLINE" : (contract.getSmartLockOnlineStatus() != null ? contract.getSmartLockOnlineStatus() : "ONLINE"))
@@ -639,12 +691,81 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
 
         var calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
 
+        // 1. Kiểm tra biên bản kiểm kê tài sản và niêm phong kho nếu có
+        BigDecimal dailyPenalty = calc.dailyLateFee() != null && calc.dailyLateFee().compareTo(BigDecimal.ZERO) > 0
+                ? calc.dailyLateFee()
+                : (calc.dailyRentalPrice() != null && calc.dailyRentalPrice().compareTo(BigDecimal.ZERO) > 0
+                    ? calc.dailyRentalPrice()
+                    : (contract.getMonthlyFee() != null ? OverdueDebtCalculationServiceImpl.roundUpToThousand(contract.getMonthlyFee().divide(BigDecimal.valueOf(30), 4, RoundingMode.HALF_UP)) : BigDecimal.ZERO));
+        BigDecimal totalLiquidationValue = null;
+        Long estimatedHoldingDays = null;
+        Integer inventoryCount = null;
+        var sealingOpt = sealingRecordRepository.findFirstByContract_IdOrderByCreatedAtDesc(contractId);
+        if (sealingOpt.isPresent()) {
+            var items = assetInventoryItemRepository.findBySealingRecord_Id(sealingOpt.get().getId());
+            if (items != null && !items.isEmpty()) {
+                inventoryCount = items.size();
+                BigDecimal totalLiq = BigDecimal.ZERO;
+                for (var it : items) {
+                    BigDecimal val = it.getEstimatedValue() != null ? it.getEstimatedValue() : BigDecimal.ZERO;
+                    int qty = it.getQuantity() != null ? it.getQuantity() : 1;
+                    totalLiq = totalLiq.add(val.multiply(BigDecimal.valueOf(qty)));
+                }
+                totalLiquidationValue = totalLiq;
+
+                BigDecimal remainingVal = totalLiq.subtract(calc.totalDebt());
+                if (dailyPenalty.compareTo(BigDecimal.ZERO) > 0 && remainingVal.compareTo(BigDecimal.ZERO) > 0) {
+                    estimatedHoldingDays = remainingVal.divide(dailyPenalty, 0, RoundingMode.FLOOR).longValue();
+                } else {
+                    estimatedHoldingDays = 0L;
+                }
+            }
+        }
+
+        // 2. Tự động phân loại mẫu thông báo chuẩn
+        String resolvedTemplate = request.getTemplateType();
+        if (resolvedTemplate == null || resolvedTemplate.isBlank() || "AUTO".equalsIgnoreCase(resolvedTemplate)) {
+            if (calc.totalDebt().compareTo(BigDecimal.ZERO) > 0 && totalLiquidationValue != null) {
+                resolvedTemplate = "LIQUIDATION_HOLDING_WARNING";
+            } else {
+                resolvedTemplate = switch (calc.stage()) {
+                    case GRACE_PERIOD -> "REMINDER";
+                    case WARNING -> "WARNING";
+                    case PIN_REVOCATION -> "LOCKOUT_NOTICE";
+                    case SEALING_ELIGIBLE, POLICY_UNCONFIGURED -> "SEAL_WARNING";
+                };
+            }
+        }
+
+        String unitTypeName = "Kho";
+        if (contract.getUnit() != null && contract.getUnit().getUnitType() != null && contract.getUnit().getUnitType().getTypeName() != null) {
+            unitTypeName = contract.getUnit().getUnitType().getTypeName();
+        }
+
         String content = request.getContent();
         if (content == null || content.trim().isEmpty()) {
-            if (calc.totalDebt().compareTo(BigDecimal.ZERO) == 0) {
+            if ("LIQUIDATION_HOLDING_WARNING".equalsIgnoreCase(resolvedTemplate)) {
+                content = String.format(
+                        "[BOXORA THÔNG BÁO CÔNG NỢ & HẠN MỨC GIỮ KHO] Kính gửi %s, hợp đồng #%s (Kho #%s - %s) tại %s đã quá hạn trả kho %d ngày. Phí phạt: %,.0f đ vượt cọc giữ %,.0f đ -> Tổng công nợ phải nộp: %,.0f đ. Tài sản kiểm kê (%d mục): Tổng thanh lý %,.0f đ (Sau bù nợ: %,.0f đ). Ước tính giữ kho tối đa: %d ngày (Đơn giá %,.0f đ/ngày). Quý khách vui lòng thanh toán công nợ và đến nhận lại tài sản trước thời hạn.",
+                        contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Quý khách",
+                        contract.getContractCode(),
+                        contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
+                        unitTypeName,
+                        contract.getFacility() != null ? contract.getFacility().getName() : "Boxora",
+                        calc.overdueDays(),
+                        calc.lateFee().doubleValue(),
+                        calc.depositHeld() != null ? calc.depositHeld().doubleValue() : 0.0,
+                        calc.totalDebt().doubleValue(),
+                        inventoryCount != null ? inventoryCount : 0,
+                        totalLiquidationValue != null ? totalLiquidationValue.doubleValue() : 0.0,
+                        totalLiquidationValue != null ? totalLiquidationValue.subtract(calc.totalDebt()).max(BigDecimal.ZERO).doubleValue() : 0.0,
+                        estimatedHoldingDays != null ? estimatedHoldingDays : 0L,
+                        dailyPenalty != null ? dailyPenalty.doubleValue() : 0.0
+                );
+            } else if (calc.totalDebt().compareTo(BigDecimal.ZERO) == 0) {
                 content = String.format(
                         "[BOXORA %s] Kính gửi %s, hợp đồng thuê kho #%s (%s) tại %s đã quá hạn trả kho %d ngày. Phí phạt trễ hạn: %,.0f đ. Tiền cọc giữ: %,.0f đ (Số tiền hoàn khách dự kiến khi trả kho: %,.0f đ). Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho.",
-                        request.getTemplateType(),
+                        resolvedTemplate,
                         contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Quý khách",
                         contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
                         contract.getContractCode(),
@@ -657,7 +778,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             } else {
                 content = String.format(
                         "[BOXORA %s] Kính gửi %s, hợp đồng thuê kho #%s (%s) tại %s đã quá hạn trả kho %d ngày. Phí phạt trễ hạn: %,.0f đ, vượt quá tiền cọc giữ %,.0f đ. Tổng công nợ cần thanh toán: %,.0f đ. Quý khách vui lòng thanh toán công nợ và liên hệ BQL cơ sở để hoàn tất bàn giao trả kho.",
-                        request.getTemplateType(),
+                        resolvedTemplate,
                         contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Quý khách",
                         contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
                         contract.getContractCode(),
@@ -676,7 +797,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .contract(contract)
                 .customer(contract.getCustomer())
                 .channel(request.getChannel())
-                .templateType(request.getTemplateType())
+                .templateType(resolvedTemplate)
                 .content(content)
                 .sentBy(currentUser)
                 .sentAt(LocalDateTime.now())
@@ -688,7 +809,10 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         // Dispatch web notification for customer dashboard & notification center
         if (contract.getCustomer() != null) {
             String unitCode = contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A";
-            String webTitle = String.format("[Quá hạn trả kho] Hợp đồng #%s (Kho #%s) quá hạn %d ngày",
+            String webTitle = "LIQUIDATION_HOLDING_WARNING".equalsIgnoreCase(resolvedTemplate)
+                    ? String.format("[Cảnh báo nợ & giữ kho] Hợp đồng #%s (Kho #%s) quá hạn %d ngày (Giữ kho ước tính: %d ngày)",
+                    contract.getContractCode(), unitCode, calc.overdueDays(), estimatedHoldingDays != null ? estimatedHoldingDays : 0L)
+                    : String.format("[Quá hạn trả kho] Hợp đồng #%s (Kho #%s) quá hạn %d ngày",
                     contract.getContractCode(), unitCode, calc.overdueDays());
 
             NotificationLog webNotif = NotificationLog.builder()
@@ -716,6 +840,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                         contract.getCustomer().getFullName(),
                         contract.getContractCode(),
                         contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
+                        unitTypeName,
                         contract.getFacility() != null ? contract.getFacility().getName() : "Boxora",
                         calc.overdueDays(),
                         calc.principalDebt(),
@@ -726,8 +851,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                         calc.dueDate(),
                         calc.feeFormulaExplanation(),
                         calc.stage() != null ? calc.stage().name() : "OVERDUE",
-                        request.getTemplateType(),
-                        request.getNotes()
+                        resolvedTemplate,
+                        request.getNotes(),
+                        totalLiquidationValue,
+                        estimatedHoldingDays,
+                        inventoryCount,
+                        dailyPenalty
                 );
             } catch (Exception e) {
                 log.warn("Could not dispatch detailed overdue email notice: {}", e.getMessage());
@@ -1584,6 +1713,85 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 oldStatus,
                 RentalContractStatus.TERMINATED.name(),
                 "Khách hàng đã tới cơ sở thanh toán đủ công nợ quá hạn và hoàn tất thủ tục trả kho"
+        );
+    }
+
+    @Override
+    @Transactional
+    public void releaseLiquidatedStorageUnit(UUID contractId, OverdueLiquidateReleaseRequest request) {
+        RentalContract contract = rentalContractRepository.findById(contractId)
+                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+
+        if (contract.getFacility() != null) {
+            facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        }
+
+        if (contract.getStatus() == RentalContractStatus.TERMINATED || contract.getStatus() == RentalContractStatus.CANCELLED) {
+            throw new AppException(ErrorCode.CONTRACT_ALREADY_TERMINATED);
+        }
+
+        User currentUser = getCurrentUser();
+        String oldStatus = contract.getStatus() != null ? contract.getStatus().name() : "N/A";
+        Booking booking = contract.getBooking();
+        if (booking == null && contract.getUnit() != null) {
+            booking = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(contract.getUnit().getId()).orElse(null);
+        }
+
+        // Không tạo giao dịch thanh toán cho việc thanh lý giải phóng kho
+
+        // 2. Clear IoT Credentials & Directly Release Storage Unit to AVAILABLE
+        if (contract.getUnit() != null) {
+            StorageUnit unit = contract.getUnit();
+            String unitCode = unit.getUnitCode() != null ? unit.getUnitCode() : "";
+            try {
+                smartLockAdapter.revokeCredentials(unitCode, "ONLINE", false);
+            } catch (Exception e) {
+                log.warn("Failed to revoke IoT credentials for unit {} during liquidation: {}", unitCode, e.getMessage());
+            }
+            unit.setStatus(UnitStatus.AVAILABLE);
+            storageUnitRepository.save(unit);
+            log.info("Storage unit {} released to AVAILABLE after overdue liquidation", unitCode);
+        }
+
+        // 3. Mark contract terminated & clear overdue states
+        contract.setStatus(RentalContractStatus.TERMINATED);
+        contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
+        contract.setOverdueSealingStatus(OverdueSealingStatus.NONE);
+        contract.setTempAccessPin(null);
+        contract.setTempPinGrantedUntil(null);
+        rentalContractRepository.save(contract);
+
+        // 4. Update Sealing Record
+        var sealingOpt = sealingRecordRepository.findFirstByContract_IdOrderByCreatedAtDesc(contractId);
+        if (sealingOpt.isPresent()) {
+            SealingRecord sr = sealingOpt.get();
+            sr.setRequestStatus("LIQUIDATED_RELEASED");
+            sr.setStatus(SealingStatus.UNSEALED);
+            sr.setNotes((sr.getNotes() != null && !sr.getNotes().isBlank() ? sr.getNotes() + " | " : "")
+                    + "Đã thanh lý tài sản kiểm kê và giải phóng kho về AVAILABLE (Thời gian giữ kho = 0)");
+            sealingRecordRepository.save(sr);
+        }
+
+        // 5. Update Booking
+        if (booking != null) {
+            booking.setAccessPin(null);
+            booking.setQrAccessToken("REVOKED_LIQUIDATED");
+            booking.setStatus(BookingStatus.COMPLETED);
+            bookingRepository.save(booking);
+        }
+
+        // 6. Record Audit Log
+        String auditNotes = "Thanh lý tài sản kiểm kê và giải phóng buồng kho về trạng thái AVAILABLE";
+        if (request != null && request.getNotes() != null && !request.getNotes().isBlank()) {
+            auditNotes += ". Ghi chú: " + request.getNotes();
+        }
+        recordAudit(
+                contract,
+                "OVERDUE_LIQUIDATION_RELEASE",
+                currentUser,
+                oldStatus,
+                RentalContractStatus.TERMINATED.name(),
+                auditNotes
         );
     }
 

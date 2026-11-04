@@ -661,6 +661,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
   const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
   const [highlightedReturnUnitCode, setHighlightedReturnUnitCode] = useState<string | null>(null)
+  const [highlightedContractCode, setHighlightedContractCode] = useState<string | null>(null)
   const [requestToPay, setRequestToPay] = useState<Booking | null>(null)
   const [bookingCreated, setBookingCreated] = useState<boolean>(false)
   const [isCustomerPolicyModalOpen, setIsCustomerPolicyModalOpen] = useState<boolean>(false)
@@ -1090,7 +1091,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       if (!silent) setLoadingPayments(true)
       const res = await paymentService.getMyPayments()
       if (Array.isArray(res)) {
-        setCustomerPayments(res)
+        setCustomerPayments(res.filter(p => p.paymentMethod !== 'LIQUIDATION' && !p.transactionId?.startsWith('LIQ-')))
       }
     } catch (err) {
       console.error('Failed to load customer payments from database:', err)
@@ -1305,6 +1306,37 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setSearchParams({ tab })
   }
 
+  const handleGoToContract = (contractIdentifier?: string) => {
+    setActiveTab('contracts')
+    setContractsSearchTerm('')
+    setContractsFacility('all')
+    setContractsFloor('all')
+    setContractsSize('all')
+    if (contractIdentifier) {
+      setSearchParams({ tab: 'contracts', contractCode: contractIdentifier })
+      setHighlightedContractCode(contractIdentifier)
+      const tryScroll = () => {
+        const clean = contractIdentifier.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const el =
+          document.getElementById(`contract-row-${clean}`) ||
+          document.getElementById(`contract-row-${contractIdentifier}`) ||
+          document.querySelector(`[data-contract-code="${contractIdentifier}"]`) ||
+          document.querySelector(`[data-unit-code="${contractIdentifier}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          return true
+        }
+        return false
+      }
+      setTimeout(tryScroll, 120)
+      setTimeout(tryScroll, 350)
+      setTimeout(tryScroll, 750)
+      setTimeout(tryScroll, 1200)
+    } else {
+      setSearchParams({ tab: 'contracts' })
+    }
+  }
+
   const handleGoToMyUnit = (unitCode?: string) => {
     setActiveTab('my-units')
     setMyUnitsSearchTerm('')
@@ -1339,6 +1371,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         setActiveTab(detail.tab)
         if (detail.unitCode) {
           handleGoToMyUnit(detail.unitCode)
+        } else if (detail.contractCode || detail.contractId) {
+          handleGoToContract(detail.contractCode || detail.contractId)
         } else {
           setSearchParams({ tab: detail.tab })
         }
@@ -1347,6 +1381,34 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     window.addEventListener('boxora:navigate-customer-tab', handleCustomerTabNav)
     return () => window.removeEventListener('boxora:navigate-customer-tab', handleCustomerTabNav)
   }, [])
+
+  const contractParam = searchParams.get('contractCode') || searchParams.get('contract') || searchParams.get('contractId')
+  useEffect(() => {
+    if (contractParam) {
+      setHighlightedContractCode(contractParam)
+      const clean = contractParam.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const tryScroll = () => {
+        const el =
+          document.getElementById(`contract-row-${clean}`) ||
+          document.getElementById(`contract-row-${contractParam}`) ||
+          document.querySelector(`[data-contract-code="${contractParam}"]`) ||
+          document.querySelector(`[data-unit-code="${contractParam}"]`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          return true
+        }
+        return false
+      }
+      const t1 = setTimeout(tryScroll, 150)
+      const t2 = setTimeout(tryScroll, 450)
+      const t3 = setTimeout(tryScroll, 850)
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+        clearTimeout(t3)
+      }
+    }
+  }, [contractParam, activeTab, loadingContracts, contracts.length])
 
   const unitParam = searchParams.get('unit') || searchParams.get('unitCode')
   useEffect(() => {
@@ -2830,8 +2892,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
     // 4. Lịch sử giao dịch thanh toán & biên lai điện tử (customerPayments)
     customerPayments.forEach(p => {
-      // Bỏ qua giao dịch đã bị hủy hoặc thất bại
-      if (p.status === 'CANCELLED' || p.status === 'FAILED') return
+      // Bỏ qua giao dịch đã bị hủy, thất bại hoặc giao dịch giải phóng thanh lý nội bộ
+      if (p.status === 'CANCELLED' || p.status === 'FAILED' || p.paymentMethod === 'LIQUIDATION' || p.transactionId?.startsWith('LIQ-')) return
 
       const payTs = p.paymentTime || p.createdAt || new Date().toISOString()
       const isDeposit = p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT'
@@ -2978,6 +3040,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           cleanContent.toLowerCase().includes('hoàn tiền')
       )
 
+      const detectedContract =
+        (n.referenceId ? contracts.find(c => c.id === n.referenceId || c.contractCode === n.referenceId) : undefined) ||
+        (detectedUnit ? contracts.find(c => c.unitCode === detectedUnit) : undefined) ||
+        contracts.find(c => c.contractCode && (n.title?.includes(c.contractCode) || cleanContent.includes(c.contractCode)))
+
       const matchedBooking =
         (n.referenceId ? customerBookings.find(b => b.id === n.referenceId) : undefined) ||
         (detectedUnit ? customerBookings.find(b => b.bookingCode === detectedUnit || b.unitCode === detectedUnit) : undefined)
@@ -3060,8 +3127,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       items.push({
         id: `NOTIF-${n.id}`,
-        unitCode: (detectedUnit || matchedBooking?.unitCode) ?? undefined,
-        facilityName: (n.facilityName || matchedBooking?.facilityName) ?? undefined,
+        unitCode: (detectedUnit || detectedContract?.unitCode || matchedBooking?.unitCode) ?? undefined,
+        facilityName: (n.facilityName || detectedContract?.facilityName || matchedBooking?.facilityName) ?? undefined,
         category: notifCategory,
         actionType: notifActionType,
         title: n.title || 'Thông báo từ hệ thống Boxora',
@@ -3073,6 +3140,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         meta: {
           bookingId: targetBookingId,
           bookingCode: targetBookingCode,
+          contractId: detectedContract?.id,
+          contractCode: detectedContract?.contractCode,
           notificationId: n.id,
           notificationType: n.notificationType,
         }
@@ -5554,9 +5623,26 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setActiveTab('contracts')
+                                  const matchedContract =
+                                    contracts.find(c =>
+                                      (item.meta?.contractCode && c.contractCode === item.meta?.contractCode) ||
+                                      (item.meta?.contractId && c.id === item.meta?.contractId) ||
+                                      (item.unitCode && c.unitCode === item.unitCode) ||
+                                      (item.meta?.bookingId && (c.bookingId === item.meta?.bookingId || c.contractCode.replace(/^CTR-/, '') === item.meta?.bookingCode))
+                                    ) ||
+                                    contracts.find(c =>
+                                      c.contractCode &&
+                                      ((item.title && item.title.includes(c.contractCode)) ||
+                                       (item.description && item.description.includes(c.contractCode)))
+                                    )
+                                  const targetIdentifier =
+                                    matchedContract?.contractCode ||
+                                    item.meta?.contractCode ||
+                                    item.meta?.contractId ||
+                                    item.unitCode
+                                  handleGoToContract(targetIdentifier)
                                 }}
-                                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-rose-600/30 hover:shadow-lg transition cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[15px]">payments</span>
                                 <span>Xem hợp đồng &amp; Thanh toán</span>
@@ -6550,12 +6636,45 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         ? (b.paymentStatus === 'PAID' || (b.depositPaid && Number(b.depositPaid) > 0))
                         : (c.depositHeld && Number(c.depositHeld) > 0)
 
+                      const cleanContract = (c.contractCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                      const cleanUnit = (c.unitCode || '').toLowerCase().replace(/[^a-z0-9]/g, '')
+                      const isHighlighted = Boolean(
+                        highlightedContractCode && (
+                          c.contractCode?.toUpperCase() === highlightedContractCode.toUpperCase() ||
+                          c.id === highlightedContractCode ||
+                          cleanContract === highlightedContractCode.toLowerCase().replace(/[^a-z0-9]/g, '') ||
+                          (c.unitCode && c.unitCode.toUpperCase() === highlightedContractCode.toUpperCase()) ||
+                          (c.unitCode && cleanUnit === highlightedContractCode.toLowerCase().replace(/[^a-z0-9]/g, ''))
+                        )
+                      )
+
                       return (
-                        <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900">#{c.contractCode}</td>
-                          <td className="py-3.5 px-4 font-bold text-blue-600">{c.unitCode ? `#${c.unitCode}` : 'Chọn khi check-in'}</td>
-                          <td className="py-3.5 px-4 text-slate-700">{c.facilityName || 'Boxora Facility'}</td>
-                          <td className="py-3.5 px-4 text-slate-700 font-mono">
+                        <tr
+                          key={c.id}
+                          id={`contract-row-${cleanContract}`}
+                          data-contract-code={c.contractCode}
+                          data-unit-code={c.unitCode || ''}
+                          className={`transition-all duration-500 relative ${
+                            isHighlighted
+                              ? 'shadow-2xl shadow-rose-500/35 ring-2 ring-rose-500/90 z-20'
+                              : 'hover:bg-slate-50/70 transition-colors'
+                          }`}
+                          style={isHighlighted ? { boxShadow: '0 12px 28px -4px rgba(244, 63, 94, 0.35)' } : undefined}
+                        >
+                          <td className={`py-3.5 px-4 font-unit-code text-xs font-bold text-slate-900 ${isHighlighted ? 'border-y-2 border-l-2 border-rose-500 rounded-l-xl bg-rose-50/95' : ''}`}>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span>#{c.contractCode}</span>
+                              {isHighlighted && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-lg shadow-rose-600/40 animate-pulse">
+                                  <span className="material-symbols-outlined text-[13px]">verified</span>
+                                  <span>Hợp đồng được chọn</span>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className={`py-3.5 px-4 font-bold text-blue-600 ${isHighlighted ? 'border-y-2 border-rose-500 bg-rose-50/95' : ''}`}>{c.unitCode ? `#${c.unitCode}` : 'Chọn khi check-in'}</td>
+                          <td className={`py-3.5 px-4 text-slate-700 ${isHighlighted ? 'border-y-2 border-rose-500 bg-rose-50/95' : ''}`}>{c.facilityName || 'Boxora Facility'}</td>
+                          <td className={`py-3.5 px-4 text-slate-700 font-mono ${isHighlighted ? 'border-y-2 border-rose-500 bg-rose-50/95' : ''}`}>
                             {c.status === 'PENDING_ACTIVATION' ? (
                               <div className="flex flex-col">
                                 <span>{c.startDate} — {c.endDate}</span>
@@ -6570,13 +6689,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               </div>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right">
+                          <td className={`py-3.5 px-4 font-data-tabular font-bold text-slate-900 text-right ${isHighlighted ? 'border-y-2 border-rose-500 bg-rose-50/95' : ''}`}>
                             {Number(c.monthlyFee || 0).toLocaleString('vi-VN')} ₫
                           </td>
-                          <td className="py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold">
+                          <td className={`py-3.5 px-4 font-data-tabular text-slate-700 text-right font-bold ${isHighlighted ? 'border-y-2 border-rose-500 bg-rose-50/95' : ''}`}>
                             {getContractDepositHeld(c).toLocaleString('vi-VN')} ₫
                           </td>
-                          <td className="py-3.5 px-4 text-center">
+                          <td className={`py-3.5 px-4 text-center ${isHighlighted ? 'border-y-2 border-rose-500 bg-rose-50/95' : ''}`}>
                             {c.status === 'TERMINATED' ? (
                               <span className="inline-block px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
                                 Đã thanh lý
@@ -6618,7 +6737,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               </span>
                             )}
                           </td>
-                          <td className="py-3.5 px-4 text-right">
+                          <td className={`py-3.5 px-4 text-right ${isHighlighted ? 'border-y-2 border-r-2 border-rose-500 rounded-r-xl bg-rose-50/95' : ''}`}>
                             <div className="flex items-center justify-end gap-2">
                               {isPaper && c.paperContractUrl ? (
                                 <button
@@ -6666,6 +6785,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   </>
                                 )
                               })()}
+                              {c.status === 'OVERDUE' && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedContractForModal(c)}
+                                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md font-bold text-xs flex items-center gap-1 shadow-sm transition-colors cursor-pointer"
+                                  title="Xem hồ sơ hợp đồng & công nợ trễ hạn"
+                                >
+                                  <span className="material-symbols-outlined text-[14px]">payments</span>
+                                  <span>Thanh toán nợ cước</span>
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => setSelectedContractForModal(c)}

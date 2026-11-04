@@ -43,7 +43,6 @@ public class FacilityPolicyController {
     }
 
     @GetMapping("/by-facility/{facilityId}")
-    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF', 'CUSTOMER')")
     @Operation(summary = "Get facility policy by facility ID")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> getByFacilityId(
             @PathVariable UUID facilityId) {

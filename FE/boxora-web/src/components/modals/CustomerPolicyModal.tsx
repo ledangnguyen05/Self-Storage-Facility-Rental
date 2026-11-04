@@ -66,7 +66,6 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
   if (!isOpen) return null
 
   const depositPercent = policy?.depositPercentage ?? policy?.depositPercent ?? 100
-  const minMonths = policy?.minimumRentalMonths ?? 1
   const cancelFullHours = policy?.cancellationFullRefundHours ?? 24
   const cancelPartHours = policy?.cancellationPartialRefundHours ?? 48
   const cancelPartPercent = policy?.cancellationPartialRefundPercent ?? 70
@@ -188,7 +187,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                     Hợp đồng thuê kho được khởi tạo và ký kết hoàn toàn trực tuyến bằng chữ ký điện tử vẽ theo đúng quy định pháp lý.
                   </li>
                   <li>
-                    Thời hạn thuê tối thiểu là <strong>{minMonths} tháng</strong>. Hết thời hạn thuê, quý khách có thể gia hạn linh hoạt.
+                    Thời hạn thuê kho linh hoạt theo nhu cầu thực tế của quý khách. Hết thời hạn thuê, quý khách có thể gia hạn linh hoạt bất cứ lúc nào.
                   </li>
                   <li>
                     Quý khách có thể chủ động thao tác gia hạn hợp đồng linh hoạt bất cứ lúc nào ngay trên tài khoản.
@@ -270,7 +269,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
 
                   <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60">
                     <span className="font-semibold text-amber-900 dark:text-amber-200">
-                      Hủy trong khoảng {cancelFullHours}h - {cancelPartHours}h kể từ khi đặt kho:
+                      Hủy trong khoảng 24h - 48h kể từ khi đặt kho:
                     </span>
                     <strong className="font-mono font-bold text-amber-700 dark:text-amber-400">
                       Hoàn lại {cancelPartPercent}% tiền cọc
@@ -279,10 +278,10 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
 
                   <div className="flex items-center justify-between p-3 rounded-lg bg-sky-50/60 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/60">
                     <span className="font-semibold text-sky-900 dark:text-sky-200">
-                      Hủy quá {cancelPartHours} giờ kể từ khi đặt kho:
+                      Hủy sau 48 giờ kể từ khi đặt kho:
                     </span>
                     <strong className="font-mono font-bold text-sky-700 dark:text-sky-400">
-                      Hoàn lại 50% tiền cọc
+                      Hoàn lại {policy?.cancellationAfter48hRefundPercent ?? 50}% tiền cọc
                     </strong>
                   </div>
                 </div>
@@ -384,7 +383,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                   <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200/60 dark:border-slate-700 flex justify-between items-center">
                     <span className="text-slate-700 dark:text-slate-300">Phí phạt trễ hạn mỗi ngày:</span>
                     <strong className="text-rose-600 font-mono font-bold">
-                      100% đơn giá ngày của loại kho thuê
+                      Theo % đơn giá ngày của loại kho thuê
                     </strong>
                   </div>
                   <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200/60 dark:border-slate-700 flex justify-between items-center">

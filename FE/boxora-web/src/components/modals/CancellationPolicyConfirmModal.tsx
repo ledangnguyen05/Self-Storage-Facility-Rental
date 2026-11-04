@@ -168,12 +168,22 @@ export const CancellationPolicyConfirmModal: React.FC<CancellationPolicyConfirmM
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-100 dark:border-amber-900/50 space-y-1">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase block">Hủy hoàn một phần</span>
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase block">Tỷ lệ hủy trong 24-48h</span>
                   <strong className="text-amber-700 dark:text-amber-400 block font-bold text-xs">
                     Hoàn {policyDetail?.cancellationPartialRefundPercent ?? 70}% tiền cọc
                   </strong>
                   <span className="text-[10px] text-slate-500 block">
-                    Trong vòng {policyDetail?.cancellationPartialRefundHours ?? 48} giờ (khấu trừ phí hủy {100 - (policyDetail?.cancellationPartialRefundPercent ?? 70)}%)
+                    Trong khoảng 24h - 48h (khấu trừ {100 - (policyDetail?.cancellationPartialRefundPercent ?? 70)}%)
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-100 dark:border-amber-900/50 space-y-1">
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase block">Tỷ lệ hoàn sau 48h đặt</span>
+                  <strong className="text-slate-700 dark:text-slate-300 block font-bold text-xs">
+                    Hoàn {policyDetail?.cancellationAfter48hRefundPercent ?? 50}% tiền cọc
+                  </strong>
+                  <span className="text-[10px] text-slate-500 block">
+                    Sau 48h đặt kho (khấu trừ {100 - (policyDetail?.cancellationAfter48hRefundPercent ?? 50)}%)
                   </span>
                 </div>
 

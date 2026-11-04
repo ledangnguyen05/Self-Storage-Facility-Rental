@@ -10,8 +10,8 @@ import { supportTicketService, SupportTicketRecord } from '../../services/suppor
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
-import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, Booking } from '../../types'
-import { parseFacilityLayoutConfig } from '../../utils/facilityLayout'
+import { Facility, FacilityPolicy, StorageUnit, OverdueDebtItem, Booking, FacilityFloor, FacilityZone } from '../../types'
+import { parseFacilityLayoutConfig, parseFacilityFloorPlanConfig, ZONE_TYPE_OPTIONS } from '../../utils/facilityLayout'
 import { IoTTelemetryModal } from './modals/IoTTelemetryModal'
 import { BookingDetailReadOnlyModal } from './modals/BookingDetailReadOnlyModal'
 import { DoorAccessHistoryModal } from './modals/DoorAccessHistoryModal'
@@ -48,6 +48,8 @@ interface InspectedUnit {
   smartlock: string
   lastAccess: string
   floorLevel: string
+  zoneCode?: string
+  zoneName?: string
   pricePerMonth?: number
   facilityId?: string
   facilityName?: string
@@ -81,10 +83,14 @@ const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[
             unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
             unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
             storageUnitId: r.storageUnitId || '',
-            startDate: r.startDate || new Date().toISOString().slice(0, 10),
+            startDate: r.startDate && !r.startDate.includes('undefined') ? r.startDate : new Date().toISOString().slice(0, 10),
             endDate: r.rentalEndDate || '',
-            expectedCheckInAt: r.expectedCheckInAt || (r.checkInDate ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00` : undefined),
-            checkInTime: r.checkInTime,
+            expectedCheckInAt: r.expectedCheckInAt && !r.expectedCheckInAt.includes('undefined') && !isNaN(new Date(r.expectedCheckInAt).getTime())
+              ? r.expectedCheckInAt
+              : (r.checkInDate && !r.checkInDate.includes('undefined')
+                ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00`
+                : (r.startDate && !r.startDate.includes('undefined') ? `${r.startDate}T09:00:00` : undefined)),
+            checkInTime: r.checkInTime || '09:00',
             status: (r.status || 'PENDING_CONTACT') as any,
             customerId: r.customerId || 'guest',
             accessCode: r.accessCode || r.bookingCode || '',
@@ -200,7 +206,7 @@ export const ManagerDashboard: React.FC = () => {
   const initialStatusParam = searchParams.get('status') as UnitStatusFilter | null
   const initialStatus: UnitStatusFilter = (initialStatusParam && validStatuses.includes(initialStatusParam)) ? initialStatusParam : 'all'
   const [statusFilter, setStatusFilter] = useState<UnitStatusFilter>(initialStatus)
-  const [selectedFloor, setSelectedFloor] = useState<'floor1' | 'floor2'>('floor1')
+  const [selectedFloorId, setSelectedFloorId] = useState<string>('')
   const [sizeFilter, setSizeFilter] = useState<'all' | 's' | 'm' | 'l'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUnit, setSelectedUnit] = useState<InspectedUnit | null>(null)
@@ -343,6 +349,10 @@ export const ManagerDashboard: React.FC = () => {
   const [deleteUnitConfirm, setDeleteUnitConfirm] = useState<InspectedUnit | null>(null)
   const [isDeletingUnit, setIsDeletingUnit] = useState(false)
 
+  // Complete maintenance confirm state
+  const [completeMaintenanceConfirmUnit, setCompleteMaintenanceConfirmUnit] = useState<InspectedUnit | null>(null)
+  const [isCompletingMaintenance, setIsCompletingMaintenance] = useState(false)
+
   // Quét tự động gửi email nhắc nhở quá hạn 24h đối với đơn ký + thanh toán tại quầy
   useEffect(() => {
     try {
@@ -427,7 +437,7 @@ export const ManagerDashboard: React.FC = () => {
         }),
         bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
         supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
-        contractService.getRenewals({ facilityId: targetId, size: 100 }),
+        contractService.getRenewals({ facilityId: targetId, status: 'PENDING_REVIEW', size: 100 }),
         handoverService.getReturnCases({ facilityId: targetId }),
       ])
 
@@ -477,9 +487,11 @@ export const ManagerDashboard: React.FC = () => {
               ? new Date(su.dueDate).toLocaleDateString('vi-VN')
               : (isAvail ? '—' : 'Chưa xác định'),
             battery: su.batteryLevel || undefined,
-            smartlock: su.smartLockSerial || 'Not reported',
-            lastAccess: su.lastAccessTime || 'No access record reported',
-            floorLevel: su.floorLevel || 'Not reported',
+            smartlock: su.smartLockSerial || '',
+            lastAccess: su.lastAccessTime || 'Chưa có dữ liệu',
+            floorLevel: su.floorLevel || 'Tầng 1',
+            zoneCode: su.zoneCode,
+            zoneName: su.zoneName,
             pricePerMonth: su.pricePerMonth,
             facilityId: su.facilityId,
             facilityName: su.facilityName,
@@ -560,10 +572,11 @@ export const ManagerDashboard: React.FC = () => {
         setTickets([])
       }
 
-      // 7. Renewals Count
+      // 7. Renewals Count: Chỉ đếm các đơn đang ở trạng thái cần phê duyệt (PENDING_REVIEW)
       if (renewalsRes.status === 'fulfilled' && renewalsRes.value) {
-        const count = renewalsRes.value.totalElements ?? (renewalsRes.value.content ? renewalsRes.value.content.length : 0)
-        setRenewalsCount(count)
+        const rawContent = renewalsRes.value.content || (Array.isArray(renewalsRes.value) ? renewalsRes.value : [])
+        const pendingCount = rawContent.filter((r: any) => String(r.status || '').toUpperCase() === 'PENDING_REVIEW').length
+        setRenewalsCount(pendingCount)
       } else {
         setRenewalsCount(0)
       }
@@ -785,6 +798,12 @@ export const ManagerDashboard: React.FC = () => {
       setSelectedFacilityId(targetFacilityId)
       void fetchUnits(targetFacilityId)
     }
+    if (unit.floorLevel) {
+      const matchedFl = activeFloors.find(f => isUnitOnFloor({ ...unit, id: unit.unitCode } as any, f))
+      if (matchedFl) {
+        setSelectedFloorId(matchedFl.id)
+      }
+    }
     triggerAction(`${t('Đã thêm kho', 'Added storage unit')} ${unit.unitCode}.`)
   }
 
@@ -823,8 +842,8 @@ export const ManagerDashboard: React.FC = () => {
 
     // Nếu kho đang Trống -> Mở modal yêu cầu nhập Lý do bảo trì & Người bảo trì
     if (selectedUnit.status === 'Available') {
-      const roleLabel = role === 'STAFF' ? 'Nhân viên cơ sở' : role === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : 'Quản trị viên'
-      const defaultMaintainer = `${user?.fullName || user?.username || 'Nhân sự cơ sở'} (${roleLabel})`
+      const roleLabel = role === 'STAFF' ? 'Nhân viên cơ sở' : role === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : role === 'BUSINESS_MANAGER' ? 'Quản lý vận hành kinh doanh' : 'Quản trị viên'
+      const defaultMaintainer = `${user?.fullName || user?.username || 'Nhân sự quản lý'} (${roleLabel})`
       setMaintenanceByInput(defaultMaintainer)
       setMaintenanceReasonInput('')
       setMaintenanceError('')
@@ -832,35 +851,26 @@ export const ManagerDashboard: React.FC = () => {
       return
     }
 
-    // Nếu kho đang Bảo trì -> Hoàn tất bảo trì (Mở lại kho)
-    try {
-      if (selectedUnit.backendId) {
-        const updated = await storageUnitService.toggleMaintenance(selectedUnit.backendId)
-        const isNowMaint = updated.status === 'UNDER_MAINTENANCE' || updated.status === 'MAINTENANCE'
-        const nextStatus: InspectedUnit['status'] = isNowMaint ? 'Maintenance' : 'Available'
-        const nextColor: InspectedUnit['color'] = isNowMaint ? 'purple' : 'emerald'
+    // Nếu kho đang Bảo trì -> Mở modal xác nhận hoàn tất bảo trì
+    if (selectedUnit.status === 'Maintenance') {
+      setCompleteMaintenanceConfirmUnit(selectedUnit)
+      return
+    }
+  }
 
-        setUnits(prev => prev.map(u => {
-          if (u.id === selectedUnit.id) {
-            return {
-              ...u,
-              status: nextStatus,
-              rawStatus: updated.status,
-              color: nextColor,
-              tenant: 'Kho trống',
-              contract: 'Chưa có hợp đồng',
-              due: '—',
-              maintenanceReason: undefined,
-              maintenanceBy: undefined,
-              maintenanceAt: undefined,
-            }
-          }
-          return u
-        }))
-        setSelectedUnit(prev => {
-          if (!prev) return null
+  const handleConfirmCompleteMaintenance = async () => {
+    if (!completeMaintenanceConfirmUnit || !completeMaintenanceConfirmUnit.backendId) return
+    setIsCompletingMaintenance(true)
+    try {
+      const updated = await storageUnitService.toggleMaintenance(completeMaintenanceConfirmUnit.backendId)
+      const isNowMaint = updated.status === 'UNDER_MAINTENANCE' || updated.status === 'MAINTENANCE'
+      const nextStatus: InspectedUnit['status'] = isNowMaint ? 'Maintenance' : 'Available'
+      const nextColor: InspectedUnit['color'] = isNowMaint ? 'purple' : 'emerald'
+
+      setUnits(prev => prev.map(u => {
+        if (u.id === completeMaintenanceConfirmUnit.id) {
           return {
-            ...prev,
+            ...u,
             status: nextStatus,
             rawStatus: updated.status,
             color: nextColor,
@@ -871,17 +881,36 @@ export const ManagerDashboard: React.FC = () => {
             maintenanceBy: undefined,
             maintenanceAt: undefined,
           }
-        })
-
-        const targetFac = selectedFacilityId || user?.facilityId
-        if (targetFac) {
-          void fetchUnits(targetFac)
         }
+        return u
+      }))
+      setSelectedUnit(prev => {
+        if (!prev || prev.id !== completeMaintenanceConfirmUnit.id) return prev
+        return {
+          ...prev,
+          status: nextStatus,
+          rawStatus: updated.status,
+          color: nextColor,
+          tenant: 'Kho trống',
+          contract: 'Chưa có hợp đồng',
+          due: '—',
+          maintenanceReason: undefined,
+          maintenanceBy: undefined,
+          maintenanceAt: undefined,
+        }
+      })
 
-        triggerAction(`Đã hoàn tất bảo trì và mở lại kho #${selectedUnit.id} về trạng thái Sẵn sàng!`)
+      const targetFac = selectedFacilityId || user?.facilityId
+      if (targetFac) {
+        void fetchUnits(targetFac)
       }
+
+      triggerAction(`Đã hoàn tất bảo trì và mở lại kho #${completeMaintenanceConfirmUnit.id} về trạng thái Sẵn sàng!`)
+      setCompleteMaintenanceConfirmUnit(null)
     } catch (err: any) {
       triggerAction(`Không thể đổi trạng thái: ${err?.response?.data?.message || 'Kho đang có người thuê hoặc lỗi hệ thống'}`)
+    } finally {
+      setIsCompletingMaintenance(false)
     }
   }
 
@@ -983,7 +1012,107 @@ export const ManagerDashboard: React.FC = () => {
     }
   }
 
-  const getUnitZone = (u: InspectedUnit): 'A' | 'B' | 'C' => {
+  const floorPlan = useMemo(() => parseFacilityFloorPlanConfig(currentFacility?.layoutConfig), [currentFacility?.layoutConfig])
+  const activeFloors = useMemo(() => {
+    if (!floorPlan.floors || floorPlan.floors.length === 0) return []
+    const filtered = floorPlan.floors.filter(f => f.status === 'ACTIVE' || !f.status)
+    return filtered.length > 0 ? filtered : floorPlan.floors
+  }, [floorPlan])
+
+  // Sync selectedFloorId with activeFloors
+  useEffect(() => {
+    if (activeFloors.length > 0) {
+      if (!selectedFloorId || !activeFloors.some(f => f.id === selectedFloorId)) {
+        setSelectedFloorId(activeFloors[0].id)
+      }
+    } else {
+      setSelectedFloorId('')
+    }
+  }, [activeFloors, selectedFloorId])
+
+  const currentFloor = useMemo(() => {
+    return activeFloors.find(f => f.id === selectedFloorId) || activeFloors[0] || null
+  }, [activeFloors, selectedFloorId])
+
+  const isUnitOnFloor = (u: InspectedUnit, floor: FacilityFloor): boolean => {
+    const uf = (u.floorLevel || '').trim().toLowerCase()
+    const fn = (floor.name || '').trim().toLowerCase()
+    const fc = (floor.code || '').trim().toLowerCase()
+
+    if (uf && (uf === fn || uf === fc)) return true
+    if (uf && fn && uf.includes(fn)) return true
+    if (uf && fc && uf.includes(fc)) return true
+
+    const isUnitBasement = uf.includes('hầm') || uf.includes('b1') || uf.includes('b2') || uf.includes('fl-g') || uf.includes('flg')
+    const isFloorBasement = fn.includes('hầm') || fc.includes('fl-g') || fc.includes('flg') || (typeof floor.floorNumber === 'number' && floor.floorNumber < 1)
+
+    if (isUnitBasement && isFloorBasement) return true
+    if (isUnitBasement !== isFloorBasement && uf) {
+      return false
+    }
+
+    const numMatch = uf.match(/\d+/)
+    if (numMatch && typeof floor.floorNumber === 'number' && floor.floorNumber > 0) {
+      if (parseInt(numMatch[0], 10) === floor.floorNumber) return true
+    }
+
+    const cleanUId = (u.id || '').toUpperCase().replace(/[-_]/g, '')
+    const cleanFloorCode = fc.toUpperCase().replace(/[-_]/g, '')
+    if (cleanFloorCode && cleanUId.includes(cleanFloorCode)) return true
+
+    return false
+  }
+
+  const isUnitInZone = (u: InspectedUnit, zone: FacilityZone, floor: FacilityFloor): boolean => {
+    const uzCode = (u.zoneCode || '').trim().toLowerCase()
+    const zCode = (zone.code || '').trim().toLowerCase()
+    const zId = (zone.id || '').trim().toLowerCase()
+
+    // 1. Mã phân khu (zoneCode) là định danh duy nhất của phân khu trên tầng
+    // Nếu ngăn kho đã có mã phân khu cụ thể từ database -> BẮT BUỘC phải khớp chính xác mã phân khu (code hoặc id)!
+    // Tuyệt đối không khớp chỉ dựa vào tên (zoneName) vì các phân khu khác nhau có thể trùng tên hiển thị (vd: 2 phân khu đều đặt tên là "Phân khu B")
+    if (uzCode) {
+      return uzCode === zCode || uzCode === zId
+    }
+
+    // 2. Dữ liệu cũ chưa có zoneCode trong DB: khớp mã phân khu trong chuỗi mã kho
+    const uIdUpper = (u.id || '').toUpperCase()
+    if (zCode && uIdUpper.includes(zCode.toUpperCase())) return true
+
+    // Khớp theo hậu tố phân khu (vd: Z-FL01-A -> hậu tố "A", Z-FL01-B -> hậu tố "B")
+    const codeSuffixMatch = zCode.match(/[-_]([A-Za-z0-9]+)$/)
+    const zSuffix = codeSuffixMatch ? codeSuffixMatch[1].toUpperCase() : zCode.toUpperCase()
+    if (zSuffix && zSuffix.length <= 3) {
+      if (
+        uIdUpper.includes(`PK${zSuffix}`) ||
+        uIdUpper.includes(`-${zSuffix}-`) ||
+        uIdUpper.endsWith(`-${zSuffix}`)
+      ) {
+        return true
+      }
+    }
+
+    // 3. Khớp theo tên phân khu CHỈ KHI trên tầng này không có phân khu nào khác trùng tên
+    const uzName = (u.zoneName || '').trim().toLowerCase()
+    const zName = (zone.name || '').trim().toLowerCase()
+    if (uzName && uzName === zName) {
+      const sameNameZones = floor.zones.filter(z => (z.name || '').trim().toLowerCase() === uzName)
+      if (sameNameZones.length === 1) {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  const getZoneIcon = (zoneType?: string) => {
+    const found = ZONE_TYPE_OPTIONS.find(opt => opt.type === zoneType)
+    return found?.icon || 'warehouse'
+  }
+
+  const getUnitZone = (u: InspectedUnit): string => {
+    if (u.zoneCode) return u.zoneCode
+    if (u.zoneName) return u.zoneName.replace(/phân\s*khu\s*/i, '').trim()
     const code = u.id.toUpperCase()
     if (code.includes('-C') || /-[2-9]\d\d/.test(code) || (u.floorLevel || '').includes('2')) {
       return 'C'
@@ -1000,15 +1129,27 @@ export const ManagerDashboard: React.FC = () => {
     return 'A'
   }
 
-  const permanentAllUnits = useMemo(() => {
-    return [...units].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
-  }, [units])
+  const unitsOnCurrentFloor = useMemo(() => {
+    if (!currentFloor) return []
+    return units.filter(u => isUnitOnFloor(u, currentFloor))
+  }, [units, currentFloor])
 
-  const permanentZoneA = useMemo(() => permanentAllUnits.filter(u => getUnitZone(u) === 'A'), [permanentAllUnits])
-  const permanentZoneB = useMemo(() => permanentAllUnits.filter(u => getUnitZone(u) === 'B'), [permanentAllUnits])
-  const permanentZoneC = useMemo(() => permanentAllUnits.filter(u => getUnitZone(u) === 'C'), [permanentAllUnits])
-  const permanentFloor1 = useMemo(() => [...permanentZoneA, ...permanentZoneB], [permanentZoneA, permanentZoneB])
-  const permanentFloor2 = permanentZoneC
+  const assignedUnitIds = useMemo(() => {
+    if (!currentFloor) return new Set<string>()
+    const set = new Set<string>()
+    currentFloor.zones.forEach(zone => {
+      unitsOnCurrentFloor.forEach(u => {
+        if (isUnitInZone(u, zone, currentFloor)) {
+          set.add(u.id)
+        }
+      })
+    })
+    return set
+  }, [currentFloor, unitsOnCurrentFloor])
+
+  const unassignedUnitsOnFloor = useMemo(() => {
+    return unitsOnCurrentFloor.filter(u => !assignedUnitIds.has(u.id))
+  }, [unitsOnCurrentFloor, assignedUnitIds])
 
   const isUnitMatchingFilter = (u: InspectedUnit) => {
     if (statusFilter !== 'all' && u.status !== statusFilter) {
@@ -1020,7 +1161,9 @@ export const ManagerDashboard: React.FC = () => {
       const matchesSearch = u.id.toLowerCase().includes(q) || 
                             u.tenant.toLowerCase().includes(q) ||
                             u.contract.toLowerCase().includes(q) ||
-                            u.type.toLowerCase().includes(q)
+                            u.type.toLowerCase().includes(q) ||
+                            (u.zoneName && u.zoneName.toLowerCase().includes(q)) ||
+                            (u.zoneCode && u.zoneCode.toLowerCase().includes(q))
       if (!matchesSearch) return false
     }
     
@@ -1035,8 +1178,6 @@ export const ManagerDashboard: React.FC = () => {
     return true
   }
 
-  const floor1MatchingCount = permanentFloor1.filter(isUnitMatchingFilter).length
-  const floor2MatchingCount = permanentFloor2.filter(isUnitMatchingFilter).length
   const isAnyFilterActive = statusFilter !== 'all' || sizeFilter !== 'all' || searchQuery.trim().length > 0
 
   const handleStatusFilterClick = (targetStatus: UnitStatusFilter) => {
@@ -1064,22 +1205,18 @@ export const ManagerDashboard: React.FC = () => {
     }, { replace: true })
 
     if (nextStatus !== 'all') {
-      const floor1Matches = permanentFloor1.some(u => u.status === nextStatus)
-      const floor2Matches = permanentFloor2.some(u => u.status === nextStatus)
+      const floorWithMatch = activeFloors.find(fl => {
+        const flUnits = units.filter(u => isUnitOnFloor(u, fl))
+        return flUnits.some(u => u.status === nextStatus)
+      })
 
-      let targetFloor: 'floor1' | 'floor2' = selectedFloor
-      if (selectedFloor === 'floor1' && !floor1Matches && floor2Matches) {
-        targetFloor = 'floor2'
-        setSelectedFloor('floor2')
-      } else if (selectedFloor === 'floor2' && !floor2Matches && floor1Matches) {
-        targetFloor = 'floor1'
-        setSelectedFloor('floor1')
+      if (floorWithMatch && floorWithMatch.id !== selectedFloorId) {
+        setSelectedFloorId(floorWithMatch.id)
       }
 
-      const targetFloorUnits = (targetFloor === 'floor2' ? permanentFloor2 : permanentFloor1)
-      const firstMatch = targetFloorUnits.find(u => u.status === nextStatus) || units.find(u => u.status === nextStatus)
-      if (firstMatch) {
-        setSelectedUnit(firstMatch)
+      const matchUnit = units.find(u => u.status === nextStatus && (floorWithMatch ? isUnitOnFloor(u, floorWithMatch) : true)) || units.find(u => u.status === nextStatus)
+      if (matchUnit) {
+        setSelectedUnit(matchUnit)
       }
     }
 
@@ -1268,7 +1405,7 @@ export const ManagerDashboard: React.FC = () => {
     const isMatching = isUnitMatchingFilter(unit)
     const isSelected = selectedUnit?.id === unit.id
     const zone = getUnitZone(unit)
-    const isClimate = zone === 'C'
+    const isClimate = unit.type.toLowerCase().includes('lạnh') || unit.type.toLowerCase().includes('điều hòa') || (unit.zoneName || '').toLowerCase().includes('điều hòa') || (unit.zoneName || '').toLowerCase().includes('lạnh') || zone === 'C'
 
     if (!isMatching) {
       return (
@@ -1312,11 +1449,12 @@ export const ManagerDashboard: React.FC = () => {
           <span className="font-mono text-xs font-bold text-slate-900">#{unit.id}</span>
           {isClimate ? (
             <span className="material-symbols-outlined text-cyan-500 text-[14px]" title="Vi khí hậu 18-22°C">device_thermostat</span>
-          ) : (
-            <span className="text-[10px] font-mono text-slate-400 font-medium">
-              {unit.smartlock === 'Not reported' ? 'No lock data' : unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : 'ID'}
+          ) : (unit.smartlock && unit.smartlock !== 'Not reported') ? (
+            <span className="text-[10px] font-mono text-indigo-600 font-semibold flex items-center gap-0.5" title={`Khóa SmartLock IoT: ${unit.smartlock}`}>
+              <span className="material-symbols-outlined text-[13px]">lock</span>
+              {unit.smartlock.startsWith('SL-') ? unit.smartlock.slice(-4) : unit.smartlock}
             </span>
-          )}
+          ) : null}
         </div>
         <div className="flex items-baseline justify-between mt-0.5">
           <span className="text-[11px] text-slate-600 font-medium">{unit.size}</span>
@@ -1712,7 +1850,9 @@ export const ManagerDashboard: React.FC = () => {
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'renewals'
               ? 'bg-white text-blue-900'
-              : 'bg-emerald-100 text-emerald-800'
+              : renewalsCount > 0
+                ? 'bg-amber-100 text-amber-800'
+                : 'bg-slate-100 text-slate-600'
           }`}>
             {renewalsCount} đơn
           </span>
@@ -1794,39 +1934,32 @@ export const ManagerDashboard: React.FC = () => {
               {/* Floor Selector + Size Dropdown + Search Box + Reset Filter Button */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 {/* Floor Selector Tabs */}
-                <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs shrink-0 self-start">
-                  <button 
-                    type="button" 
-                    onClick={() => setSelectedFloor('floor1')}
-                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
-                      selectedFloor === 'floor1' 
-                        ? 'bg-slate-900 text-white shadow-xs' 
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="whitespace-nowrap">{facilityProfile.floor1Name}</span>
-                    <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                      selectedFloor === 'floor1' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {isAnyFilterActive ? `${floor1MatchingCount}/${permanentFloor1.length}` : permanentFloor1.length}
-                    </span>
-                  </button>
-                  <button 
-                    type="button" 
-                    onClick={() => setSelectedFloor('floor2')}
-                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
-                      selectedFloor === 'floor2' 
-                        ? 'bg-slate-900 text-white shadow-xs' 
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                    }`}
-                  >
-                    <span className="whitespace-nowrap">{facilityProfile.floor2Name}</span>
-                    <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
-                      selectedFloor === 'floor2' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
-                    }`}>
-                      {isAnyFilterActive ? `${floor2MatchingCount}/${permanentFloor2.length}` : permanentFloor2.length}
-                    </span>
-                  </button>
+                <div className="inline-flex p-1 bg-white rounded-lg border border-slate-200 shadow-2xs shrink-0 self-start flex-wrap gap-1">
+                  {activeFloors.map((fl) => {
+                    const flUnits = units.filter(u => isUnitOnFloor(u, fl))
+                    const flMatchingCount = flUnits.filter(isUnitMatchingFilter).length
+                    const isSelected = fl.id === currentFloor?.id
+
+                    return (
+                      <button 
+                        key={fl.id}
+                        type="button" 
+                        onClick={() => setSelectedFloorId(fl.id)}
+                        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-md font-semibold text-xs transition cursor-pointer whitespace-nowrap ${
+                          isSelected 
+                            ? 'bg-slate-900 text-white shadow-xs' 
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="whitespace-nowrap">{fl.name}</span>
+                        <span className={`px-1.5 py-0.2 rounded font-mono tabular-nums text-[11px] font-bold ${
+                          isSelected ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {isAnyFilterActive ? `${flMatchingCount}/${flUnits.length}` : flUnits.length}
+                        </span>
+                      </button>
+                    )
+                  })}
                 </div>
 
                 {/* Size Filter Dropdown, Search Input & Clear Filters Button */}
@@ -1879,68 +2012,103 @@ export const ManagerDashboard: React.FC = () => {
 
             {/* Matrix View */}
             <div className="relative bg-slate-100 p-4 rounded-xl border border-slate-200 overflow-x-auto">
-              <div className="flex items-center justify-between px-3.5 py-2 mb-3 bg-white rounded-lg font-mono text-[11px] text-slate-600 uppercase tracking-wider border border-slate-200 shadow-2xs">
-                <span>{selectedFloor === 'floor1' ? facilityProfile.loadingBayFloor1 : facilityProfile.loadingBayFloor2}</span>
-                <span className="font-semibold text-slate-800">{selectedFloor === 'floor1' ? facilityProfile.corridorNorth : facilityProfile.corridorClimate}</span>
-                <span>{selectedFloor === 'floor1' ? facilityProfile.exitFloor1 : facilityProfile.exitFloor2}</span>
-              </div>
+              {currentFloor && (
+                <div className="flex items-center justify-between px-3.5 py-2 mb-3 bg-white rounded-lg font-mono text-[11px] text-slate-600 uppercase tracking-wider border border-slate-200 shadow-2xs flex-wrap gap-2">
+                  <span>
+                    {currentFloor.functionalAreas?.find(fa => fa.areaType === 'LOADING_BAY')?.name || 
+                     currentFloor.functionalAreas?.[0]?.name || 
+                     'Khu nhận và xuất hàng'}
+                  </span>
+                  <span className="font-semibold text-slate-800">
+                    {currentFloor.functionalAreas?.find(fa => fa.areaType === 'MAIN_CORRIDOR')?.name || 
+                     currentFloor.functionalAreas?.[1]?.name || 
+                     'Hành lang chính'}
+                  </span>
+                  <span>
+                    {currentFloor.functionalAreas?.find(fa => fa.areaType === 'EMERGENCY_EXIT')?.name || 
+                     currentFloor.functionalAreas?.[2]?.name || 
+                     'Lối thoát hiểm'}
+                  </span>
+                </div>
+              )}
 
-              {selectedFloor === 'floor2' ? (
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-mono text-xs font-bold text-cyan-900 uppercase flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">warehouse</span>
-                      {facilityProfile.zoneCName}
-                    </span>
+              {(!currentFloor || currentFloor.zones.length === 0) ? (
+                unitsOnCurrentFloor.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
+                    Chưa có thiết kế phân khu kho trên {currentFloor?.name || 'tầng này'} cho cơ sở này
                   </div>
-                  {permanentZoneC.length === 0 ? (
-                    <div className="p-8 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
-                      Chưa có thiết kế kho trên Tầng 2 cho cơ sở này
+                ) : (
+                  <div className="bg-white/80 p-3.5 rounded-xl border border-slate-200/80">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory_2</span>
+                        <span>Danh sách kho trên {currentFloor.name} ({unitsOnCurrentFloor.length})</span>
+                      </span>
                     </div>
-                  ) : (
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                      {permanentZoneC.map(unit => renderUnitCard(unit))}
+                      {unitsOnCurrentFloor.filter(isUnitMatchingFilter).map(unit => renderUnitCard(unit))}
+                    </div>
+                  </div>
+                )
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {currentFloor.zones.map((zone) => {
+                    const zoneUnits = unitsOnCurrentFloor.filter(u => isUnitInZone(u, zone, currentFloor))
+                    const matchingZoneUnits = zoneUnits.filter(isUnitMatchingFilter)
+                    const icon = getZoneIcon(zone.zoneType)
+
+                    return (
+                      <div key={zone.id} className="bg-white/80 p-3.5 rounded-xl border border-slate-200/80">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-slate-600 text-[18px]">{icon}</span>
+                              <span>{zone.name}</span>
+                            </span>
+                            <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                              {zone.code}
+                            </span>
+                            {zone.area ? (
+                              <span className="text-[11px] text-slate-500 font-medium">
+                                ({zone.area} m²)
+                              </span>
+                            ) : null}
+                          </div>
+                          <span className="text-[11px] font-mono font-medium text-slate-500">
+                            {isAnyFilterActive ? `${matchingZoneUnits.length}/${zoneUnits.length} kho` : `${zoneUnits.length} kho`}
+                          </span>
+                        </div>
+
+                        {matchingZoneUnits.length === 0 ? (
+                          <div className="p-5 text-center text-slate-400 text-xs bg-slate-50/60 rounded-lg border border-dashed border-slate-200">
+                            {zoneUnits.length === 0 
+                              ? `Chưa có ngăn kho nào tại ${zone.name} trên ${currentFloor.name}`
+                              : `Không có ngăn kho phù hợp bộ lọc tại ${zone.name}`}
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                            {matchingZoneUnits.map(unit => renderUnitCard(unit))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* Any units on current floor that didn't match any defined zone */}
+                  {unassignedUnitsOnFloor.length > 0 && (
+                    <div className="bg-white/80 p-3.5 rounded-xl border border-slate-200/80">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <span className="font-mono text-xs font-bold text-slate-700 uppercase flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-slate-500 text-[18px]">inventory_2</span>
+                          <span>Kho chưa gán phân khu ({unassignedUnitsOnFloor.length})</span>
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                        {unassignedUnitsOnFloor.filter(isUnitMatchingFilter).map(unit => renderUnitCard(unit))}
+                      </div>
                     </div>
                   )}
                 </div>
-              ) : (
-                <>
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory_2</span>
-                        {facilityProfile.zoneAName}
-                      </span>
-                    </div>
-                    {permanentZoneA.length === 0 ? (
-                      <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
-                        Chưa có thiết kế kho tại Phân khu A
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                        {permanentZoneA.map(unit => renderUnitCard(unit))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
-                        <span className="material-symbols-outlined text-slate-600 text-[18px]">inventory</span>
-                        {facilityProfile.zoneBName}
-                      </span>
-                    </div>
-                    {permanentZoneB.length === 0 ? (
-                      <div className="p-6 text-center text-slate-500 text-xs bg-white rounded-lg border border-slate-200">
-                        Chưa có thiết kế kho tại Phân khu B
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                        {permanentZoneB.map(unit => renderUnitCard(unit))}
-                      </div>
-                    )}
-                  </div>
-                </>
               )}
             </div>
           </div>
@@ -1975,7 +2143,7 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
                   <span className="text-slate-500">Vị trí:</span>
-                  <span className="font-mono font-semibold text-slate-900">{selectedUnit.floorLevel} · Phân khu {getUnitZone(selectedUnit)}</span>
+                  <span className="font-mono font-semibold text-slate-900">{selectedUnit.floorLevel} · {selectedUnit.zoneName ? `${selectedUnit.zoneName} (${selectedUnit.zoneCode || ''})` : (selectedUnit.zoneCode ? `Phân khu ${selectedUnit.zoneCode}` : `Phân khu ${getUnitZone(selectedUnit)}`)}</span>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
                   <span className="text-slate-500">Diện tích:</span>
@@ -2513,7 +2681,7 @@ export const ManagerDashboard: React.FC = () => {
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Tiền Cọc Đảm Bảo</span>
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">1. Quy định Tiền cọc</span>
                   <span className="material-symbols-outlined text-blue-600 text-[20px]">account_balance_wallet</span>
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
@@ -2523,11 +2691,8 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="text-xs text-slate-500">giá thuê</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Thuê tối thiểu: <strong className="text-slate-900">{facilityPolicy?.minimumRentalMonths ?? 1} tháng</strong>
+                  Ký quỹ ban đầu: <strong className="text-slate-900">Bảo chứng tài sản &amp; hoàn cọc khi trả kho</strong>
                 </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                Gia hạn: Linh hoạt bất cứ lúc nào
               </div>
             </div>
 
@@ -2535,21 +2700,19 @@ export const ManagerDashboard: React.FC = () => {
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Chính Sách Hủy &amp; Hoàn</span>
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">2. Hủy Đặt Kho &amp; Hoàn Tiền Cọc</span>
                   <span className="material-symbols-outlined text-emerald-600 text-[20px]">currency_exchange</span>
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
                   <span className="text-3xl font-extrabold font-mono text-emerald-600 tabular-nums">
                     {facilityPolicy?.cancellationFullRefundHours ?? 24}h
                   </span>
-                  <span className="text-xs text-slate-500">hoàn 100% kể từ khi đặt</span>
+                  <span className="text-xs text-slate-500">hoàn 100%</span>
                 </div>
-                <p className="text-xs text-slate-600 mt-2">
-                  Hoàn {facilityPolicy?.cancellationPartialRefundPercent ?? 70}% nếu hủy từ {facilityPolicy?.cancellationFullRefundHours ?? 24}h - <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundHours ?? 48}h</strong> (Quá 48h hoàn 50%)
-                </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                SLA hoàn tiền cọc: {facilityPolicy?.depositRefundSlaDays ?? 5} ngày
+                <div className="text-xs text-slate-600 mt-2 space-y-0.5">
+                  <p>Hủy 24h - 48h: hoàn <strong className="text-slate-900">{facilityPolicy?.cancellationPartialRefundPercent ?? 70}%</strong></p>
+                  <p>Hủy sau 48h: hoàn <strong className="text-slate-900">{facilityPolicy?.cancellationAfter48hRefundPercent ?? 50}%</strong></p>
+                </div>
               </div>
             </div>
 
@@ -2557,7 +2720,7 @@ export const ManagerDashboard: React.FC = () => {
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">SLA Hoàn Cọc Trả Kho</span>
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">3. Quy định Trả Kho &amp; Hoàn Cọc</span>
                   <span className="material-symbols-outlined text-cyan-600 text-[20px]">assignment_return</span>
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
@@ -2567,11 +2730,8 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="text-xs text-slate-500">ngày làm việc</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Kiểm định hiện trường: <strong className="text-slate-900">100% đạt chuẩn biên bản</strong>
+                  SLA cam kết xử lý hoàn cọc
                 </p>
-              </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                Trả kho: Khách hàng chủ động tạo yêu cầu bất cứ lúc nào
               </div>
             </div>
 
@@ -2579,17 +2739,17 @@ export const ManagerDashboard: React.FC = () => {
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Xử Lý Quá Hạn Nợ</span>
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">4. Xử Lý Quá Hạn &amp; Niêm Phong</span>
                   <span className="material-symbols-outlined text-rose-600 text-[20px]">gavel</span>
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
                   <span className="text-3xl font-extrabold font-mono text-rose-600 tabular-nums">
-                    {facilityPolicy?.overdueGraceDays ?? 1}
+                    {facilityPolicy?.dailyLateFee != null && Number(facilityPolicy.dailyLateFee) <= 500 ? Number(facilityPolicy.dailyLateFee) : 100}%
                   </span>
-                  <span className="text-xs text-slate-500">ngày ân hạn</span>
+                  <span className="text-xs text-slate-500">phạt/ngày/loại kho</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Phạt trễ: <strong className="text-rose-700">{facilityPolicy?.dailyLateFee != null && Number(facilityPolicy.dailyLateFee) <= 500 ? Number(facilityPolicy.dailyLateFee) : 100}%/ngày theo loại kho</strong>
+                  Ân hạn: <strong className="text-slate-900">{facilityPolicy?.overdueGraceDays ?? 1} ngày</strong>
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
@@ -2627,6 +2787,8 @@ export const ManagerDashboard: React.FC = () => {
         isOpen={showCreateUnitModal}
         facilities={facilities}
         selectedFacilityId={selectedFacilityId}
+        initialFloorId={currentFloor?.id}
+        initialFloorName={currentFloor?.name}
         onClose={() => setShowCreateUnitModal(false)}
         onCreated={handleStorageUnitCreated}
       />
@@ -2758,7 +2920,7 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-mono block">Vị trí</span>
-                  <span className="font-semibold text-slate-800">{maintenanceModalUnit.floorLevel} · Khu {getUnitZone(maintenanceModalUnit)}</span>
+                  <span className="font-semibold text-slate-800">{maintenanceModalUnit.floorLevel} · {maintenanceModalUnit.zoneName ? `${maintenanceModalUnit.zoneName} (${maintenanceModalUnit.zoneCode || ''})` : (maintenanceModalUnit.zoneCode ? `Khu ${maintenanceModalUnit.zoneCode}` : `Khu ${getUnitZone(maintenanceModalUnit)}`)}</span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase font-mono block">Diện tích</span>
@@ -2857,6 +3019,87 @@ export const ManagerDashboard: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Complete Maintenance Confirm Modal */}
+      {completeMaintenanceConfirmUnit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-6 max-w-md w-full animate-scale-in">
+            <div className="flex items-start gap-3.5 mb-4">
+              <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">check_circle</span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900">Xác nhận hoàn tất bảo trì</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Mở lại ngăn kho và chuyển về trạng thái Sẵn sàng cho thuê</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompleteMaintenanceConfirmUnit(null)}
+                disabled={isCompletingMaintenance}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 mb-4 text-xs flex flex-col gap-2">
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500">Mã ngăn kho:</span>
+                <span className="font-mono font-bold text-slate-900 text-sm">#{completeMaintenanceConfirmUnit.id}</span>
+              </div>
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500">Cơ sở & Vị trí:</span>
+                <span className="font-semibold text-slate-800 text-right">
+                  {completeMaintenanceConfirmUnit.facilityName || currentFacilityName} · {completeMaintenanceConfirmUnit.floorLevel}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500">Diện tích:</span>
+                <span className="font-mono font-bold text-slate-900">{completeMaintenanceConfirmUnit.size}</span>
+              </div>
+              <div className="flex items-start justify-between gap-2 pb-1.5 border-b border-slate-200/60">
+                <span className="text-slate-500 shrink-0">Lý do bảo trì:</span>
+                <span className="font-semibold text-purple-900 text-right">
+                  {completeMaintenanceConfirmUnit.maintenanceReason || 'Bảo trì kỹ thuật định kỳ'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-500 shrink-0">Người phụ trách:</span>
+                <span className="font-bold text-slate-800 text-right">
+                  {completeMaintenanceConfirmUnit.maintenanceBy || 'Kỹ thuật viên cơ sở'}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11.5px] flex items-start gap-2 mb-5">
+              <span className="material-symbols-outlined text-[16px] text-emerald-600 shrink-0 mt-0.5">info</span>
+              <span>
+                Sau khi xác nhận, ngăn kho này sẽ được gỡ trạng thái <strong>Đang bảo trì</strong> và chuyển thành <strong>Kho trống sẵn sàng (Available)</strong> để khách hàng có thể đặt chỗ ngay.
+              </span>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setCompleteMaintenanceConfirmUnit(null)}
+                disabled={isCompletingMaintenance}
+                className="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCompleteMaintenance}
+                disabled={isCompletingMaintenance}
+                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+              >
+                <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                <span>{isCompletingMaintenance ? 'Đang cập nhật...' : 'Xác nhận mở lại kho'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

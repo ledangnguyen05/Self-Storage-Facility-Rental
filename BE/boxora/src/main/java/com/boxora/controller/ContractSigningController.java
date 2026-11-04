@@ -224,7 +224,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("renewals/{renewalId}/approve")
-    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Phê duyệt yêu cầu gia hạn hợp đồng (Facility Manager / Business Manager)")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> approveRenewal(
             @PathVariable UUID renewalId,
@@ -235,7 +235,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("renewals/{renewalId}/reject")
-    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Từ chối yêu cầu gia hạn hợp đồng với lý do bắt buộc")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> rejectRenewal(
             @PathVariable UUID renewalId,
@@ -245,7 +245,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("renewals/{renewalId}/cancel")
-    @PreAuthorize("(hasAuthority('RENEWAL_CREATE') or hasRole('CUSTOMER')) and !hasRole('ADMIN')")
+    @PreAuthorize("(hasAuthority('RENEWAL_CREATE') or hasRole('CUSTOMER')) and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Hủy yêu cầu gia hạn hợp đồng (khách hàng hoặc quản lý khi chưa thanh toán)")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> cancelRenewal(
             @PathVariable UUID renewalId) {
@@ -263,7 +263,7 @@ public class ContractSigningController {
     }
 
     @PostMapping("renewals/{renewalId}/undo-approval")
-    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Bỏ duyệt yêu cầu gia hạn để xem xét lại phương án (chỉ khi khách chưa ký và chưa nộp tiền)")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> undoApproval(
             @PathVariable UUID renewalId,
@@ -274,7 +274,7 @@ public class ContractSigningController {
     }
 
     @PutMapping("renewals/{renewalId}/assign-staff")
-    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('RENEWAL_APPROVE') and !hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
     @Operation(summary = "Phân công nhân viên tiếp đón gia hạn tại cơ sở (chỉ Quản lý cơ sở / Quản lý kinh doanh)")
     public ResponseEntity<ApiResponse<ContractRenewalResponse>> assignStaff(
             @PathVariable UUID renewalId,

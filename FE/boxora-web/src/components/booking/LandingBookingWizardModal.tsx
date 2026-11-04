@@ -29,7 +29,8 @@ import {
   Tag,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { Facility, StorageUnit } from '../../types'
+import { Facility, StorageUnit, FacilityPolicy } from '../../types'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
 import {
   CHECK_IN_PERIOD_GROUPS,
   CHECK_IN_HOURS_24,
@@ -162,6 +163,25 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [locationMessage, setLocationMessage] = useState<string | null>(null)
   const [selectedCityFilter, setSelectedCityFilter] = useState<string>('all')
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null)
+  const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
+
+  useEffect(() => {
+    if (!selectedFacility?.id) {
+      setFacilityPolicy(null)
+      return
+    }
+    let isCancelled = false
+    facilityPolicyService.getByFacilityId(selectedFacility.id)
+      .then((pol) => {
+        if (!isCancelled && pol) setFacilityPolicy(pol)
+      })
+      .catch((err) => console.warn('Could not load facility policy in wizard:', err))
+    return () => { isCancelled = true }
+  }, [selectedFacility?.id])
+
+  const wizardDiscount3M = Number(facilityPolicy?.discount3MonthPercent ?? 5)
+  const wizardDiscount6M = Number(facilityPolicy?.discount6MonthPercent ?? 10)
+  const wizardDiscount12M = Number(facilityPolicy?.discount12MonthPercent ?? 15)
 
   // Step 2: Storage Size Selection
   const [selectedTierKey, setSelectedTierKey] = useState<SizeTierKey>(initialTier)
@@ -472,16 +492,17 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     const baseMonthly = tier.rateNumber
 
     let discountPercent = 0
-    if (rentalMonths >= 24) discountPercent = 20
-    else if (rentalMonths >= 12) discountPercent = 15
-    else if (rentalMonths >= 6) discountPercent = 10
-    else if (rentalMonths >= 3) discountPercent = 5
+    if (rentalMonths >= 24) discountPercent = wizardDiscount12M
+    else if (rentalMonths >= 12) discountPercent = wizardDiscount12M
+    else if (rentalMonths >= 6) discountPercent = wizardDiscount6M
+    else if (rentalMonths >= 3) discountPercent = wizardDiscount3M
 
     const monthlyAfterDiscount = Math.round(baseMonthly * (1 - discountPercent / 100))
     const rawRent = baseMonthly * rentalMonths
     const discountAmount = Math.round(rawRent * (discountPercent / 100))
     const totalRent = monthlyAfterDiscount * rentalMonths
-    const depositAmount = baseMonthly // 1 tháng tiền cọc của kho đó theo giá niêm yết
+    const depositPct = facilityPolicy?.depositPercentage != null ? Number(facilityPolicy.depositPercentage) : 100
+    const depositAmount = Math.round(baseMonthly * (depositPct / 100))
 
     return {
       baseMonthly,
@@ -493,7 +514,7 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       depositAmount,
       totalEstimate: totalRent + depositAmount,
     }
-  }, [selectedTierKey, rentalMonths])
+  }, [selectedTierKey, rentalMonths, wizardDiscount3M, wizardDiscount6M, wizardDiscount12M, facilityPolicy])
 
   // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
   const captureSigningSnapshot = useCallback(() => ({
@@ -850,10 +871,10 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         unitCode: SIZE_TIERS[selectedTierKey].name,
         tier: SIZE_TIERS[selectedTierKey],
         rentalMonths,
-        startDate,
-        checkInDate,
-        checkInTime,
-        expectedCheckInAt: `${checkInDate}T${selectedPeriod.hours[0]?.value || '09:00'}:00`,
+        startDate: startDate || checkInDate || new Date().toISOString().slice(0, 10),
+        checkInDate: checkInDate || startDate || new Date().toISOString().slice(0, 10),
+        checkInTime: checkInTime || '09:00',
+        expectedCheckInAt: `${checkInDate || startDate || new Date().toISOString().slice(0, 10)}T${(selectedPeriod?.hours?.[0]?.value || checkInTime || '09:00').split(' - ')[0].trim().length === 5 ? (selectedPeriod?.hours?.[0]?.value || checkInTime || '09:00').split(' - ')[0].trim() + ':00' : '09:00:00'}`,
         totalRentalFee: quoteCalculation.totalRent,
         depositAmount: quoteCalculation.depositAmount,
         status: 'PENDING_CONTACT',

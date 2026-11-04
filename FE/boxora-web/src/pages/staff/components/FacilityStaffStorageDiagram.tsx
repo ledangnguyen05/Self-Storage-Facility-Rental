@@ -223,7 +223,7 @@ export const FacilityStaffStorageDiagram: React.FC<FacilityStaffStorageDiagramPr
   const handleToggleMaintenance = async (unit: StorageUnit) => {
     const isCurrentlyMaint = unit.status === 'MAINTENANCE' || unit.status === 'UNDER_MAINTENANCE'
     if (!isCurrentlyMaint && !showMaintInputForm) {
-      const roleLabel = userRole === 'STAFF' ? 'Nhân viên cơ sở' : 'Quản lý cơ sở'
+      const roleLabel = userRole === 'STAFF' ? 'Nhân viên cơ sở' : userRole === 'BUSINESS_MANAGER' ? 'Quản lý vận hành kinh doanh' : 'Quản lý cơ sở'
       setMaintByInput(`${user?.fullName || user?.username || 'Nhân sự cơ sở'} (${roleLabel})`)
       setMaintReasonInput('')
       setActionMessage(null)

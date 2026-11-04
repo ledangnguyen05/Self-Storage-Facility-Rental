@@ -50,10 +50,24 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setPriceChangeReason('')
       setErrorMsg(null)
       setShowStatusConfirm(false)
+    } else {
+      setTypeName('')
+      setLengthM('')
+      setWidthM('')
+      setHeightM(2.5)
+      setVolumeM3('')
+      setAreaSqm('')
+      setCapacityBoxes('')
+      setBasePrice('')
+      setAcPrice('')
+      setIsActive(true)
+      setPriceChangeReason('')
+      setErrorMsg(null)
+      setShowStatusConfirm(false)
     }
   }, [unitType, isOpen])
 
-  if (!isOpen || !unitType) return null
+  if (!isOpen) return null
 
   // Auto calculate volume & area when length, width, height change
   const handleDimensionChange = (l: number | '', w: number | '', h: number | '') => {
@@ -104,22 +118,45 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
 
     setIsSaving(true)
     try {
-      const payload = {
-        typeName: typeName.trim(),
-        lengthM: lengthM !== '' ? Number(lengthM) : undefined,
-        widthM: widthM !== '' ? Number(widthM) : undefined,
-        heightM: heightM !== '' ? Number(heightM) : undefined,
-        volumeM3: volumeM3 !== '' ? Number(volumeM3) : undefined,
-        areaSqm: areaSqm !== '' ? Number(areaSqm) : undefined,
-        capacityBoxes: capacityBoxes !== '' ? Number(capacityBoxes) : undefined,
-        basePricePerMonth: Number(basePrice),
-        acPricePerMonth: Number(acPrice),
-        isActive,
-        priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
-      }
+      const calcArea = areaSqm !== '' ? Number(areaSqm) : (lengthM && widthM ? Number(lengthM) * Number(widthM) : 1)
+      if (unitType) {
+        const payload = {
+          typeName: typeName.trim(),
+          lengthM: lengthM !== '' ? Number(lengthM) : undefined,
+          widthM: widthM !== '' ? Number(widthM) : undefined,
+          heightM: heightM !== '' ? Number(heightM) : undefined,
+          volumeM3: volumeM3 !== '' ? Number(volumeM3) : undefined,
+          areaSqm: calcArea,
+          capacityBoxes: capacityBoxes !== '' ? Number(capacityBoxes) : undefined,
+          basePricePerMonth: Number(basePrice),
+          acPricePerMonth: Number(acPrice),
+          isActive,
+          priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
+        }
 
-      const res = await storageUnitService.updateUnitType(unitType.id, payload)
-      onSuccess(res || { ...unitType, ...payload })
+        const res = await storageUnitService.updateUnitType(unitType.id, payload)
+        onSuccess(res || { ...unitType, ...payload })
+      } else {
+        const dims = (lengthM && widthM && heightM)
+          ? `${lengthM}m x ${widthM}m x ${heightM}m`
+          : `${calcArea}m²`
+        const createPayload = {
+          typeName: typeName.trim(),
+          dimensions: dims,
+          areaSqm: calcArea,
+          volumeM3: volumeM3 !== '' ? Number(volumeM3) : Math.round(calcArea * Number(heightM || 2.5) * 100) / 100,
+          lengthM: lengthM !== '' ? Number(lengthM) : undefined,
+          widthM: widthM !== '' ? Number(widthM) : undefined,
+          heightM: heightM !== '' ? Number(heightM) : 2.5,
+          capacityBoxes: capacityBoxes !== '' ? Number(capacityBoxes) : Math.round(calcArea * 15),
+          depositAmount: Number(basePrice),
+          basePricePerMonth: Number(basePrice),
+          acPricePerMonth: Number(acPrice),
+          isActive,
+        }
+        const created = await storageUnitService.createUnitType(createPayload)
+        onSuccess(created)
+      }
       onClose()
     } catch (err: any) {
       setErrorMsg(err.response?.data?.message || err.message || 'Không thể cập nhật loại kho')
@@ -390,7 +427,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
               ) : (
                 <>
                   <span className="material-symbols-outlined text-[16px]">save</span>
-                  <span>{t('Lưu thay đổi')}</span>
+                  <span>{unitType ? t('Lưu thay đổi') : t('Tạo loại kho')}</span>
                 </>
               )}
             </button>

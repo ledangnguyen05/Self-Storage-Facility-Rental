@@ -94,9 +94,6 @@ public class StorageUnitPriceHistoryServiceImpl implements StorageUnitPriceHisto
         }
 
         BigDecimal currentPrice = unit.getEffectiveBasePrice();
-        if (currentPrice != null && currentPrice.compareTo(newPrice) == 0) {
-            throw new AppException(ErrorCode.PRICE_UNCHANGED);
-        }
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime effectiveFrom = request.getEffectiveFrom() != null ? request.getEffectiveFrom() : now;
@@ -177,9 +174,6 @@ public class StorageUnitPriceHistoryServiceImpl implements StorageUnitPriceHisto
         }
 
         BigDecimal currentPrice = unitType.getBasePricePerMonth();
-        if (currentPrice != null && currentPrice.compareTo(newPrice) == 0) {
-            throw new AppException(ErrorCode.PRICE_UNCHANGED);
-        }
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime effectiveFrom = request.getEffectiveFrom() != null ? request.getEffectiveFrom() : now;

@@ -16,6 +16,8 @@ public class OverdueSummaryResponse {
     private BigDecimal totalOverdueDebt;
     private BigDecimal totalPrincipalDebt;
     private BigDecimal totalLateFees;
+    private BigDecimal totalCustomerRefundAmount;
+    private BigDecimal totalDepositHeld;
     private BigDecimal unverifiedPaymentsAmount;
     private long unverifiedPaymentsCount;
 
@@ -29,8 +31,8 @@ public class OverdueSummaryResponse {
     // Workflow actions pending
     private long pendingPinRevocationsCount;
     private long pendingSealingApprovalsCount;
+    private long eligibleLiquidationReleaseCount; // Số buồng kho hết hạn mức giữ kho (0 ngày) có thể giải phóng
 
     // Settled contracts
     private long settledCount;
 }
-

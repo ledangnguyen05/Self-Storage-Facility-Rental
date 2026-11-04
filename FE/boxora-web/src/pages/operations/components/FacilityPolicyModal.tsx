@@ -53,6 +53,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setCancellationFullRefundHours(existingPolicy.cancellationFullRefundHours ?? 24)
       setCancellationPartialRefundHours(existingPolicy.cancellationPartialRefundHours ?? 48)
       setCancellationPartialRefundPercent(existingPolicy.cancellationPartialRefundPercent ?? 70)
+      setCancellationAfter48hRefundPercent(existingPolicy.cancellationAfter48hRefundPercent ?? 50)
       setDepositRefundSlaDays(existingPolicy.depositRefundSlaDays ?? 3)
       setDailyLateFee(existingPolicy.dailyLateFee != null && existingPolicy.dailyLateFee <= 500 ? existingPolicy.dailyLateFee : 100)
       setOverdueGraceDays(existingPolicy.overdueGraceDays ?? existingPolicy.gracePeriodDays ?? 3)
@@ -66,6 +67,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setCancellationFullRefundHours(24)
       setCancellationPartialRefundHours(48)
       setCancellationPartialRefundPercent(70)
+      setCancellationAfter48hRefundPercent(50)
       setDepositRefundSlaDays(3)
       setDailyLateFee(100)
       setOverdueGraceDays(3)
@@ -91,8 +93,8 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       return
     }
 
-    if (cancellationFullRefundHours > cancellationPartialRefundHours) {
-      setErrorMsg('Mốc thời gian hủy hoàn cọc 100% (giờ) phải nhỏ hơn hoặc bằng mốc hoàn cọc một phần.')
+    if (cancellationFullRefundHours > (cancellationPartialRefundHours || 48)) {
+      setErrorMsg('Mốc thời gian hủy hoàn cọc 100% (giờ) phải nhỏ hơn hoặc bằng 48 giờ.')
       return
     }
 
@@ -102,7 +104,12 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
     }
 
     if (cancellationPartialRefundPercent < 0 || cancellationPartialRefundPercent > 100) {
-      setErrorMsg('Tỷ lệ hoàn tiền một phần phải nằm trong khoảng từ 0% đến 100%.')
+      setErrorMsg('Tỷ lệ hủy trong 24-48h phải nằm trong khoảng từ 0% đến 100%.')
+      return
+    }
+
+    if (cancellationAfter48hRefundPercent < 0 || cancellationAfter48hRefundPercent > 100) {
+      setErrorMsg('Tỷ lệ hoàn sau 48h đặt phải nằm trong khoảng từ 0% đến 100%.')
       return
     }
 
@@ -113,15 +120,16 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
           isActive,
           depositPercentage: Number(depositPercentage),
           cancellationFullRefundHours: Number(cancellationFullRefundHours),
-          cancellationPartialRefundHours: Number(cancellationPartialRefundHours),
+          cancellationPartialRefundHours: Number(cancellationPartialRefundHours || 48),
           cancellationPartialRefundPercent: Number(cancellationPartialRefundPercent),
+          cancellationAfter48hRefundPercent: Number(cancellationAfter48hRefundPercent),
           returnNoticeDays: 0,
           depositRefundSlaDays: Number(depositRefundSlaDays),
           dailyLateFee: Number(dailyLateFee),
           overdueGraceDays: Number(overdueGraceDays),
           overdueAccessDisableDays: Number(overdueAccessDisableDays),
           overdueSealingDays: Number(overdueSealingDays),
-          minimumRentalMonths: Number(minimumRentalMonths),
+          minimumRentalMonths: 1,
         }
         const updated = await facilityPolicyService.update(existingPolicy.id, updatePayload)
         onSuccess(updated, false)
@@ -131,15 +139,16 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
           isActive,
           depositPercentage: Number(depositPercentage),
           cancellationFullRefundHours: Number(cancellationFullRefundHours),
-          cancellationPartialRefundHours: Number(cancellationPartialRefundHours),
+          cancellationPartialRefundHours: Number(cancellationPartialRefundHours || 48),
           cancellationPartialRefundPercent: Number(cancellationPartialRefundPercent),
+          cancellationAfter48hRefundPercent: Number(cancellationAfter48hRefundPercent),
           returnNoticeDays: 0,
           depositRefundSlaDays: Number(depositRefundSlaDays),
           dailyLateFee: Number(dailyLateFee),
           overdueGraceDays: Number(overdueGraceDays),
           overdueAccessDisableDays: Number(overdueAccessDisableDays),
           overdueSealingDays: Number(overdueSealingDays),
-          minimumRentalMonths: Number(minimumRentalMonths),
+          minimumRentalMonths: 1,
         }
         const created = await facilityPolicyService.create(createPayload)
         onSuccess(created, true)
@@ -213,13 +222,13 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
             </div>
           )}
 
-          {/* Nhóm 1: Tiền cọc & Thời hạn hợp đồng */}
+          {/* Nhóm 1: Tiền cọc */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400">
               <span className="material-symbols-outlined text-[16px]">payments</span>
-              <span>1. Quy định Tiền cọc & Thời gian thuê kho</span>
+              <span>1. Quy định Tiền cọc</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="max-w-md">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Tỷ lệ tiền cọc (%) <span className="text-rose-500">*</span>
@@ -239,22 +248,6 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                 </div>
                 <span className="text-[11px] text-slate-400 mt-0.5 block">Thường là 100% tiền thuê 1 tháng</span>
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Thuê tối thiểu (tháng) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="36"
-                  value={minimumRentalMonths}
-                  onChange={(e) => setMinimumRentalMonths(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
-                  required
-                />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Hợp đồng tối thiểu 1 tháng</span>
-              </div>
             </div>
           </div>
 
@@ -262,7 +255,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
           <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
               <span className="material-symbols-outlined text-[16px]">cancel</span>
-              <span>2. Chính sách Hủy đặt kho & Hoàn tiền cọc</span>
+              <span>2. Chính sách Hủy đặt kho &amp; Hoàn tiền cọc</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -283,23 +276,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Hạn hủy hoàn một phần (giờ) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="720"
-                  value={cancellationPartialRefundHours}
-                  onChange={(e) => setCancellationPartialRefundHours(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
-                  required
-                />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Khung hủy hoàn một phần kể từ khi đặt (vd: 48h)</span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Tỷ lệ hoàn một phần (%) <span className="text-rose-500">*</span>
+                  Tỷ lệ hủy trong 24-48h (%) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -314,12 +291,32 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   />
                   <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
                 </div>
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Hoàn lại % cọc đã thanh toán (vd: 70%)</span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">Hoàn lại % cọc khi hủy từ 24h đến 48h (vd: 70%)</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Tỷ lệ hoàn sau 48h đặt (%) <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={cancellationAfter48hRefundPercent}
+                    onChange={(e) => setCancellationAfter48hRefundPercent(Number(e.target.value))}
+                    className="w-full pl-3 pr-8 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
+                    required
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
+                </div>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">Hoàn lại % cọc khi hủy sau 48h đặt kho (vd: 50%)</span>
               </div>
             </div>
-            {cancellationFullRefundHours > cancellationPartialRefundHours && (
+            {cancellationFullRefundHours > (cancellationPartialRefundHours || 48) && (
               <p className="text-[11px] font-semibold text-rose-500">
-                * Hạn hủy hoàn 100% phải nhỏ hơn hoặc bằng hạn hủy hoàn một phần.
+                * Hạn hủy hoàn 100% phải nhỏ hơn hoặc bằng 48 giờ.
               </p>
             )}
           </div>
@@ -332,7 +329,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
             </div>
             <div className="max-w-md">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                SLA hoàn cọc (ngày làm việc) <span className="text-rose-500">*</span>
+                Ngày đảm bảo hoàn thành hoàn cọc <span className="text-rose-500">*</span>
               </label>
               <input
                 type="number"
@@ -353,9 +350,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
               <span className="material-symbols-outlined text-[16px]">lock_clock</span>
               <span>4. Quy trình Xử lý Quá hạn & Niêm phong</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="flex flex-col">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 leading-snug min-h-[36px]">
                   Tỷ lệ phí phạt trễ hạn (% ngày / loại kho) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
@@ -371,11 +368,11 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   />
                   <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
                 </div>
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Tỷ lệ phí tính theo mỗi ngày trễ</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Tỷ lệ phí tính theo mỗi ngày trễ</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <div className="flex flex-col">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 leading-snug min-h-[36px]">
                   Ân hạn nợ (ngày) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -387,11 +384,11 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                   required
                 />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Chưa tính phạt trong N ngày</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Chưa tính phạt trong N ngày</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <div className="flex flex-col">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 leading-snug min-h-[36px]">
                   Khóa PIN ra vào (ngày) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -403,11 +400,11 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                   required
                 />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Tự động vô hiệu hóa smartlock</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Tự động vô hiệu hóa smartlock</span>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              <div className="flex flex-col">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1 leading-snug min-h-[36px]">
                   Niêm phong kho (ngày) <span className="text-rose-500">*</span>
                 </label>
                 <input
@@ -419,7 +416,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                   required
                 />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Tiến hành thủ tục niêm phong</span>
+                <span className="text-[11px] text-slate-400 mt-1 block">Tiến hành thủ tục niêm phong</span>
               </div>
             </div>
           </div>

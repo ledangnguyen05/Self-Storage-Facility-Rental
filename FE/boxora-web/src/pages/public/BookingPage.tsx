@@ -40,7 +40,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
-import { Facility, StorageUnit, RentalContract, UnitType } from '../../types'
+import { Facility, StorageUnit, RentalContract, UnitType, FacilityPolicy } from '../../types'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
 import { bookingService } from '../../services/bookingService'
@@ -116,16 +117,18 @@ export interface StorageSizeUnitDef {
   fitsDetailed: string[]
   nonAcRate: number
   acRate: number
+  dbUnitTypeId?: string
+  typeName?: string
 }
 
 export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   {
     id: '1m3',
-    volumeText: '1 m³',
-    volumeNumber: 1,
+    volumeText: '1.2 m³',
+    volumeNumber: 1.2,
     capacityText: '6 boxes',
     image: size1m3Img,
-    dimensions: '1.0m × 1.0m × Cao 1.0m',
+    dimensions: '1.0m × 1.0m × 1.2m',
     areaM2: 1.0,
     fitsDetailed: ['4–6 Vali lớn', '6 Thùng carton tiêu chuẩn (0.5×0.4m)', 'Dụng cụ thể thao, laptop, balo', 'Giấy tờ tài liệu văn phòng'],
     nonAcRate: 350000,
@@ -205,11 +208,11 @@ export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   },
   {
     id: '8m3',
-    volumeText: '8 m³',
-    volumeNumber: 8,
+    volumeText: '7.8 m³',
+    volumeNumber: 7.8,
     capacityText: '48 boxes',
     image: size8m3Img,
-    dimensions: '2.5m × 1.2m × Cao 2.7m',
+    dimensions: '2.0m × 1.5m × 2.6m',
     areaM2: 3.0,
     fitsDetailed: ['48 Thùng hàng carton kinh doanh', 'Bàn ghế ăn 4-6 người', 'Giường đôi Queen-size + Nệm', 'Tủ lạnh 2 cánh, máy rửa bát'],
     nonAcRate: 1850000,
@@ -265,11 +268,11 @@ export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   },
   {
     id: '16m3',
-    volumeText: '16 m³',
-    volumeNumber: 16,
+    volumeText: '16.8 m³',
+    volumeNumber: 16.8,
     capacityText: '100 boxes (Căn hộ 3PN)',
     image: size8m3Img,
-    dimensions: '4.0m × 1.5m × Cao 2.7m',
+    dimensions: '3.0m × 2.0m × 2.8m',
     areaM2: 6.0,
     fitsDetailed: ['Nội thất chuyển nhà nguyên căn hộ 3PN', '3 Bộ giường nệm, bàn ăn 8 người', 'Nội thất phòng khách, bếp đầy đủ', '100+ Thùng hàng kinh doanh online'],
     nonAcRate: 3500000,
@@ -300,6 +303,19 @@ export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
     acRate: 5160000,
   },
   {
+    id: '70m3',
+    typeName: 'Rất lớn (văn phòng thương mại)',
+    volumeText: '70 m³',
+    volumeNumber: 70,
+    capacityText: '160 boxes (Kho logistics lớn)',
+    image: size9m3Img,
+    dimensions: '5.0m × 4.0m × 3.5m',
+    areaM2: 20.0,
+    fitsDetailed: ['Kho logistics, thương mại lớn & văn phòng', 'Toàn bộ trang thiết bị văn phòng lớn', 'Pallet hàng hóa thương mại quy mô lớn', '160+ Thùng carton đóng kiện tiêu chuẩn'],
+    nonAcRate: 5000000,
+    acRate: 6000000,
+  },
+  {
     id: '24m3',
     volumeText: '24 m³',
     volumeNumber: 24,
@@ -326,6 +342,9 @@ import {
 export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24 }
 
 export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): string => {
+  if (size.dbUnitTypeId) {
+    return size.dbUnitTypeId
+  }
   if (size.id.includes('cold') || size.id === '14m3' || (size.areaM2 >= 4.5 && size.areaM2 <= 5.5)) {
     return '10000000-0000-0000-0000-000000000005' // Cold Storage (kiểm soát nhiệt độ 18-22°C) - 5m²
   }
@@ -401,6 +420,47 @@ export const BookingPage: React.FC = () => {
 
   // Step 1: Facility Selection
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null)
+  const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
+  const [customDiscounts, setCustomDiscounts] = useState<{ id?: string; months: number; percent: number; label?: string }[]>([])
+
+  useEffect(() => {
+    if (!selectedFacility?.id) {
+      setFacilityPolicy(null)
+      setCustomDiscounts([])
+      return
+    }
+    let isCancelled = false
+    const loadPolicy = async () => {
+      try {
+        const pol = await facilityPolicyService.getByFacilityId(selectedFacility.id)
+        if (!isCancelled && pol) {
+          setFacilityPolicy(pol)
+        }
+      } catch (err) {
+        console.warn('Could not load facility policy:', err)
+      }
+    }
+    void loadPolicy()
+
+    try {
+      const saved = localStorage.getItem(`boxora_custom_discounts_${selectedFacility.id}`)
+      if (saved) {
+        setCustomDiscounts(JSON.parse(saved))
+      } else {
+        setCustomDiscounts([])
+      }
+    } catch {
+      setCustomDiscounts([])
+    }
+
+    return () => {
+      isCancelled = true
+    }
+  }, [selectedFacility?.id])
+
+  const facilityDiscount3M = Number(facilityPolicy?.discount3MonthPercent ?? 5)
+  const facilityDiscount6M = Number(facilityPolicy?.discount6MonthPercent ?? 10)
+  const facilityDiscount12M = Number(facilityPolicy?.discount12MonthPercent ?? 15)
 
   // Step 2: Storage Size Selection
   const [selectedSizeId, setSelectedSizeId] = useState<string>('3m3')
@@ -423,8 +483,16 @@ export const BookingPage: React.FC = () => {
     '24m3': 'AC',
   })
 
-  // Category filter state for sizes in Step 2
-  const [sizeFilterCategory, setSizeFilterCategory] = useState<'ALL' | 'PERSONAL' | 'FAMILY' | 'ENTERPRISE'>('ALL')
+  // Category filter state for sizes in Step 2 (Task: 5 standardized volume ranges)
+  type SizeCategoryTab = 'ALL' | 'PERSONAL' | 'FAMILY' | 'ENTERPRISE' | 'LOGISTICS'
+  type PreservationFilterType = 'ALL' | 'AC' | 'NON_AC'
+  type StockStatusFilterType = 'ALL' | 'AVAILABLE' | 'OUT_OF_STOCK'
+  type AreaFilterType = 'ALL' | 'LE_3' | '3_TO_6' | 'GT_6'
+
+  const [sizeFilterCategory, setSizeFilterCategory] = useState<SizeCategoryTab>('ALL')
+  const [preservationFilter, setPreservationFilter] = useState<PreservationFilterType>('ALL')
+  const [stockStatusFilter, setStockStatusFilter] = useState<StockStatusFilterType>('ALL')
+  const [areaFilter, setAreaFilter] = useState<AreaFilterType>('ALL')
   const [sizeVisualMode, setSizeVisualMode] = useState<'3D' | 'PHOTO'>('3D')
   const [inspectVisualTab, setInspectVisualTab] = useState<'3D' | 'PHOTO'>('3D')
   const [inspectingSizeUnit, setInspectingSizeUnit] = useState<StorageSizeUnitDef | null>(null)
@@ -846,53 +914,108 @@ export const BookingPage: React.FC = () => {
 
   // Real sizes that exist and are available in the selected facility
   const availableSizesInFacility = useMemo(() => {
-    if (availableFacilityUnits.length === 0) return []
-    const matchedSet = new Set<string>()
-    availableFacilityUnits.forEach((unit) => {
-      let bestMatch = STORAGE_SIZES_CATALOG[0]
-      let bestDiff = 999
-      for (const s of STORAGE_SIZES_CATALOG) {
-        const typeName = (unit.unitTypeName || '').toLowerCase()
-        if (typeName.includes(s.id)) {
-          bestMatch = s
-          bestDiff = 0
-          break
-        }
-        const diff = Math.abs((unit.areaSqMeters || 1) - s.areaM2)
-        if (diff < bestDiff) {
-          bestDiff = diff
-          bestMatch = s
-        }
+    // Process units in the selected facility
+    const facilityUnits = selectedFacility ? storageUnits.filter(u => u.facilityId === selectedFacility.id) : []
+    if (facilityUnits.length === 0 && availableFacilityUnits.length === 0) return []
+
+    const unitsSource = facilityUnits.length > 0 ? facilityUnits : availableFacilityUnits
+    const matchedSizes: StorageSizeUnitDef[] = []
+    const processedKeys = new Set<string>()
+
+    unitsSource.forEach((unit) => {
+      // 1. Try to find matching dbUnitType
+      const dbType = dbUnitTypes.find((ut) => ut.id === unit.unitTypeId)
+      const key = dbType ? dbType.id : (unit.unitTypeName || `${unit.areaSqMeters}m2`)
+      if (processedKeys.has(key)) return
+      processedKeys.add(key)
+
+      // Try to find a matching static catalog item
+      let matchedCatalog = STORAGE_SIZES_CATALOG.find((s) => {
+        if (dbType && (dbType.volumeM3 === s.volumeNumber || Math.abs((dbType.areaSqm || 0) - s.areaM2) < 0.5)) return true
+        const name = (unit.unitTypeName || '').toLowerCase()
+        if (name.includes(s.id)) return true
+        return unit.areaSqMeters && Math.abs(unit.areaSqMeters - s.areaM2) < 0.6
+      })
+
+      if (dbType) {
+        const vol = dbType.volumeM3 != null ? Number(dbType.volumeM3) : (matchedCatalog ? matchedCatalog.volumeNumber : Math.round((dbType.areaSqm || unit.areaSqMeters || 1) * 3))
+        const area = dbType.areaSqm != null ? Number(dbType.areaSqm) : (matchedCatalog ? matchedCatalog.areaM2 : (unit.areaSqMeters || 1))
+        const dims = dbType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${dbType.lengthM || 2}m × ${dbType.widthM || 1.5}m × ${dbType.heightM || 2.6}m`)
+        const cap = dbType.capacityBoxes ? `${dbType.capacityBoxes} boxes` : (matchedCatalog ? matchedCatalog.capacityText : `${Math.round(area * 8)} boxes`)
+        const name = dbType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn')
+
+        matchedSizes.push({
+          ...(matchedCatalog || STORAGE_SIZES_CATALOG[0]),
+          id: dbType.id,
+          dbUnitTypeId: dbType.id,
+          typeName: name,
+          volumeText: `${vol} m³`,
+          volumeNumber: vol,
+          capacityText: cap,
+          image: vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image),
+          dimensions: dims,
+          areaM2: area,
+          fitsDetailed: [
+            name,
+            `Diện tích sàn: ${area} m² · Thể tích: ${vol} m³`,
+            `Kích thước: ${dims}`,
+            `Sức chứa: ~${cap} quy chuẩn`,
+            'Bảo quản an ninh 24/7 với kiểm soát độ ẩm và camera thông minh',
+          ],
+          nonAcRate: dbType.basePricePerMonth || (matchedCatalog ? matchedCatalog.nonAcRate : 5000000),
+          acRate: dbType.acPricePerMonth || (matchedCatalog ? matchedCatalog.acRate : Math.round((dbType.basePricePerMonth || 5000000) * 1.2)),
+        })
+      } else if (matchedCatalog) {
+        matchedSizes.push(matchedCatalog)
       }
-      matchedSet.add(bestMatch.id)
     })
-    return STORAGE_SIZES_CATALOG.filter((s) => matchedSet.has(s.id))
-  }, [availableFacilityUnits])
+
+    return matchedSizes.sort((a, b) => a.volumeNumber - b.volumeNumber)
+  }, [selectedFacility, storageUnits, availableFacilityUnits, dbUnitTypes])
 
   // Count available units for a size in the selected facility
   const getAvailableCountForSize = (sizeUnit: StorageSizeUnitDef) => {
     return availableFacilityUnits.filter((u) => {
-      const name = (u.unitTypeName || '').toLowerCase()
-      if (name.includes(sizeUnit.id)) return true
-      if (u.areaSqMeters && Math.abs(u.areaSqMeters - sizeUnit.areaM2) < 0.6) return true
+      if (sizeUnit.dbUnitTypeId && u.unitTypeId === sizeUnit.dbUnitTypeId) return true
+      if (sizeUnit.id && u.unitTypeId === sizeUnit.id) return true
       return false
     }).length
   }
 
-  // Filter sizes based on category tab
+  // Filter sizes based on 5 standardized volume categories and multi-criteria filters
   const filteredSizesCatalog = useMemo(() => {
     const source = availableSizesInFacility.length > 0 ? availableSizesInFacility : []
-    if (sizeFilterCategory === 'PERSONAL') {
-      return source.filter((s) => s.volumeNumber <= 4)
-    }
-    if (sizeFilterCategory === 'FAMILY') {
-      return source.filter((s) => s.volumeNumber >= 5 && s.volumeNumber <= 9)
-    }
-    if (sizeFilterCategory === 'ENTERPRISE') {
-      return source.filter((s) => s.volumeNumber >= 10)
-    }
-    return source
-  }, [availableSizesInFacility, sizeFilterCategory])
+    return source.filter((s) => {
+      // 1. Volume filter:
+      // ALL: Tất cả
+      // PERSONAL: Cá nhân & Mini: <= 4 m³
+      // FAMILY: Gia đình: > 4 và <= 10 m³
+      // ENTERPRISE: Doanh nghiệp: > 10 và <= 25 m³
+      // LOGISTICS: Logistics: > 25 m³
+      if (sizeFilterCategory === 'PERSONAL' && s.volumeNumber > 4) return false
+      if (sizeFilterCategory === 'FAMILY' && (s.volumeNumber <= 4 || s.volumeNumber > 10)) return false
+      if (sizeFilterCategory === 'ENTERPRISE' && (s.volumeNumber <= 10 || s.volumeNumber > 25)) return false
+      if (sizeFilterCategory === 'LOGISTICS' && s.volumeNumber <= 25) return false
+
+      // 2. Area filter (m²)
+      if (areaFilter === 'LE_3' && s.areaM2 > 3) return false
+      if (areaFilter === '3_TO_6' && (s.areaM2 <= 3 || s.areaM2 > 6)) return false
+      if (areaFilter === 'GT_6' && s.areaM2 <= 6) return false
+
+      // 3. Stock Status filter
+      const avail = getAvailableCountForSize(s)
+      if (stockStatusFilter === 'AVAILABLE' && avail <= 0) return false
+      if (stockStatusFilter === 'OUT_OF_STOCK' && avail > 0) return false
+
+      // 4. Preservation Condition filter
+      const unitAcMode = acSelectionMap[s.id] || 'NON_AC'
+      const isClimateType = (s.typeName || '').toLowerCase().includes('lạnh') || (s.typeName || '').toLowerCase().includes('mát')
+      if (preservationFilter === 'AC' && unitAcMode !== 'AC' && !isClimateType) return false
+      if (preservationFilter === 'NON_AC' && (unitAcMode === 'AC' || isClimateType)) return false
+
+      return true
+    })
+  }, [availableSizesInFacility, sizeFilterCategory, areaFilter, stockStatusFilter, preservationFilter, acSelectionMap, availableFacilityUnits])
 
   // Auto-sync selectedSizeId when facility changes or size becomes invalid
   useEffect(() => {
@@ -925,8 +1048,10 @@ export const BookingPage: React.FC = () => {
 
   const currentSelectedSize = useMemo(() => {
     if (selectedSizeId) {
-      const found = STORAGE_SIZES_CATALOG.find((s) => s.id === selectedSizeId)
-      if (found) return found
+      const foundInFacility = availableSizesInFacility.find((s) => s.id === selectedSizeId)
+      if (foundInFacility) return foundInFacility
+      const foundInStatic = STORAGE_SIZES_CATALOG.find((s) => s.id === selectedSizeId)
+      if (foundInStatic) return foundInStatic
     }
     if (availableSizesInFacility.length > 0) {
       return availableSizesInFacility[0]
@@ -982,15 +1107,23 @@ export const BookingPage: React.FC = () => {
 
     let discountPercent = 0
     if (isCustomDuration) {
-      if (customDays >= 720) discountPercent = 20
-      else if (customDays >= 365) discountPercent = 15
-      else if (customDays >= 180) discountPercent = 10
-      else if (customDays >= 90) discountPercent = 5
+      if (customDays >= 720) discountPercent = facilityDiscount12M
+      else if (customDays >= 365) discountPercent = facilityDiscount12M
+      else if (customDays >= 180) discountPercent = facilityDiscount6M
+      else if (customDays >= 90) discountPercent = facilityDiscount3M
     } else {
-      if (rentalMonths >= 24) discountPercent = 20
-      else if (rentalMonths >= 12) discountPercent = 15
-      else if (rentalMonths >= 6) discountPercent = 10
-      else if (rentalMonths >= 3) discountPercent = 5
+      const customMatch = customDiscounts.find((cd) => cd.months === rentalMonths)
+      if (customMatch) {
+        discountPercent = customMatch.percent
+      } else if (rentalMonths >= 24) {
+        discountPercent = facilityDiscount12M
+      } else if (rentalMonths >= 12) {
+        discountPercent = facilityDiscount12M
+      } else if (rentalMonths >= 6) {
+        discountPercent = facilityDiscount6M
+      } else if (rentalMonths >= 3) {
+        discountPercent = facilityDiscount3M
+      }
     }
 
     const discountAmountPerMonth = Math.round(baseMonthly * (discountPercent / 100))
@@ -1000,7 +1133,8 @@ export const BookingPage: React.FC = () => {
     const totalRent = isCustomDuration
       ? dailyRate * Math.max(1, customDays)
       : monthlyAfterDiscount * rentalMonths
-    const depositAmount = baseMonthly
+    const depositPct = facilityPolicy?.depositPercentage != null ? Number(facilityPolicy.depositPercentage) : 100
+    const depositAmount = Math.round(baseMonthly * (depositPct / 100))
 
     return {
       baseMonthly,
@@ -1014,7 +1148,7 @@ export const BookingPage: React.FC = () => {
       depositAmount,
       totalEstimate: totalRent + depositAmount,
     }
-  }, [currentSelectedSize, isAcActive, isCustomDuration, rentalMonths, customDays, getDynamicPriceForSize])
+  }, [currentSelectedSize, isAcActive, isCustomDuration, rentalMonths, customDays, getDynamicPriceForSize, facilityDiscount3M, facilityDiscount6M, facilityDiscount12M, customDiscounts, facilityPolicy])
 
   // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
   const captureSigningSnapshot = useCallback(() => ({
@@ -1151,6 +1285,8 @@ export const BookingPage: React.FC = () => {
       rentalDuration: rentalDurationText,
       checkInDate: checkInDate,
       checkInTime: checkInTime,
+      startDate: startDate || checkInDate || new Date().toISOString().slice(0, 10),
+      expectedCheckInAt: `${checkInDate || startDate || new Date().toISOString().slice(0, 10)}T${(checkInTime || '09:00').split(' - ')[0].trim().length === 5 ? (checkInTime || '09:00').split(' - ')[0].trim() + ':00' : '09:00:00'}`,
       totalRent: quoteCalculation.totalRent,
       depositAmount: quoteCalculation.depositAmount,
       totalEstimate: quoteCalculation.totalEstimate,
@@ -2254,15 +2390,16 @@ export const BookingPage: React.FC = () => {
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[
                       { key: 'ALL', label: `Tất cả (${availableSizesInFacility.length})` },
-                      { key: 'PERSONAL', label: 'Cá nhân & Mini (1 – 4 m³)' },
-                      { key: 'FAMILY', label: 'Gia đình (5 – 9 m³)' },
-                      { key: 'ENTERPRISE', label: 'Doanh nghiệp (10 – 24 m³)' },
+                      { key: 'PERSONAL', label: 'Cá nhân & Mini (≤ 4 m³)' },
+                      { key: 'FAMILY', label: 'Gia đình (> 4 – 10 m³)' },
+                      { key: 'ENTERPRISE', label: 'Doanh nghiệp (> 10 – 25 m³)' },
+                      { key: 'LOGISTICS', label: 'Logistics (> 25 m³)' },
                     ].map((cat) => (
                       <button
                         key={cat.key}
                         type="button"
                         onClick={() => setSizeFilterCategory(cat.key as any)}
-                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           sizeFilterCategory === cat.key
                             ? 'bg-blue-600 text-white shadow-xs'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -2310,6 +2447,80 @@ export const BookingPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Secondary Multi-Criteria Filters Bar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs text-xs">
+                  <div className="flex flex-wrap items-center gap-3">
+                    {/* Area m² Filter */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-semibold text-[11px] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px]">aspect_ratio</span>
+                        Diện tích:
+                      </span>
+                      <select
+                        value={areaFilter}
+                        onChange={(e) => setAreaFilter(e.target.value as any)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="ALL">Tất cả diện tích</option>
+                        <option value="LE_3">Nhỏ (≤ 3 m²)</option>
+                        <option value="3_TO_6">Tiêu chuẩn (3.1 – 6 m²)</option>
+                        <option value="GT_6">Lớn (&gt; 6 m²)</option>
+                      </select>
+                    </div>
+
+                    {/* Preservation Condition Filter */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-semibold text-[11px] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px]">ac_unit</span>
+                        Bảo quản:
+                      </span>
+                      <select
+                        value={preservationFilter}
+                        onChange={(e) => setPreservationFilter(e.target.value as any)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="ALL">Tất cả điều kiện</option>
+                        <option value="AC">A/C (Kho lạnh / kiểm soát ẩm)</option>
+                        <option value="NON_AC">Non-A/C (Tiêu chuẩn thông gió)</option>
+                      </select>
+                    </div>
+
+                    {/* Stock Status Filter */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-semibold text-[11px] flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[15px]">inventory_2</span>
+                        Tình trạng:
+                      </span>
+                      <select
+                        value={stockStatusFilter}
+                        onChange={(e) => setStockStatusFilter(e.target.value as any)}
+                        className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs outline-none focus:border-blue-500 cursor-pointer"
+                      >
+                        <option value="ALL">Tất cả tình trạng</option>
+                        <option value="AVAILABLE">Còn trống (Sẵn sàng)</option>
+                        <option value="OUT_OF_STOCK">Hết chỗ</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Reset Filters button if any active */}
+                  {(sizeFilterCategory !== 'ALL' || areaFilter !== 'ALL' || preservationFilter !== 'ALL' || stockStatusFilter !== 'ALL') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSizeFilterCategory('ALL')
+                        setAreaFilter('ALL')
+                        setPreservationFilter('ALL')
+                        setStockStatusFilter('ALL')
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">restart_alt</span>
+                      <span>Xóa bộ lọc</span>
+                    </button>
+                  )}
+                </div>
+
                 {/* Available Sizes Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
                   {filteredSizesCatalog.map((sizeUnit) => {
@@ -2330,14 +2541,22 @@ export const BookingPage: React.FC = () => {
                         }`}
                       >
                         <div className="p-3.5 pb-1.5 flex items-start justify-between gap-2">
-                          <div>
-                            <div className="flex items-center gap-1.5">
+                          <div className="min-w-0 flex-1">
+                            {sizeUnit.typeName && (
+                              <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 block truncate" title={sizeUnit.typeName}>
+                                {sizeUnit.typeName}
+                              </span>
+                            )}
+                            <div className="flex items-center gap-1.5 mt-0.5">
                               <span className="font-extrabold text-lg sm:text-xl text-slate-900 dark:text-white tracking-tight">
                                 {sizeUnit.volumeText}
                               </span>
                               <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
                                 {sizeUnit.areaM2} m²
                               </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
+                              {sizeUnit.dimensions}
                             </div>
                             <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block mt-0.5">
                               Sức chứa: {sizeUnit.capacityText}
@@ -2398,9 +2617,15 @@ export const BookingPage: React.FC = () => {
                         <div className="p-3.5 pt-2 space-y-2">
                           <div className="flex items-center justify-between text-[11px]">
                             <span className="text-slate-500 dark:text-slate-400 font-medium">Khả dụng:</span>
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">
-                              Còn {availCount} buồng kho
-                            </span>
+                            {availCount > 0 ? (
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">
+                                Còn {availCount} buồng kho
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold">
+                                Hết chỗ
+                              </span>
+                            )}
                           </div>
 
                           {/* Segmented A/C Toggle */}
@@ -2467,7 +2692,7 @@ export const BookingPage: React.FC = () => {
                   Thời hạn thuê &amp; Bảng kê báo giá
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến 15% và xem bảng phân rã chi phí minh bạch.
+                  {t('Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến {pct}% và xem bảng phân rã chi phí minh bạch.', { pct: `${facilityDiscount12M}%` }) || `Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến ${facilityDiscount12M}% và xem bảng phân rã chi phí minh bạch.`}
                 </p>
               </div>
 
@@ -2494,7 +2719,7 @@ export const BookingPage: React.FC = () => {
                           1. Chọn thời hạn thuê kho &amp; Ưu đãi kỳ hạn
                         </h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          Cam kết từ 3 tháng trở lên được giảm trực tiếp từ 5% đến 15% vào đơn giá hàng tháng
+                          {t('Cam kết từ 3 tháng trở lên được giảm trực tiếp từ {min}% đến {max}% vào đơn giá hàng tháng', { min: `${facilityDiscount3M}%`, max: `${facilityDiscount12M}%` }) || `Cam kết từ 3 tháng trở lên được giảm trực tiếp từ ${facilityDiscount3M}% đến ${facilityDiscount12M}% vào đơn giá hàng tháng`}
                         </p>
                       </div>
                     </div>
@@ -2506,9 +2731,14 @@ export const BookingPage: React.FC = () => {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                     {[
                       { m: 1, label: '1 tháng', badge: 'Tiêu chuẩn' },
-                      { m: 3, label: '3 tháng', badge: 'Tiết kiệm 5%' },
-                      { m: 6, label: '6 tháng', badge: 'Tiết kiệm 10%' },
-                      { m: 12, label: '12 tháng', badge: 'Tiết kiệm 15%' },
+                      { m: 3, label: '3 tháng', badge: `Tiết kiệm ${facilityDiscount3M}%` },
+                      { m: 6, label: '6 tháng', badge: `Tiết kiệm ${facilityDiscount6M}%` },
+                      { m: 12, label: '12 tháng', badge: `Tiết kiệm ${facilityDiscount12M}%` },
+                      ...customDiscounts.map((cd) => ({
+                        m: cd.months,
+                        label: `${cd.months} tháng`,
+                        badge: `Tiết kiệm ${cd.percent}%`,
+                      })),
                     ].map((dur) => {
                       const active = durationMode === 'MONTHS' && rentalMonths === dur.m
                       return (
