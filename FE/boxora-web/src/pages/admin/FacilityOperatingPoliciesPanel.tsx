@@ -97,17 +97,6 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
     void loadPolicies()
   }
 
-  const handleTogglePolicyActive = async (pol: FacilityPolicy) => {
-    const newActive = pol.isActive === false ? true : false
-    try {
-      await facilityPolicyService.update(pol.id, { isActive: newActive })
-      showToast(newActive ? 'Đã kích hoạt áp dụng chính sách cơ sở thành công!' : 'Đã ngừng áp dụng chính sách cơ sở.')
-      void loadPolicies()
-    } catch (err: any) {
-      showToast(err?.response?.data?.message || 'Không thể thay đổi trạng thái chính sách.', true)
-    }
-  }
-
   const handleOpenGrantModal = async (fac: Facility, pol: FacilityPolicy) => {
     setGrantModalData({
       facility: fac,
@@ -200,12 +189,10 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50/75 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                <th className="py-3 px-4">{t('Cơ sở / Chi nhánh')}</th>
-                <th className="py-3 px-3">{t('Trạng thái')}</th>
-                <th className="py-3 px-3 text-center">{t('Tiền cọc & Thuê min')}</th>
-                <th className="py-3 px-3 text-center">{t('Gia hạn & Báo trước')}</th>
-                <th className="py-3 px-3 text-center">{t('Hủy hoàn tiền (Full / 1 phần)')}</th>
-                <th className="py-3 px-3 text-center">{t('SLA Hoàn cọc')}</th>
+                <th className="py-3 px-4">{t('Chi nhánh')}</th>
+                <th className="py-3 px-3 text-center">{t('Tiền cọc')}</th>
+                <th className="py-3 px-3 text-center">{t('Hủy & Hoàn tiền')}</th>
+                <th className="py-3 px-3 text-center">{t('Ngày phải hoàn cọc')}</th>
                 <th className="py-3 px-3 text-center">{t('Xử lý Nợ & Quá hạn')}</th>
                 {canManagePolicies && <th className="py-3 px-4 text-center">{t('Thao tác')}</th>}
               </tr>
@@ -239,26 +226,6 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                           </span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-3">
-                        {hasPolicy ? (
-                          policy?.isActive === false ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                              {t('Ngừng áp dụng')}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                              {t('Đang kích hoạt')}
-                            </span>
-                          )
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-[11px] font-bold border border-amber-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            {t('Chưa cấu hình')}
-                          </span>
-                        )}
-                      </td>
                       <td className="py-3.5 px-3 text-center">
                         {hasPolicy ? (
                           <div className="flex flex-col items-center">
@@ -267,20 +234,6 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                             </span>
                             <span className="text-[10px] text-slate-500">
                               {t('Tối thiểu', 'Minimum')} {policy?.minimumRentalMonths ?? '—'} {t('tháng')}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3 text-center">
-                        {hasPolicy ? (
-                          <div className="flex flex-col items-center">
-                            <span className="font-medium text-slate-800">
-                              {t('Mở trước', 'Opens')} {policy?.renewalWindowDays ?? '—'} {t('ngày')}
-                            </span>
-                            <span className="text-[10px] text-slate-500">
-                              {t('Báo trả:', 'Move-out notice:')} {policy?.returnNoticeDays ?? '—'} {t('ngày')}
                             </span>
                           </div>
                         ) : (
@@ -317,7 +270,9 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                         {hasPolicy ? (
                           <div className="flex flex-col items-center">
                             <span className="font-bold text-rose-600">
-                              {formatCurrency(policy?.dailyLateFee ?? policy?.lateFeePerDay)} đ/ngày
+                              {policy?.dailyLateFee != null && Number(policy.dailyLateFee) <= 500
+                                ? `${Number(policy.dailyLateFee)}% / ngày / loại kho`
+                                : '100% / ngày / loại kho'}
                             </span>
                             <span className="text-[10px] text-slate-500">
                               {t('Ân hạn', 'Grace')} {policy?.overdueGraceDays ?? '—'}d • {t('Khóa', 'Disable')} {policy?.overdueAccessDisableDays ?? '—'}d • {t('Niêm phong', 'Seal')} {policy?.overdueSealingDays ?? '—'}d
@@ -331,49 +286,15 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                         <td className="py-3.5 px-4 text-center">
                           <div className="flex items-center justify-center gap-1.5 flex-wrap">
                             {hasPolicy && policy ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditPolicy(fac, policy)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs transition border border-cyan-200 cursor-pointer"
-                                  title="Chỉnh sửa quy định chính sách"
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">edit</span>
-                                  <span>{t('Sửa')}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleTogglePolicyActive(policy)}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-xs transition border cursor-pointer ${
-                                    policy.isActive === false
-                                      ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                                      : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
-                                  }`}
-                                  title={policy.isActive === false ? 'Kích hoạt chính sách này' : 'Ngừng áp dụng chính sách này'}
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">
-                                    {policy.isActive === false ? 'toggle_on' : 'toggle_off'}
-                                  </span>
-                                  <span>{policy.isActive === false ? t('Kích hoạt') : t('Ngừng áp dụng')}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenGrantModal(fac, policy)}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs transition border border-indigo-200 cursor-pointer"
-                                  title="Cấp quyền sửa ngoại lệ cho Quản lý cơ sở"
-                                >
-                                  <span className="material-symbols-outlined text-[15px]">key</span>
-                                  <span>{t('Ngoại lệ FM')}</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeletePolicy(policy)}
-                                  className="inline-flex items-center p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                                  title="Xóa chính sách"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">delete</span>
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditPolicy(fac, policy)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs transition border border-cyan-200 cursor-pointer"
+                                title="Chỉnh sửa quy định chính sách"
+                              >
+                                <span className="material-symbols-outlined text-[15px]">edit</span>
+                                <span>{t('Sửa')}</span>
+                              </button>
                             ) : (
                               <button
                                 type="button"
@@ -381,7 +302,7 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
                                 className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs transition border border-emerald-200 cursor-pointer"
                               >
                                 <span className="material-symbols-outlined text-[16px]">add</span>
-                                <span>{t('Tạo chính sách')}</span>
+                                <span>{t('Tạo')}</span>
                               </button>
                             )}
                           </div>

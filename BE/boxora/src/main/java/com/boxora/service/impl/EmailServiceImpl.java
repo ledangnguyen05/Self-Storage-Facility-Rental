@@ -607,28 +607,57 @@ public class EmailServiceImpl implements EmailService {
 
         String subject = String.format("[Boxora] %s - Hợp đồng %s (Kho %s)", badgeText, safeCode, safeUnit);
 
-        String intro = String.format(
-                "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s</strong> tại cơ sở <strong>%s</strong>) hiện đã quá hạn thanh toán định kỳ.",
-                safeCode, safeUnit, safeFacility
-        );
+        BigDecimal effectiveTotalDebt = totalDebt != null ? totalDebt : BigDecimal.ZERO;
+        BigDecimal safeDeposit = depositHeld != null ? depositHeld : BigDecimal.ZERO;
+        BigDecimal safeLateFee = lateFee != null ? lateFee : BigDecimal.ZERO;
+        boolean hasRemainingDebt = effectiveTotalDebt.compareTo(BigDecimal.ZERO) > 0;
+        BigDecimal refundAmount = safeDeposit.subtract(safeLateFee).max(BigDecimal.ZERO);
 
-        String highlightBox = renderHighlightBox(
-                "TỔNG CÔNG NỢ CẦN THANH TOÁN",
-                formatVnd(totalDebt != null ? totalDebt : BigDecimal.ZERO),
-                "#fef2f2",
-                "#b91c1c",
-                "#fca5a5"
-        );
+        String intro;
+        String highlightBox;
+        if (!hasRemainingDebt) {
+            intro = String.format(
+                    "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho từ ngày <strong>%s</strong> (+%d ngày). Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho và nhận lại số tiền cọc còn lại.",
+                    safeCode, safeUnit, safeFacility, safeDueDate, daysOverdue
+            );
+            highlightBox = renderHighlightBox(
+                    "SỐ TIỀN HOÀN KHÁCH DỰ KIẾN KHI TRẢ KHO",
+                    formatVnd(refundAmount),
+                    "#ecfdf5",
+                    "#059669",
+                    "#a7f3d0"
+            );
+        } else {
+            intro = String.format(
+                    "Hệ thống Boxora ghi nhận hợp đồng thuê kho <strong>%s</strong> (Buồng kho <strong>#%s</strong> tại cơ sở <strong>%s</strong>) đã quá hạn trả kho (+%d ngày). Do phí phạt trễ hạn đã vượt quá số tiền cọc giữ, quý khách vui lòng thanh toán khoản công nợ phát sinh và làm thủ tục bàn giao kho.",
+                    safeCode, safeUnit, safeFacility, daysOverdue
+            );
+            highlightBox = renderHighlightBox(
+                    "TỔNG CÔNG NỢ CẦN THANH TOÁN",
+                    formatVnd(effectiveTotalDebt),
+                    "#fef2f2",
+                    "#b91c1c",
+                    "#fca5a5"
+            );
+        }
 
         StringBuilder detailsBuilder = new StringBuilder();
         detailsBuilder.append("<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin: 16px 0; border: 1px solid #f1f5f9; border-radius: 8px; overflow: hidden;\">");
         detailsBuilder.append(renderDetailRow("Mã hợp đồng", safeCode));
         detailsBuilder.append(renderDetailRow("Buồng kho / Vị trí", String.format("<strong>#%s</strong> (%s)", safeUnit, safeFacility)));
-        detailsBuilder.append(renderDetailRow("Ngày đến hạn thanh toán", safeDueDate));
-        detailsBuilder.append(renderDetailRow("Số ngày quá hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">+%d ngày</span>", daysOverdue)));   
+        detailsBuilder.append(renderDetailRow("Ngày hết hạn hợp đồng", safeDueDate));
+        detailsBuilder.append(renderDetailRow("Số ngày quá hạn trả kho", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">+%d ngày</span>", daysOverdue)));
         detailsBuilder.append(renderDetailRow("Đơn giá phạt / ngày", formatVnd(dailyLateFee != null ? dailyLateFee : BigDecimal.ZERO) + "/ngày"));
-        detailsBuilder.append(renderDetailRow("Phí phạt trễ hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(lateFee != null ? lateFee : BigDecimal.ZERO))));
-        detailsBuilder.append(renderDetailRow("Tiền cọc đang giữ", formatVnd(depositHeld != null ? depositHeld : BigDecimal.ZERO)));
+        detailsBuilder.append(renderDetailRow("Phí phạt trễ hạn", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(safeLateFee))));
+        detailsBuilder.append(renderDetailRow("Tiền cọc đang giữ", formatVnd(safeDeposit)));
+
+        if (!hasRemainingDebt) {
+            detailsBuilder.append(renderDetailRow("Khấu trừ phạt vào cọc", String.format("<span style=\"color: #b91c1c;\">-%s</span>", formatVnd(safeLateFee))));
+            detailsBuilder.append(renderDetailRow("Số tiền hoàn lại khi trả kho", String.format("<span style=\"color: #059669; font-weight: 700;\">%s</span>", formatVnd(refundAmount))));
+        } else {
+            detailsBuilder.append(renderDetailRow("Khấu trừ toàn bộ cọc", String.format("<span style=\"color: #b91c1c;\">-%s</span>", formatVnd(safeDeposit))));
+            detailsBuilder.append(renderDetailRow("Công nợ còn lại phải nộp", String.format("<span style=\"color: #b91c1c; font-weight: 700;\">%s</span>", formatVnd(effectiveTotalDebt))));
+        }
 
         if (!safeNotes.isEmpty()) {
             detailsBuilder.append(renderDetailRow("Ghi chú từ BQL cơ sở", String.format("<em>%s</em>", safeNotes)));
@@ -636,10 +665,10 @@ public class EmailServiceImpl implements EmailService {
         detailsBuilder.append("</table>");
 
         String alertWarningText = switch (templateType != null ? templateType : "") {
-            case "LOCKOUT_NOTICE" -> "<strong>CẢNH BÁO KHÓA KHO:</strong> Hệ thống đã kích hoạt quy trình thu hồi mã PIN/QR điện tử của khóa thông minh SmartLock. Quý khách vui lòng thanh toán công nợ ngay để phục hồi quyền truy cập kho.";
-            case "SEAL_WARNING" -> "<strong>CẢNH BÁO NIÊM PHONG:</strong> Hợp đồng đã đến ngưỡng xử lý niêm phong buồng kho (quá hạn >= 7 ngày). Nếu không thanh toán ngay, cơ sở sẽ tiến hành niêm phong chì khóa và kiểm kê tài sản theo điều khoản hợp đồng.";
-            case "WARNING" -> "<strong>LƯU Ý PHÁT SINH PHÍ PHẠT:</strong> Cước thuê đã quá thời gian ân hạn miễn phí. Phí phạt sẽ được tính cộng dồn theo từng ngày trễ hạn cho đến khi quý khách hoàn tất thanh toán.";
-            default -> "<strong>ÂN HẠN NHẮC CƯỚC:</strong> Quý khách vui lòng thu xếp thanh toán cước thuê sớm để đảm bảo dịch vụ không bị gián đoạn và tránh phát sinh phí phạt trễ hạn.";
+            case "LOCKOUT_NOTICE" -> "<strong>CẢNH BÁO TẠM KHÓA KHO:</strong> Hệ thống đã đến ngưỡng tạm khóa mã PIN/QR SmartLock do quá hạn ngày trả kho. Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao kho.";
+            case "SEAL_WARNING" -> "<strong>CẢNH BÁO NIÊM PHONG KHO:</strong> Hợp đồng đã quá hạn trả kho trên 7 ngày. Nếu quý khách không đến làm thủ tục bàn giao kho, cơ sở sẽ tiến hành niêm phong buồng kho và kiểm kê tài sản theo quy chế vận hành.";
+            case "WARNING" -> "<strong>LƯU Ý PHÍ PHẠT TRỄ HẠN:</strong> Hợp đồng đã quá hạn ngày trả kho. Phí phạt sẽ được tính cộng dồn theo từng ngày và khấu trừ vào tiền cọc giữ cho đến khi quý khách bàn giao trả kho.";
+            default -> "<strong>NHẮC HẸN BÀN GIAO TRẢ KHO:</strong> Quý khách vui lòng thu xếp liên hệ BQL cơ sở sớm để bàn giao kho và nhận lại số tiền cọc còn lại.";
         };
 
         String alert = renderAlertBox(
@@ -675,16 +704,16 @@ public class EmailServiceImpl implements EmailService {
                 Kính gửi: %s,
 
                 Hợp đồng thuê kho: %s (Kho #%s tại %s)
-                - Ngày hết hạn: %s
-                - Số ngày quá hạn: %d ngày
-                - Nợ gốc (Tiền thuê): %s
+                - Ngày hết hạn hợp đồng: %s
+                - Số ngày quá hạn trả kho: %d ngày
+                - Đơn giá phạt / ngày: %s/ngày
                 - Phí phạt trễ hạn: %s
-                - TỔNG CÔNG NỢ CẦN THANH TOÁN: %s
                 - Tiền cọc đang giữ: %s
-                - Công thức tính phạt: %s
+                - %s: %s
+                - Diễn giải: %s
                 %s
 
-                Vui lòng truy cập Boxora để hoàn tất thanh toán:
+                Vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho:
                 %s
 
                 Trân trọng,
@@ -692,10 +721,11 @@ public class EmailServiceImpl implements EmailService {
                 """,
                 badgeText, fullName, contractCode, unitCode, safeFacility,
                 safeDueDate, daysOverdue,
-                formatVnd(principalDebt != null ? principalDebt : BigDecimal.ZERO),
-                formatVnd(lateFee != null ? lateFee : BigDecimal.ZERO),
-                formatVnd(totalDebt != null ? totalDebt : BigDecimal.ZERO),
-                formatVnd(depositHeld != null ? depositHeld : BigDecimal.ZERO),
+                formatVnd(dailyLateFee != null ? dailyLateFee : BigDecimal.ZERO),
+                formatVnd(safeLateFee),
+                formatVnd(safeDeposit),
+                !hasRemainingDebt ? "SỐ TIỀN HOÀN KHÁCH DỰ KIẾN KHI TRẢ KHO" : "TỔNG CÔNG NỢ CẦN THANH TOÁN",
+                formatVnd(!hasRemainingDebt ? refundAmount : effectiveTotalDebt),
                 feeFormulaExplanation != null ? feeFormulaExplanation : "",
                 !safeNotes.isEmpty() ? ("- Ghi chú nhân viên: " + notes + "\n") : "",
                 paymentLink

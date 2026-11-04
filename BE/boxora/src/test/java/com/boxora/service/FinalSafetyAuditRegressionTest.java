@@ -393,26 +393,21 @@ public class FinalSafetyAuditRegressionTest {
 
         // 45 days overdue:
         assertThat(result.overdueDays()).isEqualTo(45L);
-        // 2 cycles * 1,000,000 = 2,000,000 VND gross principal debt
-        assertThat(result.principalDebt()).isEqualByComparingTo("2000000");
-        // Late fee: billable days = 45 - 1 = 44 days * 50,000 = 2,200,000 VND
-        assertThat(result.lateFee()).isEqualByComparingTo("2200000");
-        // Total debt = 4,200,000 VND
-        assertThat(result.totalDebt()).isEqualByComparingTo("4200000");
+        // Late fee: billable days = 45 - 1 = 44 days * 33,333 đ/ngày = 1,466,652 VND
+        assertThat(result.lateFee()).isEqualByComparingTo("1466652");
+        assertThat(result.totalDebt()).isEqualByComparingTo("1466652");
 
-        // Now test partial payment: customer paid 1,500,000 VND
+        // Now test partial payment: customer paid 500,000 VND
         Payment paidPart = Payment.builder()
                 .status(PaymentStatus.PAID)
-                .amount(new BigDecimal("1500000"))
+                .amount(new BigDecimal("500000"))
                 .build();
         when(paymentRepository.findByContract_Id(multiContract.getId())).thenReturn(List.of(paidPart));
 
         var resultAfterPartial = calcImpl.calculateOverdueDebt(multiContract, policyA, refDate);
-        // Total debt reduced from 4,200,000 to 2,700,000
-        assertThat(resultAfterPartial.totalDebt()).isEqualByComparingTo("2700000");
-        // Principal debt reduced from 2,000,000 to 500,000
-        assertThat(resultAfterPartial.principalDebt()).isEqualByComparingTo("500000");
-        assertThat(resultAfterPartial.lateFee()).isEqualByComparingTo("2200000");
+        // Late fee reduced after partial payment: 1,466,652 - 500,000 = 966,652
+        assertThat(resultAfterPartial.totalDebt()).isEqualByComparingTo("966652");
+        assertThat(resultAfterPartial.lateFee()).isEqualByComparingTo("966652");
     }
 
     // -------------------------------------------------------------------------

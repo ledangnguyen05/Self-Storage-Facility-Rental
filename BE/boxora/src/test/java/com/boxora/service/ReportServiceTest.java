@@ -50,6 +50,7 @@ class ReportServiceTest {
     @Mock private ActivityLogService activityLogService;
     @Mock private FacilityAccessGuard facilityAccessGuard;
     @Mock private RefundRequestRepository refundRequestRepository;
+    @Mock private HandoverRecordRepository handoverRecordRepository;
     @Mock private OverdueDebtCalculationService overdueDebtCalculationService;
 
     @InjectMocks
@@ -197,8 +198,8 @@ class ReportServiceTest {
 
         assertThat(report.getItems()).hasSize(1);
         assertThat(report.getItems().get(0).getUnpaidRent()).isEqualByComparingTo("0");
-        assertThat(report.getItems().get(0).getTotalLateFee()).isEqualByComparingTo("300");
-        assertThat(report.getItems().get(0).getTotalDebt()).isEqualByComparingTo("300");
+        assertThat(report.getItems().get(0).getTotalLateFee()).isEqualByComparingTo("150000");
+        assertThat(report.getItems().get(0).getTotalDebt()).isEqualByComparingTo("150000");
     }
 
     @Test

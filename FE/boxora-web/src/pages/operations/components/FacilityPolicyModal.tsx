@@ -25,17 +25,15 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
   const [isActive, setIsActive] = useState<boolean>(true)
   const [depositPercentage, setDepositPercentage] = useState<number>(100)
   const [minimumRentalMonths, setMinimumRentalMonths] = useState<number>(1)
-  const [renewalWindowDays, setRenewalWindowDays] = useState<number>(7)
 
   const [cancellationFullRefundHours, setCancellationFullRefundHours] = useState<number>(24)
   const [cancellationPartialRefundHours, setCancellationPartialRefundHours] = useState<number>(48)
   const [cancellationPartialRefundPercent, setCancellationPartialRefundPercent] = useState<number>(70)
   const [cancellationAfter48hRefundPercent, setCancellationAfter48hRefundPercent] = useState<number>(50)
 
-  const [returnNoticeDays, setReturnNoticeDays] = useState<number>(0)
   const [depositRefundSlaDays, setDepositRefundSlaDays] = useState<number>(3)
 
-  const [dailyLateFee, setDailyLateFee] = useState<number>(50000)
+  const [dailyLateFee, setDailyLateFee] = useState<number>(100)
   const [overdueGraceDays, setOverdueGraceDays] = useState<number>(3)
   const [overdueAccessDisableDays, setOverdueAccessDisableDays] = useState<number>(5)
   const [overdueSealingDays, setOverdueSealingDays] = useState<number>(7)
@@ -52,13 +50,11 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setIsActive(existingPolicy.isActive ?? true)
       setDepositPercentage(existingPolicy.depositPercentage ?? existingPolicy.depositPercent ?? 100)
       setMinimumRentalMonths(existingPolicy.minimumRentalMonths ?? 1)
-      setRenewalWindowDays(existingPolicy.renewalWindowDays ?? 7)
       setCancellationFullRefundHours(existingPolicy.cancellationFullRefundHours ?? 24)
       setCancellationPartialRefundHours(existingPolicy.cancellationPartialRefundHours ?? 48)
       setCancellationPartialRefundPercent(existingPolicy.cancellationPartialRefundPercent ?? 70)
-      setReturnNoticeDays(existingPolicy.returnNoticeDays ?? 3)
       setDepositRefundSlaDays(existingPolicy.depositRefundSlaDays ?? 3)
-      setDailyLateFee(existingPolicy.dailyLateFee ?? existingPolicy.lateFeePerDay ?? 50000)
+      setDailyLateFee(existingPolicy.dailyLateFee != null && existingPolicy.dailyLateFee <= 500 ? existingPolicy.dailyLateFee : 100)
       setOverdueGraceDays(existingPolicy.overdueGraceDays ?? existingPolicy.gracePeriodDays ?? 3)
       setOverdueAccessDisableDays(existingPolicy.overdueAccessDisableDays ?? 5)
       setOverdueSealingDays(existingPolicy.overdueSealingDays ?? 7)
@@ -67,13 +63,11 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       setIsActive(true)
       setDepositPercentage(100)
       setMinimumRentalMonths(1)
-      setRenewalWindowDays(7)
       setCancellationFullRefundHours(24)
       setCancellationPartialRefundHours(48)
       setCancellationPartialRefundPercent(70)
-      setReturnNoticeDays(3)
       setDepositRefundSlaDays(3)
-      setDailyLateFee(50000)
+      setDailyLateFee(100)
       setOverdueGraceDays(3)
       setOverdueAccessDisableDays(5)
       setOverdueSealingDays(7)
@@ -118,11 +112,10 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
         const updatePayload: FacilityPolicyUpdateRequest = {
           isActive,
           depositPercentage: Number(depositPercentage),
-          renewalWindowDays: Number(renewalWindowDays),
           cancellationFullRefundHours: Number(cancellationFullRefundHours),
           cancellationPartialRefundHours: Number(cancellationPartialRefundHours),
           cancellationPartialRefundPercent: Number(cancellationPartialRefundPercent),
-          returnNoticeDays: Number(returnNoticeDays),
+          returnNoticeDays: 0,
           depositRefundSlaDays: Number(depositRefundSlaDays),
           dailyLateFee: Number(dailyLateFee),
           overdueGraceDays: Number(overdueGraceDays),
@@ -137,11 +130,10 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
           facilityId: selectedFacilityId,
           isActive,
           depositPercentage: Number(depositPercentage),
-          renewalWindowDays: Number(renewalWindowDays),
           cancellationFullRefundHours: Number(cancellationFullRefundHours),
           cancellationPartialRefundHours: Number(cancellationPartialRefundHours),
           cancellationPartialRefundPercent: Number(cancellationPartialRefundPercent),
-          returnNoticeDays: Number(returnNoticeDays),
+          returnNoticeDays: 0,
           depositRefundSlaDays: Number(depositRefundSlaDays),
           dailyLateFee: Number(dailyLateFee),
           overdueGraceDays: Number(overdueGraceDays),
@@ -177,7 +169,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                 {isEdit ? 'Chỉnh sửa chính sách vận hành cơ sở' : 'Tạo mới chính sách cơ sở'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {targetFacilityName} • Thẩm quyền: Business Operations Manager (Ban hành, kích hoạt &amp; ngừng áp dụng)
+                {targetFacilityName} • Thẩm quyền: Business Operations Manager (Ban hành &amp; cấu hình chính sách)
               </p>
             </div>
           </div>
@@ -199,35 +191,6 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
               <span>{errorMsg}</span>
             </div>
           )}
-
-          {/* Trạng thái Kích hoạt / Ngừng áp dụng chính sách */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isActive ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'}`}>
-                <span className="material-symbols-outlined text-[20px]">{isActive ? 'check_circle' : 'pause_circle'}</span>
-              </div>
-              <div>
-                <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider block">
-                  Trạng thái áp dụng chính sách
-                </span>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  {isActive ? 'Chính sách đang ĐƯỢC KÍCH HOẠT và có hiệu lực trực tiếp tại cơ sở.' : 'Chính sách đang NGỪNG ÁP DỤNG (Tạm dừng tính phí & quy định theo cấu hình này).'}
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsActive(!isActive)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                isActive
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
-                  : 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[16px]">{isActive ? 'toggle_on' : 'toggle_off'}</span>
-              <span>{isActive ? 'Đang kích hoạt' : 'Ngừng áp dụng'}</span>
-            </button>
-          </div>
 
           {/* Chọn cơ sở (nếu chưa cố định) */}
           {!facility && !isEdit && availableFacilities.length > 0 && (
@@ -256,7 +219,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
               <span className="material-symbols-outlined text-[16px]">payments</span>
               <span>1. Quy định Tiền cọc & Thời gian thuê kho</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Tỷ lệ tiền cọc (%) <span className="text-rose-500">*</span>
@@ -291,22 +254,6 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   required
                 />
                 <span className="text-[11px] text-slate-400 mt-0.5 block">Hợp đồng tối thiểu 1 tháng</span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Mở gia hạn trước hạn (ngày) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="30"
-                  value={renewalWindowDays}
-                  onChange={(e) => setRenewalWindowDays(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
-                  required
-                />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Cho phép gia hạn trước N ngày</span>
               </div>
             </div>
           </div>
@@ -381,40 +328,22 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
           <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
               <span className="material-symbols-outlined text-[16px]">published_with_changes</span>
-              <span>3. Quy định Trả kho & Hoàn cọc</span>
+              <span>3. Quy định Trả kho &amp; Hoàn cọc</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Báo trước khi trả kho (ngày) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="30"
-                  value={returnNoticeDays}
-                  onChange={(e) => setReturnNoticeDays(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
-                  required
-                />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Khách cần gửi thông báo trước N ngày</span>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  SLA hoàn cọc (ngày làm việc) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="30"
-                  value={depositRefundSlaDays}
-                  onChange={(e) => setDepositRefundSlaDays(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
-                  required
-                />
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Thời gian xử lý chuyển tiền hoàn cọc</span>
-              </div>
+            <div className="max-w-md">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                SLA hoàn cọc (ngày làm việc) <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="30"
+                value={depositRefundSlaDays}
+                onChange={(e) => setDepositRefundSlaDays(Number(e.target.value))}
+                className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
+                required
+              />
+              <span className="text-[11px] text-slate-400 mt-0.5 block">Thời gian xử lý chuyển tiền hoàn cọc</span>
             </div>
           </div>
 
@@ -424,24 +353,25 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
               <span className="material-symbols-outlined text-[16px]">lock_clock</span>
               <span>4. Quy trình Xử lý Quá hạn & Niêm phong</span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Phí phạt trễ hạn/ngày <span className="text-rose-500">*</span>
+                  Tỷ lệ phí phạt trễ hạn (% ngày / loại kho) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
                     type="number"
                     min="0"
-                    step="5000"
+                    max="500"
+                    step="5"
                     value={dailyLateFee}
                     onChange={(e) => setDailyLateFee(Number(e.target.value))}
-                    className="w-full pl-3 pr-10 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
+                    className="w-full pl-3 pr-8 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                     required
                   />
-                  <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">đ</span>
+                  <span className="absolute right-3 top-2 text-xs text-slate-400 font-bold">%</span>
                 </div>
-                <span className="text-[11px] text-slate-400 mt-0.5 block">Phí tính theo mỗi ngày trễ</span>
+                <span className="text-[11px] text-slate-400 mt-0.5 block">Tỷ lệ phí tính theo mỗi ngày trễ</span>
               </div>
 
               <div>

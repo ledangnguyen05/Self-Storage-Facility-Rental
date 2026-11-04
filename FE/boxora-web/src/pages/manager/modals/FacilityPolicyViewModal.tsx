@@ -14,13 +14,11 @@ interface FacilityPolicyViewModalProps {
 const EDITABLE_POLICY_FIELDS = [
   ['depositPercentage', 'Tỷ lệ tiền cọc (%)', 0, 100],
   ['minimumRentalMonths', 'Thời gian thuê tối thiểu (tháng)', 1, 36],
-  ['renewalWindowDays', 'Cửa sổ gia hạn (ngày)', 0, 365],
   ['cancellationFullRefundHours', 'Mốc hoàn 100% (giờ)', 0, 720],
   ['cancellationPartialRefundHours', 'Mốc hoàn một phần (giờ)', 0, 720],
   ['cancellationPartialRefundPercent', 'Tỷ lệ hoàn một phần (%)', 0, 100],
-  ['returnNoticeDays', 'Báo trước khi trả kho (ngày)', 0, 365],
   ['depositRefundSlaDays', 'SLA hoàn cọc (ngày)', 0, 365],
-  ['dailyLateFee', 'Phí quá hạn mỗi ngày (đ)', 0, 100000000],
+  ['dailyLateFee', 'Tỷ lệ phí phạt trễ hạn (%/ngày/loại kho)', 0, 500],
   ['overdueGraceDays', 'Ân hạn quá hạn (ngày)', 0, 365],
   ['overdueAccessDisableDays', 'Khóa truy cập sau (ngày)', 0, 365],
   ['overdueSealingDays', 'Niêm phong sau (ngày)', 0, 365],
@@ -89,11 +87,9 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
 
   const depositPct = policy?.depositPercentage ?? policy?.depositPercent
   const minMonths = policy?.minimumRentalMonths
-  const renewalDays = policy?.renewalWindowDays
   const cancelFullHours = policy?.cancellationFullRefundHours
   const cancelPartHours = policy?.cancellationPartialRefundHours
   const cancelPartPct = policy?.cancellationPartialRefundPercent
-  const noticeDays = policy?.returnNoticeDays
   const slaDays = policy?.depositRefundSlaDays
   const lateFee = policy?.dailyLateFee ?? policy?.lateFeePerDay
   const graceDays = policy?.overdueGraceDays ?? policy?.gracePeriodDays
@@ -201,10 +197,6 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
                 <span className="text-slate-600 dark:text-slate-400">Thời gian thuê tối thiểu:</span>
                 <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{minMonths == null ? '—' : `${minMonths} tháng`}</span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                <span className="text-slate-600 dark:text-slate-400">Cửa sổ mở gia hạn trước:</span>
-                <span className="font-mono font-bold text-blue-700 dark:text-blue-400">{renewalDays == null ? '—' : `${renewalDays} ngày trước hết hạn`}</span>
-              </div>
             </div>
           </div>
 
@@ -238,10 +230,6 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
             </div>
             <div className="flex flex-col gap-2 text-xs">
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                <span className="text-slate-600 dark:text-slate-400">Thời hạn báo trước khi trả kho:</span>
-                <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{noticeDays == null ? '—' : noticeDays > 0 ? `${noticeDays} ngày` : 'Không bắt buộc'}</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">Cam kết hoàn cọc (SLA):</span>
                 <span className="font-mono font-bold text-emerald-700 dark:text-emerald-400">{slaDays == null ? '—' : `${slaDays} ngày làm việc`}</span>
               </div>
@@ -264,8 +252,8 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
                 <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{graceDays == null ? '—' : `${graceDays} ngày`}</span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
-                <span className="text-slate-600 dark:text-slate-400">Phí phạt trễ hạn mỗi ngày:</span>
-                <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{lateFee == null ? '—' : Number(lateFee) === 0 ? '0 đ/ngày (Miễn phí)' : `${Number(lateFee).toLocaleString('vi-VN')} đ/ngày`}</span>
+                <span className="text-slate-600 dark:text-slate-400">Tỷ lệ phí phạt trễ hạn mỗi ngày:</span>
+                <span className="font-mono font-bold text-orange-600 dark:text-orange-400">{lateFee == null || Number(lateFee) > 500 ? '100%' : `${Number(lateFee)}%`}/ngày theo loại kho</span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200 dark:bg-slate-800 dark:border-slate-700">
                 <span className="text-slate-600 dark:text-slate-400">Khóa quyền mở cửa SmartLock:</span>

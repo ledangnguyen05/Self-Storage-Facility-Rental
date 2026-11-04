@@ -1528,6 +1528,7 @@ public class PaymentServiceImpl implements PaymentService {
             if (queryFacilityId != null) {
                 predicates.add(cb.or(
                         cb.equal(suJoin.get("facility").get("id"), queryFacilityId),
+                        cb.equal(bookingJoin.get("facility").get("id"), queryFacilityId),
                         cb.equal(contractJoin.get("facility").get("id"), queryFacilityId)
                 ));
             }

@@ -58,6 +58,11 @@ import { AccountProfileModal } from '../../components/common/AccountProfileModal
 import { LogoutConfirmModal } from '../../components/common/LogoutConfirmModal'
 import { WebSettingsModal } from '../../components/common/WebSettingsModal'
 import { UserAvatarDropdown } from '../../components/common/UserAvatarDropdown'
+import {
+  IdCardType,
+  loadUserSavedIdDoc,
+  saveUserSavedIdDoc
+} from '../../utils/userIdDocument'
 import { useLanguage } from '../../context/LanguageContext'
 import { toast } from '../../utils/toast'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
@@ -468,8 +473,10 @@ export const BookingPage: React.FC = () => {
   // Customer Contact Information (Task 3)
   const [customerName, setCustomerName] = useState<string>('')
   const [customerPhone, setCustomerPhone] = useState<string>('')
-  const [idCardType, setIdCardType] = useState<'CCCD' | 'PASSPORT'>('CCCD')
+  const [idCardType, setIdCardType] = useState<IdCardType>('CCCD')
   const [customerIdCard, setCustomerIdCard] = useState<string>('')
+  const [bookingCccd, setBookingCccd] = useState<string>('')
+  const [bookingPassport, setBookingPassport] = useState<string>('')
   const [customerEmail, setCustomerEmail] = useState<string>('')
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
 
@@ -487,11 +494,28 @@ export const BookingPage: React.FC = () => {
       if (user.email) {
         setCustomerEmail((prev) => (prev ? prev : user.email))
       }
-      const savedCccd = (user as any).identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user.email) || localStorage.getItem('boxora_user_cccd') || ''
-      if (savedCccd) {
-        setCustomerIdCard((prev) => (prev ? prev : savedCccd))
+      const doc = loadUserSavedIdDoc(user)
+      setBookingCccd(doc.cccd)
+      setBookingPassport(doc.passport)
+      setIdCardType(doc.preferredType)
+      const targetNumber = doc.preferredType === 'CCCD' ? doc.cccd : doc.passport
+      setCustomerIdCard((prev) => (prev ? prev : targetNumber))
+    }
+  }, [user])
+
+  // Listen to profile updates (e.g. user updated CCCD or Passport in AccountProfileModal)
+  useEffect(() => {
+    const handleIdUpdated = () => {
+      if (user) {
+        const doc = loadUserSavedIdDoc(user)
+        setBookingCccd(doc.cccd)
+        setBookingPassport(doc.passport)
+        setIdCardType(doc.preferredType)
+        setCustomerIdCard(doc.preferredType === 'CCCD' ? doc.cccd : doc.passport)
       }
     }
+    window.addEventListener('boxora_id_document_updated', handleIdUpdated)
+    return () => window.removeEventListener('boxora_id_document_updated', handleIdUpdated)
   }, [user])
 
   // Step 5 & 6: Submission & Result
@@ -550,7 +574,7 @@ export const BookingPage: React.FC = () => {
     setLoadingData(true)
 
     Promise.allSettled([
-      facilityService.getFacilities({ page: 0, size: 50 }),
+      facilityService.getFacilities({ page: 0, size: 50, status: 'ACTIVE' }),
       storageUnitService.getUnits({ status: 'AVAILABLE' }),
       storageUnitService.getUnitTypes(),
     ])
@@ -559,7 +583,9 @@ export const BookingPage: React.FC = () => {
 
         let activeList: Facility[] = []
         if (facRes.status === 'fulfilled' && Array.isArray(facRes.value?.content)) {
-          activeList = facRes.value.content.filter((f) => !f.status || f.status === 'ACTIVE')
+          activeList = facRes.value.content.filter(
+            (f) => f.status === 'ACTIVE' || (!f.status && (f as any).isActive !== false)
+          )
           setFacilities(activeList)
         }
 
@@ -631,9 +657,14 @@ export const BookingPage: React.FC = () => {
               const pPhone = user?.phone || (user as any)?.phoneNumber || draft.customerPhone || ''
               if (pPhone) setCustomerPhone(pPhone)
               if (user?.email || draft.customerEmail) setCustomerEmail(user?.email || draft.customerEmail)
-              const userCccd = (user as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user?.email) || localStorage.getItem('boxora_user_cccd') || ''
-              if (userCccd) {
-                setCustomerIdCard(userCccd)
+              const doc = loadUserSavedIdDoc(user)
+              setBookingCccd(doc.cccd)
+              setBookingPassport(doc.passport)
+              const chosenType: IdCardType = (draft.idCardType as IdCardType) || doc.preferredType
+              setIdCardType(chosenType)
+              const chosenNum = chosenType === 'CCCD' ? (doc.cccd || draft.customerIdCard || '') : (doc.passport || draft.customerIdCard || '')
+              if (chosenNum) {
+                setCustomerIdCard(chosenNum)
               }
               setCurrentStep(4)
             }
@@ -723,8 +754,13 @@ export const BookingPage: React.FC = () => {
           const pPhone = user?.phone || (user as any)?.phoneNumber || draft.customerPhone || ''
           if (pPhone) setCustomerPhone(pPhone)
           if (user?.email || draft.customerEmail) setCustomerEmail(user?.email || draft.customerEmail)
-          const userCccd = (user as any)?.identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user?.email) || localStorage.getItem('boxora_user_cccd') || ''
-          if (userCccd) setCustomerIdCard(userCccd)
+          const doc = loadUserSavedIdDoc(user)
+          setBookingCccd(doc.cccd)
+          setBookingPassport(doc.passport)
+          const chosenType: IdCardType = (draft.idCardType as IdCardType) || doc.preferredType
+          setIdCardType(chosenType)
+          const chosenNum = chosenType === 'CCCD' ? (doc.cccd || draft.customerIdCard || '') : (doc.passport || draft.customerIdCard || '')
+          if (chosenNum) setCustomerIdCard(chosenNum)
 
           sessionStorage.removeItem('boxora_booking_draft')
           localStorage.removeItem('boxora_booking_draft')
@@ -738,7 +774,9 @@ export const BookingPage: React.FC = () => {
 
   // Facilities with real available unit counts (Task 1: No fake fallback)
   const sortedFacilities = useMemo(() => {
-    return facilities.map((fac) => {
+    return facilities
+      .filter((fac) => fac.status === 'ACTIVE' || (!fac.status && (fac as any).isActive !== false))
+      .map((fac) => {
       const unitsInFac = storageUnits.filter((u) => u.facilityId === fac.id)
       const availableCount = unitsInFac.filter(
         (u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống'
@@ -1276,10 +1314,14 @@ export const BookingPage: React.FC = () => {
       return
     }
 
-    // Lưu lại số CCCD để tiện tái sử dụng
-    if (customerIdCard.trim()) {
-      if (user?.email) localStorage.setItem('boxora_user_cccd_' + user.email, customerIdCard.trim())
-      localStorage.setItem('boxora_user_cccd', customerIdCard.trim())
+    // Lưu lại số định danh để tiện tái sử dụng
+    if (customerIdCard.trim() && user) {
+      saveUserSavedIdDoc(
+        user,
+        idCardType,
+        idCardType === 'CCCD' ? customerIdCard.trim() : bookingCccd,
+        idCardType === 'PASSPORT' ? customerIdCard.trim() : bookingPassport
+      )
     }
 
     // Nếu trước đó đã ký hợp đồng online thành công nhưng chưa thanh toán, tiếp tục thanh toán đơn hiện tại
@@ -1726,9 +1768,20 @@ export const BookingPage: React.FC = () => {
         if (user.email && !customerEmail.trim()) {
           setCustomerEmail(user.email)
         }
-        const savedCccd = (user as any).identityCardNumber || localStorage.getItem('boxora_user_cccd_' + user.email) || localStorage.getItem('boxora_user_cccd') || ''
-        if (savedCccd && !customerIdCard.trim()) {
-          setCustomerIdCard(savedCccd)
+        const doc = loadUserSavedIdDoc(user)
+        setBookingCccd(doc.cccd)
+        setBookingPassport(doc.passport)
+        if (!customerIdCard.trim()) {
+          setIdCardType(doc.preferredType)
+          setCustomerIdCard(doc.preferredType === 'CCCD' ? doc.cccd : doc.passport)
+        } else {
+          // If customerIdCard currently has a value, make sure it matches the selected idCardType
+          if (idCardType === 'CCCD' && doc.passport && customerIdCard.trim() === doc.passport && doc.cccd) {
+            setCustomerIdCard(doc.cccd)
+          } else if (idCardType === 'CCCD' && !doc.cccd && doc.passport) {
+            setIdCardType('PASSPORT')
+            setCustomerIdCard(doc.passport)
+          }
         }
       }
 
@@ -2891,6 +2944,9 @@ export const BookingPage: React.FC = () => {
                             type="button"
                             onClick={() => {
                               setIdCardType('CCCD')
+                              const doc = loadUserSavedIdDoc(user)
+                              const targetVal = bookingCccd || doc.cccd
+                              setCustomerIdCard(targetVal)
                               if (formErrors.customerIdCard) setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }}
                             className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
@@ -2903,6 +2959,9 @@ export const BookingPage: React.FC = () => {
                             type="button"
                             onClick={() => {
                               setIdCardType('PASSPORT')
+                              const doc = loadUserSavedIdDoc(user)
+                              const targetVal = bookingPassport || doc.passport
+                              setCustomerIdCard(targetVal)
                               if (formErrors.customerIdCard) setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }}
                             className={`px-1.5 py-0.5 rounded transition-all cursor-pointer ${
@@ -2918,14 +2977,25 @@ export const BookingPage: React.FC = () => {
                         <input
                           id="booking-customer-id-card"
                           type="text"
+                          inputMode={idCardType === 'CCCD' ? 'numeric' : 'text'}
+                          maxLength={idCardType === 'CCCD' ? 12 : 9}
                           value={customerIdCard}
                           onChange={(e) => {
-                            setCustomerIdCard(e.target.value)
+                            const raw = e.target.value
+                            const val = idCardType === 'CCCD'
+                              ? raw.replace(/\D/g, '').slice(0, 12)
+                              : raw.toUpperCase().slice(0, 9)
+                            setCustomerIdCard(val)
+                            if (idCardType === 'CCCD') {
+                              setBookingCccd(val)
+                            } else {
+                              setBookingPassport(val)
+                            }
                             if (formErrors.customerIdCard) {
                               setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }
                           }}
-                          placeholder={idCardType === 'CCCD' ? '12 chữ số CCCD (VD: 079123456789)' : '1 chữ cái + 7-8 số'}
+                          placeholder={idCardType === 'CCCD' ? '12 chữ số CCCD (VD: 079123456789)' : 'VD: B1234567 (1 chữ cái + 7-8 số)'}
                           className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerIdCard ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}

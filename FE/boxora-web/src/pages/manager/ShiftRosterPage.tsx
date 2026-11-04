@@ -657,17 +657,9 @@ export const ShiftRosterPage: React.FC = () => {
                     ? 'Giám Sát Ca Toàn Chuỗi & Phân Bổ Quản Lý'
                     : 'Xử Lý Trực Ca & Điều Phối Nhân Sự'}
                 </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                  {currentFacilityName}
-                </span>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
                   {dateRangeLabel}
                 </span>
-                {isBusinessManager && (
-                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                    Chế độ giám sát chỉ đọc
-                  </span>
-                )}
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 {isBusinessManager
@@ -678,21 +670,6 @@ export const ShiftRosterPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Facility Picker: Only shown for chain-wide managers (Business Manager / Admin); hidden for Facility Manager & Staff */}
-            {canFilterFacility && (
-              <select
-                value={selectedFacilityId}
-                onChange={e => handleFacilityChange(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-slate-400 cursor-pointer"
-              >
-                <option value="ALL">Toàn chuỗi (Tất cả cơ sở)</option>
-                {facilities.map(f => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            )}
 
             <button
               type="button"
@@ -1029,9 +1006,6 @@ export const ShiftRosterPage: React.FC = () => {
               <span className={filterStatus === 'COMPLETED' ? 'text-blue-700 font-bold' : ''}>
                 Ca trực &amp; Hoàn thành
               </span>
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                Khoảng ngày
-              </span>
             </div>
             <div className={`p-1.5 rounded-lg transition-colors ${
               filterStatus === 'COMPLETED' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 group-hover:bg-blue-100'
@@ -1251,17 +1225,6 @@ export const ShiftRosterPage: React.FC = () => {
                 <option value="CANCELLED">Đã hủy ca</option>
               </select>
 
-              {/* Reset Table Filters */}
-              {isTableFilterActive && (
-                <button
-                  type="button"
-                  onClick={handleResetTableFilters}
-                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[14px]">filter_alt_off</span>
-                  <span>Xóa bộ lọc bảng</span>
-                </button>
-              )}
             </div>
           </div>
 

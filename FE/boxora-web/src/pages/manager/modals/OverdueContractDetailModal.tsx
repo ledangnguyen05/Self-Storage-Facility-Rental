@@ -108,12 +108,12 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
   const [simulateOfflineRevocation, setSimulateOfflineRevocation] = useState(false)
 
-  const userRole = currentUser?.role?.name || ''
-  const isFacilityManager = userRole === 'FACILITY_MANAGER'
-  const isBusinessManager = userRole === 'BUSINESS_MANAGER'
-  const isBusinessOrFacilityManager = isFacilityManager || isBusinessManager
-  const isManagerOrAdmin = userRole === 'ADMIN' || isFacilityManager || isBusinessManager
-  const isAdmin = userRole === 'ADMIN'
+  const rawRole = (currentUser?.role?.name || currentUser?.roleName || (typeof (currentUser as any)?.role === 'string' ? (currentUser as any).role : '') || '').replace(/^ROLE_/, '')
+  const isAdmin = rawRole === 'ADMIN'
+  const isFacilityManager = rawRole === 'FACILITY_MANAGER' || rawRole === 'STAFF'
+  const isBusinessManager = rawRole === 'BUSINESS_MANAGER'
+  const isBusinessOrFacilityManager = isFacilityManager || isBusinessManager || isAdmin
+  const isManagerOrAdmin = isAdmin || isFacilityManager || isBusinessManager
 
   const fetchDetail = useCallback(async () => {
     if (!contractId) return
@@ -183,7 +183,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
   const formatVND = (num?: number) => {
     if (num == null) return '0 ₫'
-    const safeNum = Math.max(0, num)
+    const safeNum = Math.max(0, Math.round(num))
     return `${safeNum.toLocaleString('vi-VN')} ₫`
   }
 
@@ -431,7 +431,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Kho: <span className="font-semibold text-slate-800">{detail?.unitCode}</span> • Cơ sở: <span className="font-semibold text-slate-800">{detail?.facilityName}</span> • Khách hàng: <span className="font-semibold text-slate-800">{detail?.customerName}</span> ({detail?.customerPhone})
+                Kho: <span className="font-semibold text-slate-800">{detail?.unitCode}</span> {detail?.unitTypeName ? <span className="text-cyan-700 font-bold">({detail.unitTypeName})</span> : null} • Cơ sở: <span className="font-semibold text-slate-800">{detail?.facilityName}</span> • Khách hàng: <span className="font-semibold text-slate-800">{detail?.customerName}</span> ({detail?.customerPhone})
               </p>
             </div>
           </div>
@@ -518,6 +518,9 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
             {detail?.sealingStatus === 'SEALING_REQUESTED' && (
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
             )}
+            {detail?.sealingStatus === 'SEALING_REJECTED' && (
+              <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+            )}
           </button>
           <button
             type="button"
@@ -579,19 +582,32 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
               {/* TAB 1: DEBT & FORMULA */}
               {activeTab === 'debt' && (
                 <div className="flex flex-col gap-4">
-                  {/* Top 4 KPI Metrics */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="p-3.5 bg-rose-600 text-white rounded-xl shadow-xs">
-                      <p className="text-[11px] font-semibold text-rose-100 uppercase tracking-wider">Tổng công nợ</p>
-                      <p className="text-lg font-black text-white mt-1">{formatVND(detail.totalDebt)}</p>
-                    </div>
+                  {/* Top 3 KPI Metrics */}
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {detail.totalDebt > 0 ? (
+                      <div className="p-3.5 bg-rose-600 text-white rounded-xl shadow-xs">
+                        <p className="text-[11px] font-semibold text-rose-100 uppercase tracking-wider">Tổng công nợ</p>
+                        <p className="text-lg font-black text-white mt-1">{formatVND(detail.totalDebt)}</p>
+                        <span className="text-[10px] text-rose-100 block mt-0.5">Phí phạt vượt tiền cọc giữ</span>
+                      </div>
+                    ) : (
+                      <div className="p-3.5 bg-emerald-600 text-white rounded-xl shadow-xs">
+                        <p className="text-[11px] font-semibold text-emerald-100 uppercase tracking-wider">Số tiền hoàn khách</p>
+                        <p className="text-lg font-black text-white mt-1">
+                          {formatVND(detail.customerRefundAmount ?? Math.max(0, (detail.depositHeld || 0) - (detail.lateFee || 0)))}
+                        </p>
+                        <span className="text-[10px] text-emerald-100 block mt-0.5">Tiền cọc còn lại hoàn khi trả kho</span>
+                      </div>
+                    )}
                     <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200">
                       <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">Tiền cọc giữ</p>
                       <p className="text-lg font-black text-emerald-800 mt-1">{formatVND(detail.depositHeld)}</p>
+                      <span className="text-[10px] text-emerald-700 block mt-0.5">Tiền bảo đảm hợp đồng</span>
                     </div>
                     <div className="p-3.5 bg-rose-50/70 rounded-xl border border-rose-200">
                       <p className="text-[11px] font-semibold text-rose-600 uppercase tracking-wider">Phí phạt trễ hạn</p>
                       <p className="text-lg font-black text-rose-700 mt-1">{formatVND(detail.lateFee)}</p>
+                      <span className="text-[10px] text-rose-600 block mt-0.5">Khấu trừ trực tiếp vào cọc</span>
                     </div>
                   </div>
 
@@ -617,9 +633,16 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                       <div>
                         <span className="text-slate-500 block">Đơn giá phạt/ngày:</span>
                         <span className="font-bold text-slate-800">{formatVND(detail.dailyLateFee)}/ngày</span>
+                        <span className="text-[10px] text-slate-500 block font-mono">
+                          {detail.unitTypeName ? `${detail.unitTypeName}: ` : ''}{detail.lateFeePercentage ?? 100}% × {formatVND(detail.dailyRentalPrice ?? Math.round(Number(detail.dailyLateFee || 0)))}/d
+                        </span>
                       </div>
                     </div>
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs font-mono font-bold text-rose-900 flex items-center gap-2">
+                    <div className={`p-3 border rounded-lg text-xs font-mono font-bold flex items-center gap-2 ${
+                      detail.totalDebt > 0
+                        ? 'bg-rose-50 border-rose-200 text-rose-900'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    }`}>
                       <span className="material-symbols-outlined text-[18px]">info</span>
                       {detail.feeFormulaExplanation}
                     </div>
@@ -834,48 +857,129 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
               {/* TAB 3: SEALING & INVENTORY */}
               {activeTab === 'sealing' && (
                 <div className="flex flex-col gap-4">
-                  {/* Sealing Status Header */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3">
-                    <div>
-                      <span className="text-xs font-semibold text-slate-500">Trạng thái hồ sơ niêm phong:</span>
-                      <div className="flex items-center gap-2 mt-1">
+                  {/* Sealing Status Header / Rejection Banner */}
+                  {detail.sealingStatus === 'SEALING_REJECTED' ? (
+                    <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div className="flex items-start gap-3 flex-1">
+                        <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0 mt-0.5">
+                          <span className="material-symbols-outlined text-xl">cancel</span>
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="text-xs font-bold text-rose-900">
+                            Đề xuất niêm phong đã bị Business Manager từ chối
+                          </h4>
+                          {detail.sealingDossier?.rejectionReason && (
+                            <div className="text-xs text-rose-800 mt-1.5 bg-white/80 p-2.5 rounded-xl border border-rose-200">
+                              <span className="font-bold text-rose-950">Lý do từ chối:</span> {detail.sealingDossier.rejectionReason}
+                            </div>
+                          )}
+                          <p className="text-[11px] text-rose-700 mt-1.5">
+                            Cần quản lý cơ sở gửi lại đề xuất niêm phong.
+                          </p>
+                        </div>
+                      </div>
+
+                      {(isFacilityManager || isAdmin) && (
+                        <div className="shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setShowSealingRequestDialog(true)}
+                            className="px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">send</span>
+                            Xin phê duyệt
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-500">Trạng thái hồ sơ niêm phong:</span>
+                        <div className="flex items-center gap-2 mt-1">
+                          {isContractSettled ? (
+                            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                              Đã hoàn tất thanh toán &amp; trả kho
+                            </span>
+                          ) : (
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              detail.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                              detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' :
+                              detail.sealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                              detail.sealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                              detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                              'bg-slate-100 text-slate-700'
+                            }`}>
+                              {detail.sealingStatus === 'SEALING_COMPLETED' ? 'Đã hoàn tất niêm phong & kiểm kê tài sản' :
+                               detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'Đã kiểm kê hiện trường • Sẵn sàng niêm phong' :
+                               detail.sealingStatus === 'SEALING_APPROVED' ? 'Business Manager đã duyệt niêm phong' :
+                               detail.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ Business Manager phê duyệt' :
+                               detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ điều kiện niêm phong (>= 7 ngày)' :
+                               'Chưa đạt ngưỡng niêm phong'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Multi-step Workflow Action Buttons */}
+                      <div className="flex items-center gap-2 flex-wrap">
                         {isContractSettled ? (
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                            <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                            Đã hoàn tất thanh toán &amp; trả kho
+                          <span className="text-xs text-slate-500 font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[15px] text-slate-400">lock</span>
+                            Đã đóng hồ sơ kiểm kê (Chỉ xem)
                           </span>
                         ) : (
-                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                            detail.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
-                            detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' :
-                            detail.sealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                            detail.sealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                            detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
-                            'bg-slate-100 text-slate-700'
-                          }`}>
-                            {detail.sealingStatus === 'SEALING_COMPLETED' ? 'Đã hoàn tất niêm phong & kiểm kê tài sản' :
-                             detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'Đã kiểm kê hiện trường • Sẵn sàng niêm phong' :
-                             detail.sealingStatus === 'SEALING_APPROVED' ? 'Business Manager đã duyệt niêm phong' :
-                             detail.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ Business Manager phê duyệt' :
-                             detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ điều kiện niêm phong (>= 7 ngày)' :
-                             'Chưa đạt ngưỡng niêm phong'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                          <>
+                            {/* TRƯỜNG HỢP 1: Đủ điều kiện niêm phong (Facility Manager chưa gửi request) */}
+                            {detail.sealingStatus === 'SEALING_ELIGIBLE' && (
+                              (isFacilityManager || isAdmin) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSealingRequestDialog(true)}
+                                  className="px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">send</span>
+                                  Xin phê duyệt
+                                </button>
+                              ) : (
+                                <span className="text-xs text-slate-500 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
+                                  Đủ điều kiện niêm phong (Chờ cơ sở gửi đề xuất)
+                                </span>
+                              )
+                            )}
 
-                    {/* Multi-step Workflow Action Buttons */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {isContractSettled ? (
-                        <span className="text-xs text-slate-500 font-medium bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 flex items-center gap-1.5">
-                          <span className="material-symbols-outlined text-[15px] text-slate-400">lock</span>
-                          Đã đóng hồ sơ kiểm kê (Chỉ xem)
-                        </span>
-                      ) : (
-                        <>
-                          {/* TRƯỜNG HỢP 1: Đủ điều kiện niêm phong (Facility Manager chưa gửi request) */}
-                          {detail.sealingStatus === 'SEALING_ELIGIBLE' && (
-                            isBusinessManager ? (
+                            {/* TRƯỜNG HỢP 2: Facility Manager ĐÃ GỬI request -> Chờ Business Manager duyệt */}
+                            {detail.sealingStatus === 'SEALING_REQUESTED' && (
+                              (isBusinessManager || isAdmin) ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => { setIsRejecting(false); setShowSealingApprovalDialog(true) }}
+                                    className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 shadow-sm cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                    Phê duyệt đề xuất
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setIsRejecting(true); setShowSealingApprovalDialog(true) }}
+                                    className="px-3.5 py-2 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl hover:bg-rose-200 cursor-pointer flex items-center gap-1.5"
+                                  >
+                                    <span className="material-symbols-outlined text-[16px]">cancel</span>
+                                    Từ chối đề xuất
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-amber-700 font-semibold bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
+                                  <span className="material-symbols-outlined text-[16px] animate-pulse">hourglass_top</span>
+                                  Đang chờ Business Manager phê duyệt
+                                </span>
+                              )
+                            )}
+
+                            {/* TRƯỜNG HỢP 3: Business Manager ĐÃ DUYỆT -> Hiển thị Kiểm kê hiện trường */}
+                            {detail.sealingStatus === 'SEALING_APPROVED' && (
                               <button
                                 type="button"
                                 onClick={() => setShowInventoryDialog(true)}
@@ -884,87 +988,33 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                                 <span className="material-symbols-outlined text-[18px]">fact_check</span>
                                 Kiểm kê hiện trường
                               </button>
-                            ) : isFacilityManager ? (
-                              <button
-                                type="button"
-                                onClick={() => setShowSealingRequestDialog(true)}
-                                className="px-4 py-2 bg-amber-500 text-white text-xs font-bold rounded-xl hover:bg-amber-600 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">send</span>
-                                Gửi đề xuất niêm phong
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-500 italic bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200">
-                                Đủ điều kiện niêm phong (Đề xuất do Facility Manager gửi)
-                              </span>
-                            )
-                          )}
+                            )}
 
-                          {/* TRƯỜNG HỢP 2: Facility Manager ĐÃ GỬI request -> Chờ Business Manager duyệt */}
-                          {detail.sealingStatus === 'SEALING_REQUESTED' && (
-                            isBusinessManager ? (
+                            {detail.sealingStatus === 'SEALING_IN_PROGRESS' && (
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => { setIsRejecting(false); setShowSealingApprovalDialog(true) }}
-                                  className="px-3.5 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 shadow-sm cursor-pointer flex items-center gap-1.5"
+                                  onClick={() => setShowInventoryDialog(true)}
+                                  className="px-3.5 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                                  Phê duyệt đề xuất
+                                  <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                                  Cập nhật kiểm kê
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => { setIsRejecting(true); setShowSealingApprovalDialog(true) }}
-                                  className="px-3.5 py-2 bg-rose-100 text-rose-800 text-xs font-bold rounded-xl hover:bg-rose-200 cursor-pointer flex items-center gap-1.5"
+                                  onClick={() => setShowConfirmSealingDialog(true)}
+                                  className="px-4 py-2 bg-purple-600 text-white text-xs font-bold rounded-xl hover:bg-purple-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
                                 >
-                                  <span className="material-symbols-outlined text-[16px]">cancel</span>
-                                  Từ chối đề xuất
+                                  <span className="material-symbols-outlined text-[18px]">gavel</span>
+                                  Niêm phong
                                 </button>
                               </div>
-                            ) : (
-                              <span className="text-xs text-amber-700 font-semibold bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
-                                <span className="material-symbols-outlined text-[16px] animate-pulse">hourglass_top</span>
-                                Đang chờ Business Manager phê duyệt
-                              </span>
-                            )
-                          )}
-
-                          {/* TRƯỜNG HỢP 3: Business Manager ĐÃ DUYỆT -> Hiển thị Kiểm kê hiện trường */}
-                          {detail.sealingStatus === 'SEALING_APPROVED' && (
-                            <button
-                              type="button"
-                              onClick={() => setShowInventoryDialog(true)}
-                              className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">fact_check</span>
-                              Kiểm kê hiện trường
-                            </button>
-                          )}
-
-                          {detail.sealingStatus === 'SEALING_IN_PROGRESS' && (
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setShowInventoryDialog(true)}
-                                className="px-3.5 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1"
-                              >
-                                <span className="material-symbols-outlined text-[16px]">edit_note</span>
-                                Cập nhật kiểm kê
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setShowConfirmSealingDialog(true)}
-                                className="px-4 py-2 bg-purple-600 text-white text-xs font-bold rounded-xl hover:bg-purple-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
-                              >
-                                <span className="material-symbols-outlined text-[18px]">gavel</span>
-                                Niêm phong
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      )}
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Sealing Dossier & Inventory Items Display */}
                   {detail.sealingDossier ? (
@@ -1579,12 +1629,9 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-[18px] text-indigo-600">person_check</span>
                     <span className="font-semibold text-slate-900">
-                      {currentUser?.fullName || currentUser?.email || 'Tài khoản hiện tại'} ({currentUser?.role?.name || currentUser?.roleName || 'STAFF'})
+                      {currentUser?.fullName || currentUser?.email || 'Tài khoản hiện tại'}
                     </span>
                   </div>
-                  <span className="text-[11px] text-indigo-700 font-medium bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                    Tài khoản đang thực thi
-                  </span>
                 </div>
               </div>
 

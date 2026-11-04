@@ -22,6 +22,10 @@ public class OverdueDebtItemResponse {
     private String customerEmail;
     private UUID unitId;
     private String unitCode;
+    private String unitTypeName;
+    private BigDecimal monthlyFee;
+    private BigDecimal dailyRentalPrice;
+    private BigDecimal lateFeePercentage;
     private UUID facilityId;
     private String facilityName;
     private LocalDate startDate;

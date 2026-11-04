@@ -25,6 +25,10 @@ export interface OverdueContractItem {
   bookingCode?: string
   unitId?: string
   unitCode: string
+  unitTypeName?: string
+  monthlyFee?: number
+  dailyRentalPrice?: number
+  lateFeePercentage?: number
   facilityId?: string
   facilityName: string
   customerId?: string
@@ -38,6 +42,8 @@ export interface OverdueContractItem {
   dailyLateFee: number
   lateFee: number
   totalDebt: number
+  customerRefundAmount?: number
+  depositHeld?: number
   unverifiedAmount: number
   stage: 'GRACE_PERIOD' | 'WARNING' | 'PIN_REVOCATION' | 'SEALING_ELIGIBLE' | 'POLICY_UNCONFIGURED'
   stageLabel: string

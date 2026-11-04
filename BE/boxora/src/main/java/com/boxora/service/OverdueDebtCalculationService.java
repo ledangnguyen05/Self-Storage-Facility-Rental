@@ -22,13 +22,95 @@ public interface OverdueDebtCalculationService {
             BigDecimal dailyLateFee,
             BigDecimal lateFee,
             BigDecimal totalDebt,
+            BigDecimal customerRefundAmount,
+            BigDecimal depositHeld,
             BigDecimal unverifiedAmount,
             OverdueStage stage,
             boolean isPolicyValid,
             String policyWarning,
             LocalDate dueDate,
             LocalDate asOfDate,
-            String feeFormulaExplanation
-    ) {}
+            String feeFormulaExplanation,
+            String unitTypeName,
+            BigDecimal monthlyFee,
+            BigDecimal dailyRentalPrice,
+            BigDecimal lateFeePercentage
+    ) {
+        public CalculationResult(
+                long overdueDays,
+                BigDecimal principalDebt,
+                BigDecimal dailyLateFee,
+                BigDecimal lateFee,
+                BigDecimal totalDebt,
+                BigDecimal unverifiedAmount,
+                OverdueStage stage,
+                boolean isPolicyValid,
+                String policyWarning,
+                LocalDate dueDate,
+                LocalDate asOfDate,
+                String feeFormulaExplanation,
+                String unitTypeName,
+                BigDecimal monthlyFee,
+                BigDecimal dailyRentalPrice,
+                BigDecimal lateFeePercentage
+        ) {
+            this(
+                    overdueDays,
+                    principalDebt,
+                    dailyLateFee,
+                    lateFee,
+                    totalDebt,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    unverifiedAmount,
+                    stage,
+                    isPolicyValid,
+                    policyWarning,
+                    dueDate,
+                    asOfDate,
+                    feeFormulaExplanation,
+                    unitTypeName,
+                    monthlyFee,
+                    dailyRentalPrice,
+                    lateFeePercentage
+            );
+        }
+
+        public CalculationResult(
+                long overdueDays,
+                BigDecimal principalDebt,
+                BigDecimal dailyLateFee,
+                BigDecimal lateFee,
+                BigDecimal totalDebt,
+                BigDecimal unverifiedAmount,
+                OverdueStage stage,
+                boolean isPolicyValid,
+                String policyWarning,
+                LocalDate dueDate,
+                LocalDate asOfDate,
+                String feeFormulaExplanation
+        ) {
+            this(
+                    overdueDays,
+                    principalDebt,
+                    dailyLateFee,
+                    lateFee,
+                    totalDebt,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    unverifiedAmount,
+                    stage,
+                    isPolicyValid,
+                    policyWarning,
+                    dueDate,
+                    asOfDate,
+                    feeFormulaExplanation,
+                    null,
+                    null,
+                    null,
+                    BigDecimal.valueOf(100)
+            );
+        }
+    }
 }
 

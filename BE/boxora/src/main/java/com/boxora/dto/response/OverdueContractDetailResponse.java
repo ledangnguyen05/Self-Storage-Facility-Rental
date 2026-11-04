@@ -24,6 +24,10 @@ public class OverdueContractDetailResponse {
     private String bookingCode;
     private UUID unitId;
     private String unitCode;
+    private String unitTypeName;
+    private BigDecimal monthlyFee;
+    private BigDecimal dailyRentalPrice;
+    private BigDecimal lateFeePercentage;
     private UUID facilityId;
     private String facilityName;
     private UUID customerId;
@@ -39,6 +43,7 @@ public class OverdueContractDetailResponse {
     private BigDecimal dailyLateFee;
     private BigDecimal lateFee;
     private BigDecimal totalDebt;
+    private BigDecimal customerRefundAmount;
     private BigDecimal unverifiedAmount;
     private BigDecimal depositHeld;
 

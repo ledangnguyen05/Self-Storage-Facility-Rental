@@ -67,11 +67,9 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
 
   const depositPercent = policy?.depositPercentage ?? policy?.depositPercent ?? 100
   const minMonths = policy?.minimumRentalMonths ?? 1
-  const renewalDays = policy?.renewalWindowDays ?? 7
   const cancelFullHours = policy?.cancellationFullRefundHours ?? 24
   const cancelPartHours = policy?.cancellationPartialRefundHours ?? 48
   const cancelPartPercent = policy?.cancellationPartialRefundPercent ?? 70
-  const returnNoticeDays = policy?.returnNoticeDays ?? 3
   const depositRefundSla = policy?.depositRefundSlaDays ?? 3
   const dailyLateFee = 200000
   const graceDays = policy?.overdueGraceDays ?? policy?.gracePeriodDays ?? 3
@@ -193,7 +191,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                     Thời hạn thuê tối thiểu là <strong>{minMonths} tháng</strong>. Hết thời hạn thuê, quý khách có thể gia hạn linh hoạt.
                   </li>
                   <li>
-                    Cổng gia hạn mở trước <strong>{renewalDays} ngày</strong> so với ngày hết hạn hợp đồng. Quý khách có thể thao tác gia hạn ngay trên tài khoản.
+                    Quý khách có thể chủ động thao tác gia hạn hợp đồng linh hoạt bất cứ lúc nào ngay trên tài khoản.
                   </li>
                 </ul>
               </div>
@@ -334,13 +332,13 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-4 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/40">
                   <span className="text-[11px] font-bold uppercase text-blue-800 dark:text-blue-400 block mb-1">
-                    Báo trước khi trả kho
+                    Thủ tục trả kho
                   </span>
                   <div className="text-2xl font-black font-mono text-blue-950 dark:text-blue-200">
-                    {returnNoticeDays} ngày
+                    Linh hoạt
                   </div>
                   <p className="text-[11px] text-blue-900/80 dark:text-blue-300/80 mt-1">
-                    Quý khách chỉ cần bấm &quot;Yêu cầu trả kho&quot; trên ứng dụng trước {returnNoticeDays} ngày để nhân sự trạm chuẩn bị đón tiếp.
+                    Quý khách có thể chủ động bấm &quot;Yêu cầu trả kho&quot; trên ứng dụng bất cứ lúc nào khi muốn kết thúc hợp đồng thuê.
                   </p>
                 </div>
 
@@ -386,7 +384,7 @@ export const CustomerPolicyModal: React.FC<CustomerPolicyModalProps> = ({
                   <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200/60 dark:border-slate-700 flex justify-between items-center">
                     <span className="text-slate-700 dark:text-slate-300">Phí phạt trễ hạn mỗi ngày:</span>
                     <strong className="text-rose-600 font-mono font-bold">
-                      {dailyLateFee.toLocaleString('vi-VN')} đ/ngày
+                      100% đơn giá ngày của loại kho thuê
                     </strong>
                   </div>
                   <div className="p-3 rounded-lg bg-white dark:bg-slate-900 border border-rose-200/60 dark:border-slate-700 flex justify-between items-center">

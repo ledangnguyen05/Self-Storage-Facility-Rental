@@ -806,6 +806,7 @@ export interface RevenueReport {
     renewalFeeRevenue?: number
     extraChargeRevenue?: number
     bookingPaymentRevenue?: number
+    returnCompensationRevenue?: number
     paymentCount: number
     netRevenue?: number
     totalCashIn?: number
@@ -826,6 +827,7 @@ export interface RevenueReport {
     renewalFeeRevenue?: number
     extraChargeRevenue?: number
     bookingPaymentRevenue?: number
+    returnCompensationRevenue?: number
     paymentCount?: number
     netRevenue?: number
     totalCashIn?: number
@@ -844,6 +846,7 @@ export interface RevenueReport {
     renewalFeeRevenue: number
     extraChargeRevenue: number
     bookingPaymentRevenue: number
+    returnCompensationRevenue?: number
     paymentCount: number
   }>
   paymentsByMethod?: Array<{

@@ -36,10 +36,12 @@ export const FacilitiesPage: React.FC = () => {
       try {
         setIsLoading(true)
         const [facRes, unitRes] = await Promise.all([
-          facilityService.getFacilities({ size: 100 }),
+          facilityService.getFacilities({ size: 100, status: 'ACTIVE' }),
           storageUnitService.getUnits()
         ])
-        const facList = (facRes?.content || []).filter(facility => !facility.status || facility.status === 'ACTIVE')
+        const facList = (facRes?.content || []).filter(
+          facility => facility.status === 'ACTIVE' || (!facility.status && (facility as any).isActive !== false)
+        )
         const unitList = Array.isArray(unitRes) ? unitRes : []
         setFacilities(facList)
         setUnits(unitList)

@@ -55,11 +55,9 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
 
   const depositPct = policy?.depositPercentage ?? policy?.depositPercent ?? 100
   const minMonths = policy?.minimumRentalMonths ?? 1
-  const renewalDays = policy?.renewalWindowDays ?? 3
   const cancelFullHours = policy?.cancellationFullRefundHours ?? 24
   const cancelPartHours = policy?.cancellationPartialRefundHours ?? 48
   const cancelPartPct = policy?.cancellationPartialRefundPercent ?? 70
-  const noticeDays = policy?.returnNoticeDays ?? 0
   const slaDays = policy?.depositRefundSlaDays ?? 5
   const lateFee = Number(policy?.dailyLateFee ?? policy?.lateFeePerDay ?? 200000)
   const graceDays = policy?.overdueGraceDays ?? policy?.gracePeriodDays ?? 1
@@ -141,7 +139,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
             <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
               <li>Mức thu tiền cọc bắt buộc: <strong className="text-slate-900 font-mono">{depositPct}% tiền thuê</strong>.</li>
               <li>Thời gian thuê tối thiểu hợp đồng: <strong className="text-slate-900">{minMonths} tháng</strong>.</li>
-              <li>Cửa sổ đăng ký gia hạn: <strong className="text-slate-900">{renewalDays} ngày trước khi hợp đồng hết hạn</strong>.</li>
+              <li>Chính sách gia hạn: <strong className="text-slate-900">Khách hàng có thể chủ động thao tác gia hạn linh hoạt trên hệ thống</strong>.</li>
               <li>Sau khi backend xác nhận đủ điều kiện, lập biên bản bàn giao và đối chiếu CCCD gốc. PIN phần mềm chưa được đồng bộ với khóa vật lý; không xác nhận khách đã mở được khóa nếu chưa kiểm tra trực tiếp tại cơ sở.</li>
             </ul>
           </div>
@@ -153,7 +151,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
               <h4 className="font-bold text-xs text-slate-900 uppercase">2. Nghiệm Thu Trả Kho &amp; Cam Kết SLA Hoàn Cọc</h4>
             </div>
             <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
-              <li>Khách cần báo trước khi trả kho: <strong>{noticeDays > 0 ? `${noticeDays} ngày` : 'Không bắt buộc'}</strong>.</li>
+              <li>Yêu cầu trả kho: Khách hàng có thể chủ động tạo yêu cầu trả kho linh hoạt trên ứng dụng bất cứ lúc nào.</li>
               <li>Quy chuẩn hoàn cọc SLA: Cam kết hoàn trả tài khoản khách trong vòng <strong className="text-emerald-700 font-bold">{slaDays} ngày làm việc</strong>.</li>
               <li>Yêu cầu bắt buộc: Nhân viên phải chụp ảnh hiện trường, lập Biên bản kiểm định đạt chuẩn (Sạch sẽ, không hư hỏng chốt SmartLock).</li>
               <li>Nếu có hư hỏng tài sản trạm: Khấu trừ tiền cọc theo biểu phí vật tư trước khi ký kết thúc hợp đồng.</li>
@@ -181,7 +179,7 @@ export const StaffPolicyGuideModal: React.FC<StaffPolicyGuideModalProps> = ({
             </div>
             <ul className="text-xs text-slate-700 space-y-1 list-disc pl-5">
               <li>Thời gian ân hạn: <strong>{graceDays} ngày</strong> (Không tính phạt trễ hạn).</li>
-              <li>Phí phạt quá hạn: <strong>{lateFee.toLocaleString('vi-VN')} đ/ngày</strong> bắt đầu từ ngày hết ân hạn.</li>
+              <li>Phí phạt quá hạn: <strong>{lateFee > 0 && lateFee <= 500 ? lateFee : 100}%/ngày</strong> tính theo đơn giá ngày của từng loại kho bắt đầu từ ngày hết ân hạn.</li>
               <li>Ngắt mã PIN mở cửa: Tự động sau <strong>{lockDays} ngày</strong> quá hạn thanh toán.</li>
               <li>Niêm phong kho hàng &amp; dán tem: Sau <strong>{sealDays} ngày</strong> quá hạn (Phải có nhân chứng hiện trường).</li>
             </ul>

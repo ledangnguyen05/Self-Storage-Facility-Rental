@@ -42,14 +42,14 @@ class OverdueDebtCalculationServiceTest {
         standardPolicy = FacilityPolicy.builder()
                 .isActive(true)
                 .overdueGraceDays(1)
-                .dailyLateFee(new BigDecimal("200000.00"))
+                .dailyLateFee(new BigDecimal("100.00"))
                 .overdueAccessDisableDays(3)
                 .overdueSealingDays(7)
                 .build();
     }
 
     @Test
-    @DisplayName("Day 0: Due date is today -> 0 days overdue, 0 fee")
+    @DisplayName("Day 0: Due date is today -> 0 days overdue, 0 fee, 0 total debt")
     void testDayZeroNotOverdue() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-00")
@@ -62,12 +62,12 @@ class OverdueDebtCalculationServiceTest {
 
         assertEquals(0, result.overdueDays());
         assertEquals(0, result.lateFee().compareTo(BigDecimal.ZERO));
-        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("1500000.00")));
+        assertEquals(0, result.totalDebt().compareTo(BigDecimal.ZERO));
         assertEquals(OverdueStage.GRACE_PERIOD, result.stage());
     }
 
     @Test
-    @DisplayName("Day 1: Grace period (Nhóm 1) -> overdueDays = 1, lateFee = 0")
+    @DisplayName("Day 1: Grace period (Nhóm 1) -> overdueDays = 1, lateFee = 0, totalDebt = 0")
     void testDayOneGracePeriod() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-01")
@@ -82,12 +82,12 @@ class OverdueDebtCalculationServiceTest {
 
         assertEquals(1, result.overdueDays());
         assertEquals(0, result.lateFee().compareTo(BigDecimal.ZERO));
-        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("1500000.00")));
+        assertEquals(0, result.totalDebt().compareTo(BigDecimal.ZERO));
         assertEquals(OverdueStage.GRACE_PERIOD, result.stage());
     }
 
     @Test
-    @DisplayName("Day 2: Warning stage (Nhóm 2) -> overdueDays = 2, lateFee = 200,000")
+    @DisplayName("Day 2: Warning stage (Nhóm 2) -> overdueDays = 2, lateFee = 50,000 (100% of 1,500,000 / 30)")
     void testDayTwoWarning() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-02")
@@ -101,13 +101,13 @@ class OverdueDebtCalculationServiceTest {
         var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
 
         assertEquals(2, result.overdueDays());
-        assertEquals(new BigDecimal("200000.00"), result.lateFee());
-        assertEquals(new BigDecimal("1700000.00"), result.totalDebt());
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("50000")));
+        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("50000")));
         assertEquals(OverdueStage.WARNING, result.stage());
     }
 
     @Test
-    @DisplayName("Day 3: PIN Revocation threshold (Nhóm 3) -> overdueDays = 3, lateFee = 400,000")
+    @DisplayName("Day 3: PIN Revocation threshold (Nhóm 3) -> overdueDays = 3, lateFee = 100,000")
     void testDayThreePinThreshold() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-03")
@@ -121,17 +121,17 @@ class OverdueDebtCalculationServiceTest {
         var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
 
         assertEquals(3, result.overdueDays());
-        assertEquals(new BigDecimal("400000.00"), result.lateFee());
-        assertEquals(new BigDecimal("1900000.00"), result.totalDebt());
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("100000")));
+        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("100000")));
         assertEquals(OverdueStage.PIN_REVOCATION, result.stage());
     }
 
     @Test
-    @DisplayName("Day 6: PIN Revocation upper bound (Nhóm 3) -> overdueDays = 6, lateFee = 1,000,000")
+    @DisplayName("Day 6: PIN Revocation upper bound (Nhóm 3) -> overdueDays = 6, lateFee = 500,000 (3,000,000 / 30 * 5d)")
     void testDaySixPinThreshold() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-06")
-                .monthlyFee(new BigDecimal("2000000.00"))
+                .monthlyFee(new BigDecimal("3000000.00"))
                 .endDate(refDate.minusDays(6))
                 .build();
         contract.setId(UUID.randomUUID());
@@ -141,13 +141,13 @@ class OverdueDebtCalculationServiceTest {
         var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
 
         assertEquals(6, result.overdueDays());
-        assertEquals(new BigDecimal("1000000.00"), result.lateFee());
-        assertEquals(new BigDecimal("3000000.00"), result.totalDebt());
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("500000")));
+        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("500000")));
         assertEquals(OverdueStage.PIN_REVOCATION, result.stage());
     }
 
     @Test
-    @DisplayName("Day 7: Sealing eligible (Nhóm 4) -> overdueDays = 7, lateFee = 1,200,000")
+    @DisplayName("Day 7: Sealing eligible (Nhóm 4) -> overdueDays = 7, lateFee = 300,000")
     void testDaySevenSealingEligible() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-07")
@@ -161,17 +161,17 @@ class OverdueDebtCalculationServiceTest {
         var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
 
         assertEquals(7, result.overdueDays());
-        assertEquals(new BigDecimal("1200000.00"), result.lateFee());
-        assertEquals(new BigDecimal("2700000.00"), result.totalDebt());
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("300000")));
+        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("300000")));
         assertEquals(OverdueStage.SEALING_ELIGIBLE, result.stage());
     }
 
     @Test
-    @DisplayName("Day 15: Deep overdue sealing (Nhóm 4) -> overdueDays = 15, lateFee = 2,800,000")
+    @DisplayName("Day 15: Deep overdue sealing (Nhóm 4) -> overdueDays = 15, lateFee = 1,400,000")
     void testDayFifteenSealing() {
         RentalContract contract = RentalContract.builder()
                 .contractCode("CTR-15")
-                .monthlyFee(new BigDecimal("2000000.00"))
+                .monthlyFee(new BigDecimal("3000000.00"))
                 .endDate(refDate.minusDays(15))
                 .build();
         contract.setId(UUID.randomUUID());
@@ -181,9 +181,74 @@ class OverdueDebtCalculationServiceTest {
         var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
 
         assertEquals(15, result.overdueDays());
-        assertEquals(new BigDecimal("2800000.00"), result.lateFee());
-        assertEquals(new BigDecimal("4800000.00"), result.totalDebt());
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("1400000")));
+        assertEquals(0, result.totalDebt().compareTo(new BigDecimal("1400000")));
         assertEquals(OverdueStage.SEALING_ELIGIBLE, result.stage());
+    }
+
+    @Test
+    @DisplayName("User Example: Kho mini 450k/tháng -> 15k/ngày (100% -> 15k/ngày, 120% -> 18k/ngày)")
+    void testUserExampleKhoMiniPercentageFormula() {
+        RentalContract contract = RentalContract.builder()
+                .contractCode("CTR-MINI")
+                .monthlyFee(new BigDecimal("450000.00"))
+                .endDate(refDate.minusDays(2)) // 2 days overdue - 1 grace = 1 day billable
+                .build();
+        contract.setId(UUID.randomUUID());
+
+        when(paymentRepository.findByContract_Id(any())).thenReturn(Collections.emptyList());
+
+        // Case 1: 100% fee -> 15,000 / day
+        FacilityPolicy policy100 = FacilityPolicy.builder()
+                .isActive(true)
+                .overdueGraceDays(1)
+                .dailyLateFee(new BigDecimal("100.00"))
+                .overdueAccessDisableDays(3)
+                .overdueSealingDays(7)
+                .build();
+
+        var result100 = calculationService.calculateOverdueDebt(contract, policy100, refDate);
+        assertEquals(0, result100.dailyLateFee().compareTo(new BigDecimal("15000")));
+        assertEquals(0, result100.lateFee().compareTo(new BigDecimal("15000")));
+        assertEquals(0, result100.totalDebt().compareTo(new BigDecimal("15000")));
+
+        // Case 2: 120% fee -> 18,000 / day
+        FacilityPolicy policy120 = FacilityPolicy.builder()
+                .isActive(true)
+                .overdueGraceDays(1)
+                .dailyLateFee(new BigDecimal("120.00"))
+                .overdueAccessDisableDays(3)
+                .overdueSealingDays(7)
+                .build();
+
+        var result120 = calculationService.calculateOverdueDebt(contract, policy120, refDate);
+        assertEquals(0, result120.dailyLateFee().compareTo(new BigDecimal("18000")));
+        assertEquals(0, result120.lateFee().compareTo(new BigDecimal("18000")));
+        assertEquals(0, result120.totalDebt().compareTo(new BigDecimal("18000")));
+    }
+
+    @Test
+    @DisplayName("User Case: Kho lạnh 3.100.000 đ/tháng, cọc 3.100.000 đ, quá hạn 2 ngày -> Làm tròn 103.333 đ/ngày, Số tiền hoàn khách = 2.996.667 đ, Tổng nợ = 0")
+    void testUserCaseKhoLanhLateCheckoutRefund() {
+        RentalContract contract = RentalContract.builder()
+                .contractCode("CTR-Q2-EXPTODAY-05")
+                .monthlyFee(new BigDecimal("3100000.00"))
+                .depositHeld(new BigDecimal("3100000.00"))
+                .endDate(refDate.minusDays(2)) // 2 days overdue - 1 grace = 1 day billable
+                .build();
+        contract.setId(UUID.randomUUID());
+
+        when(paymentRepository.findByContract_Id(any())).thenReturn(Collections.emptyList());
+
+        var result = calculationService.calculateOverdueDebt(contract, standardPolicy, refDate);
+
+        // Daily rate: 3,100,000 / 30 = 103,333.33 -> rounded to integer: 103,333 đ/ngày
+        assertEquals(0, result.dailyLateFee().compareTo(new BigDecimal("103333")));
+        assertEquals(0, result.lateFee().compareTo(new BigDecimal("103333")));
+        // Customer refund amount = 3,100,000 - 103,333 = 2,996,667 đ
+        assertEquals(0, result.customerRefundAmount().compareTo(new BigDecimal("2996667")));
+        // Deposit covers late fee, so totalDebt = 0
+        assertEquals(0, result.totalDebt().compareTo(BigDecimal.ZERO));
     }
 
     @Test

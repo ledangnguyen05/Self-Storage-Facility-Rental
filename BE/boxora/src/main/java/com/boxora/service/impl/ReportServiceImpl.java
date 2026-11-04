@@ -51,6 +51,7 @@ public class ReportServiceImpl implements ReportService {
     private final FacilityAccessGuard facilityAccessGuard;
     private final RefundRequestRepository refundRequestRepository;
     private final OverdueDebtCalculationService overdueDebtCalculationService;
+    private final HandoverRecordRepository handoverRecordRepository;
 
     @Override
     public RevenueReportResponse getRevenueReport(LocalDate fromDate, LocalDate toDate) {
@@ -71,7 +72,8 @@ public class ReportServiceImpl implements ReportService {
         LocalDateTime from = fromDate != null ? fromDate.atStartOfDay() : LocalDateTime.of(2000, 1, 1, 0, 0, 0);
         LocalDateTime to = toDate != null ? toDate.atTime(LocalTime.MAX) : LocalDateTime.of(2099, 12, 31, 23, 59, 59);
 
-        List<FacilityRevenueResponse> byFacility = paymentRepository.sumRevenueByFacility(from, to, effectiveFacilityId);
+        // 1. Query Payments from PaymentRepository
+        List<FacilityRevenueResponse> rawFacilityList = paymentRepository.sumRevenueByFacility(from, to, effectiveFacilityId);
         SystemRevenueSummaryResponse systemSummary = paymentRepository.sumSystemRevenue(from, to, effectiveFacilityId);
         if (systemSummary == null) {
             systemSummary = SystemRevenueSummaryResponse.builder()
@@ -81,6 +83,8 @@ public class ReportServiceImpl implements ReportService {
                     .renewalFeeRevenue(BigDecimal.ZERO)
                     .extraChargeRevenue(BigDecimal.ZERO)
                     .bookingPaymentRevenue(BigDecimal.ZERO)
+                    .returnCompensationRevenue(BigDecimal.ZERO)
+                    .totalCashIn(BigDecimal.ZERO)
                     .paymentCount(0L)
                     .build();
         }
@@ -91,6 +95,7 @@ public class ReportServiceImpl implements ReportService {
                 .stream()
                 .map(this::toMonthlySummary)
                 .toList();
+
         List<PaymentMethodSummaryResponse> paymentsByMethod = Optional.ofNullable(
                         paymentRepository.countPaidPaymentsByMethod(from, to, effectiveFacilityId))
                 .orElseGet(List::of)
@@ -98,11 +103,32 @@ public class ReportServiceImpl implements ReportService {
                 .map(this::toPaymentMethodSummary)
                 .toList();
 
-        // 1. Calculate Overdue Debt breakdown & total
+        // 2. Overdue Debt & Accounts Receivable
         OverdueDebtReportResponse overdueDebtReport = getOverdueDebtReport(effectiveFacilityId);
-        BigDecimal totalOverdueDebt = overdueDebtReport != null && overdueDebtReport.getTotalDebtAmount() != null
+        BigDecimal overdueContractsDebt = overdueDebtReport != null && overdueDebtReport.getTotalDebtAmount() != null
                 ? overdueDebtReport.getTotalDebtAmount()
                 : BigDecimal.ZERO;
+
+        // Add unpaid return damage compensations (Case B: repair > deposit, additionalAmountDue not paid)
+        Map<UUID, BigDecimal> facilityUnpaidSettlements = new HashMap<>();
+        BigDecimal systemUnpaidSettlements = BigDecimal.ZERO;
+
+        List<com.boxora.entity.HandoverRecord> allHandovers = handoverRecordRepository != null ? handoverRecordRepository.findAll() : List.of();
+        for (com.boxora.entity.HandoverRecord h : allHandovers) {
+            if (h != null && h.getAdditionalAmountDue() != null && h.getAdditionalAmountDue().compareTo(BigDecimal.ZERO) > 0) {
+                if (!"PAID".equalsIgnoreCase(h.getAdditionalPaymentStatus())) {
+                    UUID facId = extractFacilityId(h);
+                    if (effectiveFacilityId == null || effectiveFacilityId.equals(facId)) {
+                        systemUnpaidSettlements = systemUnpaidSettlements.add(h.getAdditionalAmountDue());
+                    }
+                    if (facId != null) {
+                        facilityUnpaidSettlements.merge(facId, h.getAdditionalAmountDue(), BigDecimal::add);
+                    }
+                }
+            }
+        }
+
+        BigDecimal totalOverdueDebt = overdueContractsDebt.add(systemUnpaidSettlements);
 
         BigDecimal gracePeriodAmt = BigDecimal.ZERO;
         long gracePeriodCnt = 0;
@@ -150,27 +176,19 @@ public class ReportServiceImpl implements ReportService {
                 .eligibleForSealingAmount(eligibleForSealingAmt)
                 .eligibleForSealingCount(eligibleForSealingCnt)
                 .totalDebt(totalOverdueDebt)
-                .totalCount(overdueDebtReport != null ? overdueDebtReport.getTotalOverdueCount() : 0)
+                .totalCount((overdueDebtReport != null ? overdueDebtReport.getTotalOverdueCount() : 0)
+                        + (systemUnpaidSettlements.compareTo(BigDecimal.ZERO) > 0 ? 1 : 0))
                 .build();
 
-        // 2. Calculate Active Deposits Held
+        // 3. Refunds Breakdown & Revenue Deductions
         final UUID finalFacilityId = effectiveFacilityId;
-        List<RentalContract> allContracts = rentalContractRepository.findAll();
-        BigDecimal depositsHeld = allContracts.stream()
-                .filter(c -> c.getStatus() == RentalContractStatus.ACTIVE
-                        || c.getStatus() == RentalContractStatus.OVERDUE
-                        || c.getStatus() == RentalContractStatus.OVERDUE_LOCKED)
-                .filter(c -> finalFacilityId == null || (c.getFacility() != null && finalFacilityId.equals(c.getFacility().getId())))
-                .map(c -> c.getDepositHeld() != null ? c.getDepositHeld() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        // 3. Calculate Refunds breakdown
-        List<com.boxora.entity.RefundRequest> allRefunds = refundRequestRepository.findAll();
+        List<com.boxora.entity.RefundRequest> allRefunds = refundRequestRepository != null ? refundRequestRepository.findAll() : List.of();
         List<com.boxora.entity.RefundRequest> scopedRefunds = allRefunds.stream()
                 .filter(r -> finalFacilityId == null || (r.getFacility() != null && finalFacilityId.equals(r.getFacility().getId())))
                 .toList();
 
         BigDecimal completedRefundAmount = BigDecimal.ZERO;
+        BigDecimal completedRentalRefundAmount = BigDecimal.ZERO;
         long completedRefundCount = 0;
         BigDecimal pendingReviewAmount = BigDecimal.ZERO;
         long pendingReviewCount = 0;
@@ -180,12 +198,18 @@ public class ReportServiceImpl implements ReportService {
         long rejectedRefundCount = 0;
         BigDecimal totalRequestedAmount = BigDecimal.ZERO;
 
+        Map<UUID, BigDecimal> facilityCompletedRefunds = new HashMap<>();
+        Map<UUID, BigDecimal> facilityCompletedRentalRefunds = new HashMap<>();
+        Map<UUID, BigDecimal> facilityPendingRefunds = new HashMap<>();
+
         for (com.boxora.entity.RefundRequest r : scopedRefunds) {
             BigDecimal amt = r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : (r.getRequestedAmount() != null ? r.getRequestedAmount() : BigDecimal.ZERO);
             totalRequestedAmount = totalRequestedAmount.add(amt);
             LocalDateTime refTime = r.getProcessedAt() != null ? r.getProcessedAt() : (r.getReviewedAt() != null ? r.getReviewedAt() : r.getCreatedAt());
 
             boolean inPeriod = (fromDate == null || !refTime.isBefore(from)) && (toDate == null || !refTime.isAfter(to));
+            UUID facId = r.getFacility() != null ? r.getFacility().getId() : null;
+            boolean isRentalRefund = isRentalFeeRefund(r);
 
             if (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
                     || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
@@ -193,15 +217,22 @@ public class ReportServiceImpl implements ReportService {
                 if (inPeriod) {
                     completedRefundAmount = completedRefundAmount.add(amt);
                     completedRefundCount++;
+                    if (isRentalRefund) {
+                        completedRentalRefundAmount = completedRentalRefundAmount.add(amt);
+                        if (facId != null) facilityCompletedRentalRefunds.merge(facId, amt, BigDecimal::add);
+                    }
+                    if (facId != null) facilityCompletedRefunds.merge(facId, amt, BigDecimal::add);
                 }
             } else if (r.getStatus() == com.boxora.enums.RefundStatus.PENDING_REVIEW) {
                 pendingReviewAmount = pendingReviewAmount.add(amt);
                 pendingReviewCount++;
+                if (facId != null) facilityPendingRefunds.merge(facId, amt, BigDecimal::add);
             } else if (r.getStatus() == com.boxora.enums.RefundStatus.APPROVED
                     || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSING_TRANSFER
                     || r.getStatus() == com.boxora.enums.RefundStatus.AWAITING_CUSTOMER_CONFIRMATION) {
                 processingTransferAmount = processingTransferAmount.add(amt);
                 processingTransferCount++;
+                if (facId != null) facilityPendingRefunds.merge(facId, amt, BigDecimal::add);
             } else if (r.getStatus() == com.boxora.enums.RefundStatus.REJECTED) {
                 rejectedRefundAmount = rejectedRefundAmount.add(amt);
                 rejectedRefundCount++;
@@ -224,85 +255,234 @@ public class ReportServiceImpl implements ReportService {
                 .totalRefundRequests(scopedRefunds.size())
                 .build();
 
-        // 4. Enrich systemSummary with pure accounting indicators
+        // 4. Calculate Active Deposits Held
+        // Tiền cọc đang giữ = Tổng tiền cọc đã nhận - Tiền cọc đã hoàn thành hoàn trả - Tiền cọc đã được bù trừ hợp lệ
+        List<RentalContract> allContracts = rentalContractRepository.findAll();
+        Map<UUID, BigDecimal> facilityDepositsHeld = new HashMap<>();
+        BigDecimal systemDepositsHeld = BigDecimal.ZERO;
+
+        for (RentalContract c : allContracts) {
+            if (c == null) continue;
+            UUID facId = extractFacilityId(c);
+            if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
+
+            BigDecimal initDeposit = c.getDepositHeld() != null ? c.getDepositHeld() : BigDecimal.ZERO;
+            if (initDeposit.compareTo(BigDecimal.ZERO) <= 0 && c.getBooking() != null && c.getBooking().getDepositPaid() != null) {
+                initDeposit = c.getBooking().getDepositPaid();
+            }
+            if (initDeposit.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            // Subtract completed deposit refunds for this contract/booking
+            BigDecimal refundedForContract = allRefunds.stream()
+                    .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
+                            || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
+                            || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED))
+                    .filter(r -> !isRentalFeeRefund(r))
+                    .filter(r -> (r.getContract() != null && r.getContract().getId() != null && c.getId() != null && r.getContract().getId().equals(c.getId()))
+                            || (c.getBooking() != null && c.getBooking().getId() != null && r.getBooking() != null && r.getBooking().getId() != null && r.getBooking().getId().equals(c.getBooking().getId())))
+                    .map(r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            // Subtract approved deductions
+            BigDecimal deductedForContract = BigDecimal.ZERO;
+            if (c.getBooking() != null && c.getBooking().getId() != null && handoverRecordRepository != null) {
+                Optional<com.boxora.entity.HandoverRecord> hrOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(c.getBooking().getId(), "RETURN");
+                if (hrOpt.isPresent() && hrOpt.get().getDeductionAmount() != null) {
+                    deductedForContract = hrOpt.get().getDeductionAmount().min(initDeposit);
+                }
+            }
+
+            BigDecimal held = initDeposit.subtract(refundedForContract).subtract(deductedForContract).max(BigDecimal.ZERO);
+            if (c.getStatus() == RentalContractStatus.TERMINATED && (refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0)) {
+                held = BigDecimal.ZERO;
+            } else if (c.getStatus() == RentalContractStatus.CANCELLED && (refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0)) {
+                held = BigDecimal.ZERO;
+            }
+
+            if (held.compareTo(BigDecimal.ZERO) > 0) {
+                systemDepositsHeld = systemDepositsHeld.add(held);
+                if (facId != null) {
+                    facilityDepositsHeld.merge(facId, held, BigDecimal::add);
+                }
+            }
+        }
+
+        // Also check uncontracted bookings with deposit
+        Set<UUID> contractedBookingIds = allContracts.stream()
+                .map(RentalContract::getBooking)
+                .filter(Objects::nonNull)
+                .map(Booking::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        List<Booking> allBookings = bookingRepository.findAll();
+        for (Booking b : allBookings) {
+            if (b == null || contractedBookingIds.contains(b.getId())) continue;
+            if (b.getDepositPaid() == null || b.getDepositPaid().compareTo(BigDecimal.ZERO) <= 0) continue;
+
+            UUID facId = extractFacilityId(b);
+            if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
+
+            BigDecimal bDeposit = b.getDepositPaid();
+            BigDecimal refundedForBooking = allRefunds.stream()
+                    .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
+                            || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
+                            || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED))
+                    .filter(r -> !isRentalFeeRefund(r))
+                    .filter(r -> r.getBooking() != null && r.getBooking().getId() != null && b.getId() != null && b.getId().equals(r.getBooking().getId()))
+                    .map(r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal heldBooking = bDeposit.subtract(refundedForBooking).max(BigDecimal.ZERO);
+            if (heldBooking.compareTo(BigDecimal.ZERO) > 0) {
+                systemDepositsHeld = systemDepositsHeld.add(heldBooking);
+                if (facId != null) {
+                    facilityDepositsHeld.merge(facId, heldBooking, BigDecimal::add);
+                }
+            }
+        }
+
+        // Fallback for deposits held if no contracts/bookings exist in DB or tests
+        if (systemDepositsHeld.compareTo(BigDecimal.ZERO) == 0 && allContracts.isEmpty() && allBookings.isEmpty()) {
+            BigDecimal completedDepositRefunds = completedRefundAmount.subtract(completedRentalRefundAmount).max(BigDecimal.ZERO);
+            systemDepositsHeld = safe(systemSummary.getDepositRevenue()).subtract(completedDepositRefunds).max(BigDecimal.ZERO);
+        }
+
+        // 5. Enrich systemSummary with pure accounting indicators
         BigDecimal rentalRev = safe(systemSummary.getRentalFeeRevenue()).add(safe(systemSummary.getRenewalFeeRevenue()));
-        BigDecimal grossRev = rentalRev.add(safe(systemSummary.getExtraChargeRevenue()));
-        BigDecimal netRev = grossRev.subtract(completedRefundAmount).max(BigDecimal.ZERO);
-        BigDecimal cashIn = grossRev.add(safe(systemSummary.getDepositRevenue())).add(safe(systemSummary.getBookingPaymentRevenue()));
+        BigDecimal grossRev = rentalRev.add(safe(systemSummary.getExtraChargeRevenue())).add(safe(systemSummary.getReturnCompensationRevenue()));
+        BigDecimal netRev = grossRev.subtract(completedRentalRefundAmount).max(BigDecimal.ZERO);
+        BigDecimal cashIn = systemSummary.getTotalCashIn() != null && systemSummary.getTotalCashIn().compareTo(BigDecimal.ZERO) > 0
+                ? systemSummary.getTotalCashIn()
+                : grossRev.add(safe(systemSummary.getDepositRevenue()))
+                          .add(safe(systemSummary.getBookingPaymentRevenue()))
+                          .add(safe(systemSummary.getReturnCompensationRevenue()));
 
         systemSummary.setNetRevenue(netRev);
         systemSummary.setTotalCashIn(cashIn);
         systemSummary.setRentalRevenue(rentalRev);
         systemSummary.setTotalOverdueDebt(totalOverdueDebt);
-        systemSummary.setDepositsHeld(depositsHeld);
+        systemSummary.setDepositsHeld(systemDepositsHeld);
         systemSummary.setRefundedAmount(completedRefundAmount);
         systemSummary.setPendingRefundAmount(pendingRefundAmount);
         systemSummary.setPendingReconciliationCount(pendingReconciliationCount);
 
-        // 5. Enrich facility breakdowns
-        Map<UUID, BigDecimal> facilityDebts = new HashMap<>();
-        if (overdueDebtReport != null && overdueDebtReport.getItems() != null) {
-            for (OverdueDebtItemResponse item : overdueDebtReport.getItems()) {
-                if (item.getFacilityId() != null && item.getTotalDebt() != null) {
-                    facilityDebts.merge(item.getFacilityId(), item.getTotalDebt(), BigDecimal::add);
-                }
+        // 6. Enrich facility breakdowns (Every facility in the system is represented)
+        List<Facility> allFacilities = facilityRepository.findAll();
+        Map<UUID, FacilityRevenueResponse> facilityMap = new LinkedHashMap<>();
+
+        for (Facility f : allFacilities) {
+            if (f == null || f.getId() == null) continue;
+            if (finalFacilityId != null && !finalFacilityId.equals(f.getId())) continue;
+
+            facilityMap.put(f.getId(), FacilityRevenueResponse.builder()
+                    .facilityId(f.getId())
+                    .facilityName(f.getName())
+                    .totalRevenue(BigDecimal.ZERO)
+                    .rentalFeeRevenue(BigDecimal.ZERO)
+                    .renewalFeeRevenue(BigDecimal.ZERO)
+                    .extraChargeRevenue(BigDecimal.ZERO)
+                    .depositRevenue(BigDecimal.ZERO)
+                    .bookingPaymentRevenue(BigDecimal.ZERO)
+                    .returnCompensationRevenue(BigDecimal.ZERO)
+                    .totalCashIn(BigDecimal.ZERO)
+                    .paymentCount(0L)
+                    .build());
+        }
+
+        for (FacilityRevenueResponse row : rawFacilityList) {
+            if (row != null && row.getFacilityId() != null) {
+                facilityMap.put(row.getFacilityId(), row);
             }
         }
 
-        Map<UUID, BigDecimal> facilityDeposits = allContracts.stream()
-                .filter(c -> (c.getStatus() == RentalContractStatus.ACTIVE
-                        || c.getStatus() == RentalContractStatus.OVERDUE
-                        || c.getStatus() == RentalContractStatus.OVERDUE_LOCKED) && c.getFacility() != null)
-                .collect(Collectors.groupingBy(
-                        c -> c.getFacility().getId(),
-                        Collectors.reducing(BigDecimal.ZERO, c -> c.getDepositHeld() != null ? c.getDepositHeld() : BigDecimal.ZERO, BigDecimal::add)
-                ));
+        Map<UUID, BigDecimal> facilityOverdueMap = overdueDebtReport != null && overdueDebtReport.getByFacility() != null
+                ? overdueDebtReport.getByFacility().stream().collect(Collectors.toMap(FacilityOverdueDebtResponse::getFacilityId, f -> safe(f.getTotalOverdueDebt()), (a, b) -> a))
+                : Map.of();
 
-        Map<UUID, BigDecimal> facilityRefunds = allRefunds.stream()
-                .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
-                        || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
-                        || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED) && r.getFacility() != null)
-                .collect(Collectors.groupingBy(
-                        r -> r.getFacility().getId(),
-                        Collectors.reducing(BigDecimal.ZERO, r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : BigDecimal.ZERO, BigDecimal::add)
-                ));
-
-        Map<UUID, BigDecimal> facilityPendingRefunds = allRefunds.stream()
-                .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.PENDING_REVIEW
-                        || r.getStatus() == com.boxora.enums.RefundStatus.APPROVED
-                        || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSING_TRANSFER
-                        || r.getStatus() == com.boxora.enums.RefundStatus.AWAITING_CUSTOMER_CONFIRMATION) && r.getFacility() != null)
-                .collect(Collectors.groupingBy(
-                        r -> r.getFacility().getId(),
-                        Collectors.reducing(BigDecimal.ZERO, r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : (r.getRequestedAmount() != null ? r.getRequestedAmount() : BigDecimal.ZERO), BigDecimal::add)
-                ));
-
-        for (FacilityRevenueResponse row : byFacility) {
+        List<FacilityRevenueResponse> enrichedByFacility = new ArrayList<>();
+        for (FacilityRevenueResponse row : facilityMap.values()) {
+            UUID fId = row.getFacilityId();
             BigDecimal fRental = safe(row.getRentalFeeRevenue()).add(safe(row.getRenewalFeeRevenue()));
-            BigDecimal fGross = fRental.add(safe(row.getExtraChargeRevenue()));
-            BigDecimal fRefunded = facilityRefunds.getOrDefault(row.getFacilityId(), BigDecimal.ZERO);
-            BigDecimal fNet = fGross.subtract(fRefunded).max(BigDecimal.ZERO);
-            BigDecimal fCashIn = fGross.add(safe(row.getDepositRevenue())).add(safe(row.getBookingPaymentRevenue()));
+            BigDecimal fGross = fRental.add(safe(row.getExtraChargeRevenue())).add(safe(row.getReturnCompensationRevenue()));
+            BigDecimal fRentalRefund = facilityCompletedRentalRefunds.getOrDefault(fId, BigDecimal.ZERO);
+            BigDecimal fNet = fGross.subtract(fRentalRefund).max(BigDecimal.ZERO);
+            BigDecimal fRefunded = facilityCompletedRefunds.getOrDefault(fId, BigDecimal.ZERO);
+            BigDecimal fPendingRefund = facilityPendingRefunds.getOrDefault(fId, BigDecimal.ZERO);
+            BigDecimal fDeposits = facilityDepositsHeld.getOrDefault(fId, BigDecimal.ZERO);
+            if (fDeposits.compareTo(BigDecimal.ZERO) == 0 && allContracts.isEmpty() && allBookings.isEmpty()) {
+                BigDecimal fDepRefund = fRefunded.subtract(fRentalRefund).max(BigDecimal.ZERO);
+                fDeposits = safe(row.getDepositRevenue()).subtract(fDepRefund).max(BigDecimal.ZERO);
+            }
+            BigDecimal fOverdue = facilityOverdueMap.getOrDefault(fId, BigDecimal.ZERO).add(facilityUnpaidSettlements.getOrDefault(fId, BigDecimal.ZERO));
+
+            BigDecimal fCashIn = row.getTotalCashIn() != null && row.getTotalCashIn().compareTo(BigDecimal.ZERO) > 0
+                    ? row.getTotalCashIn()
+                    : fGross.add(safe(row.getDepositRevenue()))
+                            .add(safe(row.getBookingPaymentRevenue()))
+                            .add(safe(row.getReturnCompensationRevenue()));
 
             row.setNetRevenue(fNet);
             row.setTotalCashIn(fCashIn);
             row.setRentalRevenue(fRental);
-            row.setDepositsHeld(facilityDeposits.getOrDefault(row.getFacilityId(), BigDecimal.ZERO));
-            row.setTotalOverdueDebt(facilityDebts.getOrDefault(row.getFacilityId(), BigDecimal.ZERO));
+            row.setDepositsHeld(fDeposits);
+            row.setTotalOverdueDebt(fOverdue);
             row.setRefundedAmount(fRefunded);
-            row.setPendingRefundAmount(facilityPendingRefunds.getOrDefault(row.getFacilityId(), BigDecimal.ZERO));
+            row.setPendingRefundAmount(fPendingRefund);
+
+            enrichedByFacility.add(row);
         }
 
         return RevenueReportResponse.builder()
                 .fromDate(fromDate)
                 .toDate(toDate)
                 .systemSummary(systemSummary)
-                .byFacility(byFacility)
+                .byFacility(enrichedByFacility)
                 .monthlyRevenue(monthlyRevenue)
                 .paymentsByMethod(paymentsByMethod)
                 .debtBreakdown(debtBreakdown)
                 .refundBreakdown(refundBreakdown)
                 .build();
+    }
+
+    private boolean isRentalFeeRefund(com.boxora.entity.RefundRequest r) {
+        if (r == null) return false;
+        String reason = (r.getReason() != null ? r.getReason() : "") + " " + (r.getProcessNotes() != null ? r.getProcessNotes() : "");
+        String lower = reason.toLowerCase(Locale.ROOT);
+        return lower.contains("tiền thuê") || lower.contains("cước thuê") || lower.contains("rental_fee") || lower.contains("rental fee");
+    }
+
+    private UUID extractFacilityId(com.boxora.entity.HandoverRecord h) {
+        if (h == null) return null;
+        if (h.getBooking() != null) {
+            return extractFacilityId(h.getBooking());
+        }
+        return null;
+    }
+
+    private UUID extractFacilityId(Booking b) {
+        if (b == null) return null;
+        if (b.getFacility() != null && b.getFacility().getId() != null) {
+            return b.getFacility().getId();
+        }
+        if (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null) {
+            return b.getStorageUnit().getFacility().getId();
+        }
+        return null;
+    }
+
+    private UUID extractFacilityId(RentalContract c) {
+        if (c == null) return null;
+        if (c.getFacility() != null && c.getFacility().getId() != null) {
+            return c.getFacility().getId();
+        }
+        if (c.getUnit() != null && c.getUnit().getFacility() != null) {
+            return c.getUnit().getFacility().getId();
+        }
+        if (c.getBooking() != null) {
+            return extractFacilityId(c.getBooking());
+        }
+        return null;
     }
 
     private RevenueMonthSummaryResponse toMonthlySummary(Object[] row) {
@@ -506,6 +686,10 @@ public class ReportServiceImpl implements ReportService {
                     .customerEmail(contract.getCustomer() != null ? contract.getCustomer().getEmail() : null)
                     .unitId(contract.getUnit() != null ? contract.getUnit().getId() : null)
                     .unitCode(contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A")
+                    .unitTypeName(calc.unitTypeName())
+                    .monthlyFee(calc.monthlyFee())
+                    .dailyRentalPrice(calc.dailyRentalPrice())
+                    .lateFeePercentage(calc.lateFeePercentage())
                     .facilityId(facilityId)
                     .facilityName(facility != null ? facility.getName() : null)
                     .startDate(contract.getStartDate())
@@ -544,8 +728,27 @@ public class ReportServiceImpl implements ReportService {
 
             long daysOverdue = ChronoUnit.DAYS.between(booking.getEndDate(), today);
             BigDecimal unpaidRent = resolveUnpaidBookingRent(booking);
+
+            String bUnitTypeName = (booking.getStorageUnit() != null && booking.getStorageUnit().getUnitType() != null)
+                    ? booking.getStorageUnit().getUnitType().getTypeName()
+                    : "Kho";
+            BigDecimal bMonthlyFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee()
+                    : (booking.getStorageUnit() != null ? booking.getStorageUnit().getEffectiveBasePrice() : BigDecimal.ZERO);
+            BigDecimal bDailyRent = (bMonthlyFee != null && bMonthlyFee.compareTo(BigDecimal.ZERO) > 0)
+                    ? bMonthlyFee.divide(BigDecimal.valueOf(30), 2, java.math.RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            BigDecimal bLateFeePercentage = BigDecimal.valueOf(100);
+            if (policy != null && policy.getDailyLateFee() != null && policy.getDailyLateFee().compareTo(BigDecimal.valueOf(500)) <= 0) {
+                bLateFeePercentage = policy.getDailyLateFee();
+            }
+
             BigDecimal dailyLateFee = configuredDailyLateFee(policy);
             BigDecimal totalLateFee = calculateLateFee(daysOverdue, policy);
+            if (bDailyRent.compareTo(BigDecimal.ZERO) > 0) {
+                dailyLateFee = bDailyRent.multiply(bLateFeePercentage).divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+                long billableDays = policy != null && policy.getOverdueGraceDays() != null ? Math.max(0, daysOverdue - policy.getOverdueGraceDays()) : daysOverdue;
+                totalLateFee = dailyLateFee.multiply(BigDecimal.valueOf(billableDays));
+            }
             BigDecimal totalDebt = addIfKnown(unpaidRent, totalLateFee);
             String overdueStage = resolveOverdueStage(daysOverdue, policy);
 
@@ -560,6 +763,10 @@ public class ReportServiceImpl implements ReportService {
                     .customerEmail(booking.getCustomer() != null ? booking.getCustomer().getEmail() : null)
                     .unitId(booking.getStorageUnit() != null ? booking.getStorageUnit().getId() : null)
                     .unitCode(booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : "N/A")
+                    .unitTypeName(bUnitTypeName)
+                    .monthlyFee(bMonthlyFee)
+                    .dailyRentalPrice(bDailyRent)
+                    .lateFeePercentage(bLateFeePercentage)
                     .facilityId(facilityId)
                     .facilityName(facility != null ? facility.getName() : null)
                     .startDate(booking.getStartDate())

@@ -943,10 +943,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     [activityStorageKey, user?.fullName, user?.username]
   )
 
-  const fetchCustomerNotifications = useCallback(async () => {
+  const fetchCustomerNotifications = useCallback(async (silent = false) => {
     if (!user?.id) return []
     try {
-      setLoadingNotifications(true)
+      if (!silent) setLoadingNotifications(true)
       const res = await notificationService.getRecent({ recipientId: user.id, page: 0, size: 50 })
       const list = Array.isArray(res?.content) ? res.content : []
       setCustomerNotifications(list)
@@ -955,13 +955,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       console.warn('Failed to load customer notifications:', err)
       return []
     } finally {
-      setLoadingNotifications(false)
+      if (!silent) setLoadingNotifications(false)
     }
   }, [user?.id])
 
-  const fetchMyRenewals = async () => {
+  const fetchMyRenewals = async (silent = false) => {
     try {
-      setLoadingRenewals(true)
+      if (!silent) setLoadingRenewals(true)
       const res = await contractService.getRenewals({ size: 50 })
       const list = Array.isArray(res) ? res : (Array.isArray((res as any)?.content) ? (res as any).content : [])
       setMyRenewals(list)
@@ -969,14 +969,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     } catch {
       return []
     } finally {
-      setLoadingRenewals(false)
+      if (!silent) setLoadingRenewals(false)
     }
   }
 
 
-  const fetchCustomerBookings = async () => {
+  const fetchCustomerBookings = async (silent = false) => {
     try {
-      setLoadingBookings(true)
+      if (!silent) setLoadingBookings(true)
       let list: Booking[] = []
       try {
         const res = await bookingService.getMyBookings()
@@ -1067,13 +1067,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
       setCustomerBookings(list)
     } finally {
-      setLoadingBookings(false)
+      if (!silent) setLoadingBookings(false)
     }
   }
 
-  const fetchContracts = async () => {
+  const fetchContracts = async (silent = false) => {
     try {
-      setLoadingContracts(true)
+      if (!silent) setLoadingContracts(true)
       const res = await contractService.getMyContracts({ size: 50 })
       if (res?.content && Array.isArray(res.content)) {
         setContracts(res.content)
@@ -1081,13 +1081,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     } catch (err) {
       console.error('Failed to load real customer contracts from database:', err)
     } finally {
-      setLoadingContracts(false)
+      if (!silent) setLoadingContracts(false)
     }
   }
 
-  const fetchCustomerPayments = async () => {
+  const fetchCustomerPayments = async (silent = false) => {
     try {
-      setLoadingPayments(true)
+      if (!silent) setLoadingPayments(true)
       const res = await paymentService.getMyPayments()
       if (Array.isArray(res)) {
         setCustomerPayments(res)
@@ -1096,13 +1096,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       console.error('Failed to load customer payments from database:', err)
       setCustomerPayments([])
     } finally {
-      setLoadingPayments(false)
+      if (!silent) setLoadingPayments(false)
     }
   }
 
-  const fetchAvailableUnits = async () => {
+  const fetchAvailableUnits = async (silent = false) => {
     try {
-      setLoadingUnits(true)
+      if (!silent) setLoadingUnits(true)
       const res = await storageUnitService.getUnits({ status: 'AVAILABLE' })
       if (Array.isArray(res)) {
         setAvailableUnits(res)
@@ -1110,30 +1110,33 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     } catch (err) {
       console.error('Failed to load available storage units from database:', err)
     } finally {
-      setLoadingUnits(false)
+      if (!silent) setLoadingUnits(false)
     }
   }
 
   const fetchFacilities = async () => {
     try {
-      const res = await facilityService.getFacilities()
+      const res = await facilityService.getFacilities({ size: 50, status: 'ACTIVE' })
       if (res?.content) {
-        setFacilities(res.content)
+        const activeOnly = res.content.filter(
+          (f) => f.status === 'ACTIVE' || (!f.status && (f as any).isActive !== false)
+        )
+        setFacilities(activeOnly)
       }
     } catch (err) {
       console.error('Failed to load facilities from database:', err)
     }
   }
 
-  const fetchBookingRequests = async () => {
-    setLoadingRequests(true)
+  const fetchBookingRequests = async (silent = false) => {
+    if (!silent) setLoadingRequests(true)
     try {
       const requests = await bookingService.getMyRequests()
       setBookingRequests(Array.isArray(requests) ? requests : [])
     } catch (err) {
       console.warn('Failed to load booking requests:', err)
     } finally {
-      setLoadingRequests(false)
+      if (!silent) setLoadingRequests(false)
     }
   }
 
@@ -1148,14 +1151,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [user?.id, fetchCustomerNotifications])
 
   useRealtimeSync(() => {
-    void fetchContracts()
-    void fetchCustomerBookings()
-    void fetchCustomerPayments()
-    void fetchAvailableUnits()
-    void fetchMyRenewals()
-    void fetchCustomerNotifications()
-    void fetchBookingRequests()
-  }, { intervalMs: 5000 })
+    void fetchContracts(true)
+    void fetchCustomerBookings(true)
+    void fetchCustomerPayments(true)
+    void fetchAvailableUnits(true)
+    void fetchMyRenewals(true)
+    void fetchCustomerNotifications(true)
+    void fetchBookingRequests(true)
+  }, { intervalMs: 30000 })
 
   useEffect(() => {
     let isCurrent = true
@@ -1171,10 +1174,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
     }
     void loadRequests()
-    const intervalId = window.setInterval(() => void loadRequests(), 15000)
     return () => {
       isCurrent = false
-      window.clearInterval(intervalId)
     }
   }, [user?.id])
 
@@ -1182,16 +1183,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const activatedContracts = contracts.filter(c => c.status === 'ACTIVE')
 
   // Merge active bookings that have unit assigned into effectiveActiveContracts to guarantee
-  // the customer always sees their handed-over locker in "Kho của tôi & Mã PIN" even before contract list refetches
+  // the customer always sees their handed-over locker in "Kho của tôi & Mã PIN" even before contract list refetches.
+  // Terminated or completed bookings/contracts must NEVER be re-synthesized as active units.
   const effectiveActiveContracts = useMemo(() => {
     const list = [...activeContracts]
-    const existingUnitCodes = new Set(list.map(c => (c.unitCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '')))
-    const existingBookingIds = new Set(list.map(c => c.bookingId).filter(Boolean))
+    const allKnownUnitCodes = new Set(contracts.map(c => (c.unitCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '')))
+    const allKnownBookingIds = new Set(contracts.map(c => c.bookingId).filter(Boolean))
 
     customerBookings.forEach(b => {
-      if ((b.status === 'ACTIVE' || b.status === 'COMPLETED') && b.unitCode) {
+      if (b.status === 'ACTIVE' && b.unitCode) {
         const cleanU = b.unitCode.toUpperCase().replace(/[^A-Z0-9]/g, '')
-        if (!existingUnitCodes.has(cleanU) && !existingBookingIds.has(b.id)) {
+        if (!allKnownUnitCodes.has(cleanU) && !allKnownBookingIds.has(b.id)) {
           list.push({
             id: `contract-${b.id}`,
             contractCode: (b as any).contractCode || `CTR-${b.bookingCode}`,
@@ -1212,12 +1214,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             status: 'ACTIVE',
             createdAt: b.createdAt,
           } as any)
-          existingUnitCodes.add(cleanU)
+          allKnownUnitCodes.add(cleanU)
         }
       }
     })
     return list
-  }, [activeContracts, customerBookings])
+  }, [activeContracts, contracts, customerBookings])
 
   const effectiveActivatedContracts = useMemo(() => {
     return effectiveActiveContracts.filter(c => c.status === 'ACTIVE')
@@ -2289,6 +2291,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   const facilityCardsList = useMemo(() => {
     return facilities
+      .filter((fac) => fac.status === 'ACTIVE' || (!fac.status && (fac as any).isActive !== false))
       .map((fac, idx) => {
         const unitsInFac = availableUnits.filter((u) => u.facilityId === fac.id)
         const availableCount = unitsInFac.length > 0 ? unitsInFac.length : 8
@@ -4091,7 +4094,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       {/* 3. TAB 1: KHO CỦA TÔI ĐANG THUÊ (MY UNITS) */}
       {activeTab === 'my-units' && (
         <div className="flex flex-col gap-6">
-          {loadingContracts ? (
+          {loadingContracts && effectiveActiveContracts.length === 0 ? (
             <div className="p-12 text-center text-slate-500 text-xs">Đang tải dữ liệu kho từ hệ thống database...</div>
           ) : effectiveActiveContracts.length === 0 ? (
             <div className="stitch-card p-10 text-center flex flex-col items-center justify-center gap-5 max-w-2xl mx-auto my-6 border-dashed border-2 border-slate-200">
@@ -4799,50 +4802,27 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </button>
                       ) : (
                         <>
-                          {/* Nếu CHƯA ngưng thuê và KHÔNG quá hạn -> hiển thị Hủy yêu cầu / Yêu Cầu Gia Hạn */}
-                          {!isRentalExpired && c.status !== 'OVERDUE' && c.status !== 'OVERDUE_LOCKED' && (
-                            activeReturnRequest ? (
-                              <button
-                                type="button"
-                                disabled={cancellingReturnUnit === c.unitCode}
-                                onClick={() => setConfirmCancelReturnModal({
-                                  unitCode: c.unitCode,
-                                  contractCode: c.contractCode,
-                                  bookingId: c.bookingId,
-                                  facilityName: c.facilityName,
-                                  returnRequest: activeReturnRequest,
-                                })}
-                                className="flex-1 min-w-[150px] h-10 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 active:scale-98 text-rose-700 border border-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                                title="Hủy bỏ yêu cầu trả kho để tiếp tục thuê và gia hạn sử dụng kho này"
-                              >
-                                <span className="material-symbols-outlined text-[17px] text-rose-600">
-                                  {cancellingReturnUnit === c.unitCode ? 'sync' : 'undo'}
-                                </span>
-                                <span>
-                                  {cancellingReturnUnit === c.unitCode ? 'Đang hủy...' : 'Hủy yêu cầu trả kho'}
-                                </span>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => openRenewModal(c)}
-                                className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
-                              >
-                                <span className="material-symbols-outlined text-[18px]">
-                                  {activePendingRenewal?.status === 'PENDING_SIGNATURE'
-                                    ? 'draw'
-                                    : activePendingRenewal?.status === 'PENDING_PAYMENT'
-                                    ? 'payments'
-                                    : 'autorenew'}
-                                </span>
-                                <span>
-                                  {activePendingRenewal?.status === 'PENDING_SIGNATURE'
-                                    ? 'Ký Phụ Lục Gia Hạn'
-                                    : activePendingRenewal?.status === 'PENDING_PAYMENT'
-                                    ? 'Thanh Toán Gia Hạn'
-                                    : 'Yêu Cầu Gia Hạn'}
-                                </span>
-                              </button>
-                            )
+                          {/* Nếu CHƯA ngưng thuê, KHÔNG quá hạn và KHÔNG có yêu cầu trả kho -> hiển thị Yêu Cầu Gia Hạn */}
+                          {!isRentalExpired && c.status !== 'OVERDUE' && c.status !== 'OVERDUE_LOCKED' && !activeReturnRequest && (
+                            <button
+                              onClick={() => openRenewModal(c)}
+                              className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">
+                                {activePendingRenewal?.status === 'PENDING_SIGNATURE'
+                                  ? 'draw'
+                                  : activePendingRenewal?.status === 'PENDING_PAYMENT'
+                                  ? 'payments'
+                                  : 'autorenew'}
+                              </span>
+                              <span>
+                                {activePendingRenewal?.status === 'PENDING_SIGNATURE'
+                                  ? 'Ký Phụ Lục Gia Hạn'
+                                  : activePendingRenewal?.status === 'PENDING_PAYMENT'
+                                  ? 'Thanh Toán Gia Hạn'
+                                  : 'Yêu Cầu Gia Hạn'}
+                              </span>
+                            </button>
                           )}
 
                           {/* Lịch sử kho - luôn hiển thị khi chưa ngưng thuê */}
@@ -5726,7 +5706,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <button
                   type="button"
-                  onClick={fetchCustomerBookings}
+                  onClick={() => fetchCustomerBookings()}
                   disabled={loadingBookings}
                   className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
@@ -5802,7 +5782,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
           {/* Bookings Grid */}
-          {loadingBookings ? (
+          {loadingBookings && customerBookings.length === 0 ? (
             <div className="p-16 text-center text-slate-500 text-xs flex flex-col items-center justify-center gap-2">
               <span className="material-symbols-outlined text-[32px] text-blue-600 animate-spin">sync</span>
               <span>Đang tải lịch sử đặt kho từ máy chủ Boxora...</span>
@@ -6722,7 +6702,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={fetchMyRenewals}
+                  onClick={() => fetchMyRenewals()}
                   className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 flex items-center gap-1 transition cursor-pointer"
                   title="Làm mới danh sách gia hạn"
                 >
@@ -6942,7 +6922,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {loadingPayments ? (
+                  {loadingPayments && customerPayments.length === 0 ? (
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-slate-400 text-xs">
                         <div className="flex items-center justify-center gap-2">

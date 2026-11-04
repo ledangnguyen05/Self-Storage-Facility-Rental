@@ -214,6 +214,10 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                         .bookingCode(c.getBooking() != null ? c.getBooking().getBookingCode() : null)
                         .unitId(c.getUnit() != null ? c.getUnit().getId() : null)
                         .unitCode(c.getUnit() != null ? c.getUnit().getUnitCode() : "N/A")
+                        .unitTypeName(c.getUnit() != null && c.getUnit().getUnitType() != null ? c.getUnit().getUnitType().getTypeName() : "Kho")
+                        .monthlyFee(c.getMonthlyFee())
+                        .dailyRentalPrice(c.getMonthlyFee() != null ? c.getMonthlyFee().divide(BigDecimal.valueOf(30), 2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO)
+                        .lateFeePercentage(BigDecimal.valueOf(100))
                         .facilityId(c.getFacility() != null ? c.getFacility().getId() : null)
                         .facilityName(c.getFacility() != null ? c.getFacility().getName() : "N/A")
                         .customerId(c.getCustomer() != null ? c.getCustomer().getId() : null)
@@ -332,6 +336,10 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     .bookingCode(contract.getBooking() != null ? contract.getBooking().getBookingCode() : null)
                     .unitId(contract.getUnit() != null ? contract.getUnit().getId() : null)
                     .unitCode(contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A")
+                    .unitTypeName(calc.unitTypeName())
+                    .monthlyFee(calc.monthlyFee())
+                    .dailyRentalPrice(calc.dailyRentalPrice())
+                    .lateFeePercentage(calc.lateFeePercentage())
                     .facilityId(facId)
                     .facilityName(contract.getFacility() != null ? contract.getFacility().getName() : "N/A")
                     .customerId(contract.getCustomer() != null ? contract.getCustomer().getId() : null)
@@ -345,6 +353,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     .dailyLateFee(calc.dailyLateFee())
                     .lateFee(calc.lateFee())
                     .totalDebt(calc.totalDebt())
+                    .customerRefundAmount(calc.customerRefundAmount())
+                    .depositHeld(calc.depositHeld())
                     .unverifiedAmount(calc.unverifiedAmount())
                     .stage(calc.stage())
                     .stageLabel(resolveStageLabel(calc.stage()))
@@ -563,6 +573,10 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .bookingCode(contract.getBooking() != null ? contract.getBooking().getBookingCode() : null)
                 .unitId(contract.getUnit() != null ? contract.getUnit().getId() : null)
                 .unitCode(contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A")
+                .unitTypeName(calc.unitTypeName())
+                .monthlyFee(calc.monthlyFee())
+                .dailyRentalPrice(calc.dailyRentalPrice())
+                .lateFeePercentage(calc.lateFeePercentage())
                 .facilityId(contract.getFacility() != null ? contract.getFacility().getId() : null)
                 .facilityName(contract.getFacility() != null ? contract.getFacility().getName() : "N/A")
                 .customerId(contract.getCustomer() != null ? contract.getCustomer().getId() : null)
@@ -576,8 +590,9 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .dailyLateFee(isSettled ? BigDecimal.ZERO : calc.dailyLateFee())
                 .lateFee(isSettled ? BigDecimal.ZERO : calc.lateFee())
                 .totalDebt(isSettled ? BigDecimal.ZERO : calc.totalDebt())
+                .customerRefundAmount(isSettled ? BigDecimal.ZERO : calc.customerRefundAmount())
                 .unverifiedAmount(isSettled ? BigDecimal.ZERO : calc.unverifiedAmount())
-                .depositHeld(contract.getDepositHeld())
+                .depositHeld(calc.depositHeld())
                 .stage(isSettled ? null : calc.stage())
                 .stageLabel(isSettled ? "Đã xong (Khách trả kho)" : resolveStageLabel(calc.stage()))
                 .feeFormulaExplanation(isSettled ? "Hợp đồng đã hoàn tất thanh toán nợ cước và thủ tục trả kho." : calc.feeFormulaExplanation())
@@ -626,18 +641,33 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
 
         String content = request.getContent();
         if (content == null || content.trim().isEmpty()) {
-            content = String.format(
-                    "[BOXORA %s] Kính gửi %s, hợp đồng thuê kho #%s (%s) tại %s đã quá hạn %d ngày. Tổng công nợ cần thanh toán: %,.0f VNĐ (Nợ gốc: %,.0f đ, Phí phạt: %,.0f đ). Vui lòng thanh toán tại boxora.vn hoặc liên hệ BQL cơ sở.",
-                    request.getTemplateType(),
-                    contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Quý khách",
-                    contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
-                    contract.getContractCode(),
-                    contract.getFacility() != null ? contract.getFacility().getName() : "Boxora",
-                    calc.overdueDays(),
-                    calc.totalDebt().doubleValue(),
-                    calc.principalDebt().doubleValue(),
-                    calc.lateFee().doubleValue()
-            );
+            if (calc.totalDebt().compareTo(BigDecimal.ZERO) == 0) {
+                content = String.format(
+                        "[BOXORA %s] Kính gửi %s, hợp đồng thuê kho #%s (%s) tại %s đã quá hạn trả kho %d ngày. Phí phạt trễ hạn: %,.0f đ. Tiền cọc giữ: %,.0f đ (Số tiền hoàn khách dự kiến khi trả kho: %,.0f đ). Quý khách vui lòng liên hệ BQL cơ sở để hoàn tất thủ tục bàn giao trả kho.",
+                        request.getTemplateType(),
+                        contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Quý khách",
+                        contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
+                        contract.getContractCode(),
+                        contract.getFacility() != null ? contract.getFacility().getName() : "Boxora",
+                        calc.overdueDays(),
+                        calc.lateFee().doubleValue(),
+                        calc.depositHeld() != null ? calc.depositHeld().doubleValue() : 0.0,
+                        calc.customerRefundAmount() != null ? calc.customerRefundAmount().doubleValue() : 0.0
+                );
+            } else {
+                content = String.format(
+                        "[BOXORA %s] Kính gửi %s, hợp đồng thuê kho #%s (%s) tại %s đã quá hạn trả kho %d ngày. Phí phạt trễ hạn: %,.0f đ, vượt quá tiền cọc giữ %,.0f đ. Tổng công nợ cần thanh toán: %,.0f đ. Quý khách vui lòng thanh toán công nợ và liên hệ BQL cơ sở để hoàn tất bàn giao trả kho.",
+                        request.getTemplateType(),
+                        contract.getCustomer() != null ? contract.getCustomer().getFullName() : "Quý khách",
+                        contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A",
+                        contract.getContractCode(),
+                        contract.getFacility() != null ? contract.getFacility().getName() : "Boxora",
+                        calc.overdueDays(),
+                        calc.lateFee().doubleValue(),
+                        calc.depositHeld() != null ? calc.depositHeld().doubleValue() : 0.0,
+                        calc.totalDebt().doubleValue()
+                );
+            }
         }
 
         User currentUser = getCurrentUser();
@@ -658,7 +688,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         // Dispatch web notification for customer dashboard & notification center
         if (contract.getCustomer() != null) {
             String unitCode = contract.getUnit() != null ? contract.getUnit().getUnitCode() : "N/A";
-            String webTitle = String.format("[Nhắc cước] Hợp đồng #%s (Kho #%s) quá hạn %d ngày",
+            String webTitle = String.format("[Quá hạn trả kho] Hợp đồng #%s (Kho #%s) quá hạn %d ngày",
                     contract.getContractCode(), unitCode, calc.overdueDays());
 
             NotificationLog webNotif = NotificationLog.builder()

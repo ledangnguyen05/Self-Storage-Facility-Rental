@@ -178,13 +178,11 @@ export const CancellationPolicyConfirmModal: React.FC<CancellationPolicyConfirmM
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-100 dark:border-amber-900/50 space-y-1">
-                  <span className="text-[10px] font-semibold text-slate-500 uppercase block">Thời hạn báo trước khi trả kho</span>
+                  <span className="text-[10px] font-semibold text-slate-500 uppercase block">Thủ tục trả kho</span>
                   <strong className="text-slate-800 dark:text-slate-200 block font-bold text-xs">
-                    {policyDetail?.returnNoticeDays && policyDetail.returnNoticeDays > 0
-                      ? `${policyDetail.returnNoticeDays} ngày trước ngày kết thúc`
-                      : 'Không yêu cầu báo trước'}
+                    Linh hoạt bất cứ lúc nào
                   </strong>
-                  <span className="text-[10px] text-slate-500 block">Quy định thông báo trước trả kho</span>
+                  <span className="text-[10px] text-slate-500 block">Chủ động gửi yêu cầu trên hệ thống</span>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-white/90 dark:bg-slate-900/90 border border-amber-100 dark:border-amber-900/50 space-y-1">

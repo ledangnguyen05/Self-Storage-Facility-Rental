@@ -2527,7 +2527,7 @@ export const ManagerDashboard: React.FC = () => {
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                Mở gia hạn trước: {facilityPolicy?.renewalWindowDays ?? 3} ngày
+                Gia hạn: Linh hoạt bất cứ lúc nào
               </div>
             </div>
 
@@ -2553,25 +2553,25 @@ export const ManagerDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Card 3: Nghiệm Thu Trả Kho */}
+            {/* Card 3: Nghiệm Thu Trả Kho & SLA Hoàn Cọc */}
             <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Báo Trước Trả Kho</span>
-                  <span className="material-symbols-outlined text-amber-600 text-[20px]">assignment_return</span>
+                  <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">SLA Hoàn Cọc Trả Kho</span>
+                  <span className="material-symbols-outlined text-cyan-600 text-[20px]">assignment_return</span>
                 </div>
                 <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold font-mono text-slate-900 tabular-nums">
-                    {facilityPolicy?.returnNoticeDays ?? 0}
+                  <span className="text-3xl font-extrabold font-mono text-cyan-700 tabular-nums">
+                    {facilityPolicy?.depositRefundSlaDays ?? 3}
                   </span>
-                  <span className="text-xs text-slate-500">ngày</span>
+                  <span className="text-xs text-slate-500">ngày làm việc</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Kiểm định hiện trường: <strong className="text-slate-900">100% đạt chuẩn</strong>
+                  Kiểm định hiện trường: <strong className="text-slate-900">100% đạt chuẩn biên bản</strong>
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">
-                Khấu trừ nếu hư hỏng chốt hoặc tồn đọng rác
+                Trả kho: Khách hàng chủ động tạo yêu cầu bất cứ lúc nào
               </div>
             </div>
 
@@ -2589,7 +2589,7 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="text-xs text-slate-500">ngày ân hạn</span>
                 </div>
                 <p className="text-xs text-slate-600 mt-2">
-                  Phạt trễ: <strong className="text-rose-700">{(facilityPolicy?.dailyLateFee ?? 50000).toLocaleString('vi-VN')} đ/ngày</strong>
+                  Phạt trễ: <strong className="text-rose-700">{facilityPolicy?.dailyLateFee != null && Number(facilityPolicy.dailyLateFee) <= 500 ? Number(facilityPolicy.dailyLateFee) : 100}%/ngày theo loại kho</strong>
                 </p>
               </div>
               <div className="mt-4 pt-3 border-t border-slate-100 text-[11px] text-slate-500">

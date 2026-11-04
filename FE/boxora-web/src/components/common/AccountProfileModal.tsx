@@ -4,6 +4,13 @@ import { useAuth } from '../../context/AuthContext'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { authService } from '../../services/authService'
+import {
+  IdCardType,
+  CCCD_PATTERN,
+  PASSPORT_PATTERN,
+  loadUserSavedIdDoc,
+  saveUserSavedIdDoc
+} from '../../utils/userIdDocument'
 
 interface AccountProfileModalProps {
   isOpen: boolean
@@ -11,33 +18,8 @@ interface AccountProfileModalProps {
 }
 
 type TabId = 'profile' | 'security'
-type IdCardType = 'CCCD' | 'PASSPORT'
 
-const CCCD_PATTERN = /^[0-9]{12}$/
-const PASSPORT_PATTERN = /^[A-Za-z][0-9]{7,8}$/
 const PHONE_PATTERN = /^(0|\+84)(3|5|7|8|9)[0-9]{8}$/
-const ID_DOC_KEY = 'boxora_user_id_document'
-
-function loadIdDocument(userId?: string): { type: IdCardType; number: string } {
-  try {
-    const raw = localStorage.getItem(ID_DOC_KEY)
-    if (!raw) return { type: 'CCCD', number: '' }
-    const all = JSON.parse(raw)
-    const entry = userId ? all[userId] : null
-    return entry || { type: 'CCCD', number: '' }
-  } catch {
-    return { type: 'CCCD', number: '' }
-  }
-}
-
-function saveIdDocument(userId: string, type: IdCardType, number: string) {
-  try {
-    const raw = localStorage.getItem(ID_DOC_KEY)
-    const all = raw ? JSON.parse(raw) : {}
-    all[userId] = { type, number }
-    localStorage.setItem(ID_DOC_KEY, JSON.stringify(all))
-  } catch {}
-}
 
 function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: '', color: '' }
@@ -121,7 +103,8 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
   const [idCardType, setIdCardType] = useState<IdCardType>('CCCD')
-  const [idCardNumber, setIdCardNumber] = useState('')
+  const [cccdNumber, setCccdNumber] = useState('')
+  const [passportNumber, setPassportNumber] = useState('')
   const [profileError, setProfileError] = useState('')
   const [isSavingProfile, setIsSavingProfile] = useState(false)
   const [profileSaved, setProfileSaved] = useState(false)
@@ -139,9 +122,10 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
     setActiveTab('profile')
     setFullName(user?.fullName || '')
     setPhone(user?.phone || '')
-    const doc = loadIdDocument(user?.id)
-    setIdCardType(doc.type)
-    setIdCardNumber(doc.number)
+    const doc = loadUserSavedIdDoc(user)
+    setIdCardType(doc.preferredType)
+    setCccdNumber(doc.cccd)
+    setPassportNumber(doc.passport)
     setProfileError('')
     setProfileSaved(false)
     setOldPassword('')
@@ -155,7 +139,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
     e.preventDefault()
     const name = fullName.trim()
     const ph = phone.trim()
-    const idNum = idCardNumber.trim()
+    const activeIdNum = idCardType === 'CCCD' ? cccdNumber.trim() : passportNumber.trim()
 
     if (name.length < 3 || name.length > 30) {
       setProfileError('Tên phải có từ 3 đến 30 ký tự.')
@@ -165,12 +149,12 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
       setProfileError('Vui lòng nhập số điện thoại Việt Nam hợp lệ.')
       return
     }
-    if (idNum) {
-      if (idCardType === 'CCCD' && !CCCD_PATTERN.test(idNum)) {
+    if (activeIdNum) {
+      if (idCardType === 'CCCD' && !CCCD_PATTERN.test(activeIdNum)) {
         setProfileError('Số CCCD phải gồm đúng 12 chữ số.')
         return
       }
-      if (idCardType === 'PASSPORT' && !PASSPORT_PATTERN.test(idNum)) {
+      if (idCardType === 'PASSPORT' && !PASSPORT_PATTERN.test(activeIdNum)) {
         setProfileError('Số hộ chiếu không hợp lệ (VD: B1234567).')
         return
       }
@@ -180,8 +164,13 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
     setProfileError('')
     try {
       await updateProfile({ fullName: name, phone: ph })
-      if (user?.id) {
-        saveIdDocument(user.id, idCardType, idNum)
+      if (user) {
+        saveUserSavedIdDoc(user, idCardType, cccdNumber.trim(), passportNumber.trim())
+        window.dispatchEvent(
+          new CustomEvent('boxora_id_document_updated', {
+            detail: { type: idCardType, cccd: cccdNumber.trim(), passport: passportNumber.trim() }
+          })
+        )
       }
       setProfileSaved(true)
       setTimeout(() => setProfileSaved(false), 2500)
@@ -231,7 +220,7 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
     { id: 'profile', label: 'Hồ Sơ', icon: <UserRound size={14} /> },
-    { id: 'security', label: 'Bảo Mật', icon: <ShieldCheck size={14} /> },
+    { id: 'security', label: 'Đổi mật khẩu', icon: <ShieldCheck size={14} /> },
   ]
 
   return (
@@ -321,7 +310,6 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
             <div className="flex items-center gap-1.5">
               <CreditCard size={13} className="text-slate-500" />
               <span className="text-xs font-bold text-slate-700">CCCD / Hộ chiếu</span>
-              <span className="text-[10px] text-slate-400 font-normal">(tùy chọn)</span>
             </div>
 
             <div className="flex gap-1.5">
@@ -329,7 +317,10 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
                 <button
                   key={t}
                   type="button"
-                  onClick={() => { setIdCardType(t); setIdCardNumber('') }}
+                  onClick={() => {
+                    setIdCardType(t)
+                    setProfileError('')
+                  }}
                   className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
                     idCardType === t
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
@@ -345,13 +336,15 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
               type="text"
               inputMode={idCardType === 'CCCD' ? 'numeric' : 'text'}
               maxLength={idCardType === 'CCCD' ? 12 : 9}
-              value={idCardNumber}
+              value={idCardType === 'CCCD' ? cccdNumber : passportNumber}
               onChange={e => {
                 const raw = e.target.value
-                const val = idCardType === 'CCCD'
-                  ? raw.replace(/\D/g, '')
-                  : raw.toUpperCase()
-                setIdCardNumber(val)
+                if (idCardType === 'CCCD') {
+                  setCccdNumber(raw.replace(/\D/g, '').slice(0, 12))
+                } else {
+                  setPassportNumber(raw.toUpperCase().slice(0, 9))
+                }
+                setProfileError('')
               }}
               placeholder={idCardType === 'CCCD' ? '12 chữ số (VD: 079201012345)' : 'VD: B1234567'}
               className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 font-mono outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
@@ -369,13 +362,6 @@ export const AccountProfileModal: React.FC<AccountProfileModalProps> = ({ isOpen
             </div>
           )}
 
-          {/* Success */}
-          {profileSaved && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-700 font-semibold">
-              <CheckCircle2 size={14} />
-              Hồ sơ đã được cập nhật thành công!
-            </div>
-          )}
 
           <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
             <Button type="button" variant="secondary" onClick={onClose} disabled={isSavingProfile}>

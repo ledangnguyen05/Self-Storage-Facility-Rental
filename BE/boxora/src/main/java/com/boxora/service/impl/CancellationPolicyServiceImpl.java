@@ -279,11 +279,10 @@ public class CancellationPolicyServiceImpl implements CancellationPolicyService 
         int partialHours = policy.getCancellationPartialRefundHours() != null ? policy.getCancellationPartialRefundHours() : 48;
         double partialPercent = policy.getCancellationPartialRefundPercent() != null ? policy.getCancellationPartialRefundPercent() : 70.0;
         int slaDays = policy.getDepositRefundSlaDays() != null ? policy.getDepositRefundSlaDays() : 5;
-        int noticeDays = policy.getReturnNoticeDays() != null ? policy.getReturnNoticeDays() : 0;
 
         return String.format(
-                "Chính sách hủy: Hoàn 100%% tiền cọc trong vòng %d giờ kể từ khi đặt kho; hoàn %.0f%% trong vòng %d giờ; thông báo trả kho trước %d ngày; xử lý hoàn tiền trong %d ngày làm việc.",
-                fullHours, partialPercent, partialHours, noticeDays, slaDays
+                "Chính sách hủy: Hoàn 100%% tiền cọc trong vòng %d giờ kể từ khi đặt kho; hoàn %.0f%% trong vòng %d giờ; xử lý hoàn tiền trong %d ngày làm việc.",
+                fullHours, partialPercent, partialHours, slaDays
         );
     }
 

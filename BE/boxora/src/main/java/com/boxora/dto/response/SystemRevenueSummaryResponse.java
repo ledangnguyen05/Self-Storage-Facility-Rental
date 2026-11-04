@@ -18,6 +18,7 @@ public class SystemRevenueSummaryResponse {
     private BigDecimal renewalFeeRevenue;
     private BigDecimal extraChargeRevenue;
     private BigDecimal bookingPaymentRevenue;
+    private BigDecimal returnCompensationRevenue;
     private BigDecimal totalOverdueDebt; // KPI 4: Công nợ phải thu quá hạn
     private BigDecimal depositsHeld; // KPI 5: Tiền cọc đang giữ còn phải quyết toán
     private BigDecimal refundedAmount; // KPI 6: Số tiền hoàn thành công trong kỳ
@@ -25,7 +26,7 @@ public class SystemRevenueSummaryResponse {
     private Long pendingReconciliationCount; // KPI 6: Số giao dịch chờ đối soát
     private Long paymentCount;
 
-    // 7-parameter constructor for JPQL PaymentRepository.sumSystemRevenue
+    // 7-parameter constructor for backward compatibility
     public SystemRevenueSummaryResponse(
             BigDecimal totalRevenue,
             BigDecimal depositRevenue,
@@ -41,6 +42,29 @@ public class SystemRevenueSummaryResponse {
         this.renewalFeeRevenue = renewalFeeRevenue;
         this.extraChargeRevenue = extraChargeRevenue;
         this.bookingPaymentRevenue = bookingPaymentRevenue;
+        this.paymentCount = paymentCount;
+    }
+
+    // 9-parameter constructor for JPQL PaymentRepository.sumSystemRevenue
+    public SystemRevenueSummaryResponse(
+            BigDecimal totalRevenue,
+            BigDecimal depositRevenue,
+            BigDecimal rentalFeeRevenue,
+            BigDecimal renewalFeeRevenue,
+            BigDecimal extraChargeRevenue,
+            BigDecimal bookingPaymentRevenue,
+            BigDecimal returnCompensationRevenue,
+            BigDecimal totalCashIn,
+            Long paymentCount
+    ) {
+        this.totalRevenue = totalRevenue;
+        this.depositRevenue = depositRevenue;
+        this.rentalFeeRevenue = rentalFeeRevenue;
+        this.renewalFeeRevenue = renewalFeeRevenue;
+        this.extraChargeRevenue = extraChargeRevenue;
+        this.bookingPaymentRevenue = bookingPaymentRevenue;
+        this.returnCompensationRevenue = returnCompensationRevenue;
+        this.totalCashIn = totalCashIn;
         this.paymentCount = paymentCount;
     }
 }

@@ -34,12 +34,38 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
 
         boolean policyValid = isPolicyValid(policy);
 
-        // Multi-period calculation: overdueCycles is 1 for <= 30 days, 2 for 31-60 days, etc.
-        long overdueCycles = (overdueDays > 0) ? ((overdueDays - 1) / 30 + 1) : 0L;
-        BigDecimal monthlyFee = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
-        BigDecimal grossPrincipalDebt = (overdueDays > 0)
-                ? monthlyFee.multiply(BigDecimal.valueOf(Math.max(1L, overdueCycles)))
-                : monthlyFee;
+        String unitTypeName = "Kho";
+        if (contract.getUnit() != null && contract.getUnit().getUnitType() != null && contract.getUnit().getUnitType().getTypeName() != null) {
+            unitTypeName = contract.getUnit().getUnitType().getTypeName();
+        } else if (contract.getBooking() != null && contract.getBooking().getStorageUnit() != null
+                && contract.getBooking().getStorageUnit().getUnitType() != null
+                && contract.getBooking().getStorageUnit().getUnitType().getTypeName() != null) {
+            unitTypeName = contract.getBooking().getStorageUnit().getUnitType().getTypeName();
+        }
+
+        BigDecimal monthlyFee = contract.getMonthlyFee();
+        if (monthlyFee == null || monthlyFee.compareTo(BigDecimal.ZERO) <= 0) {
+            if (contract.getUnit() != null && contract.getUnit().getEffectiveBasePrice() != null) {
+                monthlyFee = contract.getUnit().getEffectiveBasePrice();
+            } else if (contract.getBooking() != null && contract.getBooking().getTotalRentalFee() != null) {
+                monthlyFee = contract.getBooking().getTotalRentalFee();
+            } else {
+                monthlyFee = BigDecimal.ZERO;
+            }
+        }
+
+        // Đơn giá thuê 1 ngày làm tròn số nguyên không có phần thập phân (VND)
+        BigDecimal dailyRentalPrice = monthlyFee.compareTo(BigDecimal.ZERO) > 0
+                ? monthlyFee.divide(BigDecimal.valueOf(30), 0, java.math.RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+
+        BigDecimal depositHeld = contract.getDepositHeld() != null
+                ? contract.getDepositHeld()
+                : (contract.getBooking() != null && contract.getBooking().getDepositPaid() != null
+                    ? contract.getBooking().getDepositPaid()
+                    : (contract.getBooking() != null && contract.getBooking().getDepositAmount() != null
+                        ? contract.getBooking().getDepositAmount()
+                        : BigDecimal.ZERO));
 
         // Check for paid and unverified payments
         BigDecimal paidTowardsDebt = BigDecimal.ZERO;
@@ -75,36 +101,71 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
         }
 
         if (!policyValid) {
-            BigDecimal netPrincipal = grossPrincipalDebt.subtract(paidTowardsDebt).max(BigDecimal.ZERO);
             return new CalculationResult(
                     overdueDays,
-                    netPrincipal,
                     BigDecimal.ZERO,
                     BigDecimal.ZERO,
-                    netPrincipal,
+                    BigDecimal.ZERO,
+                    BigDecimal.ZERO,
+                    depositHeld,
+                    depositHeld,
                     unverifiedAmount,
                     OverdueStage.POLICY_UNCONFIGURED,
                     false,
                     "Cơ sở chưa có chính sách quá hạn được kích hoạt hoặc tham số chính sách không hợp lệ.",
                     dueDate,
                     today,
-                    "Không thể tính phí: Thiếu chính sách cơ sở hợp lệ (Group 5)"
+                    "Không thể tính phí: Thiếu chính sách cơ sở hợp lệ (Group 5)",
+                    unitTypeName,
+                    monthlyFee,
+                    dailyRentalPrice,
+                    BigDecimal.valueOf(100)
             );
         }
 
         int graceDays = policy.getOverdueGraceDays();
-        BigDecimal dailyRate = policy.getDailyLateFee();
         int disableDays = policy.getOverdueAccessDisableDays();
         int sealingDays = policy.getOverdueSealingDays();
 
-        long billableDays = Math.max(0, overdueDays - graceDays);
-        BigDecimal grossLateFee = dailyRate.multiply(BigDecimal.valueOf(billableDays));
+        // Tỷ lệ % phí phạt trễ hạn từ chính sách cơ sở (tạm thời áp dụng toàn chi nhánh là 100%)
+        BigDecimal lateFeePercentage = BigDecimal.valueOf(100);
+        if (policy.getDailyLateFee() != null) {
+            if (policy.getDailyLateFee().compareTo(BigDecimal.valueOf(500)) <= 0
+                    && policy.getDailyLateFee().compareTo(BigDecimal.ZERO) >= 0) {
+                lateFeePercentage = policy.getDailyLateFee();
+            }
+        }
 
-        // Deduct paid debt: first against principal debt, remainder against late fee
-        BigDecimal netPrincipalDebt = grossPrincipalDebt.subtract(paidTowardsDebt).max(BigDecimal.ZERO);
-        BigDecimal remainderPaid = paidTowardsDebt.subtract(grossPrincipalDebt).max(BigDecimal.ZERO);
-        BigDecimal netLateFee = grossLateFee.subtract(remainderPaid).max(BigDecimal.ZERO);
-        BigDecimal netTotalDebt = netPrincipalDebt.add(netLateFee);
+        // Đơn giá phạt trễ 1 ngày: Đơn giá ngày của loại kho * (Tỷ lệ % / 100), làm tròn số nguyên VND không có số lẻ thập phân
+        BigDecimal dailyRate;
+        if (dailyRentalPrice.compareTo(BigDecimal.ZERO) > 0) {
+            dailyRate = dailyRentalPrice.multiply(lateFeePercentage)
+                    .divide(BigDecimal.valueOf(100), 0, java.math.RoundingMode.HALF_UP);
+        } else if (policy.getDailyLateFee() != null && policy.getDailyLateFee().compareTo(BigDecimal.valueOf(500)) > 0) {
+            dailyRate = policy.getDailyLateFee().setScale(0, java.math.RoundingMode.HALF_UP);
+        } else {
+            dailyRate = BigDecimal.ZERO;
+        }
+
+        long billableDays = Math.max(0, overdueDays - graceDays);
+        BigDecimal grossLateFee = dailyRate.multiply(BigDecimal.valueOf(billableDays)).setScale(0, java.math.RoundingMode.HALF_UP);
+        BigDecimal netLateFee = grossLateFee.subtract(paidTowardsDebt).max(BigDecimal.ZERO);
+
+        // Xử lý trường hợp khách trả kho muộn:
+        // Cấn trừ tiền phạt vào tiền cọc giữ:
+        // - Số tiền hoàn khách = tiền cọc - tiền phí phạt (khi cọc >= phạt)
+        // - Chỉ khi tiền cọc - phí phạt < 0 thì chuyển thành Tổng công nợ = tiền phí phạt - tiền cọc (khách phải nộp thêm cho Boxora)
+        BigDecimal balance = depositHeld.subtract(netLateFee);
+        BigDecimal customerRefundAmount;
+        BigDecimal totalDebt;
+
+        if (balance.compareTo(BigDecimal.ZERO) >= 0) {
+            customerRefundAmount = balance;
+            totalDebt = BigDecimal.ZERO;
+        } else {
+            customerRefundAmount = BigDecimal.ZERO;
+            totalDebt = balance.negate();
+        }
 
         OverdueStage stage;
         if (overdueDays <= graceDays) {
@@ -117,26 +178,44 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
             stage = OverdueStage.SEALING_ELIGIBLE;
         }
 
-        String formulaExplanation = String.format(
-                "Phí phạt = max(0, %d ngày quá hạn - %d ngày ân hạn) × %,.0f đ/ngày = %,.0f đ. Nợ gốc (%d kỳ) = %,.0f đ%s",
-                overdueDays, graceDays, dailyRate.doubleValue(), netLateFee.doubleValue(),
-                Math.max(1L, overdueCycles), netPrincipalDebt.doubleValue(),
-                paidTowardsDebt.compareTo(BigDecimal.ZERO) > 0 ? String.format(" (Đã thanh toán: %,.0f đ)", paidTowardsDebt.doubleValue()) : ""
-        );
+        String formulaExplanation;
+        if (balance.compareTo(BigDecimal.ZERO) >= 0) {
+            formulaExplanation = String.format(
+                    "Phí phạt (%s: %,.0f đ/tháng -> %,.0f đ/ngày × %.0f%%) = max(0, %d ngày quá hạn - %d ngày ân hạn) × %,.0f đ/ngày = %,.0f đ. Tiền cọc giữ: %,.0f đ -> Số tiền hoàn khách = %,.0f đ - %,.0f đ = %,.0f đ%s",
+                    unitTypeName, monthlyFee.doubleValue(), dailyRentalPrice.doubleValue(), lateFeePercentage.doubleValue(),
+                    overdueDays, graceDays, dailyRate.doubleValue(), netLateFee.doubleValue(),
+                    depositHeld.doubleValue(), depositHeld.doubleValue(), netLateFee.doubleValue(), customerRefundAmount.doubleValue(),
+                    paidTowardsDebt.compareTo(BigDecimal.ZERO) > 0 ? String.format(" (Đã thanh toán: %,.0f đ)", paidTowardsDebt.doubleValue()) : ""
+            );
+        } else {
+            formulaExplanation = String.format(
+                    "Phí phạt (%s: %,.0f đ/tháng -> %,.0f đ/ngày × %.0f%%) = max(0, %d ngày quá hạn - %d ngày ân hạn) × %,.0f đ/ngày = %,.0f đ. Tiền cọc giữ: %,.0f đ -> Tổng công nợ khách phải nộp = %,.0f đ - %,.0f đ = %,.0f đ%s",
+                    unitTypeName, monthlyFee.doubleValue(), dailyRentalPrice.doubleValue(), lateFeePercentage.doubleValue(),
+                    overdueDays, graceDays, dailyRate.doubleValue(), netLateFee.doubleValue(),
+                    depositHeld.doubleValue(), netLateFee.doubleValue(), depositHeld.doubleValue(), totalDebt.doubleValue(),
+                    paidTowardsDebt.compareTo(BigDecimal.ZERO) > 0 ? String.format(" (Đã thanh toán: %,.0f đ)", paidTowardsDebt.doubleValue()) : ""
+            );
+        }
 
         return new CalculationResult(
                 overdueDays,
-                netPrincipalDebt,
+                BigDecimal.ZERO,
                 dailyRate,
                 netLateFee,
-                netTotalDebt,
+                totalDebt,
+                customerRefundAmount,
+                depositHeld,
                 unverifiedAmount,
                 stage,
                 true,
                 null,
                 dueDate,
                 today,
-                formulaExplanation
+                formulaExplanation,
+                unitTypeName,
+                monthlyFee,
+                dailyRentalPrice,
+                lateFeePercentage
         );
     }
 

@@ -336,7 +336,8 @@ export const OverdueManagementPage: React.FC = () => {
 
   const formatVND = (num?: number | null) => {
     if (num == null) return '0 ₫'
-    return `${num.toLocaleString('vi-VN')} ₫`
+    const safe = Math.max(0, Math.round(Number(num) || 0))
+    return `${safe.toLocaleString('vi-VN')} ₫`
   }
 
   return (
@@ -645,6 +646,7 @@ export const OverdueManagementPage: React.FC = () => {
               <option value="SEALING_REQUESTED">Chờ duyệt niêm phong</option>
               <option value="SEALING_APPROVED">Đã duyệt (Chờ niêm phong)</option>
               <option value="SEALING_COMPLETED">Đã niêm phong hoàn tất</option>
+              <option value="SEALING_REJECTED">Đề xuất bị từ chối</option>
             </select>
           </div>
 
@@ -820,7 +822,7 @@ export const OverdueManagementPage: React.FC = () => {
                         </div>
                         <span className="text-xs font-semibold text-rose-600 flex items-center gap-1">
                           <span className="material-symbols-outlined text-[14px]">grid_view</span>
-                          Buồng #{item.unitCode}
+                          Buồng #{item.unitCode} {item.unitTypeName ? `• ${item.unitTypeName}` : ''}
                         </span>
                       </div>
                     </td>
@@ -857,16 +859,23 @@ export const OverdueManagementPage: React.FC = () => {
                     <td className="p-3.5">
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1">
-                          <span className="text-[11px] text-slate-400">Gốc:</span>
-                          <span className="text-slate-700 font-medium">{formatVND(item.principalDebt)}</span>
+                          <span className="text-[11px] text-slate-400">Cọc giữ:</span>
+                          <span className="text-emerald-700 font-medium">{formatVND(item.depositHeld)}</span>
                         </div>
                         <div className="flex items-center gap-1 text-[11px] text-rose-600">
-                          <span>Phạt:</span>
+                          <span>Phạt ({item.lateFeePercentage ?? 100}%/d):</span>
                           <span className="font-bold">+{formatVND(item.lateFee)}</span>
                         </div>
-                        <div className="font-mono font-black text-rose-700 text-sm mt-0.5">
-                          {formatVND(item.totalDebt)}
-                        </div>
+                        {item.totalDebt > 0 ? (
+                          <div className="font-mono font-black text-rose-700 text-sm mt-0.5" title="Công nợ khách phải thanh toán thêm">
+                            Nợ: {formatVND(item.totalDebt)}
+                          </div>
+                        ) : (
+                          <div className="font-mono font-bold text-emerald-700 text-xs mt-0.5 flex items-center gap-1" title="Số tiền cọc còn lại hoàn khách khi trả kho">
+                            <span className="material-symbols-outlined text-[13px]">replay</span>
+                            Hoàn: {formatVND(item.customerRefundAmount ?? Math.max(0, (item.depositHeld || 0) - (item.lateFee || 0)))}
+                          </div>
+                        )}
                       </div>
                     </td>
 
@@ -895,12 +904,14 @@ export const OverdueManagementPage: React.FC = () => {
                         item.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
                         item.sealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800' :
                         item.sealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800' :
+                        item.sealingStatus === 'SEALING_REJECTED' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                         item.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800' :
                         'bg-slate-100 text-slate-500'
                       }`}>
                         {item.sealingStatus === 'SEALING_COMPLETED' ? 'Đã niêm phong' :
                          item.sealingStatus === 'SEALING_APPROVED' ? 'Đã duyệt NP' :
                          item.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ duyệt NP' :
+                         item.sealingStatus === 'SEALING_REJECTED' ? 'Từ chối NP' :
                          item.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ ĐK niêm phong' :
                          'Chưa niêm phong'}
                       </span>

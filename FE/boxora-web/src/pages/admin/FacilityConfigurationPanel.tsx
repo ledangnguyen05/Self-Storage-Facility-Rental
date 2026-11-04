@@ -1312,21 +1312,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                 {t('Chính sách vận hành chi nhánh', 'Branch Operating Policy')}
                               </span>
                             </div>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                facilityPoliciesMap[facility.id]?.isActive === false
-                                  ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-900'
-                                  : facilityPoliciesMap[facility.id]
-                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-900'
-                                  : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
-                              }`}
-                            >
-                              {facilityPoliciesMap[facility.id]
-                                ? facilityPoliciesMap[facility.id].isActive === false
-                                  ? t('Ngừng áp dụng', 'Inactive')
-                                  : t('Đang áp dụng', 'Active')
-                                : t('Chưa xác minh', 'Unverified')}
-                            </span>
                           </div>
 
                           {loadingPolicyFacilityId === facility.id ? (
@@ -1347,7 +1332,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                               const pol = facilityPoliciesMap[facility.id]
                               const depositPct = pol.depositPercentage ?? pol.depositPercent
                               const minMonths = pol.minimumRentalMonths
-                              const renewalDays = pol.renewalWindowDays
                               const cancelFullHours = pol.cancellationFullRefundHours
                               const cancelPartHours = pol.cancellationPartialRefundHours
                               const cancelPartPct = pol.cancellationPartialRefundPercent
@@ -1379,10 +1363,10 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                     </div>
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
                                       <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                                        {t('Gia hạn & Hoàn cọc', 'Renewal & SLA')}
+                                        {t('SLA Hoàn cọc', 'SLA Deposit Refund')}
                                       </div>
                                       <div className="mt-0.5 font-bold text-cyan-800 dark:text-cyan-300">
-                                        {renewalDays == null ? '—' : `Trước ${renewalDays}d`} · SLA {slaDays == null ? '—' : `${slaDays}d`}
+                                        SLA {slaDays == null ? '—' : `${slaDays} ngày làm việc`}
                                       </div>
                                     </div>
                                     <div className="rounded-lg border border-slate-200/80 bg-white p-2.5 shadow-2xs dark:border-slate-800 dark:bg-slate-800/80">
@@ -1390,7 +1374,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                         {t('Quá hạn & Khóa kho', 'Overdue & Lockout')}
                                       </div>
                                       <div className="mt-0.5 font-bold text-rose-700 dark:text-rose-400">
-                                        {lateFee == null ? '—' : `${Number(lateFee).toLocaleString('vi-VN')} đ/d`} · {lockDays == null ? '—' : `Khóa D+${lockDays}`}
+                                        {lateFee == null || Number(lateFee) > 500 ? '100% / ngày' : `${Number(lateFee)}% / ngày`} · {lockDays == null ? '—' : `Khóa D+${lockDays}`}
                                       </div>
                                     </div>
                                   </div>
@@ -1398,7 +1382,6 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                   <div className="flex items-center justify-between pt-1 text-[11px]">
                                     <span className="text-slate-500 dark:text-slate-400">
                                       {t('Ân hạn', 'Grace')}: {graceDays == null ? '—' : `${graceDays}d`} · {t('Niêm phong', 'Seal')}: {sealDays == null ? '—' : `D+${sealDays}`}
-                                      {noticeDays != null && noticeDays > 0 ? ` · Báo trước: ${noticeDays}d` : ''}
                                     </span>
                                     <button
                                       type="button"

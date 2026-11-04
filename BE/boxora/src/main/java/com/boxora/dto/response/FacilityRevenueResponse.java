@@ -21,13 +21,14 @@ public class FacilityRevenueResponse {
     private BigDecimal renewalFeeRevenue;
     private BigDecimal extraChargeRevenue;
     private BigDecimal bookingPaymentRevenue;
+    private BigDecimal returnCompensationRevenue;
     private BigDecimal totalOverdueDebt;
     private BigDecimal depositsHeld;
     private BigDecimal refundedAmount;
     private BigDecimal pendingRefundAmount;
     private Long paymentCount;
 
-    // 9-parameter constructor for JPQL PaymentRepository.sumRevenueByFacility
+    // 9-parameter constructor for backward compatibility
     public FacilityRevenueResponse(
             UUID facilityId,
             String facilityName,
@@ -47,6 +48,33 @@ public class FacilityRevenueResponse {
         this.renewalFeeRevenue = renewalFeeRevenue;
         this.extraChargeRevenue = extraChargeRevenue;
         this.bookingPaymentRevenue = bookingPaymentRevenue;
+        this.paymentCount = paymentCount;
+    }
+
+    // 11-parameter constructor for JPQL PaymentRepository.sumRevenueByFacility
+    public FacilityRevenueResponse(
+            UUID facilityId,
+            String facilityName,
+            BigDecimal totalRevenue,
+            BigDecimal depositRevenue,
+            BigDecimal rentalFeeRevenue,
+            BigDecimal renewalFeeRevenue,
+            BigDecimal extraChargeRevenue,
+            BigDecimal bookingPaymentRevenue,
+            BigDecimal returnCompensationRevenue,
+            BigDecimal totalCashIn,
+            Long paymentCount
+    ) {
+        this.facilityId = facilityId;
+        this.facilityName = facilityName;
+        this.totalRevenue = totalRevenue;
+        this.depositRevenue = depositRevenue;
+        this.rentalFeeRevenue = rentalFeeRevenue;
+        this.renewalFeeRevenue = renewalFeeRevenue;
+        this.extraChargeRevenue = extraChargeRevenue;
+        this.bookingPaymentRevenue = bookingPaymentRevenue;
+        this.returnCompensationRevenue = returnCompensationRevenue;
+        this.totalCashIn = totalCashIn;
         this.paymentCount = paymentCount;
     }
 }

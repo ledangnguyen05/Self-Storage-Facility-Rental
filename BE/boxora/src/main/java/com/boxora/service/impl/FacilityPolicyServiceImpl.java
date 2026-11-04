@@ -111,7 +111,7 @@ public class FacilityPolicyServiceImpl implements FacilityPolicyService {
                 .facility(facility)
                 .isActive(request.getIsActive() == null || request.getIsActive())
                 .depositPercentage(request.getDepositPercentage())
-                .renewalWindowDays(request.getRenewalWindowDays() != null ? request.getRenewalWindowDays() : 3)
+                .renewalWindowDays(request.getRenewalWindowDays() != null ? request.getRenewalWindowDays() : 0)
                 .cancellationFullRefundHours(request.getCancellationFullRefundHours())
                 .cancellationPartialRefundHours(request.getCancellationPartialRefundHours())
                 .cancellationPartialRefundPercent(request.getCancellationPartialRefundPercent())
