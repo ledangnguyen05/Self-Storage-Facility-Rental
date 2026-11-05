@@ -3193,8 +3193,67 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [unitActivityLogs, myRenewals, contracts, customerBookings, customerNotifications, customerTickets, customerPayments, user?.fullName])
 
 
+  // Hàm nhận diện sự kiện / thông báo thuộc phạm vi Trả kho & Quyết toán
+  const isReturnActivityItem = useCallback((item: CustomerUnitActivityLog) => {
+    const isReturnAction = item.actionType === 'RETURN_SETTLEMENT'
+    const text = `${item.title} ${item.description}`.toLowerCase()
+    const isRefundRequest =
+      text.includes('yêu cầu hoàn tiền') ||
+      text.includes('ref-') ||
+      item.actionType === 'REFUND_STATUS' ||
+      item.actionType === 'REFUND_REJECTED' ||
+      item.actionType === 'REFUND_APPROVED'
+    if (isRefundRequest) return false
+
+    const isReturnKeyword =
+      text.includes('trả kho') ||
+      text.includes('quyết toán') ||
+      text.includes('nghiệm thu') ||
+      text.includes('khiếu nại') ||
+      (text.includes('hoàn cọc') && (text.includes('trả kho') || text.includes('nghiệm thu') || text.includes('quyết toán'))) ||
+      text.includes('khấu trừ')
+    return Boolean(isReturnAction || ((item.category === 'SUPPORT' || item.category === 'NOTIFICATION') && isReturnKeyword))
+  }, [])
+
+  // Lọc riêng các hoạt động & thông báo liên quan đến Trả kho & Nghiệm thu quyết toán (Dành riêng cho Tab "Trả kho")
+  const returnActivityLogs = useMemo<CustomerUnitActivityLog[]>(() => {
+    return combinedUnitActivityHistory.filter(isReturnActivityItem)
+  }, [combinedUnitActivityHistory, isReturnActivityItem])
+
+  const unitHistoryCounts = useMemo(() => {
+    const overdueCount = combinedUnitActivityHistory.filter(isOverdueDebtItem).length
+    const accessCount = combinedUnitActivityHistory.filter(i => !isReturnActivityItem(i) && i.category === 'ACCESS').length
+    const renewalCount = combinedUnitActivityHistory.filter(i => !isReturnActivityItem(i) && i.category === 'RENEWAL').length
+    const notificationCount = combinedUnitActivityHistory.filter(
+      i =>
+        !isReturnActivityItem(i) &&
+        !isOverdueDebtItem(i) &&
+        (i.category === 'CONTRACT' ||
+          i.actionType === 'PAYMENT_COMPLETED' ||
+          i.actionType === 'CONTRACT_ACTIVATED' ||
+          i.actionType === 'REFUND_STATUS' ||
+          i.actionType === 'REFUND_REJECTED' ||
+          i.actionType === 'REFUND_APPROVED')
+    ).length
+    const supportCount = combinedUnitActivityHistory.filter(isReturnActivityItem).length
+
+    return {
+      all: overdueCount + accessCount + renewalCount + notificationCount,
+      overdue: overdueCount,
+      access: accessCount,
+      renewal: renewalCount,
+      notification: notificationCount,
+      support: supportCount,
+    }
+  }, [combinedUnitActivityHistory, isReturnActivityItem])
+
   const filteredUnitActivityHistory = useMemo(() => {
     return combinedUnitActivityHistory.filter(item => {
+      // Loại bỏ hoàn toàn thông báo Trả kho khỏi mục Thông báo chung
+      if (isReturnActivityItem(item)) {
+        return false
+      }
+
       if (unitHistoryCategory !== 'ALL') {
         if (unitHistoryCategory === 'OVERDUE') {
           // Tab "Nợ cước": Chứa toàn bộ thông báo từ 3 mục (Công Nợ & Công Thức, SmartLock & Thu Hồi PIN, Niêm Phong & Kiểm Kê)
@@ -3212,12 +3271,31 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           ) {
             return false
           }
-        } else if (unitHistoryCategory === 'SUPPORT') {
-          if (item.category !== 'SUPPORT' && item.actionType !== 'RETURN_SETTLEMENT') return false
+        } else if (unitHistoryCategory === 'ACCESS') {
+          if (item.category !== 'ACCESS') return false
+        } else if (unitHistoryCategory === 'RENEWAL') {
+          if (item.category !== 'RENEWAL') return false
         } else if (item.category !== unitHistoryCategory) {
           return false
         }
+      } else {
+        // Tab "ALL" (Tất cả): Chỉ hiển thị các sự kiện thuộc 4 mục (Nợ cước, Mã PIN, Gia hạn kho, Hợp đồng và thanh toán)
+        const isOverdue = isOverdueDebtItem(item)
+        const isAccess = item.category === 'ACCESS'
+        const isRenewal = item.category === 'RENEWAL'
+        const isNotification =
+          !isOverdue &&
+          (item.category === 'CONTRACT' ||
+            item.actionType === 'PAYMENT_COMPLETED' ||
+            item.actionType === 'CONTRACT_ACTIVATED' ||
+            item.actionType === 'REFUND_STATUS' ||
+            item.actionType === 'REFUND_REJECTED' ||
+            item.actionType === 'REFUND_APPROVED')
+        if (!isOverdue && !isAccess && !isRenewal && !isNotification) {
+          return false
+        }
       }
+
       if (unitHistoryUnitFilter !== 'ALL') {
         if (!item.unitCode || item.unitCode.toUpperCase() !== unitHistoryUnitFilter.toUpperCase()) {
           return false
@@ -3237,51 +3315,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
       return true
     })
-  }, [combinedUnitActivityHistory, unitHistoryCategory, unitHistoryUnitFilter, unitHistorySearch])
-
-  const unitHistoryCounts = useMemo(() => {
-    return {
-      all: combinedUnitActivityHistory.length,
-      overdue: combinedUnitActivityHistory.filter(isOverdueDebtItem).length,
-      access: combinedUnitActivityHistory.filter(i => i.category === 'ACCESS').length,
-      renewal: combinedUnitActivityHistory.filter(i => i.category === 'RENEWAL').length,
-      notification: combinedUnitActivityHistory.filter(
-        i =>
-          !isOverdueDebtItem(i) &&
-          (i.category === 'CONTRACT' ||
-            i.actionType === 'PAYMENT_COMPLETED' ||
-            i.actionType === 'CONTRACT_ACTIVATED' ||
-            i.actionType === 'REFUND_STATUS' ||
-            i.actionType === 'REFUND_REJECTED' ||
-            i.actionType === 'REFUND_APPROVED')
-      ).length,
-      support: combinedUnitActivityHistory.filter(i => i.category === 'SUPPORT' || i.actionType === 'RETURN_SETTLEMENT').length,
-    }
-  }, [combinedUnitActivityHistory])
-
-  // Lọc riêng các hoạt động & thông báo liên quan đến Trả kho & Nghiệm thu quyết toán
-  const returnActivityLogs = useMemo<CustomerUnitActivityLog[]>(() => {
-    return combinedUnitActivityHistory.filter(item => {
-      const isReturnAction = item.actionType === 'RETURN_SETTLEMENT'
-      const text = `${item.title} ${item.description}`.toLowerCase()
-      const isRefundRequest =
-        text.includes('yêu cầu hoàn tiền') ||
-        text.includes('ref-') ||
-        item.actionType === 'REFUND_STATUS' ||
-        item.actionType === 'REFUND_REJECTED' ||
-        item.actionType === 'REFUND_APPROVED'
-      if (isRefundRequest) return false
-
-      const isReturnKeyword =
-        text.includes('trả kho') ||
-        text.includes('quyết toán') ||
-        text.includes('nghiệm thu') ||
-        text.includes('khiếu nại') ||
-        (text.includes('hoàn cọc') && (text.includes('trả kho') || text.includes('nghiệm thu') || text.includes('quyết toán'))) ||
-        text.includes('khấu trừ')
-      return isReturnAction || ((item.category === 'SUPPORT' || item.category === 'NOTIFICATION') && isReturnKeyword)
-    })
-  }, [combinedUnitActivityHistory])
+  }, [combinedUnitActivityHistory, unitHistoryCategory, unitHistoryUnitFilter, unitHistorySearch, isReturnActivityItem])
 
   // Trích xuất mã kho từ chuỗi văn bản nếu có
   const extractUnitCodeForReturn = (text?: string): string | undefined => {
