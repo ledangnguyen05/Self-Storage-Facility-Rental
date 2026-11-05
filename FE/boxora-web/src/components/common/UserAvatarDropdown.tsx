@@ -115,7 +115,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
       <button
         type="button"
         onClick={() => setIsOpen(prev => !prev)}
-        className={`flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl transition-all cursor-pointer border ${
+        className={`notranslate flex items-center gap-2 p-1 sm:px-2.5 sm:py-1.5 rounded-xl transition-all cursor-pointer border ${
           isOpen
             ? 'bg-slate-100 border-slate-300 shadow-xs'
             : 'border-transparent hover:border-slate-200 hover:bg-slate-50'
@@ -131,9 +131,9 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
           <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
         </div>
 
-        <div className="hidden md:flex flex-col text-left" translate="no" data-no-translate="true">
-          <span className="text-xs font-bold text-slate-900 leading-tight max-w-[130px] truncate">
-            {user?.fullName || user?.username || t('Tài khoản')}
+        <div className="hidden md:flex flex-col text-left notranslate" translate="no" data-no-translate="true">
+          <span className="text-xs font-bold text-slate-900 leading-tight max-w-[130px] truncate notranslate" translate="no">
+            {t(user?.fullName || '') || user?.fullName || user?.username || t('Tài khoản')}
           </span>
         </div>
 
@@ -150,13 +150,13 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 p-3.5 animate-in fade-in slide-in-from-top-2 duration-150 flex flex-col gap-3">
           {/* User Profile Card */}
-          <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800" translate="no" data-no-translate="true">
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800 notranslate" translate="no" data-no-translate="true">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
               {userInitials}
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                {user?.fullName || user?.username || t('Người dùng')}
+              <span className="text-xs font-bold text-slate-900 dark:text-white truncate notranslate" translate="no">
+                {t(user?.fullName || '') || user?.fullName || user?.username || t('Người dùng')}
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 {user?.email || t('Chưa cập nhật email')}

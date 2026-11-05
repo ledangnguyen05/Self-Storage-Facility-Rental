@@ -5,6 +5,7 @@ import com.boxora.entity.Payment;
 import com.boxora.entity.RentalContract;
 import com.boxora.enums.OverdueStage;
 import com.boxora.enums.PaymentStatus;
+import com.boxora.enums.PaymentType;
 import com.boxora.repository.PaymentRepository;
 import com.boxora.service.OverdueDebtCalculationService;
 import lombok.RequiredArgsConstructor;
@@ -83,6 +84,12 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
             if (contract.getId() != null) {
                 List<Payment> contractPayments = paymentRepository.findByContract_Id(contract.getId());
                 for (Payment p : contractPayments) {
+                    if (p.getPaymentType() == PaymentType.DEPOSIT) {
+                        continue;
+                    }
+                    if (p.getPaymentTime() != null && dueDate != null && p.getPaymentTime().toLocalDate().isBefore(dueDate)) {
+                        continue;
+                    }
                     if (p.getStatus() == PaymentStatus.PAID && p.getAmount() != null) {
                         paidTowardsDebt = paidTowardsDebt.add(p.getAmount());
                     } else if (p.getStatus() == PaymentStatus.PENDING && p.getAmount() != null) {
@@ -96,12 +103,16 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
                     if (p.getContract() != null && contract.getId() != null && contract.getId().equals(p.getContract().getId())) {
                         continue;
                     }
-                    if (p.getPaymentTime() != null && dueDate != null && !p.getPaymentTime().toLocalDate().isBefore(dueDate)) {
-                        if (p.getStatus() == PaymentStatus.PAID && p.getAmount() != null) {
-                            paidTowardsDebt = paidTowardsDebt.add(p.getAmount());
-                        } else if (p.getStatus() == PaymentStatus.PENDING && p.getAmount() != null) {
-                            unverifiedAmount = unverifiedAmount.add(p.getAmount());
-                        }
+                    if (p.getPaymentType() == PaymentType.DEPOSIT) {
+                        continue;
+                    }
+                    if (p.getPaymentTime() != null && dueDate != null && p.getPaymentTime().toLocalDate().isBefore(dueDate)) {
+                        continue;
+                    }
+                    if (p.getStatus() == PaymentStatus.PAID && p.getAmount() != null) {
+                        paidTowardsDebt = paidTowardsDebt.add(p.getAmount());
+                    } else if (p.getStatus() == PaymentStatus.PENDING && p.getAmount() != null) {
+                        unverifiedAmount = unverifiedAmount.add(p.getAmount());
                     }
                 }
             }

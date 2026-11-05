@@ -1174,9 +1174,6 @@ export const OverdueManagementPage: React.FC = () => {
                           <span className="material-symbols-outlined text-[17px] text-emerald-600">check_circle</span>
                           Boxora hoàn trả cọc cho khách:
                         </span>
-                        <span className="text-[10px] text-emerald-700 mt-0.5">
-                          Đã cấn trừ đủ {formatVND(totalDeductions)} phí phát sinh vào tiền cọc
-                        </span>
                       </div>
                       <span className="font-mono font-black text-emerald-700 text-lg">
                         {formatVND(refundAmount)}
@@ -1187,10 +1184,7 @@ export const OverdueManagementPage: React.FC = () => {
                       <div className="flex flex-col">
                         <span className="text-xs font-black text-amber-900 uppercase tracking-wide flex items-center gap-1">
                           <span className="material-symbols-outlined text-[17px] text-amber-600">payments</span>
-                          Khách cần thanh toán số tiền còn thiếu:
-                        </span>
-                        <span className="text-[10px] text-amber-700 mt-0.5">
-                          Đã cấn trừ toàn bộ tiền cọc {formatVND(depositHeld)} vào cước nợ {formatVND(totalDeductions)}
+                          Khách cần thanh toán:
                         </span>
                       </div>
                       <span className="font-mono font-black text-amber-900 text-lg">
@@ -1214,29 +1208,6 @@ export const OverdueManagementPage: React.FC = () => {
                   )}
                 </div>
               </div>
-
-              {/* Thông báo hướng dẫn nghiệp vụ gọn gàng (Không cần nhập thông tin giao dịch) */}
-              {isDebtorMode ? (
-                <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-xl text-xs text-amber-950 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5 text-amber-900">
-                    <span className="material-symbols-outlined text-[17px] text-amber-600">payments</span>
-                    Thu tiền nợ cước tại quầy cơ sở ({formatVND(remainingDebt)})
-                  </div>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Khách hàng thanh toán phần nợ còn thiếu <strong>{formatVND(remainingDebt)}</strong> cho nhân viên (tiền mặt hoặc chuyển khoản). Hệ thống sẽ tự động ghi nhận phiếu thu và tất toán hợp đồng mà không cần nhập thủ công thông tin ngân hàng hay chứng từ.
-                  </p>
-                </div>
-              ) : isRefundMode ? (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5 text-emerald-900">
-                    <span className="material-symbols-outlined text-[17px] text-emerald-600">price_check</span>
-                    Không cần tạo phiếu thu
-                  </div>
-                  <p className="text-[11px] text-emerald-800 leading-relaxed">
-                    Khách hàng không còn công nợ cần thanh toán. Boxora thực hiện hoàn cọc <strong>{formatVND(refundAmount)}</strong> cho khách hàng <strong>{contractToSettle.customerName}</strong>.
-                  </p>
-                </div>
-              ) : null}
 
               {/* Hướng dẫn quy trình hệ thống */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 leading-relaxed">
