@@ -122,6 +122,7 @@ const mergeGuestArrivals = (apiArrivals: Booking[], targetId?: string): Booking[
 
 export const ManagerDashboard: React.FC = () => {
   const { t } = useLanguage()
+  const tr = (vietnamese: string, english: string) => t(vietnamese, english)
   const { user, role, hasPermission } = useAuth()
   const { selectedFacility, setSelectedFacility, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
@@ -477,8 +478,8 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: isMaint ? (su.maintenanceBy || 'Kỹ thuật viên cơ sở') : (su.tenantName || (isAvail ? 'Kho trống' : isRes ? 'Đang cập nhật hồ sơ' : 'Chưa có thông tin')),
-            contract: isMaint ? (su.maintenanceReason || 'Bảo trì kỹ thuật định kỳ') : (su.contractCode || (isAvail ? 'Chưa có hợp đồng' : isRes ? 'Chờ ký HĐ bàn giao' : 'Chưa có mã HĐ')),
+            tenant: isMaint ? (su.maintenanceBy || tr('Kỹ thuật viên cơ sở', 'On-site Technician')) : (su.tenantName || (isAvail ? tr('Chưa có khách thuê', 'Vacant (No tenant)') : isRes ? tr('Đang cập nhật hồ sơ', 'Updating profile') : tr('Chưa có thông tin', 'No information'))),
+            contract: isMaint ? (su.maintenanceReason || tr('Bảo trì kỹ thuật định kỳ', 'Routine Maintenance')) : (su.contractCode || (isAvail ? tr('Chưa có hợp đồng', 'No active contract') : isRes ? tr('Chờ ký HĐ bàn giao', 'Pending contract signature') : tr('Chưa có mã HĐ', 'No contract ID'))),
             due: isMaint
               ? (su.maintenanceAt ? new Date(su.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Đang bảo trì')
               : (su.startDate && su.dueDate)
@@ -1426,11 +1427,11 @@ export const ManagerDashboard: React.FC = () => {
           <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
             <span className="flex items-center gap-1 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-              {unit.status === 'Available' ? 'Trống' :
-               unit.status === 'Rented' ? 'Thuê' :
-               unit.status === 'Pending' ? 'Chờ giao' :
-               unit.status === 'Maintenance' ? 'Bảo trì' :
-               unit.status === 'Overdue' ? 'Quá hạn' : unit.status === 'Unknown' ? 'Unknown' : 'Bảo trì'}
+              {unit.status === 'Available' ? tr('Trống', 'Available') :
+               unit.status === 'Rented' ? tr('Thuê', 'Rented') :
+               unit.status === 'Pending' ? tr('Chờ giao', 'Pending') :
+               unit.status === 'Maintenance' ? tr('Bảo trì', 'Maintenance') :
+               unit.status === 'Overdue' ? tr('Quá hạn', 'Overdue') : unit.status === 'Unknown' ? 'Unknown' : tr('Bảo trì', 'Maintenance')}
             </span>
           </div>
         </button>
@@ -1477,11 +1478,11 @@ export const ManagerDashboard: React.FC = () => {
               unit.color === 'purple' ? 'bg-purple-600' :
               unit.color === 'rose' || unit.color === 'red' ? 'bg-rose-500' : 'bg-slate-400'
             }`}></span>
-            {unit.status === 'Available' ? 'Trống' :
-             unit.status === 'Rented' ? 'Thuê' :
-             unit.status === 'Pending' ? 'Chờ giao' :
-             unit.status === 'Maintenance' ? 'Bảo trì' :
-             unit.status === 'Overdue' ? 'Quá hạn' : unit.status === 'Unknown' ? 'Unknown' : 'Bảo trì'}
+            {unit.status === 'Available' ? tr('Trống', 'Available') :
+               unit.status === 'Rented' ? tr('Thuê', 'Rented') :
+               unit.status === 'Pending' ? tr('Chờ giao', 'Pending') :
+               unit.status === 'Maintenance' ? tr('Bảo trì', 'Maintenance') :
+               unit.status === 'Overdue' ? tr('Quá hạn', 'Overdue') : unit.status === 'Unknown' ? 'Unknown' : tr('Bảo trì', 'Maintenance')}
           </span>
         </div>
       </button>
@@ -1511,15 +1512,15 @@ export const ManagerDashboard: React.FC = () => {
 
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-              {currentFacilityName} — {role === 'STAFF' ? 'Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng' : 'Bảng Tổng Quan Quản Lý'}
+              {currentFacilityName} — {role === 'STAFF' ? tr('Sơ Đồ Cơ Sở Kho & Trạng Thái Buồng', 'Facility Unit Layout & Status') : tr('Bảng Tổng Quan Quản Lý', 'Manager Overview Dashboard')}
             </h1>
             
           </div>
 
           <p className="text-xs text-slate-500">
             {role === 'STAFF'
-              ? `Giám sát trực quan ${totalUnitsCount} kho tự quản • Trực quan buồng kho, thiết bị IoT & nghiệp vụ trạm.`
-              : `Giám sát thời gian thực ${totalUnitsCount} kho tự quản • Trực ca nhân sự, doanh thu, hợp đồng & ngoại lệ nghiệp vụ.`}
+              ? `${tr('Giám sát trực quan', 'Visual monitoring of')} ${totalUnitsCount} ${tr('kho tự quản • Trực quan buồng kho, thiết bị IoT & nghiệp vụ trạm.', 'smart units • Floorplan, IoT locks & station ops.')}`
+              : `${tr('Giám sát thời gian thực', 'Real-time monitoring of')} ${totalUnitsCount} ${tr('kho tự quản • Trực ca nhân sự, doanh thu, hợp đồng & ngoại lệ nghiệp vụ.', 'smart units • Staff shifts, revenue, contracts & exceptions.')}`}
           </p>
         </div>
 
@@ -1533,7 +1534,7 @@ export const ManagerDashboard: React.FC = () => {
               className="inline-flex items-center gap-2 rounded-xl border border-blue-600 bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition cursor-pointer"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
-              <span>Thêm kho mới</span>
+              <span>{tr('Thêm kho mới', 'Add New Storage Unit')}</span>
             </button>
           )}
 
@@ -1544,7 +1545,7 @@ export const ManagerDashboard: React.FC = () => {
             title="Tải lại toàn bộ dữ liệu mới nhất"
           >
             <span className={`material-symbols-outlined text-[18px] text-blue-600 ${isLoading ? 'animate-spin' : ''}`}>sync</span>
-            <span>{isLoading ? 'Đang tải...' : 'Làm mới'}</span>
+            <span>{isLoading ? tr('Đang tải...', 'Loading...') : tr('Làm mới', 'Refresh')}</span>
           </button>
         </div>
       </header>
@@ -1556,7 +1557,7 @@ export const ManagerDashboard: React.FC = () => {
         <button 
           type="button"
           onClick={() => handleStatusFilterClick('all')}
-          title={`Xem tất cả ${totalUnitsCount} kho (Xóa lọc trạng thái)`}
+          title={`Xem tất cả ${totalUnitsCount} {tr('kho', 'units')} (Xóa lọc trạng thái)`}
           className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
             statusFilter === 'all'
               ? 'bg-slate-50/80 border-2 border-slate-900 ring-2 ring-slate-900/20 shadow-xs'
@@ -1564,17 +1565,17 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Tổng số kho</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Tổng số kho', 'Total Storage Units')}</span>
             <div className="flex items-center gap-1.5">
               {statusFilter === 'all' && (
-                <span className="px-1.5 py-0.5 rounded bg-slate-900 text-white text-[9px] font-bold font-mono tracking-tight">Tất cả</span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-900 text-white text-[9px] font-bold font-mono tracking-tight">{tr('Tất cả', 'All')}</span>
               )}
               <span className="material-symbols-outlined text-slate-400 text-[20px]">warehouse</span>
             </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{totalUnitsCount}</span>
-            <span className="text-[11px] text-slate-500 font-medium">kho</span>
+            <span className="text-[11px] text-slate-500 font-medium">{tr('kho', 'units')}</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-slate-900 h-full rounded-full" style={{ width: '100%' }}></div>
@@ -1593,17 +1594,17 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Đang thuê</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Đang thuê', 'Rented')}</span>
             <div className="flex items-center gap-1.5">
               {statusFilter === 'Rented' && (
-                <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+                <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
               )}
               <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-bold">{rentedPercent}%</span>
             </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{rentedUnitsCount}</span>
-            <span className="text-[11px] text-slate-500">kho</span>
+            <span className="text-[11px] text-slate-500">{tr('kho', 'units')}</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-blue-600 h-full rounded-full" style={{ width: `${rentedPercent}%` }}></div>
@@ -1622,17 +1623,17 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Kho trống</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Kho trống', 'Available Units')}</span>
             <div className="flex items-center gap-1.5">
               {statusFilter === 'Available' && (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
               )}
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
             </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-emerald-600 leading-none">{availableUnitsCount}</span>
-            <span className="text-[11px] text-slate-500">sẵn sàng</span>
+            <span className="text-[11px] text-slate-500">{tr('sẵn sàng', 'ready')}</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${availablePercent}%` }}></div>
@@ -1651,10 +1652,10 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Chờ bàn giao</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Chờ bàn giao', 'Pending Handover')}</span>
             <div className="flex items-center gap-1.5">
               {statusFilter === 'Pending' && (
-                <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+                <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
               )}
               <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
             </div>
@@ -1663,7 +1664,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="text-3xl font-extrabold font-mono tabular-nums text-amber-600 leading-none">
               {pendingUnitsCount}
             </span>
-            <span className="text-[11px] text-slate-500">đang đợi</span>
+            <span className="text-[11px] text-slate-500">{tr('đang đợi', 'pending')}</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-amber-500 h-full rounded-full" style={{ width: `${pendingPercent}%` }}></div>
@@ -1682,10 +1683,10 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Bảo trì kỹ thuật</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Bảo trì kỹ thuật', 'Technical Maintenance')}</span>
             <div className="flex items-center gap-1.5">
               {statusFilter === 'Maintenance' && (
-                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
               )}
               <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
             </div>
@@ -1694,7 +1695,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="text-3xl font-extrabold font-mono tabular-nums text-purple-600 leading-none">
               {maintenanceUnitsCount}
             </span>
-            <span className="text-[11px] text-slate-500">ngưng dùng</span>
+            <span className="text-[11px] text-slate-500">{tr('ngưng dùng', 'in maintenance')}</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-purple-600 h-full rounded-full" style={{ width: `${maintenancePercent}%` }}></div>
@@ -1713,10 +1714,10 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">Nợ quá hạn</span>
+            <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Nợ quá hạn', 'Overdue Payments')}</span>
             <div className="flex items-center gap-1.5">
               {statusFilter === 'Overdue' && (
-                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold tracking-tight">Đang lọc</span>
+                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
               )}
               <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
             </div>
@@ -1725,7 +1726,7 @@ export const ManagerDashboard: React.FC = () => {
             <span className="text-3xl font-extrabold font-mono tabular-nums text-rose-700 leading-none">
               {overdueUnitsCount}
             </span>
-            <span className="text-[11px] text-slate-500">kho nợ</span>
+            <span className="text-[11px] text-slate-500">{tr('kho nợ', 'delinquent')}</span>
           </div>
           <div className="mt-3 w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
             <div className="bg-rose-600 h-full rounded-full" style={{ width: `${overduePercent}%` }}></div>
@@ -1747,7 +1748,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">grid_view</span>
-          <span>Sơ Đồ Cơ Sở</span>
+          <span>{tr('Sơ Đồ Cơ Sở', 'Facility Floorplan')}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'overview'
               ? 'bg-white text-slate-900'
@@ -1770,14 +1771,14 @@ export const ManagerDashboard: React.FC = () => {
           title="Quản lý đơn đặt giữ chỗ chờ liên hệ / chờ xử lý"
         >
           <span className="material-symbols-outlined text-[18px]">pending_actions</span>
-          <span>1. Đơn Chờ Xử Lý</span>
+          <span>{tr('1. Đơn Chờ Xử Lý', '1. Pending Requests')}</span>
           {pendingOrdersCount > 0 && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
               activeTab === 'pending_orders'
                 ? 'bg-white text-amber-700'
                 : 'bg-amber-100 text-amber-800 animate-pulse'
             }`}>
-              {pendingOrdersCount} đơn
+              {pendingOrdersCount} {tr('đơn', 'requests')}
             </span>
           )}
         </button>
@@ -1794,15 +1795,15 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-          <span>2. Bàn Tiếp Đón Nhận Kho</span>
+          <span>{tr('2. Bàn Tiếp Đón Nhận Kho', '2. Reception & Handover Desk')}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'reception' || activeTab === 'handovers-returns'
               ? 'bg-white text-cyan-800'
               : 'bg-cyan-100 text-cyan-800'
           }`}>
             {receptionMetrics.pendingCheckIn > 0
-              ? `${receptionMetrics.pendingCheckIn} chờ check-in`
-              : (receptionMetrics.total > 0 ? `${receptionMetrics.total} đơn` : '0 đơn')}
+              ? `${receptionMetrics.pendingCheckIn} ${tr('chờ check-in', 'pending check-in')}`
+              : (receptionMetrics.total > 0 ? `${receptionMetrics.total} ${tr('đơn', 'requests')}` : `0 ${tr('đơn', 'requests')}`)}
           </span>
         </button>
         )}
@@ -1824,13 +1825,13 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">assignment_return</span>
-          <span>3. Trả Kho</span>
+          <span>{tr('3. Trả Kho', '3. Unit Return & Checkout')}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'returns'
               ? 'bg-white text-amber-800'
               : 'bg-amber-100 text-amber-800'
           }`}>
-            {returnActiveTotal} hợp đồng
+            {returnActiveTotal} {tr('hợp đồng', 'contracts')}
           </span>
         </button>
         )}
@@ -1846,7 +1847,7 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">autorenew</span>
-          <span>4. Hỗ Trợ Gia Hạn</span>
+          <span>{tr('4. Hỗ Trợ Gia Hạn', '4. Renewal Support')}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'renewals'
               ? 'bg-white text-blue-900'
@@ -1854,7 +1855,7 @@ export const ManagerDashboard: React.FC = () => {
                 ? 'bg-amber-100 text-amber-800'
                 : 'bg-slate-100 text-slate-600'
           }`}>
-            {renewalsCount} đơn
+            {renewalsCount} {tr('đơn', 'requests')}
           </span>
         </button>
         )}
@@ -1870,14 +1871,14 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">account_balance</span>
-          <span>5. Hoàn Tiền Hủy Đơn</span>
+          <span>{tr('5. Hoàn Tiền Hủy Đơn', '5. Cancellations & Refunds')}</span>
           {pendingRefundCount > 0 && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
               activeTab === 'refunds'
                 ? 'bg-white text-amber-900'
                 : 'bg-amber-100 text-amber-800 animate-pulse'
             }`}>
-              {pendingRefundCount} chờ chuyển
+              {pendingRefundCount} {tr('chờ chuyển', 'pending')}
             </span>
           )}
         </button>
@@ -1894,13 +1895,13 @@ export const ManagerDashboard: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">build_circle</span>
-          <span>6. Sự Cố &amp; SLA</span>
+          <span>{tr('6. Sự Cố & SLA', '6. Incidents & SLA')}</span>
           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
             activeTab === 'tickets'
               ? 'bg-white text-slate-900'
               : 'bg-rose-100 text-rose-800'
           }`}>
-            {tickets.filter(t => t.status !== 'RESOLVED').length} ca
+            {tickets.filter(t => t.status !== 'RESOLVED').length} {tr('ca', 'tickets')}
           </span>
         </button>
         )}
@@ -1916,7 +1917,7 @@ export const ManagerDashboard: React.FC = () => {
             }`}
           >
             <span className="material-symbols-outlined text-[18px]">policy</span>
-            <span>7. Chính Sách Vận Hành Cơ Sở</span>
+            <span>{tr('7. Chính Sách Vận Hành Cơ Sở', '7. Facility Operation Policies')}</span>
           </button>
         )}
       </div>
@@ -1969,10 +1970,10 @@ export const ManagerDashboard: React.FC = () => {
                     onChange={(e) => setSizeFilter(e.target.value as any)}
                     className="px-3 py-1.5 bg-white rounded-lg text-slate-800 text-xs border border-slate-200 focus:outline-none shadow-2xs font-medium cursor-pointer"
                   >
-                    <option value="all">Tất cả kích thước</option>
-                    <option value="s">Kho nhỏ S (≤ 6.5m²)</option>
-                    <option value="m">Kho vừa M (8m² - 12m²)</option>
-                    <option value="l">Kho lớn L (15m² - 20m²)</option>
+                    <option value="all">{tr('Tất cả kích thước', 'All Sizes')}</option>
+                    <option value="s">{tr('Kho nhỏ S (≤ 6.5m²)', 'Small S (≤ 6.5m²)')}</option>
+                    <option value="m">{tr('Kho vừa M (8m² - 12m²)', 'Medium M (8m² - 12m²)')}</option>
+                    <option value="l">{tr('Kho lớn L (15m² - 20m²)', 'Large L (15m² - 20m²)')}</option>
                   </select>
 
                   <div className="relative flex-1 sm:flex-initial min-w-[210px] sm:w-60">
@@ -1981,7 +1982,7 @@ export const ManagerDashboard: React.FC = () => {
                       type="text" 
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Tìm mã kho (#A-101), khách..." 
+                      placeholder={tr('Tìm mã kho (#A-101), khách...', 'Search unit code (#A-101), customer...')} 
                       className="w-full pl-8 pr-3 py-1.5 bg-white text-slate-800 text-xs rounded-lg placeholder:text-slate-400 focus:outline-none border border-slate-200 shadow-2xs font-mono"
                     />
                   </div>
@@ -2003,7 +2004,7 @@ export const ManagerDashboard: React.FC = () => {
                       title="Đặt lại toàn bộ bộ lọc"
                     >
                       <span className="material-symbols-outlined text-[15px]">restart_alt</span>
-                      <span>Xóa bộ lọc</span>
+                      <span>{tr('Xóa bộ lọc', 'Reset Filter')}</span>
                     </button>
                   )}
                 </div>
@@ -2075,15 +2076,15 @@ export const ManagerDashboard: React.FC = () => {
                             ) : null}
                           </div>
                           <span className="text-[11px] font-mono font-medium text-slate-500">
-                            {isAnyFilterActive ? `${matchingZoneUnits.length}/${zoneUnits.length} kho` : `${zoneUnits.length} kho`}
+                            {isAnyFilterActive ? `${matchingZoneUnits.length}/${zoneUnits.length} ${tr('kho', 'units')}` : `${zoneUnits.length} ${tr('kho', 'units')}`}
                           </span>
                         </div>
 
                         {matchingZoneUnits.length === 0 ? (
                           <div className="p-5 text-center text-slate-400 text-xs bg-slate-50/60 rounded-lg border border-dashed border-slate-200">
                             {zoneUnits.length === 0 
-                              ? `Chưa có ngăn kho nào tại ${zone.name} trên ${currentFloor.name}`
-                              : `Không có ngăn kho phù hợp bộ lọc tại ${zone.name}`}
+                              ? `${tr('Chưa có ngăn kho nào tại', 'No storage units in')} ${zone.name} ${tr('trên', 'on')} ${currentFloor.name}`
+                              : `${tr('Không có ngăn kho phù hợp bộ lọc tại', 'No units matching filter in')} ${zone.name}`}
                           </div>
                         ) : (
                           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
@@ -2123,55 +2124,55 @@ export const ManagerDashboard: React.FC = () => {
                     <span className="material-symbols-outlined text-[24px]">door_sliding</span>
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">Hồ sơ giám sát</span>
+                    <span className="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">{tr('Hồ sơ giám sát', 'Inspection Profile')}</span>
                     <h2 className="text-xl font-bold text-slate-900 font-mono">#{selectedUnit.id}</h2>
                   </div>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full font-mono text-xs font-bold border ${getStatusBadgeStyle(selectedUnit.status)}`}>
-                  {selectedUnit.status === 'Available' ? 'Kho trống' :
-                   selectedUnit.status === 'Rented' ? 'Đang thuê' :
-                   selectedUnit.status === 'Pending' ? 'Chờ bàn giao' :
-                   selectedUnit.status === 'Overdue' ? 'Quá hạn nợ' : 'Đang bảo trì'}
+                  {selectedUnit.status === 'Available' ? tr('Kho trống', 'Available Units') :
+                   selectedUnit.status === 'Rented' ? tr('Đang thuê', 'Rented') :
+                   selectedUnit.status === 'Pending' ? tr('Chờ bàn giao', 'Pending Handover') :
+                   selectedUnit.status === 'Overdue' ? tr('Quá hạn nợ', 'Overdue Debt') : tr('Đang bảo trì', 'In Maintenance')}
                 </span>
               </div>
 
               {/* Spec Table */}
               <div className="flex flex-col gap-1.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
                 <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Cơ sở:</span>
+                  <span className="text-slate-500">{tr('Cơ sở:', 'Facility:')}</span>
                   <span className="font-semibold text-slate-800">{selectedUnit.facilityName || currentFacilityName}</span>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Vị trí:</span>
+                  <span className="text-slate-500">{tr('Vị trí:', 'Location:')}</span>
                   <span className="font-mono font-semibold text-slate-900">{selectedUnit.floorLevel} · {selectedUnit.zoneName ? `${selectedUnit.zoneName} (${selectedUnit.zoneCode || ''})` : (selectedUnit.zoneCode ? `Phân khu ${selectedUnit.zoneCode}` : `Phân khu ${getUnitZone(selectedUnit)}`)}</span>
                 </div>
                 <div className="flex items-center justify-between py-1 border-b border-slate-200/50">
-                  <span className="text-slate-500">Diện tích:</span>
+                  <span className="text-slate-500">{tr('Diện tích:', 'Area:')}</span>
                   <span className="font-mono font-bold text-slate-900">{selectedUnit.size}</span>
                 </div>
                 <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/50">
                   <span className="text-slate-500 shrink-0">
-                    {selectedUnit.status === 'Maintenance' ? 'Người bảo trì:' : 'Khách thuê:'}
+                    {selectedUnit.status === 'Maintenance' ? tr('Người bảo trì:', 'Maintenance By:') : tr('Khách thuê:', 'Tenant:')}
                   </span>
                   <span className={`font-semibold text-right ${selectedUnit.status === 'Maintenance' ? 'text-purple-700' : 'text-slate-900'}`}>
                     {selectedUnit.status === 'Maintenance'
-                      ? (selectedUnit.maintenanceBy || selectedUnit.tenant || 'Kỹ thuật viên cơ sở')
-                      : selectedUnit.tenant}
+                      ? (selectedUnit.maintenanceBy || selectedUnit.tenant || tr('Kỹ thuật viên cơ sở', 'On-site Technician'))
+                      : (selectedUnit.status === 'Available' ? tr('Chưa có khách thuê', 'Vacant (No tenant)') : selectedUnit.tenant)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/50">
                   <span className="text-slate-500 shrink-0">
-                    {selectedUnit.status === 'Maintenance' ? 'Lý do bảo trì:' : 'Mã hợp đồng:'}
+                    {selectedUnit.status === 'Maintenance' ? tr('Lý do bảo trì:', 'Maintenance Reason:') : tr('Mã hợp đồng:', 'Contract:')}
                   </span>
                   <span className={`font-bold text-right ${selectedUnit.status === 'Maintenance' ? 'text-purple-900' : 'font-mono text-blue-600'}`}>
                     {selectedUnit.status === 'Maintenance'
-                      ? (selectedUnit.maintenanceReason || selectedUnit.contract || 'Bảo trì kỹ thuật định kỳ')
-                      : selectedUnit.contract}
+                      ? (selectedUnit.maintenanceReason || selectedUnit.contract || tr('Bảo trì kỹ thuật định kỳ', 'Routine Maintenance'))
+                      : (selectedUnit.status === 'Available' ? tr('Chưa có hợp đồng', 'No active contract') : selectedUnit.contract)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-2 py-1">
                   <span className="text-slate-500 shrink-0">
-                    {selectedUnit.status === 'Maintenance' ? 'Bắt đầu bảo trì:' : 'Thời hạn:'}
+                    {selectedUnit.status === 'Maintenance' ? tr('Bắt đầu bảo trì:', 'Maintenance Started:') : tr('Thời hạn:', 'Term:')}
                   </span>
                   <span className="font-mono text-slate-800 text-right">
                     {selectedUnit.status === 'Maintenance' && selectedUnit.maintenanceAt
@@ -2281,7 +2282,7 @@ export const ManagerDashboard: React.FC = () => {
                   <span className="material-symbols-outlined text-[16px]">
                     {selectedUnit.status === 'Maintenance' ? 'check_circle' : 'build'}
                   </span>
-                  <span>{selectedUnit.status === 'Maintenance' ? 'Hoàn tất bảo trì (Mở lại kho)' : 'Chuyển bảo trì kỹ thuật'}</span>
+                  <span>{selectedUnit.status === 'Maintenance' ? tr('Hoàn tất bảo trì (Mở lại kho)', 'Complete Maintenance (Reopen)') : tr('Chuyển bảo trì kỹ thuật', 'Set to Maintenance')}</span>
                 </button>
 
 
@@ -2293,7 +2294,7 @@ export const ManagerDashboard: React.FC = () => {
                     className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all w-full justify-center mt-1"
                   >
                     <span className="material-symbols-outlined text-[16px]">delete</span>
-                    Xóa kho
+                    {tr('Xóa kho', 'Delete Unit')}
                   </button>
                 )}
 
@@ -2303,9 +2304,9 @@ export const ManagerDashboard: React.FC = () => {
           ) : (
             <div className="xl:col-span-4 flex flex-col items-center justify-center p-10 bg-white rounded-2xl shadow-xs border border-slate-200 sticky top-24 text-center min-h-[360px]">
               <span className="material-symbols-outlined text-slate-300 text-[48px] mb-2">grid_view</span>
-              <h3 className="text-sm font-bold text-slate-700">Chọn một kho từ sơ đồ</h3>
+              <h3 className="text-sm font-bold text-slate-700">{tr('Chọn một kho từ sơ đồ', 'Select a unit from floorplan')}</h3>
               <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                Bấm vào ô kho để xem thông số kỹ thuật, pin SmartLock và trạng thái hợp đồng.
+                {tr('Bấm vào ô kho để xem thông số kỹ thuật, pin SmartLock và trạng thái hợp đồng.', 'Click any unit slot to view specs, SmartLock battery, and contract status.')}
               </p>
             </div>
           )}
