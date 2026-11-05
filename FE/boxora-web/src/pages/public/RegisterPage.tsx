@@ -31,6 +31,7 @@ import boxoraLogo from '../../assets/boxora-logo.png'
 import { TermsAndStandardsModal } from '../../components/common/TermsAndStandardsModal'
 import { GoogleAuthButton } from '../../components/auth/GoogleAuthButton'
 import { markUserAsNewCustomer } from '../../utils/rentalAccess'
+import { saveUserSavedIdDoc } from '../../utils/userIdDocument'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
@@ -52,7 +53,6 @@ export const RegisterPage: React.FC = () => {
     fullName: googleRedirectState?.fullName || '',
     email: googleRedirectState?.email || '',
     phone: '',
-    identityCardNumber: '',
     password: '',
     confirmPassword: ''
   })
@@ -61,47 +61,37 @@ export const RegisterPage: React.FC = () => {
     googleRedirectState?.message || null
   )
 
-  // Document Type: CCCD (12 digits) or Passport (1 uppercase letter + 7 digits)
+  // Document Type: CCCD (12 digits) or Passport (1 uppercase letter + 7-8 digits)
+  // Keep values separate so toggling back and forth does NOT lose data or inject fake values
   const [idCardType, setIdCardType] = useState<'CCCD' | 'PASSPORT'>('CCCD')
+  const [cccdNumber, setCccdNumber] = useState('')
+  const [passportNumber, setPassportNumber] = useState('')
+
+  const currentIdNumber = idCardType === 'CCCD' ? cccdNumber : passportNumber
 
   const handleIdCardChange = (val: string) => {
     if (idCardType === 'CCCD') {
-      // If user typed a letter, automatically switch to PASSPORT mode
-      if (/^[A-Za-z]/.test(val)) {
-        setIdCardType('PASSPORT')
-        const first = val.charAt(0).toUpperCase()
-        const rest = val.slice(1).replace(/\D/g, '').slice(0, 7)
-        setFormData((prev) => ({ ...prev, identityCardNumber: `${first}${rest}` }))
-        return
-      }
       const digits = val.replace(/\D/g, '').slice(0, 12)
-      setFormData((prev) => ({ ...prev, identityCardNumber: digits }))
+      setCccdNumber(digits)
     } else {
-      // PASSPORT mode: 1 uppercase letter + 7 digits
       const trimmed = val.trim()
       if (!trimmed) {
-        setFormData((prev) => ({ ...prev, identityCardNumber: '' }))
-        return
-      }
-      // If user cleared and entered 9-12 digits, switch back to CCCD
-      if (/^\d{9,12}$/.test(trimmed)) {
-        setIdCardType('CCCD')
-        setFormData((prev) => ({ ...prev, identityCardNumber: trimmed.slice(0, 12) }))
+        setPassportNumber('')
         return
       }
       const first = trimmed.charAt(0).toUpperCase()
       if (/[A-Z]/.test(first)) {
-        const rest = trimmed.slice(1).replace(/\D/g, '').slice(0, 7)
-        setFormData((prev) => ({ ...prev, identityCardNumber: `${first}${rest}` }))
+        const rest = trimmed.slice(1).replace(/\D/g, '').slice(0, 8)
+        setPassportNumber(`${first}${rest}`)
       } else {
-        const cleaned = trimmed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase()
-        setFormData((prev) => ({ ...prev, identityCardNumber: cleaned }))
+        const cleaned = trimmed.replace(/[^a-zA-Z0-9]/g, '').slice(0, 9).toUpperCase()
+        setPassportNumber(cleaned)
       }
     }
   }
 
   const idCardValidation = useMemo(() => {
-    const val = formData.identityCardNumber.trim()
+    const val = currentIdNumber.trim()
     if (!val) {
       return {
         isValid: false,
@@ -115,13 +105,13 @@ export const RegisterPage: React.FC = () => {
         message: is12Digits ? '' : `Số CCCD bắt buộc phải gồm đúng 12 chữ số (hiện có ${val.length}/12)`,
       }
     } else {
-      const isPassport = /^[A-Z][0-9]{7}$/.test(val)
+      const isPassport = /^[A-Z][0-9]{7,8}$/.test(val)
       return {
         isValid: isPassport,
         message: isPassport ? '' : 'Hộ chiếu phải gồm 1 chữ cái in hoa đầu tiên theo sau là đúng 7 số (VD: B1234567)',
       }
     }
-  }, [formData.identityCardNumber, idCardType])
+  }, [currentIdNumber, idCardType])
 
   // Anti-bot & Captcha states
   const [captchaId, setCaptchaId] = useState<string>('')
@@ -244,27 +234,33 @@ export const RegisterPage: React.FC = () => {
     }
 
     // 3. CCCD / Hộ chiếu validation
-    const idCardVal = formData.identityCardNumber.trim()
-    if (!idCardVal) {
+    const activeIdVal = currentIdNumber.trim()
+    if (!activeIdVal) {
       setError(
         idCardType === 'CCCD'
           ? 'Vui lòng nhập số CCCD (bắt buộc gồm đúng 12 chữ số).'
-          : 'Vui lòng nhập số Hộ chiếu (1 chữ cái in hoa theo sau là đúng 7 chữ số, VD: B1234567).'
+          : 'Vui lòng nhập số Hộ chiếu (1 chữ cái in hoa theo sau là đúng 7 số, VD: B1234567).'
       )
       return
     }
 
     if (idCardType === 'CCCD') {
-      if (!/^[0-9]{12}$/.test(idCardVal)) {
+      if (!/^[0-9]{12}$/.test(activeIdVal)) {
         setError('Số CCCD không hợp lệ. Bắt buộc phải gồm đúng 12 chữ số (VD: 079123456789).')
         return
       }
     } else {
-      if (!/^[A-Z][0-9]{7}$/.test(idCardVal)) {
-        setError('Số Hộ chiếu không hợp lệ. Chữ cái đầu tiên phải in hoa theo sau là đúng 7 chữ số (VD: B1234567).')
+      if (!/^[A-Z][0-9]{7,8}$/.test(activeIdVal)) {
+        setError('Số Hộ chiếu không hợp lệ. Chữ cái đầu tiên phải in hoa theo sau là đúng 7 số (VD: B1234567).')
         return
       }
     }
+
+    // Check validity of both fields to save both if valid
+    const isCccdEnteredValid = /^[0-9]{12}$/.test(cccdNumber.trim())
+    const isPassportEnteredValid = /^[A-Z][0-9]{7,8}$/.test(passportNumber.trim())
+    const finalCccd = isCccdEnteredValid ? cccdNumber.trim() : (idCardType === 'CCCD' ? activeIdVal : '')
+    const finalPassport = isPassportEnteredValid ? passportNumber.trim() : (idCardType === 'PASSPORT' ? activeIdVal : '')
 
     // 4. Password validation
     if (!formData.password) {
@@ -309,16 +305,26 @@ export const RegisterPage: React.FC = () => {
         captchaId,
         captchaCode: captchaInput.trim().toUpperCase()
       })
-      if (formData.identityCardNumber.trim()) {
-        localStorage.setItem('boxora_user_cccd_' + formData.email.trim(), formData.identityCardNumber.trim())
-        localStorage.setItem('boxora_user_cccd', formData.identityCardNumber.trim())
-        localStorage.setItem('boxora_user_id_type_' + formData.email.trim(), idCardType)
-        localStorage.setItem('boxora_user_id_type', idCardType)
-      }
+
+      // Save ID document data (if both entered validly, both are saved)
+      saveUserSavedIdDoc(
+        { email: formData.email.trim() },
+        idCardType,
+        finalCccd,
+        finalPassport
+      )
 
       // Auto login immediately so user is authenticated without having to manually log in again
       try {
-        await login(formData.email.trim(), formData.password)
+        const loggedInUser = await login(formData.email.trim(), formData.password)
+        if (loggedInUser) {
+          saveUserSavedIdDoc(
+            loggedInUser,
+            idCardType,
+            finalCccd,
+            finalPassport
+          )
+        }
         setSuccess(true)
         const targetRedirect = redirect
           ? decodeURIComponent(redirect)
@@ -342,6 +348,12 @@ export const RegisterPage: React.FC = () => {
     } catch (err: any) {
       console.error(err)
       let msg = err?.response?.data?.message || 'Đăng ký không thành công. Vui lòng kiểm tra lại thông tin.'
+      if (msg.includes('Dữ liệu yêu cầu không hợp lệ (phone:') || msg.includes('phone: Phone must be a valid Vietnamese phone number')) {
+        msg = msg.replace('Dữ liệu yêu cầu không hợp lệ (phone:', 'Dữ liệu số điện thoại yêu cầu không hợp lệ (phone:')
+        if (!msg.startsWith('Dữ liệu số điện thoại yêu cầu không hợp lệ')) {
+          msg = 'Dữ liệu số điện thoại yêu cầu không hợp lệ (phone: Phone must be a valid Vietnamese phone number).'
+        }
+      }
       if (
         msg.includes('must be at least 5') ||
         msg.includes('phải có ít nhất 5 ký tự') ||
@@ -704,13 +716,7 @@ export const RegisterPage: React.FC = () => {
                       <div className="inline-flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold border border-slate-200/80 dark:border-slate-700">
                         <button
                           type="button"
-                          onClick={() => {
-                            setIdCardType('CCCD')
-                            setFormData((prev) => ({
-                              ...prev,
-                              identityCardNumber: prev.identityCardNumber.replace(/\D/g, '').slice(0, 12),
-                            }))
-                          }}
+                          onClick={() => setIdCardType('CCCD')}
                           className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                             idCardType === 'CCCD'
                               ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs font-extrabold'
@@ -721,19 +727,7 @@ export const RegisterPage: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => {
-                            setIdCardType('PASSPORT')
-                            const raw = formData.identityCardNumber.trim()
-                            if (raw) {
-                              const first = raw.charAt(0).toUpperCase()
-                              const isLetter = /[A-Z]/.test(first)
-                              const rest = (isLetter ? raw.slice(1) : raw).replace(/\D/g, '').slice(0, 7)
-                              setFormData((prev) => ({
-                                ...prev,
-                                identityCardNumber: `${isLetter ? first : 'B'}${rest}`,
-                              }))
-                            }
-                          }}
+                          onClick={() => setIdCardType('PASSPORT')}
                           className={`px-2 py-0.5 rounded-md transition-all cursor-pointer ${
                             idCardType === 'PASSPORT'
                               ? 'bg-white dark:bg-slate-900 text-teal-700 dark:text-teal-300 shadow-2xs font-extrabold'
@@ -752,7 +746,7 @@ export const RegisterPage: React.FC = () => {
                     </div>
                     <input
                       type="text"
-                      value={formData.identityCardNumber}
+                      value={currentIdNumber}
                       onChange={(e) => handleIdCardChange(e.target.value)}
                       placeholder={
                         idCardType === 'CCCD'
@@ -763,7 +757,7 @@ export const RegisterPage: React.FC = () => {
                       className={`w-full h-10.5 pl-10 pr-20 rounded-xl border bg-slate-50/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-800 focus:bg-white dark:focus:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none transition-all font-mono font-medium ${
                         idCardValidation.isValid
                           ? 'border-emerald-500 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-500/10'
-                          : formData.identityCardNumber
+                          : currentIdNumber
                           ? 'border-red-400 focus:border-red-500 focus:ring-4 focus:ring-red-500/10'
                           : 'border-slate-200 dark:border-slate-700 focus:border-teal-600 focus:ring-4 focus:ring-teal-600/10'
                       }`}
@@ -775,14 +769,14 @@ export const RegisterPage: React.FC = () => {
                         </span>
                       ) : (
                         <span className="text-[10px] text-slate-400 font-mono">
-                          {formData.identityCardNumber.length}/{idCardType === 'CCCD' ? 12 : 8}
+                          {currentIdNumber.length}/{idCardType === 'CCCD' ? 12 : 8}
                         </span>
                       )}
                     </div>
                   </div>
 
                   {/* Dynamic validation error or hint */}
-                  {formData.identityCardNumber && !idCardValidation.isValid ? (
+                  {currentIdNumber && !idCardValidation.isValid ? (
                     <p className="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1 font-medium mt-0.5">
                       <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                       <span>{idCardValidation.message}</span>

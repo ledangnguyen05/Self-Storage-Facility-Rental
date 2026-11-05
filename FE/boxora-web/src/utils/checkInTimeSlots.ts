@@ -177,3 +177,27 @@ export const hasAvailablePeriods = (
 ): boolean => {
   return CHECK_IN_PERIOD_GROUPS.some((g) => !isPeriodInPast(checkInDateStr, g.id, refDate))
 }
+
+/**
+ * Định dạng ngày sang định dạng chuẩn hiển thị DD/MM/YYYY.
+ * Hỗ trợ string dạng YYYY-MM-DD hoặc ISO string.
+ */
+export const formatDateDDMMYYYY = (dateVal?: string | null, fallback = ''): string => {
+  if (!dateVal) return fallback
+  const clean = dateVal.split('T')[0].trim()
+  const parts = clean.split('-')
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`
+  }
+  try {
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return fallback || String(dateVal)
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    return `${day}/${month}/${year}`
+  } catch {
+    return fallback || String(dateVal)
+  }
+}
+

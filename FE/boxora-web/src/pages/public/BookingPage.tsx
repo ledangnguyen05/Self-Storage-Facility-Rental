@@ -337,9 +337,10 @@ import {
   getFirstAvailablePeriod,
   hasAvailablePeriods,
   formatLocalDate,
+  formatDateDDMMYYYY,
 } from '../../utils/checkInTimeSlots'
 
-export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24 }
+export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24, formatDateDDMMYYYY }
 
 export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): string => {
   if (size.dbUnitTypeId) {
@@ -2096,7 +2097,7 @@ export const BookingPage: React.FC = () => {
                 { step: 1, title: 'Chọn cơ sở', subtitle: selectedFacility?.name || 'Chọn chi nhánh' },
                 { step: 2, title: 'Chọn kho', subtitle: currentSelectedSize ? `Kho ${currentSelectedSize.volumeText}` : 'Chọn quy cách' },
                 { step: 3, title: 'Thời hạn & Báo giá', subtitle: `${rentalDurationText} • ${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫` },
-                { step: 4, title: 'Lịch hẹn & Chi tiết', subtitle: `${checkInDate} • ${customerName || 'Chi tiết'}` },
+                { step: 4, title: 'Lịch hẹn & Chi tiết', subtitle: `${formatDateDDMMYYYY(checkInDate)} • ${customerName || 'Chi tiết'}` },
                 { step: 5, title: 'Hợp đồng & Thanh toán', subtitle: paymentMethod === 'ONLINE' ? 'Ký HĐ & Trực tuyến' : 'Tại cơ sở' },
                 { step: 6, title: 'Hoàn tất', subtitle: 'Hoàn tất giữ chỗ' },
               ].map((item) => {
@@ -2987,9 +2988,9 @@ export const BookingPage: React.FC = () => {
                         Thời hạn hợp đồng dự kiến
                       </label>
                       <div className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-xs sm:text-sm flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-xs">Từ {startDate} đến:</span>
+                        <span className="text-slate-500 dark:text-slate-400 text-xs">Từ {formatDateDDMMYYYY(startDate)} đến:</span>
                         <strong className="text-slate-900 dark:text-white font-bold text-xs sm:text-sm">
-                          {rentalEndDate}
+                          {formatDateDDMMYYYY(rentalEndDate)}
                         </strong>
                       </div>
                     </div>
@@ -3390,7 +3391,7 @@ export const BookingPage: React.FC = () => {
                         Lịch hẹn nhận kho:
                       </span>
                       <strong className="text-blue-600 dark:text-blue-400 font-semibold text-right">
-                        {checkInDate} • {selectedPeriod.name}
+                        {formatDateDDMMYYYY(checkInDate)} • {selectedPeriod.name}
                       </strong>
                     </div>
 
@@ -3610,7 +3611,7 @@ export const BookingPage: React.FC = () => {
                     ) : (
                       <>
                         <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {checkInDate}.
+                          Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {formatDateDDMMYYYY(checkInDate)}.
                         </p>
                         {!isStaffOrManager && (
                           <div className="pt-2">
@@ -3726,7 +3727,7 @@ export const BookingPage: React.FC = () => {
 
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Lịch hẹn đón tiếp</span>
-                    <strong className="text-blue-600 dark:text-blue-400 block font-bold text-xs sm:text-sm">{checkInDate}</strong>
+                    <strong className="text-blue-600 dark:text-blue-400 block font-bold text-xs sm:text-sm">{formatDateDDMMYYYY(checkInDate)}</strong>
                     <span className="text-slate-500 block text-[11px]">{checkInTime}</span>
                   </div>
                 </div>
@@ -3830,7 +3831,7 @@ export const BookingPage: React.FC = () => {
                   <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                     <Calendar size={14} className="text-blue-600" />
                     <span>
-                      Nhận kho: <strong className="text-blue-600 dark:text-blue-400">{checkInDate} ({selectedPeriod.name})</strong> • Người đặt: <strong className="text-slate-900 dark:text-white">{customerName || 'Chưa điền'}</strong>
+                      Nhận kho: <strong className="text-blue-600 dark:text-blue-400">{formatDateDDMMYYYY(checkInDate)} ({selectedPeriod.name})</strong> • Người đặt: <strong className="text-slate-900 dark:text-white">{customerName || 'Chưa điền'}</strong>
                     </span>
                   </span>
                 )}

@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
+import { formatDateDDMMYYYY } from '../../utils/checkInTimeSlots'
 
 export interface PayLaterAppointmentConfirmModalProps {
   isOpen: boolean
@@ -89,7 +90,7 @@ export const PayLaterAppointmentConfirmModal: React.FC<PayLaterAppointmentConfir
               <span className="text-[10px] text-slate-500 dark:text-slate-400 block font-medium">Ngày nhận bàn giao</span>
               <strong className="text-slate-900 dark:text-white font-extrabold text-xs sm:text-sm flex items-center gap-1.5 mt-0.5">
                 <Calendar size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
-                <span>{checkInDate || 'Chưa chọn'}</span>
+                <span>{formatDateDDMMYYYY(checkInDate) || 'Chưa chọn'}</span>
               </strong>
             </div>
 

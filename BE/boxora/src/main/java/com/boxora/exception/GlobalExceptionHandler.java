@@ -68,7 +68,10 @@ public class GlobalExceptionHandler {
                 .map(entry -> entry.getKey() + ": " + entry.getValue())
                 .reduce((a, b) -> a + "; " + b)
                 .orElse("Vui lòng kiểm tra lại các trường thông tin");
-        response.put("message", "Dữ liệu yêu cầu không hợp lệ (" + detailedErrors + ").");
+        String prefix = errors.containsKey("phone")
+                ? "Dữ liệu số điện thoại yêu cầu không hợp lệ ("
+                : "Dữ liệu yêu cầu không hợp lệ (";
+        response.put("message", prefix + detailedErrors + ").");
         response.put("errors", errors);
 
         return ResponseEntity

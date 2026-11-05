@@ -446,10 +446,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                      className={`text-xs font-mono font-bold ${
                         discount3M > 0
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          ? 'text-emerald-700'
+                          : 'text-slate-500'
                       }`}
                     >
                       {discount3M > 0 ? `-${discount3M}%` : '0%'}
@@ -524,10 +524,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                      className={`text-xs font-mono font-bold ${
                         discount6M > 0
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          ? 'text-emerald-700'
+                          : 'text-slate-500'
                       }`}
                     >
                       {discount6M > 0 ? `-${discount6M}%` : '0%'}
@@ -602,10 +602,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                      className={`text-xs font-mono font-bold ${
                         discount12M > 0
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                          ? 'text-emerald-700'
+                          : 'text-slate-500'
                       }`}
                     >
                       {discount12M > 0 ? `-${discount12M}%` : '0%'}
@@ -654,10 +654,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 </div>
                 <div className="flex items-center gap-3">
                   <span
-                    className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                    className={`text-xs font-mono font-bold ${
                       cd.percent > 0
-                        ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                        : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        ? 'text-purple-700'
+                        : 'text-slate-500'
                     }`}
                   >
                     {cd.percent > 0 ? `-${cd.percent}%` : '0%'}

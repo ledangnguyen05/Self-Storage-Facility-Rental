@@ -15,6 +15,7 @@ import {
   Info,
 } from 'lucide-react'
 import { CancellationPolicyDetail } from '../../types'
+import { formatDateDDMMYYYY } from '../../utils/checkInTimeSlots'
 
 export interface CancellationPolicyConfirmModalProps {
   isOpen: boolean
@@ -242,7 +243,7 @@ export const CancellationPolicyConfirmModal: React.FC<CancellationPolicyConfirmM
             <div className="p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800">
               <span className="text-[10px] text-slate-500 block">Thời gian</span>
               <strong className="text-slate-700 dark:text-slate-300 font-semibold block text-[10px] truncate">
-                {bookingInfo.startDate} → {bookingInfo.endDate}
+                {formatDateDDMMYYYY(bookingInfo.startDate)} → {formatDateDDMMYYYY(bookingInfo.endDate)}
               </strong>
             </div>
           </div>
