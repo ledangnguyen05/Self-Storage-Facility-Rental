@@ -2,21 +2,54 @@ package com.boxora.mapper;
 
 import com.boxora.dto.response.StaffAssignmentResponse;
 import com.boxora.entity.StaffAssignment;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
+import org.springframework.stereotype.Component;
 
-@Mapper(componentModel = "spring")
-public interface StaffAssignmentMapper {
+@Component
+public class StaffAssignmentMapper {
 
-    @Mapping(source = "staff.id", target = "staffId")
-    @Mapping(source = "staff.username", target = "staffUsername")
-    @Mapping(source = "staff.fullName", target = "staffFullName")
-    @Mapping(source = "staff.email", target = "staffEmail")
-    @Mapping(source = "staff.role.name", target = "staffRole")
-    @Mapping(source = "facility.id", target = "facilityId")
-    @Mapping(source = "facility.name", target = "facilityName")
-    @Mapping(source = "facility.code", target = "facilityCode")
-    @Mapping(source = "assignedBy.id", target = "assignedById")
-    @Mapping(source = "assignedBy.fullName", target = "assignedByName")
-    StaffAssignmentResponse toResponse(StaffAssignment entity);
+    public StaffAssignmentResponse toResponse(StaffAssignment entity) {
+        if (entity == null) {
+            return null;
+        }
+
+        StaffAssignmentResponse.StaffAssignmentResponseBuilder builder = StaffAssignmentResponse.builder()
+                .id(entity.getId())
+                .assignedDate(entity.getAssignedDate())
+                .shift(entity.getShift())
+                .assignedZone(entity.getAssignedZone())
+                .roleInShift(entity.getRoleInShift())
+                .status(entity.getStatus())
+                .startTime(entity.getStartTime())
+                .endTime(entity.getEndTime())
+                .checkedInAt(entity.getCheckedInAt())
+                .checkedOutAt(entity.getCheckedOutAt())
+                .checkInNote(entity.getCheckInNote())
+                .checkOutNote(entity.getCheckOutNote())
+                .notes(entity.getNotes())
+                .createdAt(entity.getCreatedAt())
+                .updatedAt(entity.getUpdatedAt());
+
+        if (entity.getStaff() != null) {
+            builder.staffId(entity.getStaff().getId())
+                    .staffUsername(entity.getStaff().getUsername())
+                    .staffFullName(entity.getStaff().getFullName())
+                    .staffEmail(entity.getStaff().getEmail());
+            if (entity.getStaff().getRole() != null) {
+                builder.staffRole(entity.getStaff().getRole().getName());
+            }
+        }
+
+        if (entity.getFacility() != null) {
+            builder.facilityId(entity.getFacility().getId())
+                    .facilityName(entity.getFacility().getName())
+                    .facilityCode(entity.getFacility().getCode());
+        }
+
+        if (entity.getAssignedBy() != null) {
+            builder.assignedById(entity.getAssignedBy().getId())
+                    .assignedByName(entity.getAssignedBy().getFullName());
+        }
+
+        return builder.build();
+    }
 }

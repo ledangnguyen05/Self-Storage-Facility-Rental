@@ -440,6 +440,7 @@ class BookingServiceTest {
 
             BookingCreateRequest request = BookingCreateRequest.builder()
                     .storageUnitId(unitId)
+                    .customerId(customerId)
                     .startDate(LocalDate.now().plusDays(3))
                     .rentalMonths(2)
                     .build();
@@ -877,7 +878,7 @@ class BookingServiceTest {
                     .status(BookingStatus.CONFIRMED)
                     .build();
             noAppointment.setId(UUID.randomUUID());
-            when(bookingRepository.findByStorageUnit_Facility_Id(facilityId))
+            when(bookingRepository.findAllByFacilityIdIncludingNullUnit(facilityId))
                     .thenReturn(java.util.List.of(noAppointment, arrival));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.empty());
 
@@ -887,7 +888,7 @@ class BookingServiceTest {
             assertThat(results.get(0).getFacilityId()).isEqualTo(facilityId);
             assertThat(results.get(0).getAccessPin()).isNull();
             assertThat(results.get(0).getQrAccessToken()).isNull();
-            verify(bookingRepository).findByStorageUnit_Facility_Id(facilityId);
+            verify(bookingRepository).findAllByFacilityIdIncludingNullUnit(facilityId);
             verify(bookingRepository, never()).findAll();
         }
 

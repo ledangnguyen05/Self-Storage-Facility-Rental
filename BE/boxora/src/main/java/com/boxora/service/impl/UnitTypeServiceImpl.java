@@ -188,14 +188,15 @@ public class UnitTypeServiceImpl implements UnitTypeService {
                         ? request.getPriceChangeReason().trim()
                         : "Cập nhật đơn giá niêm yết khi chỉnh sửa thông tin loại kho";
 
-                storageUnitPriceHistoryService.adjustUnitTypePrice(id, StorageUnitPriceAdjustmentRequest.builder()
-                        .newPrice(request.getBasePricePerMonth())
-                        .reason(reason)
-                        .effectiveFrom(LocalDateTime.now())
-                        .build());
-            } else {
-                unitType.setBasePricePerMonth(request.getBasePricePerMonth());
+                if (storageUnitPriceHistoryService != null) {
+                    storageUnitPriceHistoryService.adjustUnitTypePrice(id, StorageUnitPriceAdjustmentRequest.builder()
+                            .newPrice(request.getBasePricePerMonth())
+                            .reason(reason)
+                            .effectiveFrom(LocalDateTime.now())
+                            .build());
+                }
             }
+            unitType.setBasePricePerMonth(request.getBasePricePerMonth());
         }
 
         UnitType updated = unitTypeRepository.save(unitType);

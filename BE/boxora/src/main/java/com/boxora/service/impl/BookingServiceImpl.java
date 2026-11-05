@@ -298,6 +298,11 @@ public class BookingServiceImpl implements BookingService {
             throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID,
                     "Thời gian thuê tối thiểu tại cơ sở này là " + minRentalDays + " ngày. Vui lòng chọn thời hạn phù hợp.");
         }
+        if (activePolicy != null && activePolicy.getMinimumRentalMonths() != null
+                && months < activePolicy.getMinimumRentalMonths()) {
+            throw new AppException(ErrorCode.BOOKING_MINIMUM_DURATION_INVALID,
+                    "Thời gian thuê tối thiểu tại cơ sở này là " + activePolicy.getMinimumRentalMonths() + " tháng. Vui lòng chọn thời hạn phù hợp.");
+        }
 
         User customer;
         boolean isStaffOrAdmin = requestContext != null && (
@@ -904,7 +909,7 @@ public class BookingServiceImpl implements BookingService {
                     if (checkInDate == null) return false;
 
                     if (timeframe == null && fromDate == null && toDate == null) {
-                        return true;
+                        return b.getExpectedCheckInAt() != null;
                     }
 
                     if ("TODAY".equalsIgnoreCase(timeframe) || "CURRENT".equalsIgnoreCase(timeframe)) {

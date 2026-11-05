@@ -186,6 +186,7 @@ class StorageUnitPriceHistoryServiceTest {
             when(userRepository.findById(managerUser.getId())).thenReturn(Optional.of(managerUser));
             when(storageUnitPriceHistoryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
             when(storageUnitRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(storageUnitPriceHistoryMapper.toResponse(any())).thenReturn(com.boxora.dto.response.StorageUnitPriceHistoryResponse.builder().build());
 
             com.boxora.dto.response.StorageUnitPriceHistoryResponse res = storageUnitPriceHistoryService.adjustUnitPrice(unitId, request);
             assertThat(res).isNotNull();

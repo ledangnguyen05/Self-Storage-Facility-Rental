@@ -234,6 +234,9 @@ public class FacilityPolicyTask1And2RegressionTest {
         @Mock
         private HandoverRecordRepository handoverRecordRepository;
 
+        @Mock
+        private PaymentRepository paymentRepository;
+
         @InjectMocks
         private BookingCancellationServiceImpl cancellationService;
 
@@ -289,6 +292,13 @@ public class FacilityPolicyTask1And2RegressionTest {
             when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
             when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(facilityId)).thenReturn(Optional.of(policy));
             when(handoverRecordRepository.existsByBooking_IdAndRecordType(any(), any())).thenReturn(false);
+            when(paymentRepository.findAllByBooking_Id(bookingId)).thenReturn(java.util.List.of(
+                    Payment.builder()
+                            .paymentType(com.boxora.enums.PaymentType.RENTAL_FEE)
+                            .status(com.boxora.enums.PaymentStatus.PAID)
+                            .amount(new BigDecimal("6000000.00"))
+                            .build()
+            ));
         }
 
         @Test
