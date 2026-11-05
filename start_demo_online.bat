@@ -150,7 +150,11 @@ set "TUNNEL_LOG=%TEMP%\boxora_cloudflared.log"
 taskkill /f /im cloudflared.exe >nul 2>&1
 if exist "%TUNNEL_LOG%" del /f /q "%TUNNEL_LOG%" >nul 2>&1
 
-start "BOXORA - CLOUDFLARE TUNNEL" /min "!CLOUDFLARED_EXE!" tunnel --url http://localhost:8080 --logfile "%TUNNEL_LOG%" --no-autoupdate
+echo   - Dang lam nong DNS cho Cloudflare Tunnel (ho tro mang 4G / Hotspot)...
+powershell -NoProfile -Command "foreach ($h in @('region1.v2.argotunnel.com','region2.v2.argotunnel.com','api.trycloudflare.com','api.cloudflare.com')) { Resolve-DnsName $h -Server 1.1.1.1 -ErrorAction SilentlyContinue | Out-Null; Resolve-DnsName $h -ErrorAction SilentlyContinue | Out-Null }"
+
+:LAUNCH_CLOUDFLARED_PROC
+start "BOXORA - CLOUDFLARE TUNNEL" /min "!CLOUDFLARED_EXE!" tunnel --url http://localhost:8080 --protocol http2 --edge-ip-version 4 --logfile "%TUNNEL_LOG%" --no-autoupdate
 
 echo   - Dang lay URL HTTPS tu Cloudflare Tunnel...
 set "TUNNEL_URL="
@@ -162,10 +166,21 @@ for /f "delims=" %%U in ('powershell -NoProfile -Command "if (Test-Path '%TUNNEL
     set "TUNNEL_URL=%%U"
 )
 if defined TUNNEL_URL goto :TUNNEL_FOUND
-set /a TUNNEL_WAIT+=1
-if !TUNNEL_WAIT! lss 20 goto :WAIT_TUNNEL_LOOP
 
-echo   [LOI] Khong lay duoc URL tu Cloudflare Tunnel sau 40 giay!
+REM Neu cloudflared bi thoat som do timeout DNS mang Hotspot, tu dong khoi dong lai ngay
+powershell -NoProfile -Command "if (Get-Process cloudflared -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+if %errorlevel% equ 0 goto :CONTINUE_TUNNEL_WAIT
+
+echo     ... DNS mang dang phan hoi cham, dang thu ket noi lai Cloudflare Tunnel...
+if exist "%TUNNEL_LOG%" del /f /q "%TUNNEL_LOG%" >nul 2>&1
+powershell -NoProfile -Command "foreach ($h in @('region1.v2.argotunnel.com','region2.v2.argotunnel.com','api.trycloudflare.com')) { Resolve-DnsName $h -Server 8.8.8.8 -ErrorAction SilentlyContinue | Out-Null; Resolve-DnsName $h -ErrorAction SilentlyContinue | Out-Null }"
+start "BOXORA - CLOUDFLARE TUNNEL" /min "!CLOUDFLARED_EXE!" tunnel --url http://localhost:8080 --protocol http2 --edge-ip-version 4 --logfile "%TUNNEL_LOG%" --no-autoupdate
+
+:CONTINUE_TUNNEL_WAIT
+set /a TUNNEL_WAIT+=1
+if !TUNNEL_WAIT! lss 25 goto :WAIT_TUNNEL_LOOP
+
+echo   [LOI] Khong lay duoc URL tu Cloudflare Tunnel sau 50 giay!
 echo   Vui long kiem tra ket noi mang hoac file log: %TUNNEL_LOG%
 pause
 exit /b 1
