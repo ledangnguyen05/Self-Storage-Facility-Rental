@@ -1782,11 +1782,12 @@ public class HandoverServiceImpl implements HandoverService {
         }
         requireAuthorizedStaffOperator(null);
 
-        if (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.COMPLETED) {
+        String normalizedType = documentType != null ? documentType.trim().toUpperCase() : "PAPER_CONTRACT";
+        if ("PAPER_CONTRACT".equals(normalizedType) &&
+                (booking.getStatus() == BookingStatus.CANCELLED || booking.getStatus() == BookingStatus.COMPLETED)) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Không thể tải tài liệu cho đơn đặt kho đã hủy hoặc đã hoàn tất");
         }
 
-        String normalizedType = documentType != null ? documentType.trim().toUpperCase() : "PAPER_CONTRACT";
         String subDir;
         switch (normalizedType) {
             case "PAPER_CONTRACT" -> subDir = "contracts/" + booking.getId();

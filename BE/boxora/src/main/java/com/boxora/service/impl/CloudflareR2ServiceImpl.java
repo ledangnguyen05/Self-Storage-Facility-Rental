@@ -25,6 +25,12 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class CloudflareR2ServiceImpl implements CloudflareR2Service {
 
+    @Value("${app.r2.enabled:true}")
+    private boolean r2Enabled;
+
+    @Value("${app.r2.account-id:0e057a93c13437ab7a9f464e23cd9b48}")
+    private String accountId;
+
     @Value("${app.r2.bucket-name:boxora-storage-units}")
     private String bucketName;
 
@@ -80,7 +86,8 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
             tempFile = Files.createTempFile("boxora-r2-", "." + extension);
             Files.copy(file.getInputStream(), tempFile, StandardCopyOption.REPLACE_EXISTING);
 
-            boolean uploadSuccess = executeWranglerR2Upload(bucketName, r2Key, tempFile.toFile());
+            String resolvedContentType = resolveMimeType(file.getContentType(), extension);
+            boolean uploadSuccess = executeWranglerR2Upload(bucketName, r2Key, tempFile.toFile(), resolvedContentType);
 
             if (uploadSuccess) {
                 String publicCdnUrl = normalizePublicUrl(publicUrlBase) + "/" + r2Key;
@@ -89,7 +96,7 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
                 return FileUploadResponse.builder()
                         .fileName(uniqueFileName)
                         .fileUrl(publicCdnUrl)
-                        .fileType(file.getContentType() != null ? file.getContentType() : "image/" + extension)
+                        .fileType(resolvedContentType)
                         .fileSize(file.getSize())
                         .uploadedAt(LocalDateTime.now())
                         .build();
@@ -126,35 +133,51 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
         }
     }
 
-    private boolean executeWranglerR2Upload(String bucket, String key, File file) {
-        try {
-            String token = System.getenv("CLOUDFLARE_API_TOKEN");
-            if (token == null || token.isBlank()) {
-                log.info("CLOUDFLARE_API_TOKEN is not configured in environment; skipping Wrangler execution.");
-                return false;
-            }
+    private String resolveMimeType(String rawContentType, String extension) {
+        if (rawContentType != null && !rawContentType.isBlank() && !rawContentType.equalsIgnoreCase("application/octet-stream")) {
+            return rawContentType.split(";")[0].trim();
+        }
+        return switch (extension.toLowerCase(Locale.ROOT)) {
+            case "pdf" -> "application/pdf";
+            case "png" -> "image/png";
+            case "webp" -> "image/webp";
+            case "gif" -> "image/gif";
+            case "svg" -> "image/svg+xml";
+            default -> "image/jpeg";
+        };
+    }
 
+    private boolean executeWranglerR2Upload(String bucket, String key, File file, String contentType) {
+        if (!r2Enabled) {
+            return false;
+        }
+        try {
             boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
             List<String> command = new ArrayList<>();
+            String safeContentType = (contentType != null && !contentType.isBlank()) ? contentType : "image/jpeg";
 
             if (isWindows) {
                 command.add("cmd.exe");
                 command.add("/c");
-                command.add(String.format("npx -y wrangler r2 object put \"%s/%s\" --file=\"%s\" --remote",
-                        bucket, key, file.getAbsolutePath().replace('\\', '/')));
+                command.add(String.format("npx --yes wrangler r2 object put \"%s/%s\" --file=\"%s\" --content-type=\"%s\" --remote",
+                        bucket, key, file.getAbsolutePath().replace('\\', '/'), safeContentType));
             } else {
                 command.add("npx");
-                command.add("-y");
+                command.add("--yes");
                 command.add("wrangler");
                 command.add("r2");
                 command.add("object");
                 command.add("put");
                 command.add(bucket + "/" + key);
                 command.add("--file=" + file.getAbsolutePath());
+                command.add("--content-type=" + safeContentType);
                 command.add("--remote");
             }
 
             ProcessBuilder pb = new ProcessBuilder(command);
+            if (accountId != null && !accountId.isBlank()) {
+                pb.environment().putIfAbsent("CLOUDFLARE_ACCOUNT_ID", accountId.trim());
+            }
             pb.redirectErrorStream(true);
             Process process = pb.start();
 

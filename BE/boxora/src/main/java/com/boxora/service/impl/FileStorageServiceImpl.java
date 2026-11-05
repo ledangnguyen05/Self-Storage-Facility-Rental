@@ -57,17 +57,6 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public FileUploadResponse storeFile(MultipartFile file, String subDirectory) {
-        if (cloudflareR2Service != null) {
-            try {
-                FileUploadResponse r2Response = cloudflareR2Service.uploadFile(file, subDirectory);
-                if (r2Response != null) {
-                    return r2Response;
-                }
-            } catch (Exception e) {
-                log.warn("Cloudflare R2 upload error ({}), falling back to local file storage for directory '{}'...",
-                        e.getMessage(), subDirectory);
-            }
-        }
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.TICKET_IMAGE_UPLOAD_FAILED);
         }
@@ -85,8 +74,21 @@ public class FileStorageServiceImpl implements FileStorageService {
             throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT);
         }
 
+        String safeSubDir = sanitizeSubDirectory(subDirectory, "general");
+
+        if (cloudflareR2Service != null) {
+            try {
+                FileUploadResponse r2Response = cloudflareR2Service.uploadFile(file, safeSubDir);
+                if (r2Response != null) {
+                    return r2Response;
+                }
+            } catch (Exception e) {
+                log.warn("Cloudflare R2 upload error ({}), falling back to local file storage for directory '{}'...",
+                        e.getMessage(), safeSubDir);
+            }
+        }
+
         try {
-            String safeSubDir = sanitizeSubDirectory(subDirectory, "general");
             Path targetDirectory = this.rootUploadPath.resolve(safeSubDir).normalize();
             if (!targetDirectory.startsWith(this.rootUploadPath)) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn thư mục tải lên không hợp lệ");
@@ -134,17 +136,6 @@ public class FileStorageServiceImpl implements FileStorageService {
 
     @Override
     public FileUploadResponse storeDocumentFile(MultipartFile file, String subDirectory) {
-        if (cloudflareR2Service != null) {
-            try {
-                FileUploadResponse r2Response = cloudflareR2Service.uploadFile(file, subDirectory);
-                if (r2Response != null) {
-                    return r2Response;
-                }
-            } catch (Exception e) {
-                log.warn("Cloudflare R2 document upload error ({}), falling back to local file storage for directory '{}'...",
-                        e.getMessage(), subDirectory);
-            }
-        }
         if (file == null || file.isEmpty()) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp tài liệu tải lên không được để trống");
         }
@@ -199,6 +190,19 @@ public class FileStorageServiceImpl implements FileStorageService {
             if (!targetDirectory.startsWith(this.rootUploadPath)) {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn lưu trữ tài liệu không hợp lệ");
             }
+
+            if (cloudflareR2Service != null) {
+                try {
+                    FileUploadResponse r2Response = cloudflareR2Service.uploadFile(file, safeSubDir);
+                    if (r2Response != null) {
+                        return r2Response;
+                    }
+                } catch (Exception e) {
+                    log.warn("Cloudflare R2 document upload error ({}), falling back to local file storage for directory '{}'...",
+                            e.getMessage(), safeSubDir);
+                }
+            }
+
             Files.createDirectories(targetDirectory);
 
             String storedFileName = String.format("doc-%s-%d.%s",
