@@ -295,7 +295,18 @@ export const OverdueManagementPage: React.FC = () => {
         console.warn('Failed to save settled contracts to localStorage:', lsErr)
       }
 
-      toast.success(`Đã hoàn tất đơn nợ cước buồng #${contractToSettle.unitCode}! Khách hàng ${contractToSettle.customerName} đã thanh toán & trả kho thành công.`)
+      const depositHeldVal = contractToSettle.depositHeld || 0
+      const lateFeeVal = contractToSettle.lateFee || 0
+      const principalVal = contractToSettle.principalDebt || 0
+      const refundVal = contractToSettle.customerRefundAmount !== undefined && contractToSettle.customerRefundAmount !== null
+        ? contractToSettle.customerRefundAmount
+        : Math.max(0, depositHeldVal - (principalVal + lateFeeVal))
+
+      if (refundVal > 0) {
+        toast.success(`Đã hoàn tất trả kho buồng #${contractToSettle.unitCode}! Boxora đã hoàn trả ${formatVND(refundVal)} tiền cọc cho khách hàng ${contractToSettle.customerName}.`)
+      } else {
+        toast.success(`Đã hoàn tất đơn nợ cước buồng #${contractToSettle.unitCode}! Khách hàng ${contractToSettle.customerName} đã thanh toán & trả kho thành công.`)
+      }
       setContractToSettle(null)
       fetchSummary()
       fetchContracts()
@@ -1050,239 +1061,380 @@ export const OverdueManagementPage: React.FC = () => {
       </div>
 
       {/* Modal Confirm Khách đã tới hoàn tất đơn */}
-      {contractToSettle && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-200">
-                <span className="material-symbols-outlined text-2xl">how_to_reg</span>
-              </div>
-              <div className="flex-1">
-                <h3 className="text-sm font-bold text-slate-900">Xác nhận hoàn tất đơn nợ cước</h3>
-              </div>
-            </div>
+      {contractToSettle && (() => {
+        const depositHeld = contractToSettle.depositHeld || 0
+        const lateFee = contractToSettle.lateFee || 0
+        const principalDebt = contractToSettle.principalDebt || 0
+        const totalDeductions = principalDebt + lateFee
+        const refundAmount = contractToSettle.customerRefundAmount !== undefined && contractToSettle.customerRefundAmount !== null
+          ? contractToSettle.customerRefundAmount
+          : Math.max(0, depositHeld - totalDeductions)
+        const remainingDebt = contractToSettle.totalDebt || 0
+        const isRefundMode = refundAmount > 0
+        const isDebtorMode = remainingDebt > 0
 
-            {/* Contract Info Summary Card */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Mã hợp đồng:</span>
-                <span className="font-mono font-bold text-slate-900">{contractToSettle.contractCode}</span>
+        return (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl border border-slate-200 flex flex-col gap-4 animate-scaleUp max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="flex items-start gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                  isRefundMode
+                    ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                    : isDebtorMode
+                    ? 'bg-rose-100 text-rose-700 border-rose-200'
+                    : 'bg-blue-100 text-blue-700 border-blue-200'
+                }`}>
+                  <span className="material-symbols-outlined text-2xl">
+                    {isRefundMode ? 'currency_exchange' : isDebtorMode ? 'receipt_long' : 'verified'}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {isRefundMode
+                      ? 'Xác nhận hoàn trả tiền cọc cho khách hàng'
+                      : isDebtorMode
+                      ? 'Xác nhận thu nợ cước & Hoàn tất trả kho'
+                      : 'Xác nhận tất toán & Hoàn tất trả kho'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {isRefundMode
+                      ? 'Khách hàng hoàn tất trả kho — Boxora hoàn cọc sau khi đã cấn trừ chi phí quá hạn.'
+                      : isDebtorMode
+                      ? 'Khách hàng còn nợ vượt quá tiền cọc — Ghi nhận phiếu thu và tất toán hợp đồng.'
+                      : 'Hợp đồng đã hoàn tất cân bằng công nợ, sẵn sàng thu hồi PIN và trả kho.'}
+                  </p>
+                </div>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Buồng kho:</span>
-                <span className="font-bold text-rose-600">Buồng #{contractToSettle.unitCode}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Khách hàng:</span>
-                <span className="font-semibold text-slate-900">
-                  {contractToSettle.customerName} ({contractToSettle.customerPhone})
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500">Cơ sở:</span>
-                <span className="font-medium text-slate-800">{contractToSettle.facilityName}</span>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <span className="text-slate-600 font-bold">Tổng nợ cần thu:</span>
-                <span className="font-mono font-black text-emerald-700 text-sm">
-                  {formatVND(contractToSettle.totalDebt)}
-                </span>
-              </div>
-            </div>
 
-            {/* Form ghi nhận phiếu thu quầy khi còn nợ */}
-            {contractToSettle.totalDebt > 0 ? (
-              <div className="space-y-3 p-3.5 bg-blue-50/50 border border-blue-200/80 rounded-xl text-xs">
-                <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs pb-1 border-b border-blue-200/60">
-                  <span className="material-symbols-outlined text-[17px] text-blue-600">receipt_long</span>
-                  Thông tin phiếu thu & thanh toán tại quầy
+              {/* Contract & Customer Info Card */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Mã hợp đồng:</span>
+                  <span className="font-mono font-bold text-slate-900">{contractToSettle.contractCode}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Buồng kho:</span>
+                  <span className="font-bold text-slate-900">
+                    Buồng #{contractToSettle.unitCode} {contractToSettle.unitTypeName ? `• ${contractToSettle.unitTypeName}` : ''}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Khách hàng:</span>
+                  <span className="font-semibold text-slate-900">
+                    {contractToSettle.customerName} ({contractToSettle.customerPhone})
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Cơ sở:</span>
+                  <span className="font-medium text-slate-800">{contractToSettle.facilityName}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Hạn trả kho ban đầu:</span>
+                  <span className="font-medium text-slate-700">
+                    {contractToSettle.dueDate} <span className="text-rose-600 font-bold">(+{contractToSettle.daysOverdue} ngày • {contractToSettle.stageLabel || 'Quá hạn'})</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* BẢNG KÊ QUYẾT TOÁN TÀI CHÍNH CHI TIẾT ĐẦY ĐỦ CÁC KHOẢN */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-2.5">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider pb-1 border-b border-slate-200 flex items-center justify-between">
+                  <span>Bảng phân rã quyết toán tài chính</span>
+                  <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Cấn trừ trực tiếp tiền cọc
+                  </span>
                 </div>
 
-                {/* Phương thức thanh toán */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Phương thức thanh toán <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSettlementPaymentMethod('CASH')}
-                      className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                        settlementPaymentMethod === 'CASH'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[16px]">payments</span>
-                      Tiền mặt
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSettlementPaymentMethod('BANK_TRANSFER')}
-                      className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${
-                        settlementPaymentMethod === 'BANK_TRANSFER'
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[16px]">account_balance</span>
-                      Chuyển khoản quầy
-                    </button>
-                  </div>
+                {/* 1. Tiền cọc */}
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600 flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-[15px] text-blue-600">savings</span>
+                    Tiền đặt cọc bảo đảm kho (đang giữ):
+                  </span>
+                  <span className="font-mono font-bold text-slate-900 text-sm">
+                    +{formatVND(depositHeld)}
+                  </span>
                 </div>
 
-                {/* Mã phiếu thu / Số biên lai */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Mã phiếu thu / Số biên lai <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={settlementReceiptCode}
-                    onChange={(e) => {
-                      setSettlementReceiptCode(e.target.value)
-                      if (settlementFormErrors.receiptCode) {
-                        setSettlementFormErrors(prev => ({ ...prev, receiptCode: '' }))
-                      }
-                    }}
-                    placeholder="VD: PT-20261102-001"
-                    className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-medium focus:outline-hidden focus:ring-2 ${
-                      settlementFormErrors.receiptCode
-                        ? 'border-rose-400 focus:ring-rose-200'
-                        : 'border-slate-300 focus:ring-blue-200'
-                    }`}
-                  />
-                  {settlementFormErrors.receiptCode && (
-                    <p className="text-[11px] text-rose-600 mt-1 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">error</span>
-                      {settlementFormErrors.receiptCode}
-                    </p>
-                  )}
+                {/* 2. Tiền phạt */}
+                <div className="flex justify-between items-center text-rose-600">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <span className="material-symbols-outlined text-[15px] text-rose-500">warning</span>
+                    Phí phạt trễ hạn (+{contractToSettle.daysOverdue} ngày • {contractToSettle.lateFeePercentage ?? 100}%/ngày):
+                  </span>
+                  <span className="font-mono font-bold text-sm">
+                    -{formatVND(lateFee)}
+                  </span>
                 </div>
 
-                {/* Số tiền thực thu */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[11px] font-semibold text-slate-700">
-                      Số tiền thực thu (VND) <span className="text-rose-500">*</span>
-                    </label>
-                    <span className="text-[11px] font-mono text-emerald-700 font-bold">
-                      {formatVND(settlementAmount)}
+                {/* 3. Nợ gốc nếu có */}
+                {principalDebt > 0 && (
+                  <div className="flex justify-between items-center text-rose-600">
+                    <span className="flex items-center gap-1.5 font-medium">
+                      <span className="material-symbols-outlined text-[15px] text-rose-500">receipt</span>
+                      Cước thuê gốc còn nợ:
+                    </span>
+                    <span className="font-mono font-bold text-sm">
+                      -{formatVND(principalDebt)}
                     </span>
                   </div>
-                  <input
-                    type="number"
-                    min={contractToSettle.totalDebt}
-                    value={settlementAmount || ''}
-                    onChange={(e) => {
-                      setSettlementAmount(Number(e.target.value) || 0)
-                      if (settlementFormErrors.amount) {
-                        setSettlementFormErrors(prev => ({ ...prev, amount: '' }))
-                      }
-                    }}
-                    className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-bold focus:outline-hidden focus:ring-2 ${
-                      settlementFormErrors.amount
-                        ? 'border-rose-400 focus:ring-rose-200'
-                        : 'border-slate-300 focus:ring-blue-200'
-                    }`}
-                  />
-                  {settlementFormErrors.amount && (
-                    <p className="text-[11px] text-rose-600 mt-1 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">error</span>
-                      {settlementFormErrors.amount}
-                    </p>
+                )}
+
+                {/* 4. Tổng kết */}
+                <div className="pt-2 border-t-2 border-dashed border-slate-200">
+                  {isRefundMode ? (
+                    <div className="p-3 bg-emerald-50/90 border border-emerald-300 rounded-xl flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black text-emerald-900 uppercase tracking-wide flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[17px] text-emerald-600">check_circle</span>
+                          Boxora hoàn trả cọc cho khách:
+                        </span>
+                        <span className="text-[10px] text-emerald-700 mt-0.5">
+                          Đã cấn trừ đủ {formatVND(totalDeductions)} phí phát sinh vào tiền cọc
+                        </span>
+                      </div>
+                      <span className="font-mono font-black text-emerald-700 text-lg">
+                        {formatVND(refundAmount)}
+                      </span>
+                    </div>
+                  ) : isDebtorMode ? (
+                    <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-black text-rose-900 uppercase tracking-wide flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[17px] text-rose-600">error</span>
+                          Khách cần thanh toán thêm:
+                        </span>
+                        <span className="text-[10px] text-rose-600 mt-0.5">
+                          Tiền cọc ({formatVND(depositHeld)}) không đủ bù cước nợ ({formatVND(totalDeductions)})
+                        </span>
+                      </div>
+                      <span className="font-mono font-black text-rose-700 text-lg">
+                        {formatVND(remainingDebt)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+                          Công nợ tất toán cân bằng:
+                        </span>
+                        <span className="text-[10px] text-blue-600 mt-0.5">
+                          Không còn nợ và không có tiền cọc dư hoàn lại
+                        </span>
+                      </div>
+                      <span className="font-mono font-bold text-blue-800 text-base">
+                        0 ₫
+                      </span>
+                    </div>
                   )}
                 </div>
+              </div>
 
-                {/* Mã tham chiếu chuyển khoản */}
-                {settlementPaymentMethod === 'BANK_TRANSFER' && (
+              {/* Form ghi nhận phiếu thu quầy CHỈ KHI KHÁCH CÒN NỢ (isDebtorMode) */}
+              {isDebtorMode ? (
+                <div className="space-y-3 p-3.5 bg-blue-50/50 border border-blue-200/80 rounded-xl text-xs">
+                  <div className="flex items-center gap-1.5 text-blue-900 font-bold text-xs pb-1 border-b border-blue-200/60">
+                    <span className="material-symbols-outlined text-[17px] text-blue-600">receipt_long</span>
+                    Thông tin phiếu thu số tiền còn thiếu tại quầy ({formatVND(remainingDebt)})
+                  </div>
+
+                  {/* Phương thức thanh toán */}
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Mã tham chiếu ngân hàng / App Banking
+                      Phương thức thanh toán <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSettlementPaymentMethod('CASH')}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                          settlementPaymentMethod === 'CASH'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">payments</span>
+                        Tiền mặt
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSettlementPaymentMethod('BANK_TRANSFER')}
+                        className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg border text-xs font-semibold transition cursor-pointer ${
+                          settlementPaymentMethod === 'BANK_TRANSFER'
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        <span className="material-symbols-outlined text-[16px]">account_balance</span>
+                        Chuyển khoản quầy
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Mã phiếu thu / Số biên lai */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Mã phiếu thu / Số biên lai <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
-                      value={settlementRefCode}
-                      onChange={(e) => setSettlementRefCode(e.target.value)}
-                      placeholder="VD: FT263078491820..."
-                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-200"
+                      value={settlementReceiptCode}
+                      onChange={(e) => {
+                        setSettlementReceiptCode(e.target.value)
+                        if (settlementFormErrors.receiptCode) {
+                          setSettlementFormErrors(prev => ({ ...prev, receiptCode: '' }))
+                        }
+                      }}
+                      placeholder="VD: PT-20261102-001"
+                      className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-medium focus:outline-hidden focus:ring-2 ${
+                        settlementFormErrors.receiptCode
+                          ? 'border-rose-400 focus:ring-rose-200'
+                          : 'border-slate-300 focus:ring-blue-200'
+                      }`}
+                    />
+                    {settlementFormErrors.receiptCode && (
+                      <p className="text-[11px] text-rose-600 mt-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">error</span>
+                        {settlementFormErrors.receiptCode}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Số tiền thực thu */}
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[11px] font-semibold text-slate-700">
+                        Số tiền thực thu (VND) <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[11px] font-mono text-emerald-700 font-bold">
+                        {formatVND(settlementAmount)}
+                      </span>
+                    </div>
+                    <input
+                      type="number"
+                      min={remainingDebt}
+                      value={settlementAmount || ''}
+                      onChange={(e) => {
+                        setSettlementAmount(Number(e.target.value) || 0)
+                        if (settlementFormErrors.amount) {
+                          setSettlementFormErrors(prev => ({ ...prev, amount: '' }))
+                        }
+                      }}
+                      className={`w-full px-3 py-1.5 bg-white border rounded-lg text-xs font-mono font-bold focus:outline-hidden focus:ring-2 ${
+                        settlementFormErrors.amount
+                          ? 'border-rose-400 focus:ring-rose-200'
+                          : 'border-slate-300 focus:ring-blue-200'
+                      }`}
+                    />
+                    {settlementFormErrors.amount && (
+                      <p className="text-[11px] text-rose-600 mt-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">error</span>
+                        {settlementFormErrors.amount}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Mã tham chiếu chuyển khoản */}
+                  {settlementPaymentMethod === 'BANK_TRANSFER' && (
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Mã tham chiếu ngân hàng / App Banking
+                      </label>
+                      <input
+                        type="text"
+                        value={settlementRefCode}
+                        onChange={(e) => setSettlementRefCode(e.target.value)}
+                        placeholder="VD: FT263078491820..."
+                        className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-200"
+                      />
+                    </div>
+                  )}
+
+                  {/* Link / Ghi chú chứng từ */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Link ảnh biên lai / Ghi chú chứng từ (tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      value={settlementProofUrl}
+                      onChange={(e) => setSettlementProofUrl(e.target.value)}
+                      placeholder="VD: Biên lai thu tiền ký tay số 1234"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-200"
                     />
                   </div>
-                )}
 
-                {/* Link / Ghi chú chứng từ */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Link ảnh biên lai / Ghi chú chứng từ (tùy chọn)
-                  </label>
-                  <input
-                    type="text"
-                    value={settlementProofUrl}
-                    onChange={(e) => setSettlementProofUrl(e.target.value)}
-                    placeholder="VD: Biên lai thu tiền ký tay số 1234"
-                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-200"
-                  />
+                  {/* Ghi chú thu ngân */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Ghi chú tất toán (tùy chọn)
+                    </label>
+                    <input
+                      type="text"
+                      value={settlementNotes}
+                      onChange={(e) => setSettlementNotes(e.target.value)}
+                      placeholder="VD: Khách nộp tiền mặt tại quầy bàn giao cơ sở"
+                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
                 </div>
-
-                {/* Ghi chú thu ngân */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Ghi chú tất toán (tùy chọn)
-                  </label>
-                  <input
-                    type="text"
-                    value={settlementNotes}
-                    onChange={(e) => setSettlementNotes(e.target.value)}
-                    placeholder="VD: Khách nộp tiền mặt tại quầy bàn giao cơ sở"
-                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:outline-hidden focus:ring-2 focus:ring-blue-200"
-                  />
+              ) : isRefundMode ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+                    <span className="material-symbols-outlined text-[17px] text-emerald-600">price_check</span>
+                    Không cần tạo phiếu thu
+                  </div>
+                  <p className="text-[11px] text-emerald-800 leading-relaxed">
+                    Khách hàng không còn công nợ cần thanh toán. Boxora thực hiện hoàn cọc <strong>{formatVND(refundAmount)}</strong> cho khách hàng <strong>{contractToSettle.customerName}</strong>.
+                  </p>
                 </div>
-              </div>
-            ) : (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2">
-                <span className="material-symbols-outlined text-[18px] text-emerald-600 shrink-0">check_circle</span>
-                <span>
-                  Hợp đồng này <strong>không còn nợ cước</strong> (khách hàng đã thanh toán trực tuyến hoặc đã hoàn tất công nợ). Không cần tạo thêm phiếu thu.
-                </span>
-              </div>
-            )}
+              ) : null}
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 leading-relaxed">
-              ✓ Sau khi bấm <strong>"Xác nhận đã xong"</strong>, hệ thống sẽ xác thực phiếu thu, gọi SmartLock thu hồi PIN truy cập và kiểm tra biên bản nghiệm thu trả kho trước khi chuyển trạng thái buồng kho <strong>#{contractToSettle.unitCode}</strong>.
-            </div>
+              {/* Hướng dẫn quy trình hệ thống */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 leading-relaxed">
+                ✓ Sau khi bấm <strong>"Xác nhận đã xong"</strong>, hệ thống sẽ: (1) Cập nhật trạng thái hợp đồng thành <strong>Đã kết thúc (TERMINATED)</strong>; (2) Thu hồi SmartLock PIN mở kho; (3) Kiểm tra biên bản nghiệm thu trả kho và giải phóng buồng kho <strong>#{contractToSettle.unitCode}</strong> về trạng thái Sẵn sàng sử dụng.
+              </div>
 
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setContractToSettle(null)}
-                disabled={isSettling}
-                className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmSettlement}
-                disabled={isSettling}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-              >
-                {isSettling ? (
-                  <>
-                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                    Đang xử lý...
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                    Xác nhận đã xong
-                  </>
-                )}
-              </button>
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setContractToSettle(null)}
+                  disabled={isSettling}
+                  className="px-4 py-2 text-xs text-slate-600 font-semibold hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmSettlement}
+                  disabled={isSettling}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                >
+                  {isSettling ? (
+                    <>
+                      <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                      <span>Đang xử lý...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                      <span>
+                        {isRefundMode
+                          ? `Xác nhận hoàn ${formatVND(refundAmount)} & Đã xong`
+                          : isDebtorMode
+                          ? `Xác nhận thu nợ ${formatVND(remainingDebt)} & Đã xong`
+                          : 'Xác nhận tất toán & Đã xong'}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Contract Detail Modal */}
       {selectedContractId && (
