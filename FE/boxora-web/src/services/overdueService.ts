@@ -143,7 +143,7 @@ export interface OverdueContractDetail extends OverdueContractItem {
 
 export interface SendReminderPayload {
   channel: 'SMS' | 'EMAIL' | 'CALL' | 'MULTI' | 'WEB'
-  templateType: 'REMINDER' | 'WARNING' | 'LOCKOUT_NOTICE' | 'SEAL_WARNING'
+  templateType: 'REMINDER' | 'WARNING' | 'LOCKOUT_NOTICE' | 'SEAL_WARNING' | 'LIQUIDATION_HOLDING_WARNING' | string
   content?: string
   notes?: string
 }

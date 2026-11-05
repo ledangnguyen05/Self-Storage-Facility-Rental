@@ -942,7 +942,7 @@ export const BookingPage: React.FC = () => {
         const area = dbType.areaSqm != null ? Number(dbType.areaSqm) : (matchedCatalog ? matchedCatalog.areaM2 : (unit.areaSqMeters || 1))
         const dims = dbType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${dbType.lengthM || 2}m × ${dbType.widthM || 1.5}m × ${dbType.heightM || 2.6}m`)
         const cap = dbType.capacityBoxes ? `${dbType.capacityBoxes} boxes` : (matchedCatalog ? matchedCatalog.capacityText : `${Math.round(area * 8)} boxes`)
-        const name = dbType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn')
+        const name = (dbType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn') || 'Kho tiêu chuẩn') as string
 
         matchedSizes.push({
           ...(matchedCatalog || STORAGE_SIZES_CATALOG[0]),

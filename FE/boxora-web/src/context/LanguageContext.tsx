@@ -1713,8 +1713,6 @@ Object.assign(DICTIONARY, {
   'Tất cả kênh TT': 'All Payment Methods',
   'Lọc cơ sở': 'Filter',
   'Đang lọc': 'Active',
-
-
 })
 
 // Merge domain-specific modular dictionaries
