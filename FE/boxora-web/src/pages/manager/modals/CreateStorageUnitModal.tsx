@@ -436,17 +436,36 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
 
           {/* Selected Type Specs & Standard Pricing Preview */}
           {selectedType && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 space-y-1.5 shadow-2xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-cyan-600 text-[16px]">
-                    inventory_2
-                  </span>
-                  {selectedType.typeName}
-                </span>
-                <span className="font-mono text-slate-600 dark:text-slate-300">
-                  {selectedType.areaSqm} m² · {selectedType.dimensions}
-                </span>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800/70 dark:text-slate-300 space-y-2 shadow-2xs">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {selectedType.imageUrl ? (
+                    <img
+                      src={selectedType.imageUrl}
+                      alt={selectedType.typeName}
+                      className="w-11 h-11 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        target.onerror = null
+                        target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=200&q=80'
+                      }}
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0">
+                      <span className="material-symbols-outlined text-cyan-600 text-[18px]">
+                        inventory_2
+                      </span>
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-800 dark:text-slate-100 block truncate">
+                      {selectedType.typeName}
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                      {selectedType.areaSqm} m² · {selectedType.dimensions}
+                    </span>
+                  </div>
+                </div>
               </div>
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-700/60 text-[11px]">
                 <span className="text-slate-500">

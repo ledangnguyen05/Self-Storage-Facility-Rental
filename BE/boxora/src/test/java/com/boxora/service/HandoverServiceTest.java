@@ -1800,6 +1800,43 @@ class HandoverServiceTest {
             long inspectionSummaryCount = notes.stream().filter(n -> n.contains("hoàn thành thẩm định hiện trường")).count();
             assertThat(inspectionSummaryCount).isEqualTo(1);
         }
+
+        @Test
+        @DisplayName("Hủy yêu cầu khiếu nại (CANCEL_DISPUTE): Khôi phục trạng thái PENDING / PENDING_CUSTOMER_REVIEW và bảo toàn lịch sử")
+        void cancelDispute_RestoresPendingDecisionAndPreservesHistory() {
+            HandoverRecord returnRecord = HandoverRecord.builder()
+                    .booking(testBooking)
+                    .recordType("RETURN")
+                    .settlementConfirmed(true)
+                    .settlementVersion(2)
+                    .customerDecision("DISPUTED")
+                    .approvalStatus("DISPUTED")
+                    .disputeReason("Không đồng ý phí vệ sinh")
+                    .recordedAt(LocalDateTime.now())
+                    .build();
+            returnRecord.setId(UUID.randomUUID());
+
+            when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(testBooking));
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(bookingId))
+                    .thenReturn(List.of(returnRecord));
+            when(handoverRecordRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.request.CustomerDecisionRequest req = com.boxora.dto.request.CustomerDecisionRequest.builder()
+                    .decision("CANCEL_DISPUTE")
+                    .settlementVersion(2)
+                    .build();
+
+            handoverService.handleCustomerDecision(bookingId, req);
+
+            assertThat(returnRecord.getCustomerDecision()).isEqualTo("PENDING");
+            assertThat(returnRecord.getApprovalStatus()).isEqualTo("PENDING_CUSTOMER_REVIEW");
+            assertThat(returnRecord.getDisputeReason()).isNull();
+            assertThat(returnRecord.getNotes()).contains("KHÁCH HÀNG HỦY KHIẾU NẠI V2: Không đồng ý phí vệ sinh");
+            assertThat(testBooking.getStepTransitionHistory()).contains("KHÁCH HÀNG HỦY KHIẾU NẠI kết quả quyết toán (V2)");
+        }
     }
 }
 

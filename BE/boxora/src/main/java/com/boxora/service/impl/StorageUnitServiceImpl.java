@@ -665,7 +665,33 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         String startDate = null;
         String dueDate = null;
 
-        if (u.getStatus() == UnitStatus.OCCUPIED || u.getStatus() == UnitStatus.OVERDUE_LOCKED || u.getStatus() == UnitStatus.RESERVED) {
+        if (u.getStatus() == UnitStatus.RESERVED) {
+            var optHoldingBooking = bookingRepository.findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(
+                    u.getId(), INVENTORY_HOLDING_STATUSES);
+            if (optHoldingBooking.isPresent()) {
+                var booking = optHoldingBooking.get();
+                bookingId = booking.getId();
+                if (booking.getCustomer() != null) {
+                    tenantName = booking.getCustomer().getFullName() != null
+                            ? booking.getCustomer().getFullName()
+                            : booking.getCustomer().getUsername();
+                }
+                contractCode = booking.getBookingCode();
+                if (booking.getStartDate() != null) {
+                    startDate = booking.getStartDate().toString();
+                }
+                if (booking.getEndDate() != null) {
+                    dueDate = booking.getEndDate().toString();
+                }
+                var optContract = rentalContractRepository.findByBookingId(booking.getId());
+                if (optContract.isPresent()) {
+                    contractId = optContract.get().getId();
+                    if (optContract.get().getContractCode() != null) {
+                        contractCode = optContract.get().getContractCode();
+                    }
+                }
+            }
+        } else if (u.getStatus() == UnitStatus.OCCUPIED || u.getStatus() == UnitStatus.OVERDUE_LOCKED) {
             var optContract = rentalContractRepository.findFirstByUnit_IdOrderByCreatedAtDesc(u.getId());
             if (optContract.isPresent()) {
                 var contract = optContract.get();
@@ -734,7 +760,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .contractId(contractId)
                 .startDate(startDate)
                 .dueDate(dueDate)
-                .imageUrl(u.getImageUrl())
+                .imageUrl((u.getImageUrl() != null && !u.getImageUrl().isBlank())
+                        ? u.getImageUrl()
+                        : (u.getUnitType() != null ? u.getUnitType().getImageUrl() : null))
                 .maintenanceReason(u.getMaintenanceReason())
                 .maintenanceBy(u.getMaintenanceBy())
                 .maintenanceAt(u.getMaintenanceAt() != null ? u.getMaintenanceAt().toString() : null)

@@ -293,6 +293,29 @@ class UnitTypeServiceTest {
             assertThat(histories).hasSize(1);
             assertThat(histories.get(0).getNewPrice()).isEqualTo(new BigDecimal("1350000.00"));
         }
+
+        @Test
+        @DisplayName("Từ chối URL ảnh không hợp lệ (javascript:) và cho phép xóa ảnh về null khi cập nhật")
+        void shouldValidateAndAllowClearingImageUrl() {
+            UnitTypeUpdateRequest invalidReq = UnitTypeUpdateRequest.builder()
+                    .imageUrl("javascript:alert(1)")
+                    .build();
+            when(unitTypeRepository.findById(unitTypeId)).thenReturn(Optional.of(unitType));
+
+            AppException ex = assertThrows(AppException.class, () -> unitTypeService.updateUnitType(unitTypeId, invalidReq));
+            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.INVALID_REQUEST);
+
+            unitType.setImageUrl("https://cdn.boxora.vn/unit-types/sample.png");
+            UnitTypeUpdateRequest clearReq = UnitTypeUpdateRequest.builder()
+                    .imageUrl("")
+                    .build();
+            when(unitTypeRepository.save(unitType)).thenReturn(unitType);
+            when(storageUnitRepository.countByUnitType_Id(unitTypeId)).thenReturn(0L);
+            when(unitTypeMapper.toResponse(unitType, 0L)).thenReturn(UnitTypeResponse.builder().id(unitTypeId).imageUrl(null).build());
+
+            unitTypeService.updateUnitType(unitTypeId, clearReq);
+            assertThat(unitType.getImageUrl()).isNull();
+        }
     }
 }
 

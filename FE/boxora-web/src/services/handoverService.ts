@@ -463,7 +463,14 @@ export const handoverService = {
     return response.data?.data as ReturnSettlementDetail
   },
 
-  async cancelDispute(bookingId: string): Promise<ReturnSettlementDetail> {
+  async cancelDispute(bookingId: string, settlementVersion?: number): Promise<ReturnSettlementDetail> {
+    if (settlementVersion != null) {
+      const response = await api.post(`/api/v1/handovers/returns/${bookingId}/customer-decision`, {
+        decision: 'CANCEL_DISPUTE',
+        settlementVersion
+      })
+      return response.data?.data as ReturnSettlementDetail
+    }
     const response = await api.post(`/api/v1/handovers/returns/${bookingId}/cancel-dispute`)
     return response.data?.data as ReturnSettlementDetail
   },

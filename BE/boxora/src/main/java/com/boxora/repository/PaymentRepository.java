@@ -41,12 +41,35 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             SELECT new com.boxora.dto.response.FacilityRevenueResponse(
                 f.id,
                 f.name,
-                COALESCE(SUM(CASE WHEN p.paymentType != com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN 0
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE p.amount END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount >= COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN COALESCE(b.depositPaid, b.depositAmount, 0)
+                              ELSE p.amount END)
+                    ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RETURN_COMPENSATION THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(p.amount), 0),
                 COUNT(p)
@@ -57,6 +80,18 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             LEFT JOIN p.contract c
             JOIN Facility f ON f.id = COALESCE(bSu.facility.id, b.facility.id, c.facility.id)
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
+            AND (
+                b IS NULL
+                OR b.signingMethod IS NULL
+                OR UPPER(b.signingMethod) != 'IN_PERSON'
+                OR b.status IN (
+                    com.boxora.enums.BookingStatus.ACTIVE,
+                    com.boxora.enums.BookingStatus.COMPLETED,
+                    com.boxora.enums.BookingStatus.OVERDUE,
+                    com.boxora.enums.BookingStatus.CHECKOUT_REQUESTED,
+                    com.boxora.enums.BookingStatus.INSPECTED
+                )
+            )
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             AND (:facilityId IS NULL OR f.id = :facilityId)
@@ -73,12 +108,35 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     // a null SUM when there are no matching payments in the period.
     @Query("""
             SELECT new com.boxora.dto.response.SystemRevenueSummaryResponse(
-                COALESCE(SUM(CASE WHEN p.paymentType != com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN 0
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE p.amount END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount >= COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN COALESCE(b.depositPaid, b.depositAmount, 0)
+                              ELSE p.amount END)
+                    ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RETURN_COMPENSATION THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(p.amount), 0),
                 COUNT(p)
@@ -88,6 +146,18 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             LEFT JOIN b.storageUnit bSu
             LEFT JOIN p.contract c
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
+            AND (
+                b IS NULL
+                OR b.signingMethod IS NULL
+                OR UPPER(b.signingMethod) != 'IN_PERSON'
+                OR b.status IN (
+                    com.boxora.enums.BookingStatus.ACTIVE,
+                    com.boxora.enums.BookingStatus.COMPLETED,
+                    com.boxora.enums.BookingStatus.OVERDUE,
+                    com.boxora.enums.BookingStatus.CHECKOUT_REQUESTED,
+                    com.boxora.enums.BookingStatus.INSPECTED
+                )
+            )
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             AND (:facilityId IS NULL OR COALESCE(bSu.facility.id, b.facility.id, c.facility.id) = :facilityId)
@@ -102,17 +172,46 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
     // as the report totals above. YEAR/MONTH keep the grouping in the database and avoid page caps.
     @Query("""
             SELECT YEAR(p.paymentTime), MONTH(p.paymentTime),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.RENTAL_FEE THEN p.amount
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.DEPOSIT THEN p.amount
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount >= COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN COALESCE(b.depositPaid, b.depositAmount, 0)
+                              ELSE p.amount END)
+                    ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RENEWAL_FEE THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.EXTRA_CHARGE THEN p.amount ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN p.amount ELSE 0 END), 0),
+                COALESCE(SUM(CASE
+                    WHEN p.paymentType = com.boxora.enums.PaymentType.BOOKING_PAYMENT THEN
+                        (CASE WHEN p.amount > COALESCE(b.depositPaid, b.depositAmount, 0)
+                              THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
+                              ELSE 0 END)
+                    ELSE 0 END), 0),
                 COALESCE(SUM(p.amount), 0), COUNT(p)
             FROM Payment p
             LEFT JOIN p.booking b
             LEFT JOIN b.storageUnit bSu
             LEFT JOIN p.contract c
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
+            AND (
+                b IS NULL
+                OR b.signingMethod IS NULL
+                OR UPPER(b.signingMethod) != 'IN_PERSON'
+                OR b.status IN (
+                    com.boxora.enums.BookingStatus.ACTIVE,
+                    com.boxora.enums.BookingStatus.COMPLETED,
+                    com.boxora.enums.BookingStatus.OVERDUE,
+                    com.boxora.enums.BookingStatus.CHECKOUT_REQUESTED,
+                    com.boxora.enums.BookingStatus.INSPECTED
+                )
+            )
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             AND (:facilityId IS NULL OR COALESCE(bSu.facility.id, b.facility.id, c.facility.id) = :facilityId)
@@ -136,6 +235,18 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
             LEFT JOIN b.storageUnit bSu
             LEFT JOIN p.contract c
             WHERE p.status = com.boxora.enums.PaymentStatus.PAID
+            AND (
+                b IS NULL
+                OR b.signingMethod IS NULL
+                OR UPPER(b.signingMethod) != 'IN_PERSON'
+                OR b.status IN (
+                    com.boxora.enums.BookingStatus.ACTIVE,
+                    com.boxora.enums.BookingStatus.COMPLETED,
+                    com.boxora.enums.BookingStatus.OVERDUE,
+                    com.boxora.enums.BookingStatus.CHECKOUT_REQUESTED,
+                    com.boxora.enums.BookingStatus.INSPECTED
+                )
+            )
             AND (CAST(:fromDate AS timestamp) IS NULL OR p.paymentTime >= :fromDate)
             AND (CAST(:toDate AS timestamp) IS NULL OR p.paymentTime <= :toDate)
             AND (:facilityId IS NULL OR COALESCE(bSu.facility.id, b.facility.id, c.facility.id) = :facilityId)

@@ -517,20 +517,26 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     }
   }
 
-  const handleCancelDisputeSubmit = async (ticket: SupportTicketRecord) => {
+  const [cancelDisputeConfirmTicket, setCancelDisputeConfirmTicket] = useState<SupportTicketRecord | null>(null)
+
+  const handleCancelDisputeSubmit = (ticket: SupportTicketRecord) => {
     if (!ticket.bookingId) return
-    const isConfirmed = window.confirm(
-      'Bạn có chắc chắn muốn hủy yêu cầu khiếu nại này không?\n\nSau khi hủy, biên bản quyết toán sẽ quay lại trạng thái chờ bạn phản hồi.'
-    )
-    if (!isConfirmed) return
+    setCancelDisputeConfirmTicket(ticket)
+  }
+
+  const handleConfirmCancelDisputeTicket = async () => {
+    if (!cancelDisputeConfirmTicket?.bookingId || isSubmittingCustomerDecision) return
+    const targetBookingId = cancelDisputeConfirmTicket.bookingId
+    const currentSettlement = returnSettlementMap[targetBookingId]
 
     setIsSubmittingCustomerDecision(true)
     try {
-      await handoverService.cancelDispute(ticket.bookingId)
-      toast.success('Đã hủy yêu cầu khiếu nại thành công!')
-      const updated = await handoverService.calculateSettlement(ticket.bookingId)
+      await handoverService.cancelDispute(targetBookingId, currentSettlement?.settlementVersion)
+      toast.success('Đã hủy yêu cầu khiếu nại thành công! Biên bản quyết toán đã trở về trạng thái chờ bạn phản hồi.')
+      setCancelDisputeConfirmTicket(null)
+      const updated = await handoverService.calculateSettlement(targetBookingId)
       if (updated) {
-        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+        setReturnSettlementMap(prev => ({ ...prev, [targetBookingId]: updated }))
       }
       loadMyTickets()
     } catch (err: any) {
@@ -1641,7 +1647,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                   {/* Task 16.3: QUYẾT ĐỊNH CỦA KHÁCH HÀNG (2 NÚT BẤM HOẶC TRẠNG THÁI) */}
                   {isConfirmed && (
                     <div className="pt-1">
-                      {(!decision || decision === 'AWAITING_CUSTOMER_CONFIRMATION') ? (
+                      {(!decision || decision === 'PENDING' || decision === 'NONE' || decision === 'AWAITING_CUSTOMER_CONFIRMATION') ? (
                         <div className="space-y-2">
                           <div className="text-[11px] text-amber-800 font-semibold">
                             Nhân viên đã chốt biên bản kiểm tra &amp; tính phí. Vui lòng xem xét và phản hồi:
@@ -2258,6 +2264,95 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                     <>
                       <span className="material-symbols-outlined text-[16px]">cancel</span>
                       <span>Xác Nhận Hủy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xác nhận hủy yêu cầu khiếu nại quyết toán */}
+      {cancelDisputeConfirmTicket && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-slate-100 bg-rose-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center font-bold shrink-0 shadow-2xs">
+                  <span className="material-symbols-outlined text-[22px]">undo</span>
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-rose-950">
+                    Xác nhận hủy yêu cầu khiếu nại?
+                  </h3>
+                  <span className="text-[11px] font-mono text-rose-700/80">
+                    Mã đơn: #{(cancelDisputeConfirmTicket.bookingId && returnSettlementMap[cancelDisputeConfirmTicket.bookingId]?.bookingCode) || cancelDisputeConfirmTicket.ticketCode || cancelDisputeConfirmTicket.id.slice(0, 8)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCancelDisputeConfirmTicket(null)}
+                disabled={isSubmittingCustomerDecision}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs text-slate-700">
+              <p className="leading-relaxed text-slate-600">
+                Bạn có chắc muốn rút lại yêu cầu khiếu nại đối với phiên bản quyết toán hiện tại? Sau khi rút lại, bạn có thể xem lại quyết toán và lựa chọn đồng ý với quyết định của cơ sở.
+              </p>
+
+              {cancelDisputeConfirmTicket.bookingId && returnSettlementMap[cancelDisputeConfirmTicket.bookingId] && (
+                <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Phiên bản quyết toán:</span>
+                    <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                      V{returnSettlementMap[cancelDisputeConfirmTicket.bookingId].settlementVersion || 1}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Mã đơn / Kho:</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      #{returnSettlementMap[cancelDisputeConfirmTicket.bookingId].bookingCode || '—'} (#{returnSettlementMap[cancelDisputeConfirmTicket.bookingId].unitCode || cancelDisputeConfirmTicket.unitCode || '—'})
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-medium">Số tiền hoàn trả dự kiến:</span>
+                    <span className="font-mono font-extrabold text-emerald-700 text-sm">
+                      {formatVND(Number(returnSettlementMap[cancelDisputeConfirmTicket.bookingId].netRefundAmount || 0))}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingCustomerDecision}
+                  onClick={() => setCancelDisputeConfirmTicket(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
+                >
+                  Tiếp tục khiếu nại
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmittingCustomerDecision}
+                  onClick={handleConfirmCancelDisputeTicket}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {isSubmittingCustomerDecision ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Đang hủy...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">undo</span>
+                      <span>Xác nhận hủy khiếu nại</span>
                     </>
                   )}
                 </button>
