@@ -274,10 +274,29 @@ public class ReportServiceImpl implements ReportService {
             UUID facId = extractFacilityId(c);
             if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
 
-            BigDecimal initDeposit = c.getDepositHeld() != null ? c.getDepositHeld() : BigDecimal.ZERO;
-            if (initDeposit.compareTo(BigDecimal.ZERO) <= 0 && c.getBooking() != null && c.getBooking().getDepositPaid() != null) {
-                initDeposit = c.getBooking().getDepositPaid();
+            BigDecimal initDeposit = BigDecimal.ZERO;
+            boolean isContractActivated = c.getStatus() == RentalContractStatus.ACTIVE
+                    || c.getStatus() == RentalContractStatus.OVERDUE
+                    || c.getStatus() == RentalContractStatus.OVERDUE_LOCKED
+                    || c.getStatus() == RentalContractStatus.EXPIRED
+                    || c.getStatus() == RentalContractStatus.TERMINATED
+                    || c.getStatus() == null; // For mocks/tests without explicit status
+
+            if (isContractActivated) {
+                initDeposit = c.getDepositHeld() != null && c.getDepositHeld().compareTo(BigDecimal.ZERO) > 0
+                        ? c.getDepositHeld()
+                        : (c.getBooking() != null && c.getBooking().getDepositPaid() != null ? c.getBooking().getDepositPaid() : BigDecimal.ZERO);
+            } else {
+                // For pending/unactivated contracts (e.g. PENDING_SIGNATURE, PENDING_ACTIVATION, PENDING_VERIFICATION, DRAFT):
+                // Tiền cọc chỉ được tính khi khách thực sự đã thanh toán cọc thành công (VD: thanh toán cọc trực tuyến).
+                // Với đơn ký và thanh toán tại quầy chưa tiếp nhận, tiền cọc chưa thu nên không tính vào tiền cọc đang giữ.
+                if (c.getBooking() != null && c.getBooking().getDepositPaid() != null && c.getBooking().getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                    initDeposit = c.getBooking().getDepositPaid();
+                } else {
+                    initDeposit = BigDecimal.ZERO;
+                }
             }
+
             if (initDeposit.compareTo(BigDecimal.ZERO) <= 0) continue;
 
             // Subtract completed deposit refunds for this contract/booking

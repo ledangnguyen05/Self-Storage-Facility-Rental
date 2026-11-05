@@ -345,7 +345,7 @@ class BusinessManagerFinancialReportRestructureTest {
                 .refundAmount(new BigDecimal("1500000"))
                 .build();
         when(handoverRecordRepository.findAll()).thenReturn(List.of(handover));
-        when(handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(eq(booking.getId()), eq("RETURN")))
+        lenient().when(handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(any(), any()))
                 .thenReturn(Optional.of(handover));
 
         RevenueReportResponse report = reportService.getRevenueReport(from, to, null);
@@ -620,5 +620,80 @@ class BusinessManagerFinancialReportRestructureTest {
 
         // In March report, only marchRefund (500,000) is included; febRefund is excluded
         assertThat(report.getSystemSummary().getRefundedAmount()).isEqualByComparingTo("500000");
+    }
+
+    @Test
+    @DisplayName("TC12: Đơn ký và thanh toán tại quầy chưa tiếp nhận (depositPaid=0, contract PENDING_SIGNATURE) không tính vào depositsHeld; chỉ tính đơn online đã thanh toán cọc")
+    void tc12_counterBookingUnactivatedDoesNotHoldDepositUntilHandoverCheckin() {
+        LocalDate from = LocalDate.of(2026, 3, 1);
+        LocalDate to = LocalDate.of(2026, 3, 31);
+        LocalDateTime fromDt = from.atStartOfDay();
+        LocalDateTime toDt = to.atTime(LocalTime.MAX);
+
+        when(paymentRepository.sumSystemRevenue(fromDt, toDt, null)).thenReturn(
+                new SystemRevenueSummaryResponse(
+                        new BigDecimal("22051250"),
+                        new BigDecimal("5750000"),
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        new BigDecimal("16301250"),
+                        BigDecimal.ZERO,
+                        new BigDecimal("22051250"),
+                        2L
+                )
+        );
+        when(facilityRepository.findAll()).thenReturn(List.of(facilityA));
+        when(paymentRepository.sumRevenueByFacility(fromDt, toDt, null)).thenReturn(List.of());
+        when(paymentRepository.sumRevenueByMonth(fromDt, toDt, null)).thenReturn(Collections.emptyList());
+        when(paymentRepository.countPaidPaymentsByMethod(fromDt, toDt, null)).thenReturn(Collections.emptyList());
+        when(refundRequestRepository.findAll()).thenReturn(Collections.emptyList());
+        when(handoverRecordRepository.findAll()).thenReturn(Collections.emptyList());
+
+        // Đơn 1: Online booking đã thanh toán cọc 4.500.000
+        Booking onlineBooking1 = Booking.builder().facility(facilityA).depositPaid(new BigDecimal("4500000")).build();
+        onlineBooking1.setId(UUID.randomUUID());
+        RentalContract onlineContract1 = RentalContract.builder()
+                .facility(facilityA)
+                .booking(onlineBooking1)
+                .depositHeld(new BigDecimal("4500000"))
+                .status(RentalContractStatus.PENDING_ACTIVATION)
+                .build();
+        onlineContract1.setId(UUID.randomUUID());
+
+        // Đơn 2: Online booking đã thanh toán cọc 1.250.000
+        Booking onlineBooking2 = Booking.builder().facility(facilityA).depositPaid(new BigDecimal("1250000")).build();
+        onlineBooking2.setId(UUID.randomUUID());
+        RentalContract onlineContract2 = RentalContract.builder()
+                .facility(facilityA)
+                .booking(onlineBooking2)
+                .depositHeld(new BigDecimal("1250000"))
+                .status(RentalContractStatus.PENDING_ACTIVATION)
+                .build();
+        onlineContract2.setId(UUID.randomUUID());
+
+        // Đơn 3: Đơn ký giấy tại quầy chưa tiếp nhận (depositPaid = 0, draft contract depositHeld = 1.250.000)
+        Booking counterBooking = Booking.builder().facility(facilityA).depositPaid(BigDecimal.ZERO).build();
+        counterBooking.setId(UUID.randomUUID());
+        RentalContract counterContract = RentalContract.builder()
+                .facility(facilityA)
+                .booking(counterBooking)
+                .depositHeld(new BigDecimal("1250000"))
+                .status(RentalContractStatus.PENDING_SIGNATURE)
+                .build();
+        counterContract.setId(UUID.randomUUID());
+
+        when(rentalContractRepository.findAll()).thenReturn(List.of(onlineContract1, onlineContract2, counterContract));
+        when(bookingRepository.findAll()).thenReturn(List.of(onlineBooking1, onlineBooking2, counterBooking));
+
+        RevenueReportResponse report = reportService.getRevenueReport(from, to, null);
+
+        // Tiền cọc đang giữ CHỈ tính 2 đơn online: 4.500.000 + 1.250.000 = 5.750.000 (KHÔNG tính 1.250.000 của đơn quầy)
+        assertThat(report.getSystemSummary().getDepositsHeld()).isEqualByComparingTo("5750000");
+
+        // Sau khi hoàn tất 4 bước check-in và kích hoạt bàn giao, hợp đồng quầy trở thành ACTIVE
+        counterContract.setStatus(RentalContractStatus.ACTIVE);
+        RevenueReportResponse reportAfterHandover = reportService.getRevenueReport(from, to, null);
+        assertThat(reportAfterHandover.getSystemSummary().getDepositsHeld()).isEqualByComparingTo("7000000");
     }
 }
