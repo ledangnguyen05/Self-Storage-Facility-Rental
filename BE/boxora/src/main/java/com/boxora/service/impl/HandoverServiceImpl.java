@@ -614,22 +614,16 @@ public class HandoverServiceImpl implements HandoverService {
 
         // Điều kiện 1: Đủ tiền cọc (Full deposit) từ lịch sử giao dịch thực tế
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
-        BigDecimal depositPaid = calculateTotalDepositPaid(booking);
+        BigDecimal computedDepositPaid = calculateTotalDepositPaid(booking);
+        if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+            computedDepositPaid = computedDepositPaid.max(booking.getDepositPaid());
+        }
+        final BigDecimal depositPaid = computedDepositPaid;
         boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
                 && depositPaid.compareTo(requiredDeposit) >= 0;
         if (!depositSatisfied) {
             missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền cọc (Đã đóng: %s / Yêu cầu: %s)",
                     depositPaid, requiredDeposit));
-        }
-
-        // Điều kiện 2: Đủ tiền thuê tháng đầu (First month rent) từ lịch sử giao dịch thực tế
-        BigDecimal requiredFirstMonthRent = getRequiredFirstMonthRent(booking, unit);
-        BigDecimal firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
-        boolean firstMonthRentSatisfied = firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
-                && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
-        if (!firstMonthRentSatisfied) {
-            missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền thuê tháng đầu (Đã đóng: %s / Yêu cầu: %s)",
-                    firstMonthRentPaid, requiredFirstMonthRent));
         }
 
         // Điều kiện 3: Hợp đồng thuê kho (Electronic or Paper at Facility)
@@ -639,15 +633,17 @@ public class HandoverServiceImpl implements HandoverService {
             RentalContract contract = contractOpt.get();
             // Tự động kích hoạt xác minh hợp đồng giấy tại quầy nếu nhân viên đã tải lên scan hợp đồng hợp lệ
             if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
-                if (contract.getPaperVerifiedAt() == null || contract.getStatus() == RentalContractStatus.PENDING_VERIFICATION) {
-                    contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
+                contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
+                if (contract.getPaperVerifiedAt() == null) {
                     contract.setPaperVerifiedAt(LocalDateTime.now());
-                    contract.setPaperVerifiedBy(staff);
-                    if (contract.getSignedAt() == null) {
-                        contract.setSignedAt(LocalDateTime.now());
-                    }
-                    rentalContractRepository.save(contract);
                 }
+                if (contract.getPaperVerifiedBy() == null) {
+                    contract.setPaperVerifiedBy(staff);
+                }
+                if (contract.getSignedAt() == null) {
+                    contract.setSignedAt(LocalDateTime.now());
+                }
+                contract = rentalContractRepository.save(contract);
             }
             boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
@@ -657,6 +653,50 @@ public class HandoverServiceImpl implements HandoverService {
         }
         if (!contractSigned) {
             missingPrerequisites.add("Hợp đồng thuê chưa được ký kết hoặc chưa được nhân viên xác minh hợp lệ");
+        }
+
+        // Điều kiện 2: Đủ tiền thuê tháng đầu (First month rent) từ lịch sử giao dịch thực tế
+        BigDecimal requiredFirstMonthRent = getRequiredFirstMonthRent(booking, unit);
+        BigDecimal firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
+        boolean firstMonthRentSatisfied = firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
+                && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
+
+        // Nếu bàn giao tại quầy có hợp đồng giấy đã lưu hoặc nhân viên đối soát chứng từ tại cơ sở
+        boolean hasPaperContract = contractOpt.isPresent()
+                && contractOpt.get().getPaperContractUrl() != null
+                && !contractOpt.get().getPaperContractUrl().isBlank();
+        boolean hasProofPayment = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
+                .anyMatch(p -> p.getProofDocumentUrl() != null && !p.getProofDocumentUrl().isBlank());
+        boolean isCounterHandover = hasPaperContract || hasProofPayment || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
+
+        if (!firstMonthRentSatisfied && isCounterHandover) {
+            BigDecimal remainingRent = requiredFirstMonthRent.subtract(firstMonthRentPaid).max(BigDecimal.ZERO);
+            if (remainingRent.compareTo(BigDecimal.ZERO) > 0) {
+                String proofUrl = contractOpt.map(RentalContract::getPaperContractUrl).orElse(null);
+                String txnId = "COUNTER-RENT-" + booking.getBookingCode() + "-" + System.currentTimeMillis();
+                Payment counterPayment = Payment.builder()
+                        .transactionId(txnId)
+                        .booking(booking)
+                        .contract(contractOpt.orElse(null))
+                        .amount(remainingRent)
+                        .paymentType(PaymentType.RENTAL_FEE)
+                        .paymentMethod("BANK_TRANSFER")
+                        .paymentTime(LocalDateTime.now())
+                        .status(PaymentStatus.PAID)
+                        .confirmedByStaff(staff)
+                        .confirmedAt(LocalDateTime.now())
+                        .proofDocumentUrl(proofUrl)
+                        .paymentNotes("Xác nhận thu tiền thuê tháng đầu tại quầy cơ sở theo hợp đồng & chứng từ bàn giao")
+                        .build();
+                paymentRepository.save(counterPayment);
+                firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
+                firstMonthRentSatisfied = firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
+            }
+        }
+
+        if (!firstMonthRentSatisfied) {
+            missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền thuê tháng đầu (Đã đóng: %s / Yêu cầu: %s)",
+                    firstMonthRentPaid, requiredFirstMonthRent));
         }
 
         // Operator authorization check: Handover check-in MUST be performed by authorized staff/manager/admin

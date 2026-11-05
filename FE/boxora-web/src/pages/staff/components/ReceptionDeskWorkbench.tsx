@@ -214,11 +214,22 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
   // Reception Queue Table 3 Status Filter Tabs
   const [receptionStatusFilter, setReceptionStatusFilter] = useState<'PENDING_CHECKIN' | 'HANDED_OVER' | 'ALL'>('PENDING_CHECKIN')
 
-  // Calculate reception counts for 3 tabs
+  // Helper matching currently active booking across various code formats (#BX-..., BX-..., UUID)
+  const isMatchActiveBooking = useCallback((b: Booking) => {
+    if (!activeBookingId) return false
+    const normActive = activeBookingId.replace(/^[#\s]+/, '').trim().toLowerCase()
+    if (!normActive) return false
+    const normId = (b.id || '').replace(/^[#\s]+/, '').trim().toLowerCase()
+    const normCode = (b.bookingCode || '').replace(/^[#\s]+/, '').trim().toLowerCase()
+    return normId === normActive || normCode === normActive || b.id === activeBookingId || b.bookingCode === activeBookingId
+  }, [activeBookingId])
+
+  // Calculate reception counts for 3 tabs (excluding the currently active booking open on workbench)
   const receptionCounts = useMemo<ReceptionDeskMetrics>(() => {
     let pendingCheckIn = 0
     let handedOver = 0
     scopedArrivals.forEach((b) => {
+      if (isMatchActiveBooking(b)) return
       if (isHandedOverBooking(b)) {
         handedOver++
       } else if (isPendingCheckInBooking(b)) {
@@ -230,7 +241,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
       handedOver,
       total: pendingCheckIn + handedOver,
     }
-  }, [scopedArrivals])
+  }, [scopedArrivals, isMatchActiveBooking])
 
   // Notify parent of metrics changes
   useEffect(() => {
@@ -247,7 +258,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
     return scopedArrivals
       .filter((b) => {
         // 0. Hide currently active booking if it is being processed on the workbench
-        if (activeBookingId && (b.id === activeBookingId || b.bookingCode === activeBookingId)) {
+        if (isMatchActiveBooking(b)) {
           return false
         }
 

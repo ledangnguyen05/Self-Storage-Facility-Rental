@@ -282,6 +282,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const paymentProofInputRef = useRef<HTMLInputElement | null>(null)
   const paperContractScanInputRef = useRef<HTMLInputElement | null>(null)
   const initializedBookingTabsRef = useRef<Set<string>>(new Set())
+  const userSelectedTabsRef = useRef<Set<string>>(new Set())
 
   // Step 3: Evidence/Document Image Lightbox Modal State
   const [previewImageModal, setPreviewImageModal] = useState<{
@@ -570,8 +571,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // 4. Tính toán chính xác các khoản tiền cần thu tại cơ sở (tránh hiển thị 0đ khi chưa đối soát xong)
   const displayDepositDue = useMemo(() => {
-    if (currentPrerequisites?.depositRemaining != null && Number(currentPrerequisites.depositRemaining) > 0) {
-      return Number(currentPrerequisites.depositRemaining)
+    if (isDepositMet) return 0
+    if (currentPrerequisites?.depositRemaining != null) {
+      const rem = Number(currentPrerequisites.depositRemaining)
+      if (rem > 0) return rem
+      if (currentPrerequisites.depositSatisfied) return 0
     }
     if (currentPrerequisites?.requiredDeposit != null && Number(currentPrerequisites.requiredDeposit) > 0) {
       return Number(currentPrerequisites.requiredDeposit)
@@ -579,19 +583,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     if (currentBooking?.depositAmount != null && Number(currentBooking.depositAmount) > 0) {
       return Number(currentBooking.depositAmount)
     }
-    if (currentBooking?.depositPaid != null && Number(currentBooking.depositPaid) > 0) {
-      return Number(currentBooking.depositPaid)
-    }
     const unitDeposit = (currentBooking as any)?.storageUnit?.unitType?.depositAmount || (currentBooking as any)?.unitType?.depositAmount
     if (unitDeposit && Number(unitDeposit) > 0) {
       return Number(unitDeposit)
     }
     return 0
-  }, [currentPrerequisites, currentBooking])
+  }, [isDepositMet, currentPrerequisites, currentBooking])
 
   const displayFirstMonthRentDue = useMemo(() => {
-    if (currentPrerequisites?.firstMonthRentRemaining != null && Number(currentPrerequisites.firstMonthRentRemaining) > 0) {
-      return Number(currentPrerequisites.firstMonthRentRemaining)
+    if (isRentMet) return 0
+    if (currentPrerequisites?.firstMonthRentRemaining != null) {
+      const rem = Number(currentPrerequisites.firstMonthRentRemaining)
+      if (rem > 0) return rem
+      if (currentPrerequisites.firstMonthRentSatisfied) return 0
     }
     if (currentPrerequisites?.requiredFirstMonthRent != null && Number(currentPrerequisites.requiredFirstMonthRent) > 0) {
       return Number(currentPrerequisites.requiredFirstMonthRent)
@@ -605,25 +609,23 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return Number(unitPrice)
     }
     return 0
-  }, [currentPrerequisites, currentBooking])
+  }, [isRentMet, currentPrerequisites, currentBooking])
 
   const displayTotalDueAtFacility = useMemo(() => {
-    if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
-      return Number(currentBooking.initialPaymentAmount)
-    }
+    if (isDepositMet && isRentMet) return 0
     if (displayDepositDue > 0 || displayFirstMonthRentDue > 0) {
       return displayDepositDue + displayFirstMonthRentDue
+    }
+    if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
+      return Number(currentBooking.initialPaymentAmount)
     }
     const prereqRemaining =
       Number(currentPrerequisites?.depositRemaining || 0) +
       Number(currentPrerequisites?.firstMonthRentRemaining || 0)
     if (prereqRemaining > 0) return prereqRemaining
 
-    if (currentBooking?.totalRentalFee != null && Number(currentBooking.totalRentalFee) > 0) {
-      return Number(currentBooking.totalRentalFee) + Number(currentBooking.depositAmount || 0)
-    }
-    return displayDepositDue
-  }, [currentBooking, currentPrerequisites, displayDepositDue, displayFirstMonthRentDue])
+    return 0
+  }, [isDepositMet, isRentMet, currentBooking, currentPrerequisites, displayDepositDue, displayFirstMonthRentDue])
 
   // Đồng bộ hai chiều từ CSDL backend vào workbench session khi nạp dữ liệu đơn
   useEffect(() => {
@@ -650,7 +652,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     if (!initializedBookingTabsRef.current.has(selectedBookingId)) {
       initializedBookingTabsRef.current.add(selectedBookingId)
       const currentTab = sessions[selectedBookingId]?.activeStepTab
-      if (!currentTab || currentTab === 'verify') {
+      if (!currentTab && !userSelectedTabsRef.current.has(selectedBookingId)) {
         const dbIdDone = Boolean(isPersistedIdVerified || currentSession.identityVerified)
         const dbUnitDone = Boolean(persistedUnitCode || currentSession.assignedUnitCode)
         const dbContractAndPaymentDone = Boolean(
@@ -849,6 +851,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // Step Tab Navigation Guards (Task 8.4: Allow signed & paid bookings to review Step 3 directly)
   const handleSelectTab = (tab: 'verify' | 'assign' | 'contract_payment' | 'pin') => {
+    if (selectedBookingId) {
+      userSelectedTabsRef.current.add(selectedBookingId)
+    }
+
     if (isHandedOver) {
       setCheckInError(null)
       updateCurrentSession({ activeStepTab: tab })
@@ -978,23 +984,31 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           paymentProofName: file.name
         })
 
-        const reqDeposit = (currentPrerequisites?.depositRemaining && Number(currentPrerequisites.depositRemaining) > 0)
-          ? Number(currentPrerequisites.depositRemaining)
-          : displayDepositDue
-        const reqRent = (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
-          ? Number(currentPrerequisites.firstMonthRentRemaining)
-          : displayFirstMonthRentDue
+        const reqDeposit = isDepositMet ? 0 : (
+          (currentPrerequisites?.depositRemaining && Number(currentPrerequisites.depositRemaining) > 0)
+            ? Number(currentPrerequisites.depositRemaining)
+            : displayDepositDue
+        )
+        const reqRent = isRentMet ? 0 : (
+          (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
+            ? Number(currentPrerequisites.firstMonthRentRemaining)
+            : displayFirstMonthRentDue
+        )
 
         if (reqDeposit > 0) {
-          await handoverService.recordManualPayment({
-            bookingId: selectedBookingId,
-            paymentType: 'DEPOSIT',
-            paymentMethod: 'BANK_TRANSFER',
-            amount: reqDeposit,
-            proofDocumentUrl: res.fileUrl,
-            referenceCode: `PROOF-DEP-${bookingDisplayCode}`,
-            notes: 'Thanh toán tiền cọc có chứng từ kèm theo tại cơ sở'
-          })
+          try {
+            await handoverService.recordManualPayment({
+              bookingId: selectedBookingId,
+              paymentType: 'DEPOSIT',
+              paymentMethod: 'BANK_TRANSFER',
+              amount: reqDeposit,
+              proofDocumentUrl: res.fileUrl,
+              referenceCode: `PROOF-DEP-${bookingDisplayCode}`,
+              notes: 'Thanh toán tiền cọc có chứng từ kèm theo tại cơ sở'
+            })
+          } catch (depErr: any) {
+            console.warn('Deposit manual payment skipped or already processed:', depErr)
+          }
         }
         if (reqRent > 0) {
           await handoverService.recordManualPayment({

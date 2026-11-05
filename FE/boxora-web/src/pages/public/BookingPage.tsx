@@ -2464,13 +2464,13 @@ export const BookingPage: React.FC = () => {
               <div className="space-y-0.5">
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
                   <Box size={12} />
-                  <span>BÆ°á»›c 2 / 6 â€¢ Chá»n kho / loáº¡i kho</span>
+                  <span>Bước 2 / 6 • Chọn kho / loại kho</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Chá»n kho hoáº·c loáº¡i kho lÆ°u trá»¯
+                  Chọn kho hoặc loại kho lưu trữ
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Lá»±a chá»n thá»ƒ tÃ­ch phÃ¹ há»£p vÃ  tÃ¹y chá»‰nh cháº¿ Ä‘á»™ Ä‘iá»u hÃ²a nhiá»‡t áº©m  hoáº·c thÃ´ng giÃ³ tá»± nhiÃªn.
+                  Lựa chọn thể tích phù hợp và tùy chỉnh chế độ điều hòa nhiệt ẩm (A/C) hoặc thông gió tự nhiên (Non-A/C).
                 </p>
               </div>
 
@@ -2525,11 +2525,11 @@ export const BookingPage: React.FC = () => {
                     style={{ flexWrap: 'nowrap' }}
                   >
                     {[
-                      { key: 'ALL', label: `Táº¥t cáº£ (${availableSizesInFacility.length})` },
-                      { key: 'PERSONAL', label: 'CÃ¡ nhÃ¢n & Mini (â‰¤ 4 mÂ³)' },
-                      { key: 'FAMILY', label: 'Gia Ä‘Ã¬nh (> 4 â€“ 10 mÂ³)' },
-                      { key: 'ENTERPRISE', label: 'Doanh nghiá»‡p (> 10 â€“ 25 mÂ³)' },
-                      { key: 'LOGISTICS', label: 'Logistics (> 25 mÂ³)' },
+                      { key: 'ALL', label: `Tất cả (${availableSizesInFacility.length})` },
+                      { key: 'PERSONAL', label: 'Cá nhân & Mini (≤ 4 m³)' },
+                      { key: 'FAMILY', label: 'Gia đình (> 4 – 10 m³)' },
+                      { key: 'ENTERPRISE', label: 'Doanh nghiệp (> 10 – 25 m³)' },
+                      { key: 'LOGISTICS', label: 'Logistics (> 25 m³)' },
                     ].map((cat) => (
                       <button
                         key={cat.key}
