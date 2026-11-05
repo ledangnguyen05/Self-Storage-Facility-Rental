@@ -1273,18 +1273,14 @@ export const OperationsDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* Legends Bar: Hiển thị trên 1 hàng duy nhất */}
+              {/* Legends Bar: Hiển thị trên 1 hàng duy nhất theo thứ tự 1 -> 6 */}
               <div className="mb-4 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2.5 text-[10.5px] sm:text-[11px] text-slate-600 whitespace-nowrap overflow-x-auto scrollbar-none">
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('Tiền thuê kho', 'Rental')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></span>{tr('Gia hạn HĐ', 'Renewal')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-slate-500 shrink-0"></span>{tr('Phụ phí & Dịch vụ', 'Extra Fees')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('Ký quỹ đặt cọc', 'Deposit')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-blue-600 shrink-0"></span>{tr('Cọc giữ chỗ', 'Booking')}</span>
-                <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
-                <span className="flex items-center gap-1 shrink-0">
-                  <span className="h-2 w-2 rounded-full bg-purple-600 ring-1 ring-purple-400 shrink-0"></span>
-                  <span className="font-semibold text-purple-700">{tr('Hoàn tiền khách', 'Refund')}</span>
-                </span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></span>{tr('1. Doanh thu thuần', '1. Net Revenue')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-blue-600 shrink-0"></span>{tr('2. Tiền thực thu', '2. Cash-In')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('3. Tiền thuê kho', '3. Rental')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-rose-600 shrink-0"></span>{tr('4. Công nợ phải thu', '4. Debt')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('5. Tiền cọc đang giữ', '5. Deposits')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('6. Hoàn tiền & Chờ XL', '6. Refunds')}</span>
                 <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
                 <span className="flex items-center gap-1 shrink-0">
                   <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0"></span>
@@ -1297,15 +1293,75 @@ export const OperationsDashboard: React.FC = () => {
                 <div className={`grid ${displayedChartMonths.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4`}>
                   {displayedChartMonths.map((m) => {
                     const sources = [
-                      { id: 'rental', label: tr('Tiền thuê kho mới', 'New Rental'), shortLabel: tr('Thuê kho', 'Rental'), amount: m.rental, icon: 'storefront', color: '#d97706', bgClass: 'bg-amber-500', textClass: 'text-amber-700', type: 'IN' },
-                      { id: 'renewal', label: tr('Phí gia hạn hợp đồng', 'Contract Renewal'), shortLabel: tr('Gia hạn', 'Renewal'), amount: m.renewal, icon: 'autorenew', color: '#059669', bgClass: 'bg-emerald-600', textClass: 'text-emerald-700', type: 'IN' },
-                      { id: 'extra', label: tr('Phụ phí dịch vụ phát sinh', 'Extra Services & Penalties'), shortLabel: tr('Phụ phí & Dịch vụ', 'Extra Fees'), amount: m.extra, icon: 'receipt_long', color: '#64748b', bgClass: 'bg-slate-500', textClass: 'text-slate-700', type: 'IN' },
-                      { id: 'deposit', label: tr('Tiền ký quỹ đặt cọc', 'Security Deposit'), shortLabel: tr('Cọc kho', 'Deposit'), amount: m.deposit, icon: 'shield_with_heart', color: '#0891b2', bgClass: 'bg-cyan-600', textClass: 'text-cyan-700', type: 'IN' },
-                      { id: 'booking', label: tr('Tiền đặt cọc giữ chỗ', 'Booking Reserve Fee'), shortLabel: tr('Giữ chỗ', 'Booking'), amount: m.booking, icon: 'bookmark', color: '#2563eb', bgClass: 'bg-blue-600', textClass: 'text-blue-700', type: 'IN' },
-                      { id: 'refund', label: tr('Tiền hoàn trả khách hàng', 'Customer Refund (Outflow)'), shortLabel: tr('Hoàn tiền (Ra)', 'Refund (Out)'), amount: m.refund, icon: 'assignment_return', color: '#7e22ce', bgClass: 'bg-purple-600', textClass: 'text-purple-700', type: 'OUT' },
+                      {
+                        id: 'netRevenue',
+                        label: tr('1. Doanh thu thuần', '1. Net Revenue'),
+                        shortLabel: tr('DT thuần', 'Net Rev'),
+                        amount: m.netRevenue,
+                        icon: 'account_balance_wallet',
+                        color: '#059669',
+                        bgClass: 'bg-emerald-600',
+                        textClass: 'text-emerald-700',
+                        type: 'IN',
+                      },
+                      {
+                        id: 'cashIn',
+                        label: tr('2. Tiền thực thu', '2. Total Cash-In'),
+                        shortLabel: tr('Thực thu', 'Cash-In'),
+                        amount: m.totalIn,
+                        icon: 'payments',
+                        color: '#2563eb',
+                        bgClass: 'bg-blue-600',
+                        textClass: 'text-blue-700',
+                        type: 'IN',
+                      },
+                      {
+                        id: 'rental',
+                        label: tr('3. Tiền thuê kho', '3. Rental Revenue'),
+                        shortLabel: tr('Thuê kho', 'Rental'),
+                        amount: m.rental + m.renewal,
+                        icon: 'warehouse',
+                        color: '#d97706',
+                        bgClass: 'bg-amber-500',
+                        textClass: 'text-amber-700',
+                        type: 'IN',
+                      },
+                      {
+                        id: 'overdueDebt',
+                        label: tr('4. Công nợ phải thu', '4. Overdue Debt'),
+                        shortLabel: tr('Công nợ', 'Debt'),
+                        amount: totalOverdueDebt,
+                        icon: 'gavel',
+                        color: '#e11d48',
+                        bgClass: 'bg-rose-600',
+                        textClass: 'text-rose-600',
+                        type: 'IN',
+                      },
+                      {
+                        id: 'depositHeld',
+                        label: tr('5. Tiền cọc đang giữ', '5. Deposits Held'),
+                        shortLabel: tr('Cọc giữ', 'Deposit'),
+                        amount: depositsHeld,
+                        icon: 'lock',
+                        color: '#0891b2',
+                        bgClass: 'bg-cyan-600',
+                        textClass: 'text-cyan-700',
+                        type: 'IN',
+                      },
+                      {
+                        id: 'refund',
+                        label: tr('6. Hoàn tiền & Chờ XL', '6. Refunds & Pending'),
+                        shortLabel: tr('Hoàn tiền', 'Refund'),
+                        amount: m.refund > 0 ? m.refund : refundedAmount,
+                        icon: 'assignment_return',
+                        color: '#7e22ce',
+                        bgClass: 'bg-purple-600',
+                        textClass: 'text-purple-700',
+                        type: 'OUT',
+                      },
                     ]
 
-                    const maxVal = Math.max(m.totalIn, m.refund, m.rental, m.deposit, m.renewal, m.extra, 1)
+                    const maxVal = Math.max(...sources.map(s => s.amount), Math.abs(m.netCashFlow), 1)
 
                     return (
                       <div
@@ -1338,7 +1394,7 @@ export const OperationsDashboard: React.FC = () => {
 
                           <div className="w-full h-44 flex items-end justify-between gap-1.5 sm:gap-2 pt-6 pb-2 px-1 border-b border-slate-200 bg-white rounded-xl p-3 border">
                             {sources.map((s) => {
-                              const heightPct = Math.max(s.amount > 0 ? 12 : 3, Math.min(100, Math.round((s.amount / maxVal) * 100)))
+                              const heightPct = s.amount > 0 ? Math.max(14, Math.min(100, Math.round(Math.pow(s.amount / maxVal, 0.45) * 100))) : 4
                               const pctOfIn = m.totalIn > 0 ? Math.round((s.amount / m.totalIn) * 100) : 0
 
                               return (
@@ -1385,7 +1441,7 @@ export const OperationsDashboard: React.FC = () => {
                                 className={`w-full max-w-[28px] sm:max-w-[36px] rounded-t-md transition-all duration-300 group-hover:scale-105 cursor-pointer ${
                                   m.netCashFlow >= 0 ? 'bg-indigo-600' : 'bg-rose-600'
                                 }`}
-                                style={{ height: `${Math.max(12, Math.min(100, Math.round((Math.abs(m.netCashFlow) / maxVal) * 100)))}%` }}
+                                style={{ height: `${Math.max(14, Math.min(100, Math.round(Math.pow(Math.abs(m.netCashFlow) / maxVal, 0.45) * 100)))}%` }}
                                 title={`${tr('Dòng tiền ròng thực nhận:', 'Net Cash Flow:')} ${formatVnd(m.netCashFlow)}`}
                               />
                               <div className="flex flex-col items-center">
@@ -1398,31 +1454,114 @@ export const OperationsDashboard: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Breakdown 6-cell Matrix */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-xs">
-                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Tiền thuê kho mới', 'New Rental')}</span>
-                            <span className="font-mono font-bold text-amber-700 text-xs">{formatVnd(m.rental)}</span>
+                        {/* Breakdown 6-cell Matrix - 6 thẻ theo đúng thứ tự 1 -> 6 */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-2 text-xs">
+                          {/* 1. Doanh thu thuần */}
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('1. Doanh thu thuần', '1. Net Revenue')}</span>
+                                <span className="material-symbols-outlined text-[16px] text-emerald-600">account_balance_wallet</span>
+                              </div>
+                              <span className="font-mono font-bold text-emerald-700 text-sm block">{formatVnd(m.netRevenue)}</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Đã trừ hoàn tiền hợp lệ; không tính cọc & giữ chỗ', 'Deducted valid refunds; excludes deposits')}</span>
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-emerald-700 font-semibold">
+                              <span>{tr('Ghi nhận kỳ:', 'Period status:')}</span>
+                              <span className="bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                {m.netRevenue > 0 ? `${Math.round(((m.rental + m.renewal) / m.netRevenue) * 100)}% thuê kho` : '100%'}
+                              </span>
+                            </div>
                           </div>
-                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Phí gia hạn kho', 'Renewal')}</span>
-                            <span className="font-mono font-bold text-emerald-700 text-xs">{formatVnd(m.renewal)}</span>
+
+                          {/* 2. Tiền thực thu */}
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('2. Tiền thực thu', '2. Total Cash-In')}</span>
+                                <span className="material-symbols-outlined text-[16px] text-blue-600">payments</span>
+                              </div>
+                              <span className="font-mono font-bold text-blue-700 text-sm block">{formatVnd(m.totalIn)}</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Tổng tiền thực nhận từ các giao dịch PAID', 'Total cash received across verified payments')}</span>
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600 font-medium">
+                              <span>{tr('Số giao dịch:', 'Payments:')}</span>
+                              <span className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded">
+                                {m.paymentCount} GD
+                              </span>
+                            </div>
                           </div>
-                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Phụ phí dịch vụ', 'Extra Fees')}</span>
-                            <span className="font-mono font-bold text-slate-700 text-xs">{formatVnd(m.extra)}</span>
+
+                          {/* 3. Tiền thuê kho */}
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('3. Tiền thuê kho', '3. Rental Revenue')}</span>
+                                <span className="material-symbols-outlined text-[16px] text-amber-600">warehouse</span>
+                              </div>
+                              <span className="font-mono font-bold text-amber-700 text-sm block">{formatVnd(m.rental + m.renewal)}</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Doanh thu cho thuê kho & tái ký trong kỳ', 'Storage rental fees & renewed contract cycles')}</span>
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600 font-medium">
+                              <span>{tr('Tái ký:', 'Renewals:')}</span>
+                              <span className="font-mono font-bold text-emerald-600">
+                                {formatVnd(m.renewal)}
+                              </span>
+                            </div>
                           </div>
-                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Ký quỹ đặt cọc', 'Deposit')}</span>
-                            <span className="font-mono font-bold text-cyan-700 text-xs">{formatVnd(m.deposit)}</span>
+
+                          {/* 4. Công nợ phải thu */}
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('4. Công nợ phải thu', '4. Overdue Debt')}</span>
+                                <span className="material-symbols-outlined text-[16px] text-rose-600">gavel</span>
+                              </div>
+                              <span className="font-mono font-bold text-rose-600 text-sm block">{formatVnd(totalOverdueDebt)}</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Nợ cước thuê kho quá hạn chưa thu hồi', 'Overdue storage rental fees pending collection')}</span>
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-rose-700 font-semibold">
+                              <span>{tr('Khóa kho / Niêm phong:', 'Blocked / Sealing:')}</span>
+                              <span className="font-mono bg-rose-50 px-1.5 py-0.2 rounded text-rose-800 border border-rose-200">
+                                {debtBreakdown.accessBlockedCount + debtBreakdown.eligibleForSealingCount} {tr('kho', 'units')}
+                              </span>
+                            </div>
                           </div>
-                          <div className="p-2 rounded-lg bg-white border border-slate-200/80">
-                            <span className="text-[10px] text-slate-500 font-semibold block">{tr('Cọc giữ chỗ', 'Booking')}</span>
-                            <span className="font-mono font-bold text-blue-700 text-xs">{formatVnd(m.booking)}</span>
+
+                          {/* 5. Tiền cọc đang giữ */}
+                          <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('5. Tiền cọc đang giữ', '5. Deposits Held')}</span>
+                                <span className="material-symbols-outlined text-[16px] text-cyan-600">lock</span>
+                              </div>
+                              <span className="font-mono font-bold text-cyan-700 text-sm block">{formatVnd(depositsHeld)}</span>
+                              <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Nghĩa vụ hoàn trả / quyết toán khi trả kho', 'Payable obligation awaiting checkout settlement')}</span>
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-cyan-800 font-semibold">
+                              <span>{tr('Hợp đồng ACTIVE:', 'Active contracts:')}</span>
+                              <span className="font-mono bg-cyan-50 px-1.5 py-0.2 rounded text-cyan-800 border border-cyan-200">
+                                {activeContractsCount !== null ? `${activeContractsCount} HĐ` : '—'}
+                              </span>
+                            </div>
                           </div>
-                          <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200">
-                            <span className="text-[10px] text-purple-700 font-bold block">{tr('Tiền hoàn', 'Refund Outflow')}</span>
-                            <span className="font-mono font-bold text-purple-700 text-xs">-{formatVnd(m.refund)}</span>
+
+                          {/* 6. Hoàn tiền & Chờ XL */}
+                          <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-200/90 shadow-2xs flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">{tr('6. Hoàn tiền & Chờ XL', '6. Refunds & Pending')}</span>
+                                <span className="material-symbols-outlined text-[16px] text-purple-600">assignment_return</span>
+                              </div>
+                              <span className="font-mono font-bold text-purple-700 text-sm block">{formatVnd(m.refund > 0 ? m.refund : refundedAmount)}</span>
+                              <span className="text-[10px] text-purple-600/80 block mt-0.5 leading-tight">{tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')}</span>
+                            </div>
+                            <div className="mt-2 pt-1.5 border-t border-purple-200/60 flex items-center justify-between text-[10px] text-purple-800 font-semibold">
+                              <span>{tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
+                              <span className="font-mono bg-white px-1.5 py-0.2 rounded text-purple-800 border border-purple-200">
+                                {formatVnd(pendingRefundAmount)}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
