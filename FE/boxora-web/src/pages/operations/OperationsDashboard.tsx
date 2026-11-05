@@ -373,13 +373,13 @@ export const OperationsDashboard: React.FC = () => {
     const sum = totalCashIn || classifiedSum || 1
 
     const items = [
-      { id: 'RENTAL', label: tr('Tiền thuê kho đã thu', 'Collected rental fees'), amount: rentalFee, color: '#0f172a', bgClass: 'bg-slate-900', pct: Math.round((rentalFee / sum) * 1000) / 10 },
-      { id: 'DEPOSIT', label: tr('Tiền cọc nhận vào', 'Incoming deposits'), amount: deposit, color: '#06b6d4', bgClass: 'bg-cyan-500', pct: Math.round((deposit / sum) * 1000) / 10 },
-      { id: 'BOOKING', label: tr('Tiền đặt kho giữ chỗ', 'Booking reserve fees'), amount: bookingPayment, color: '#9333ea', bgClass: 'bg-purple-600', pct: Math.round((bookingPayment / sum) * 1000) / 10 },
-      { id: 'RENEWAL', label: tr('Phí gia hạn / Tái ký', 'Renewal fees'), amount: renewalFee, color: '#059669', bgClass: 'bg-emerald-600', pct: Math.round((renewalFee / sum) * 1000) / 10 },
-      { id: 'EXTRA', label: tr('Phụ phí & Dịch vụ', 'Extra charges & services'), amount: extraCharge, color: '#f59e0b', bgClass: 'bg-amber-500', pct: Math.round((extraCharge / sum) * 1000) / 10 },
-      { id: 'RETURN_COMPENSATION', label: tr('Bồi thường trả kho / thiệt hại', 'Return compensation'), amount: returnCompensation, color: '#e11d48', bgClass: 'bg-rose-600', pct: Math.round((returnCompensation / sum) * 1000) / 10 },
-      { id: 'OTHER', label: tr('Khoản thu khác', 'Other receipts'), amount: otherCash, color: '#64748b', bgClass: 'bg-slate-500', pct: Math.round((otherCash / sum) * 1000) / 10 },
+      { id: 'RENTAL', label: tr('Tiền thuê kho đã thu', 'Collected rental fees'), amount: rentalFee, color: '#d97706', bgClass: 'bg-amber-500', textClass: 'text-amber-700', pct: Math.round((rentalFee / sum) * 1000) / 10 },
+      { id: 'DEPOSIT', label: tr('Tiền cọc nhận vào', 'Incoming deposits'), amount: deposit, color: '#0891b2', bgClass: 'bg-cyan-600', textClass: 'text-cyan-700', pct: Math.round((deposit / sum) * 1000) / 10 },
+      { id: 'BOOKING', label: tr('Tiền đặt kho giữ chỗ', 'Booking reserve fees'), amount: bookingPayment, color: '#2563eb', bgClass: 'bg-blue-600', textClass: 'text-blue-700', pct: Math.round((bookingPayment / sum) * 1000) / 10 },
+      { id: 'RENEWAL', label: tr('Phí gia hạn / Tái ký', 'Renewal fees'), amount: renewalFee, color: '#059669', bgClass: 'bg-emerald-600', textClass: 'text-emerald-700', pct: Math.round((renewalFee / sum) * 1000) / 10 },
+      { id: 'EXTRA', label: tr('Phụ phí & Dịch vụ', 'Extra charges & services'), amount: extraCharge, color: '#64748b', bgClass: 'bg-slate-500', textClass: 'text-slate-700', pct: Math.round((extraCharge / sum) * 1000) / 10 },
+      { id: 'RETURN_COMPENSATION', label: tr('Bồi thường trả kho / thiệt hại', 'Return compensation'), amount: returnCompensation, color: '#e11d48', bgClass: 'bg-rose-600', textClass: 'text-rose-600', pct: Math.round((returnCompensation / sum) * 1000) / 10 },
+      { id: 'OTHER', label: tr('Khoản thu khác', 'Other receipts'), amount: otherCash, color: '#94a3b8', bgClass: 'bg-slate-400', textClass: 'text-slate-600', pct: Math.round((otherCash / sum) * 1000) / 10 },
     ]
 
     return items.filter((item) => item.amount > 0 || totalCashIn === 0)
@@ -1009,7 +1009,7 @@ export const OperationsDashboard: React.FC = () => {
               </div>
             </div>
             <div className="my-3">
-              <div className="text-xl xl:text-2xl font-black font-mono text-slate-900 tracking-tight">
+              <div className="text-xl xl:text-2xl font-black font-mono text-emerald-700 tracking-tight whitespace-nowrap">
                 {formatVnd(netRevenue)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
@@ -1033,7 +1033,7 @@ export const OperationsDashboard: React.FC = () => {
               </div>
             </div>
             <div className="my-3">
-              <div className="text-xl xl:text-2xl font-black font-mono text-blue-700 tracking-tight">
+              <div className="text-xl xl:text-2xl font-black font-mono text-blue-700 tracking-tight whitespace-nowrap">
                 {formatVnd(totalCashIn)}
               </div>
             </div>
@@ -1054,7 +1054,7 @@ export const OperationsDashboard: React.FC = () => {
               </div>
             </div>
             <div className="my-3">
-              <div className="text-xl xl:text-2xl font-black font-mono text-slate-900 tracking-tight">
+              <div className="text-xl xl:text-2xl font-black font-mono text-amber-600 tracking-tight whitespace-nowrap">
                 {formatVnd(rentalRevenue)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
@@ -1078,7 +1078,7 @@ export const OperationsDashboard: React.FC = () => {
               </div>
             </div>
             <div className="my-3">
-              <div className="text-xl xl:text-2xl font-black font-mono text-rose-600 tracking-tight">
+              <div className="text-xl xl:text-2xl font-black font-mono text-rose-600 tracking-tight whitespace-nowrap">
                 {formatVnd(totalOverdueDebt)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
@@ -1102,7 +1102,7 @@ export const OperationsDashboard: React.FC = () => {
               </div>
             </div>
             <div className="my-3">
-              <div className="text-xl xl:text-2xl font-black font-mono text-cyan-700 tracking-tight">
+              <div className="text-xl xl:text-2xl font-black font-mono text-cyan-700 tracking-tight whitespace-nowrap">
                 {formatVnd(depositsHeld)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
@@ -1126,7 +1126,7 @@ export const OperationsDashboard: React.FC = () => {
               </div>
             </div>
             <div className="my-3">
-              <div className="text-xl xl:text-2xl font-black font-mono text-purple-700 tracking-tight">
+              <div className="text-xl xl:text-2xl font-black font-mono text-purple-700 tracking-tight whitespace-nowrap">
                 {formatVnd(refundedAmount)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
@@ -1233,15 +1233,15 @@ export const OperationsDashboard: React.FC = () => {
 
               {/* Legends Bar: Hiển thị trên 1 hàng duy nhất */}
               <div className="mb-4 py-2 px-3 bg-slate-50/90 rounded-xl border border-slate-200/80 flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2.5 text-[10.5px] sm:text-[11px] text-slate-600 whitespace-nowrap overflow-x-auto scrollbar-none">
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-slate-900 shrink-0"></span>{tr('Tiền thuê kho', 'Rental')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('Tiền thuê kho', 'Rental')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></span>{tr('Gia hạn HĐ', 'Renewal')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('Phụ phí & Dịch vụ', 'Extra Fees')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-slate-500 shrink-0"></span>{tr('Phụ phí & Dịch vụ', 'Extra Fees')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('Ký quỹ đặt cọc', 'Deposit')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('Cọc giữ chỗ', 'Booking')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-blue-600 shrink-0"></span>{tr('Cọc giữ chỗ', 'Booking')}</span>
                 <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
                 <span className="flex items-center gap-1 shrink-0">
-                  <span className="h-2 w-2 rounded-full bg-rose-500 ring-1 ring-rose-400 shrink-0"></span>
-                  <span className="font-semibold text-rose-700">{tr('Hoàn tiền khách', 'Refund')}</span>
+                  <span className="h-2 w-2 rounded-full bg-purple-600 ring-1 ring-purple-400 shrink-0"></span>
+                  <span className="font-semibold text-purple-700">{tr('Hoàn tiền khách', 'Refund')}</span>
                 </span>
                 <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
                 <span className="flex items-center gap-1 shrink-0">
@@ -1255,12 +1255,12 @@ export const OperationsDashboard: React.FC = () => {
                 <div className={`grid ${displayedChartMonths.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'} gap-4`}>
                   {displayedChartMonths.map((m) => {
                     const sources = [
-                      { id: 'rental', label: tr('Tiền thuê kho mới', 'New Rental'), shortLabel: tr('Thuê kho', 'Rental'), amount: m.rental, icon: 'storefront', color: '#0f172a', bgClass: 'bg-slate-900', type: 'IN' },
-                      { id: 'renewal', label: tr('Phí gia hạn hợp đồng', 'Contract Renewal'), shortLabel: tr('Gia hạn', 'Renewal'), amount: m.renewal, icon: 'autorenew', color: '#059669', bgClass: 'bg-emerald-600', type: 'IN' },
-                      { id: 'extra', label: tr('Phụ phí dịch vụ phát sinh', 'Extra Services & Penalties'), shortLabel: tr('Phụ phí & Dịch vụ', 'Extra Fees'), amount: m.extra, icon: 'receipt_long', color: '#f59e0b', bgClass: 'bg-amber-500', type: 'IN' },
-                      { id: 'deposit', label: tr('Tiền ký quỹ đặt cọc', 'Security Deposit'), shortLabel: tr('Cọc kho', 'Deposit'), amount: m.deposit, icon: 'shield_with_heart', color: '#0891b2', bgClass: 'bg-cyan-600', type: 'IN' },
-                      { id: 'booking', label: tr('Tiền đặt cọc giữ chỗ', 'Booking Reserve Fee'), shortLabel: tr('Giữ chỗ', 'Booking'), amount: m.booking, icon: 'bookmark', color: '#9333ea', bgClass: 'bg-purple-600', type: 'IN' },
-                      { id: 'refund', label: tr('Tiền hoàn trả khách hàng', 'Customer Refund (Outflow)'), shortLabel: tr('Hoàn tiền (Ra)', 'Refund (Out)'), amount: m.refund, icon: 'assignment_return', color: '#e11d48', bgClass: 'bg-rose-500', type: 'OUT' },
+                      { id: 'rental', label: tr('Tiền thuê kho mới', 'New Rental'), shortLabel: tr('Thuê kho', 'Rental'), amount: m.rental, icon: 'storefront', color: '#d97706', bgClass: 'bg-amber-500', textClass: 'text-amber-700', type: 'IN' },
+                      { id: 'renewal', label: tr('Phí gia hạn hợp đồng', 'Contract Renewal'), shortLabel: tr('Gia hạn', 'Renewal'), amount: m.renewal, icon: 'autorenew', color: '#059669', bgClass: 'bg-emerald-600', textClass: 'text-emerald-700', type: 'IN' },
+                      { id: 'extra', label: tr('Phụ phí dịch vụ phát sinh', 'Extra Services & Penalties'), shortLabel: tr('Phụ phí & Dịch vụ', 'Extra Fees'), amount: m.extra, icon: 'receipt_long', color: '#64748b', bgClass: 'bg-slate-500', textClass: 'text-slate-700', type: 'IN' },
+                      { id: 'deposit', label: tr('Tiền ký quỹ đặt cọc', 'Security Deposit'), shortLabel: tr('Cọc kho', 'Deposit'), amount: m.deposit, icon: 'shield_with_heart', color: '#0891b2', bgClass: 'bg-cyan-600', textClass: 'text-cyan-700', type: 'IN' },
+                      { id: 'booking', label: tr('Tiền đặt cọc giữ chỗ', 'Booking Reserve Fee'), shortLabel: tr('Giữ chỗ', 'Booking'), amount: m.booking, icon: 'bookmark', color: '#2563eb', bgClass: 'bg-blue-600', textClass: 'text-blue-700', type: 'IN' },
+                      { id: 'refund', label: tr('Tiền hoàn trả khách hàng', 'Customer Refund (Outflow)'), shortLabel: tr('Hoàn tiền (Ra)', 'Refund (Out)'), amount: m.refund, icon: 'assignment_return', color: '#7e22ce', bgClass: 'bg-purple-600', textClass: 'text-purple-700', type: 'OUT' },
                     ]
 
                     const maxVal = Math.max(m.totalIn, m.refund, m.rental, m.deposit, m.renewal, m.extra, 1)
@@ -1284,7 +1284,7 @@ export const OperationsDashboard: React.FC = () => {
                                 </span>
                               </h3>
                               <span className="text-[11px] text-slate-500 font-mono">
-                                {tr('Doanh thu thuần:', 'Net Revenue:')} <strong className="text-slate-800">{formatVnd(m.netRevenue)}</strong>
+                                {tr('Doanh thu thuần:', 'Net Revenue:')} <strong className="text-emerald-700">{formatVnd(m.netRevenue)}</strong>
                               </span>
                             </div>
                           </div>
@@ -1302,7 +1302,7 @@ export const OperationsDashboard: React.FC = () => {
                               return (
                                 <div key={s.id} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
                                   {/* Amount label on top */}
-                                  <span className="text-[9px] sm:text-[10px] font-mono font-bold text-slate-700 text-center leading-none">
+                                  <span className={`text-[9px] sm:text-[10px] font-mono font-bold text-center leading-none ${s.amount > 0 ? s.textClass : 'text-slate-400'}`}>
                                     {s.amount >= 1_000_000
                                       ? `${(s.amount / 1_000_000).toFixed(1)}M`
                                       : s.amount >= 1_000
@@ -1315,7 +1315,7 @@ export const OperationsDashboard: React.FC = () => {
                                   {/* Vertical Bar */}
                                   <div
                                     className={`w-full max-w-[28px] sm:max-w-[36px] rounded-t-md transition-all duration-300 group-hover:scale-105 cursor-pointer ${s.bgClass} ${
-                                      s.type === 'OUT' ? 'ring-1 ring-rose-400' : ''
+                                      s.type === 'OUT' ? 'ring-1 ring-purple-400' : ''
                                     }`}
                                     style={{ height: `${heightPct}%` }}
                                     title={`${s.label}: ${formatVnd(s.amount)} (${pctOfIn}% ${tr('tổng vào', 'of inflow')})`}
@@ -1360,7 +1360,7 @@ export const OperationsDashboard: React.FC = () => {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-xs">
                           <div className="p-2 rounded-lg bg-white border border-slate-200/80">
                             <span className="text-[10px] text-slate-500 font-semibold block">{tr('Tiền thuê kho mới', 'New Rental')}</span>
-                            <span className="font-mono font-bold text-slate-900 text-xs">{formatVnd(m.rental)}</span>
+                            <span className="font-mono font-bold text-amber-700 text-xs">{formatVnd(m.rental)}</span>
                           </div>
                           <div className="p-2 rounded-lg bg-white border border-slate-200/80">
                             <span className="text-[10px] text-slate-500 font-semibold block">{tr('Phí gia hạn kho', 'Renewal')}</span>
@@ -1368,19 +1368,19 @@ export const OperationsDashboard: React.FC = () => {
                           </div>
                           <div className="p-2 rounded-lg bg-white border border-slate-200/80">
                             <span className="text-[10px] text-slate-500 font-semibold block">{tr('Phụ phí dịch vụ', 'Extra Fees')}</span>
-                            <span className="font-mono font-bold text-amber-700 text-xs">{formatVnd(m.extra)}</span>
+                            <span className="font-mono font-bold text-slate-700 text-xs">{formatVnd(m.extra)}</span>
                           </div>
                           <div className="p-2 rounded-lg bg-white border border-slate-200/80">
                             <span className="text-[10px] text-slate-500 font-semibold block">{tr('Ký quỹ đặt cọc', 'Deposit')}</span>
-                            <span className="font-mono font-bold text-cyan-800 text-xs">{formatVnd(m.deposit)}</span>
+                            <span className="font-mono font-bold text-cyan-700 text-xs">{formatVnd(m.deposit)}</span>
                           </div>
                           <div className="p-2 rounded-lg bg-white border border-slate-200/80">
                             <span className="text-[10px] text-slate-500 font-semibold block">{tr('Cọc giữ chỗ', 'Booking')}</span>
-                            <span className="font-mono font-bold text-purple-700 text-xs">{formatVnd(m.booking)}</span>
+                            <span className="font-mono font-bold text-blue-700 text-xs">{formatVnd(m.booking)}</span>
                           </div>
-                          <div className="p-2 rounded-lg bg-rose-50/70 border border-rose-200">
-                            <span className="text-[10px] text-rose-600 font-bold block">{tr('Tiền hoàn', 'Refund Outflow')}</span>
-                            <span className="font-mono font-bold text-rose-700 text-xs">-{formatVnd(m.refund)}</span>
+                          <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200">
+                            <span className="text-[10px] text-purple-700 font-bold block">{tr('Tiền hoàn', 'Refund Outflow')}</span>
+                            <span className="font-mono font-bold text-purple-700 text-xs">-{formatVnd(m.refund)}</span>
                           </div>
                         </div>
                       </div>
@@ -1401,12 +1401,12 @@ export const OperationsDashboard: React.FC = () => {
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-medium text-slate-600">
                 <span>{tr('Kỳ báo cáo:', 'Report Period:')} <strong className="text-slate-900">{periodLabel}</strong></span>
                 <span>•</span>
-                <span>{tr('Tổng thực thu (Vào):', 'Total Inflow:')} <strong className="text-emerald-700 font-mono">+{formatVnd(totalCashIn)}</strong></span>
+                <span>{tr('Tổng thực thu (Vào):', 'Total Inflow:')} <strong className="text-blue-700 font-mono">+{formatVnd(totalCashIn)}</strong></span>
                 <span>•</span>
-                <span>{tr('Tổng hoàn trả (Ra):', 'Total Outflow:')} <strong className="text-rose-700 font-mono">-{formatVnd(refundedAmount)}</strong></span>
+                <span>{tr('Tổng hoàn trả (Ra):', 'Total Outflow:')} <strong className="text-purple-700 font-mono">-{formatVnd(refundedAmount)}</strong></span>
               </div>
               <div className="font-mono font-bold text-slate-900">
-                {tr('Tổng doanh thu thuần kỳ:', 'Period Net Revenue:')} <span className="text-sm text-slate-900 font-extrabold">{formatVnd(netRevenue)}</span>
+                {tr('Tổng doanh thu thuần kỳ:', 'Period Net Revenue:')} <span className="text-sm text-emerald-700 font-extrabold">{formatVnd(netRevenue)}</span>
               </div>
             </div>
           </div>
@@ -1449,7 +1449,7 @@ export const OperationsDashboard: React.FC = () => {
               </svg>
               <div className="absolute flex flex-col items-center justify-center text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{tr('Tổng thực thu', 'Total Cash-In')}</span>
-                <span className="text-lg font-black font-mono text-slate-900 mt-0.5">
+                <span className="text-lg font-black font-mono text-blue-700 mt-0.5">
                   {totalCashIn >= 1_000_000 ? `${(totalCashIn / 1_000_000).toFixed(1)}M ₫` : formatVnd(totalCashIn)}
                 </span>
                 <span className="text-[11px] font-semibold text-slate-500">{paymentCount} {tr('giao dịch', 'payments')}</span>
@@ -1465,7 +1465,7 @@ export const OperationsDashboard: React.FC = () => {
                     {item.label}
                   </span>
                   <div className="flex items-center gap-2 font-mono">
-                    <span className="font-bold text-slate-900">{formatVnd(item.amount)}</span>
+                    <span className={`font-bold ${item.textClass || 'text-slate-900'}`}>{formatVnd(item.amount)}</span>
                     <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 font-bold">{item.pct}%</span>
                   </div>
                 </div>
@@ -1550,7 +1550,7 @@ export const OperationsDashboard: React.FC = () => {
                               </span>
                             </div>
                           </td>
-                          <td className="py-3.5 px-3 text-right font-mono font-extrabold text-slate-900">
+                          <td className="py-3.5 px-3 text-right font-mono font-extrabold text-emerald-700">
                             {formatVnd(f.netRevenue)}
                           </td>
                           <td className="py-3.5 px-3 text-right font-mono font-bold text-blue-700">
@@ -1695,7 +1695,7 @@ export const OperationsDashboard: React.FC = () => {
                             cy="80"
                             fill="transparent"
                             r="62"
-                            stroke="#0f172a"
+                            stroke="#0891b2"
                             strokeDasharray={`${(circumference * bankPct) / 100} ${circumference}`}
                             strokeDashoffset={-((circumference * vnpayPct) / 100)}
                             strokeWidth="15"
@@ -1730,7 +1730,7 @@ export const OperationsDashboard: React.FC = () => {
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           {channelMetric === 'COUNT' ? tr('Tổng giao dịch', 'Total count') : tr('Tổng giá trị', 'Total value')}
                         </span>
-                        <span className="text-base font-black font-mono text-slate-900 mt-0.5">
+                        <span className={`text-base font-black font-mono mt-0.5 ${channelMetric === 'COUNT' ? 'text-slate-900' : 'text-blue-700'}`}>
                           {channelMetric === 'COUNT' ? `${total} GD` : formatVnd(total)}
                         </span>
                       </div>
@@ -1743,7 +1743,7 @@ export const OperationsDashboard: React.FC = () => {
                           {tr('Cổng VNPay (Trực tuyến)', 'VNPay Gateway (Online)')}
                         </span>
                         <div className="flex items-center gap-2 font-mono">
-                          <span className="font-bold text-slate-900">
+                          <span className="font-bold text-blue-700">
                             {channelMetric === 'COUNT' ? `${vnpayVal} GD` : formatVnd(vnpayVal)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 font-bold">{vnpayPct}%</span>
@@ -1752,14 +1752,14 @@ export const OperationsDashboard: React.FC = () => {
 
                       <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
                         <span className="flex items-center gap-2 font-semibold text-slate-800">
-                          <span className="h-2.5 w-2.5 rounded-full bg-slate-900"></span>
+                          <span className="h-2.5 w-2.5 rounded-full bg-cyan-600"></span>
                           {tr('Chuyển khoản (Tại quầy)', 'Bank Transfer (Counter)')}
                         </span>
                         <div className="flex items-center gap-2 font-mono">
-                          <span className="font-bold text-slate-900">
+                          <span className="font-bold text-cyan-700">
                             {channelMetric === 'COUNT' ? `${bankVal} GD` : formatVnd(bankVal)}
                           </span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200 text-slate-800 font-bold">{bankPct}%</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold">{bankPct}%</span>
                         </div>
                       </div>
 
@@ -1769,7 +1769,7 @@ export const OperationsDashboard: React.FC = () => {
                           {tr('Tiền mặt (Tại quầy)', 'Cash (Counter)')}
                         </span>
                         <div className="flex items-center gap-2 font-mono">
-                          <span className="font-bold text-slate-900">
+                          <span className="font-bold text-emerald-700">
                             {channelMetric === 'COUNT' ? `${cashVal} GD` : formatVnd(cashVal)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold">{cashPct}%</span>
