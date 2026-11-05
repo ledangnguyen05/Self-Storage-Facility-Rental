@@ -10,10 +10,10 @@ interface QuickThemeLanguageToggleProps {
 
 export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> = ({
   className = '',
-  showLanguage: _showLanguage = false,
+  showLanguage = true,
   showTheme = true,
 }) => {
-  const { t } = useLanguage()
+  const { t, language, setLanguage } = useLanguage()
   const [settings, setSettings] = useState<WebSettings>(getWebSettings())
   const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
 
@@ -44,6 +44,40 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
 
   return (
     <div className={`flex items-center gap-1.5 ${className}`}>
+      {/* Language Toggle */}
+      {showLanguage && (
+        <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200/80 dark:border-slate-700 text-[11px] font-bold shadow-xs">
+          <button
+            type="button"
+            onClick={() => setLanguage('vi')}
+            aria-pressed={language === 'vi'}
+            aria-label={t('Tiếng Việt', 'Vietnamese')}
+            title={t('Tiếng Việt', 'Vietnamese')}
+            className={`min-w-8 px-2 py-1 rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              language === 'vi'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            VI
+          </button>
+          <button
+            type="button"
+            onClick={() => setLanguage('en')}
+            aria-pressed={language === 'en'}
+            aria-label={t('Tiếng Anh', 'English')}
+            title={t('Tiếng Anh', 'English')}
+            className={`min-w-8 px-2 py-1 rounded-lg cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              language === 'en'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            EN
+          </button>
+        </div>
+      )}
+
       {/* Theme Toggle Button */}
       {showTheme && (
         <button

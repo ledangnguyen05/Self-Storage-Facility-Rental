@@ -131,7 +131,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
           <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
         </div>
 
-        <div className="hidden md:flex flex-col text-left">
+        <div className="hidden md:flex flex-col text-left" translate="no" data-no-translate="true">
           <span className="text-xs font-bold text-slate-900 leading-tight max-w-[130px] truncate">
             {user?.fullName || user?.username || t('Tài khoản')}
           </span>
@@ -150,7 +150,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
       {isOpen && (
         <div className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 z-50 p-3.5 animate-in fade-in slide-in-from-top-2 duration-150 flex flex-col gap-3">
           {/* User Profile Card */}
-          <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3 pb-3 border-b border-slate-100 dark:border-slate-800" translate="no" data-no-translate="true">
             <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
               {userInitials}
             </div>

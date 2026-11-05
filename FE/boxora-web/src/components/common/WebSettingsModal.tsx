@@ -15,7 +15,7 @@ interface WebSettingsModalProps {
 }
 
 export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onClose }) => {
-  const { t } = useLanguage()
+  const { t, setLanguage } = useLanguage()
   const [settings, setSettings] = useState<WebSettings>(getWebSettings())
   const [savedSuccess, setSavedSuccess] = useState(false)
 
@@ -105,6 +105,53 @@ export const WebSettingsModal: React.FC<WebSettingsModalProps> = ({ isOpen, onCl
                     <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
                     <span className="text-xs font-bold">{item.label}</span>
                     <span className="text-[10px] text-slate-500 leading-tight">{item.desc}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Section: Ngôn ngữ hiển thị (Language) */}
+          <div className="rounded-xl border border-slate-200/80 dark:border-slate-800 p-3.5 bg-white dark:bg-slate-900/90 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-slate-500">language</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{t('Ngôn ngữ hiển thị')}</span>
+              </div>
+              <span className="text-[11px] font-medium text-slate-500">
+                {settings.language === 'en' ? t('Tiếng Anh') : t('Tiếng Việt')}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              {[
+                { id: 'vi', label: t('Tiếng Việt'), desc: 'Giao diện tiếng Việt chuẩn Boxora', badge: 'VI' },
+                { id: 'en', label: t('Tiếng Anh'), desc: 'English interface & operations', badge: 'EN' },
+              ].map(item => {
+                const isActive = settings.language === item.id
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      handleUpdate('language', item.id as any)
+                      setLanguage(item.id as any)
+                    }}
+                    aria-pressed={isActive}
+                    className={`flex items-start gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      isActive
+                        ? 'border-blue-600 bg-blue-50/70 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200 shadow-xs ring-1 ring-blue-500/20'
+                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60 text-slate-700 dark:text-slate-300'
+                    }`}
+                  >
+                    <span className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5 ${
+                      isActive ? 'bg-blue-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                    }`}>
+                      {item.badge}
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold">{item.label}</span>
+                      <span className="text-[10px] text-slate-500 leading-tight">{item.desc}</span>
+                    </div>
                   </button>
                 )
               })}

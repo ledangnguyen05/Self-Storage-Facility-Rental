@@ -621,7 +621,15 @@ export const DICTIONARY: Record<string, string> = {
   'Giao diện trắng tiêu chuẩn': 'Clean standard light theme',
   'Tối': 'Dark',
   'Dịu mắt ban đêm': 'Gentle on eyes at night',
-  'Tự động': 'System',
+  'Tự động': 'Auto',
+  'TỰ ĐỘNG': 'AUTO',
+  'Hệ thống': 'System',
+  'HỆ THỐNG': 'SYSTEM',
+  'Quản lý hệ thống': 'System Manager',
+  'Quản Lý Hệ Thống': 'System Manager',
+  'System Manager': 'Quản lý Hệ thống',
+  'Business Manager': 'Quản lý Kinh doanh',
+  'Facility Manager': 'Quản lý Cơ sở',
   'Theo hệ điều hành': 'Sync with operating system',
   'Kích thước phông chữ': 'Font Scaling',
   'Tiêu chuẩn (100%)': 'Standard (100%)',
@@ -1429,6 +1437,110 @@ Object.assign(DICTIONARY, {
   'Khi thanh lý hợp đồng và nghiệm thu buồng kho nguyên vẹn, Boxora cam kết hoàn trả 100% tiền cọc vào tài khoản ngân hàng trong vòng 24 giờ làm việc.': 'Upon contract liquidation and inspection of an intact storage unit, Boxora commits to refunding 100% of the deposit to your bank account within 24 working hours.',
   'Khi thanh lý hợp đồng và nghiệm thu buồng kho nguyên vẹn, Boxora cam kết hoàn trả 100% tiền cọc bảo đảm vào tài khoản ngân hàng trong vòng 24 giờ làm việc.': 'Upon contract liquidation and inspection of an intact storage unit, Boxora commits to refunding 100% of the security deposit to your bank account within 24 working hours.',
   'Thanh toán cọc hoặc kỳ hạn đầu để kích hoạt giữ buồng kho. Nhận mã PIN và hợp đồng điện tử ngay.': 'Pay deposit or first period to activate storage unit. Receive your smart PIN and e-contract immediately.',
+
+  // Business Rules & Dynamic Pricing Matrix
+  'Chiết khấu kỳ hạn': 'Term Discounts',
+  'Kỳ hạn ngắn tiêu chuẩn': 'Standard Short Term',
+  'Kỳ hạn trung bình ưu đãi': 'Discounted Medium Term',
+  'Kỳ hạn dài hạn tiết kiệm tối đa': 'Maximum Savings Long Term',
+  'Cấu hình loại mới': 'Configure New Type',
+  'Cấu hình kỳ hạn': 'Configure Term',
+  'Thêm kỳ hạn mới': 'Add New Term',
+  'Thêm loại kho mới': 'Add New Storage Type',
+  'Chỉnh sửa Loại Kho': 'Edit Storage Type',
+  'Lưu thay đổi': 'Save Changes',
+  'Lý do cập nhật': 'Reason for Update',
+  'Trạng thái hoạt động': 'Operational Status',
+  'Kích thước quy chuẩn': 'Standard Dimensions',
+  'Diện tích / Sức chứa': 'Area / Capacity',
+  'Giá Tiêu chuẩn / tháng': 'Standard Rate / month',
+  'Giá Máy lạnh A/C / tháng': 'Climate A/C Rate / month',
+  'Mini (tủ cá nhân)': 'Mini (Personal Locker)',
+  'Tủ cá nhân (Mini)': 'Personal Locker (Mini)',
+  'Vừa (phòng studio nhỏ)': 'Medium (Small Studio)',
+  'Kho lạnh (kiểm soát nhiệt độ 18-22°C)': 'Climate Storage (18-22°C)',
+  'Kho Mát A/C (18-22°C)': 'Cool Storage A/C (18-22°C)',
+  'Tiêu chuẩn (căn một phòng ngủ)': 'Standard (1-Bedroom)',
+  'Rất lớn (văn phòng thương mại)': 'Extra Large (Commercial Office)',
+  'Logistics / Thương mại lớn': 'Logistics / Large Commercial',
+  'Hành lang chính': 'Main Corridor',
+  'Lối thoát hiểm': 'Emergency Exit',
+  'Phân khu A': 'Zone A',
+  'Phân khu B': 'Zone B',
+  'Tổng số kho': 'Total Storage Units',
+  'Kho trống': 'Available Units',
+  'Chờ bàn giao': 'Pending Handover',
+  'Bảo trì kỹ thuật': 'Technical Maintenance',
+  'Nợ quá hạn': 'Overdue Payments',
+  'Sơ Đồ Cơ Sở': 'Facility Floorplan',
+  'Đơn Chờ Xử Lý': 'Pending Requests',
+  'Bàn Tiếp Đón Nhận Kho': 'Reception & Handover Desk',
+  'Trả Kho': 'Unit Return & Checkout',
+  'Hỗ Trợ Gia Hạn': 'Renewal Support',
+  'Sự Cố & SLA': 'Incidents & SLA',
+  'Chính Sách Vận Hành Cơ Sở': 'Facility Operation Policies',
+  'Tầng hầm': 'Basement',
+  'Tầng 1': '1st Floor',
+  'Tất cả kích thước': 'All Sizes',
+  'Tìm mã kho (#A-101), khách...': 'Search unit code (#A-101), customer...',
+
+  // Booking Flow Steps & Details
+  'Bước 1 / 6 • Chọn cơ sở lưu trữ': 'Step 1 / 6 • Select Storage Facility',
+  'Bước 2 / 6 • Chọn kho / loại kho': 'Step 2 / 6 • Select Unit / Type',
+  'Bước 3 / 6 • Thời hạn thuê & Báo giá': 'Step 3 / 6 • Term & Quotation',
+  'Bước 4 / 6 • Lịch hẹn & Chi tiết': 'Step 4 / 6 • Appointment & Details',
+  'Bước 5 / 6 • Báo giá & Điều khoản': 'Step 5 / 6 • Quotation & Terms',
+  'Bước 6 / 6 • Thanh toán & Hoàn tất': 'Step 6 / 6 • Payment & Completion',
+  'Cá nhân & Mini (1 – 4 m³)': 'Personal & Mini (1 – 4 m³)',
+  'Gia đình (5 – 9 m³)': 'Family (5 – 9 m³)',
+  'Doanh nghiệp (10 – 24 m³)': 'Enterprise (10 – 24 m³)',
+  'Logistics (> 25 m³)': 'Logistics (> 25 m³)',
+  'Mô hình 3D': '3D Model',
+  'Ảnh thực tế': 'Real Photos',
+  'Đang chọn:': 'Selected:',
+  'Đơn giá buồng kho niêm yết:': 'Listed Unit Price:',
+  'Kỳ hạn đăng ký thuê:': 'Registered Rental Term:',
+  'Đơn giá sau ưu đãi': 'Discounted Unit Price',
+  'Đơn giá sau ưu đãi (-5%):': 'Discounted Unit Price (-5%):',
+  'Đơn giá sau ưu đãi (-10%):': 'Discounted Unit Price (-10%):',
+  'Đơn giá sau ưu đãi (-15%):': 'Discounted Unit Price (-15%):',
+  'Tổng số tiền tiết kiệm được:': 'Total Amount Saved:',
+  'Tổng tiền thuê': 'Total Rental Cost',
+  'Tiền đặt cọc bảo đảm:': 'Security Deposit:',
+  'Tổng chi phí dự kiến': 'Total Estimated Cost',
+  'Quay lại chọn kho': 'Back to Unit Selection',
+  'Quay lại chọn cơ sở': 'Back to Facility Selection',
+  'Tiếp tục: Lịch hẹn & Chi tiết': 'Continue: Schedule & Details',
+  'Tiếp tục: Thời hạn': 'Continue: Rental Term',
+  'Hoàn cọc 100%': '100% Deposit Refund',
+  'Bao trọn điện & A/C': 'All-inclusive Electricity & A/C',
+  'Đã gồm VAT 8%': 'Includes 8% VAT',
+  'Xuất hóa đơn điện tử VAT tự động, không phát sinh bất kỳ khoản phụ phí ẩn nào.': 'Automatic electronic VAT invoicing, zero hidden surcharges.',
+  'Tiền cọc bảo đảm được hoàn trả nguyên vẹn ngay khi thanh lý hợp đồng hợp lệ.': 'Security deposit is fully refunded upon valid lease liquidation.',
+  'Đã bao gồm chi phí điện chiếu sáng, điều hòa kiểm soát ẩm và vệ sinh công nghiệp.': 'Includes lighting, humidity-controlled A/C, and industrial cleaning.',
+  'Minh bạch chi phí': 'Transparent Costs',
+  'Tự động 24/7': 'Automated 24/7',
+  'Hỗ trợ khách hàng': 'Customer Support',
+  'Xin chào! Tôi là trợ lý ảo của Boxora. Bạn cần tìm hiểu thông tin gì về việc thuê kho, bảng giá hay quy trình mở khóa Smart Key hôm nay?': 'Hello! I am Boxora virtual assistant. What can I help you with regarding rentals, pricing, or Smart Key unlock today?',
+  'Gợi ý câu hỏi nhanh': 'Quick Suggested Questions',
+  'Bảng giá và các loại kho tại Boxora': 'Pricing and unit types at Boxora',
+  'Địa chỉ 4 chi nhánh Boxora tại TP.HCM': 'Addresses of 4 Boxora facilities in HCMC',
+  'Quy trình thanh toán online và nhận mã PIN mở kho': 'Online payment process and receiving PIN to unlock',
+  'Chính sách hoàn cọc và hủy hợp đồng thế nào?': 'What are the deposit refund and cancellation policies?',
+  'Kho lạnh kiểm soát nhiệt độ bảo quản những gì?': 'What can be stored in temperature-controlled climate units?',
+  'Thủ tục gia hạn và trả kho trực tuyến': 'Online lease renewal and checkout procedures',
+  'Nhập câu hỏi của bạn...': 'Type your question here...',
+  'Ngôn ngữ hiển thị': 'Display Language',
+  'Giao diện chuẩn Việt Nam': 'Standard Vietnamese Interface',
+  'English interface': 'English Interface',
+  'Khôi phục mặc định': 'Reset to Default',
+  'Lưu & Áp dụng': 'Save & Apply',
+  'Ghi nhớ phiên đăng nhập an toàn': 'Remember Secure Session',
+  'Duy trì trạng thái làm việc khi đóng trình duyệt': 'Keep session active when closing browser',
+  'Cài đặt giao diện & hệ thống': 'Appearance & System Settings',
+  'Tùy chỉnh trải nghiệm làm việc theo nhu cầu cá nhân': 'Customize your workspace preferences',
+  'Hoạt động': 'Active',
+  'Tạm dừng': 'Inactive',
 })
 
 // Pre-sorted dictionary keys by length descending to match longest phrases first
@@ -1530,7 +1642,10 @@ function applyDOMTranslation(root: Node, lang: Language) {
           const parent = node.parentElement
           if (!parent) return NodeFilter.FILTER_REJECT
           const tag = parent.tagName.toLowerCase()
-          if (tag === 'script' || tag === 'style' || tag === 'code' || tag === 'noscript') {
+          if (parent.closest('[data-no-translate], [translate="no"], .no-translate, .font-mono')) {
+            return NodeFilter.FILTER_REJECT
+          }
+          if (tag === 'script' || tag === 'style' || tag === 'code' || tag === 'pre' || tag === 'noscript' || tag === 'input' || tag === 'textarea') {
             return NodeFilter.FILTER_REJECT
           }
           if (!node.nodeValue || !node.nodeValue.trim()) {
@@ -1716,14 +1831,7 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       } else if (fallback && typeof fallback === 'string' && DICTIONARY[fallback.trim()]) {
         result = fallback
       } else {
-        // If key has English phrases, translate them
-        let res = key
-        for (const phrase of SORTED_REVERSE_KEYS) {
-          if (phrase.length > 2 && res.includes(phrase)) {
-            res = res.split(phrase).join(REVERSE_DICTIONARY[phrase])
-          }
-        }
-        result = res
+        result = key
       }
     }
 

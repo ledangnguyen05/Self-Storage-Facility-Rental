@@ -621,7 +621,7 @@ export const OverdueManagementPage: React.FC = () => {
               <span className="material-symbols-outlined text-[18px]">
                 {isCustomerArrivalMode ? 'check_circle' : 'how_to_reg'}
               </span>
-              <span>Khách đã tới hoàn tất</span>
+              <span>Chuyển sang hoàn tất</span>
               {isCustomerArrivalMode && (
                 <span className="text-[10px] bg-emerald-800/80 text-emerald-100 px-1.5 py-0.5 rounded-full font-normal">
                   Đang bật
@@ -1059,9 +1059,6 @@ export const OverdueManagementPage: React.FC = () => {
               </div>
               <div className="flex-1">
                 <h3 className="text-sm font-bold text-slate-900">Xác nhận hoàn tất đơn nợ cước</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Ghi nhận thu tiền tại quầy, cập nhật thanh toán và hoàn tất tất toán hợp đồng trả kho.
-                </p>
               </div>
             </div>
 
