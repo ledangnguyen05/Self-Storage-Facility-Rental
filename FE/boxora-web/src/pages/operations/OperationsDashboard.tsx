@@ -1061,7 +1061,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-emerald-700 font-semibold">
               <span>{tr('Ghi nhận kỳ:', 'Period status:')}</span>
               <span className="font-mono bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
-                {summary?.rentalRevenue ? `${Math.round(((summary.rentalRevenue) / Math.max(netRevenue, 1)) * 100)}% thuê kho` : '100%'}
+                {summary?.rentalRevenue ? `${Math.round(((summary.rentalRevenue) / Math.max(netRevenue, 1)) * 100)}% ${tr('thuê kho', 'unit rental')}` : '100%'}
               </span>
             </div>
           </div>
@@ -1082,7 +1082,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-medium">
               <span>{tr('Số giao dịch:', 'Payments:')}</span>
               <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
-                {paymentCount.toLocaleString(currencyLocale)} GD
+                {paymentCount.toLocaleString(currencyLocale)} {tr('GD', 'txns')}
               </span>
             </div>
           </div>
@@ -1154,7 +1154,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-cyan-800 font-semibold">
               <span>{tr('Hợp đồng ACTIVE:', 'Active contracts:')}</span>
               <span className="font-mono bg-cyan-50 px-2 py-0.5 rounded text-cyan-800 border border-cyan-200">
-                {activeContractsCount !== null ? `${activeContractsCount} HĐ` : '—'}
+                {activeContractsCount !== null ? `${activeContractsCount} ${tr('HĐ', 'contracts')}` : '—'}
               </span>
             </div>
           </div>
@@ -1278,9 +1278,9 @@ export const OperationsDashboard: React.FC = () => {
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-emerald-600 shrink-0"></span>{tr('1. Doanh thu thuần', '1. Net Revenue')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-blue-600 shrink-0"></span>{tr('2. Tiền thực thu', '2. Cash-In')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('3. Tiền thuê kho', '3. Rental')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-rose-600 shrink-0"></span>{tr('4. Công nợ phải thu', '4. Debt')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-rose-600 shrink-0"></span>{tr('4. Công nợ', '4. Debt')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('5. Tiền cọc đang giữ', '5. Deposits')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('6. Hoàn tiền & Chờ XL', '6. Refunds')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('6. Hoàn tiền', '6. Refunds')}</span>
                 <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
                 <span className="flex items-center gap-1 shrink-0">
                   <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0"></span>
@@ -1469,7 +1469,7 @@ export const OperationsDashboard: React.FC = () => {
                             <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-emerald-700 font-semibold">
                               <span>{tr('Ghi nhận kỳ:', 'Period status:')}</span>
                               <span className="bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-                                {m.netRevenue > 0 ? `${Math.round(((m.rental + m.renewal) / m.netRevenue) * 100)}% thuê kho` : '100%'}
+                                {m.netRevenue > 0 ? `${Math.round(((m.rental + m.renewal) / m.netRevenue) * 100)}% ${tr('thuê kho', 'unit rental')}` : '100%'}
                               </span>
                             </div>
                           </div>
@@ -1487,7 +1487,7 @@ export const OperationsDashboard: React.FC = () => {
                             <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-600 font-medium">
                               <span>{tr('Số giao dịch:', 'Payments:')}</span>
                               <span className="font-mono font-bold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded">
-                                {m.paymentCount} GD
+                                {m.paymentCount} {tr('GD', 'txns')}
                               </span>
                             </div>
                           </div>
@@ -1541,7 +1541,7 @@ export const OperationsDashboard: React.FC = () => {
                             <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-cyan-800 font-semibold">
                               <span>{tr('Hợp đồng ACTIVE:', 'Active contracts:')}</span>
                               <span className="font-mono bg-cyan-50 px-1.5 py-0.2 rounded text-cyan-800 border border-cyan-200">
-                                {activeContractsCount !== null ? `${activeContractsCount} HĐ` : '—'}
+                                {activeContractsCount !== null ? `${activeContractsCount} ${tr('HĐ', 'contracts')}` : '—'}
                               </span>
                             </div>
                           </div>
@@ -1780,7 +1780,7 @@ export const OperationsDashboard: React.FC = () => {
                                 }}
                                 className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] transition-colors cursor-pointer shadow-xs"
                               >
-                                {tr('Lọc cơ sở', 'Filter')}
+                                {tr('Lọc', 'Filter')}
                               </button>
                             )}
                           </td>
@@ -1925,7 +1925,7 @@ export const OperationsDashboard: React.FC = () => {
                         </span>
                         <div className="flex items-center gap-2 font-mono">
                           <span className="font-bold text-blue-700">
-                            {channelMetric === 'COUNT' ? `${vnpayVal} GD` : formatVnd(vnpayVal)}
+                            {channelMetric === 'COUNT' ? `${vnpayVal} ${tr('GD', 'txns')}` : formatVnd(vnpayVal)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 font-bold">{vnpayPct}%</span>
                         </div>
@@ -1938,7 +1938,7 @@ export const OperationsDashboard: React.FC = () => {
                         </span>
                         <div className="flex items-center gap-2 font-mono">
                           <span className="font-bold text-cyan-700">
-                            {channelMetric === 'COUNT' ? `${bankVal} GD` : formatVnd(bankVal)}
+                            {channelMetric === 'COUNT' ? `${bankVal} ${tr('GD', 'txns')}` : formatVnd(bankVal)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-100 text-cyan-800 font-bold">{bankPct}%</span>
                         </div>
@@ -1951,7 +1951,7 @@ export const OperationsDashboard: React.FC = () => {
                         </span>
                         <div className="flex items-center gap-2 font-mono">
                           <span className="font-bold text-emerald-700">
-                            {channelMetric === 'COUNT' ? `${cashVal} GD` : formatVnd(cashVal)}
+                            {channelMetric === 'COUNT' ? `${cashVal} ${tr('GD', 'txns')}` : formatVnd(cashVal)}
                           </span>
                           <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold">{cashPct}%</span>
                         </div>
@@ -1964,7 +1964,7 @@ export const OperationsDashboard: React.FC = () => {
                             {tr('Kênh khác', 'Other Channels')}
                           </span>
                           <span className="font-mono font-bold text-slate-700">
-                            {channelMetric === 'COUNT' ? `${otherVal} GD` : formatVnd(otherVal)}
+                            {channelMetric === 'COUNT' ? `${otherVal} ${tr('GD', 'txns')}` : formatVnd(otherVal)}
                           </span>
                         </div>
                       )}
@@ -2065,7 +2065,7 @@ export const OperationsDashboard: React.FC = () => {
                 onChange={(e) => setTablePaymentMethod(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold cursor-pointer focus:outline-none"
               >
-                <option value="ALL">{tr('Tất cả kênh TT', 'All Methods')}</option>
+                <option value="ALL">{tr('Tất cả kênh TT', 'All Payment Methods')}</option>
                 <option value="VNPAY">VNPay</option>
                 <option value="BANK_TRANSFER">{tr('Chuyển khoản NH', 'Bank Transfer')}</option>
                 <option value="CASH">{tr('Tiền mặt', 'Cash')}</option>
@@ -2305,7 +2305,7 @@ export const OperationsDashboard: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">{tr('Người xác nhận / Duyệt', 'Confirmed By')}</span>
-                    <span className="font-semibold text-slate-800">{selectedPaymentDetail.confirmedByName || selectedPaymentDetail.collectedByName || 'Hệ thống'}</span>
+                    <span className="font-semibold text-slate-800">{selectedPaymentDetail.confirmedByName || selectedPaymentDetail.collectedByName || tr('Hệ thống', 'System')}</span>
                   </div>
                 </div>
 

@@ -1678,6 +1678,41 @@ Object.assign(DICTIONARY, {
   'Đang tải lịch phân công ca trực...': 'Loading shift roster schedule...',
   'Toàn chuỗi (Tất cả cơ sở)': 'All Facilities Chain',
   'Cơ sở Boxora': 'Boxora Facility',
+
+  // Operations & Revenue Dashboard
+  '1. Doanh thu thuần': '1. Net Revenue',
+  '2. Tiền thực thu': '2. Total Cash-In',
+  '3. Tiền thuê kho': '3. Rental Revenue',
+  '4. Công nợ phải thu': '4. Overdue Debt',
+  '5. Tiền cọc đang giữ': '5. Deposits Held',
+  '6. Hoàn tiền & Chờ XL': '6. Refunds & Pending',
+  '4. Công nợ': '4. Debt',
+  '6. Hoàn tiền': '6. Refunds',
+  'Dòng tiền ròng': 'Net Flow',
+  'Dòng tiền ròng thực nhận:': 'Net Cash Flow:',
+  'DT thuần': 'Net Rev',
+  'Thực thu': 'Cash-In',
+  'Thuê kho': 'Rental',
+  'Công nợ': 'Debt',
+  'Hoàn tiền': 'Refund',
+  'Ròng': 'Net',
+  'Hợp đồng ACTIVE:': 'Active contracts:',
+  'Hợp đồng ACTIVE': 'Active contracts',
+  'Active contracts:': 'Active contracts:',
+  'thuê kho': 'unit rental',
+  'GD': 'txns',
+  'HĐ': 'contracts',
+  'kho': 'units',
+  'kho đang thuê': 'occupied',
+  'Tất cả các tháng (Lưới biểu đồ)': 'All Months (Grid)',
+  'Chi tiết giao dịch tài chính': 'Financial Transaction Details',
+  'Chi Tiết Giao Dịch Tài Chính': 'Financial Transaction Details',
+  'Tất cả nhóm tài chính': 'All Financial Groups',
+  'Tất cả loại nghiệp vụ': 'All Business Types',
+  'Tất cả kênh TT': 'All Payment Methods',
+  'Lọc cơ sở': 'Filter',
+  'Đang lọc': 'Active',
+
 })
 
 // Pre-sorted dictionary keys by length descending to match longest phrases first
@@ -1696,7 +1731,8 @@ const SORTED_REVERSE_KEYS = Object.keys(REVERSE_DICTIONARY).sort((a, b) => b.len
 const EXACT_MATCH_ONLY = new Set([
   'Tất cả', 'TẤT CẢ', 'Lưu', 'ngày', 'Ngày', 'NGÀY', 'Kho', 'KHO', 'Ca', 'CA',
   'Đã', 'Chưa', 'Nợ', 'Cọc', 'Phạt', 'Hoàn', 'Hạn', 'Chi nhánh', 'Cơ sở',
-  'Hoạt động', 'Tạm dừng', 'Sáng', 'Tối', 'Tự động', 'Hệ thống', 'Chi tiết'
+  'Hoạt động', 'Tạm dừng', 'Sáng', 'Tối', 'Tự động', 'Hệ thống', 'Chi tiết',
+  'GD', 'HĐ', 'kho', 'thuê kho', 'Lọc', 'Lọc cơ sở', 'Active', 'ACTIVE', 'Debt', 'Refund', 'All'
 ])
 
 // WeakMaps storing original Vietnamese text and attributes
@@ -1709,6 +1745,10 @@ const translatedAttrMap = new WeakMap<Element, Record<string, string>>()
 let isTranslatingDOM = false
 
 const translateText = (value: string) => {
+  const trimmed = value.trim()
+  if (DICTIONARY[trimmed]) {
+    return value.replace(trimmed, DICTIONARY[trimmed])
+  }
   let translated = value
   for (const phrase of SORTED_KEYS) {
     if (EXACT_MATCH_ONLY.has(phrase)) continue
@@ -1724,13 +1764,7 @@ const translateTextToVietnamese = (value: string) => {
   if (REVERSE_DICTIONARY[trimmed]) {
     return value.replace(trimmed, REVERSE_DICTIONARY[trimmed])
   }
-  let translated = value
-  for (const phrase of SORTED_REVERSE_KEYS) {
-    if (phrase.length > 2 && translated.includes(phrase)) {
-      translated = translated.split(phrase).join(REVERSE_DICTIONARY[phrase])
-    }
-  }
-  return translated
+  return value
 }
 
 const applyTextNodeTranslation = (node: Node, lang: Language) => {
