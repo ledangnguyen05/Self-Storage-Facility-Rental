@@ -81,13 +81,23 @@ if "!CHOICE!"=="5" goto STOP_SERVICE
 :BUILD_AND_RUN
 echo.
 echo [1/2] Dang dong goi Backend bang Maven Wrapper (bo qua test de build nhanh)...
-call .\mvnw.cmd clean package -DskipTests
+set "JAR_FILE=target\boxora-backend-0.0.1-SNAPSHOT.jar"
+set "JAR_BAK=target\boxora-backend-0.0.1-SNAPSHOT.jar.bak"
+if exist "!JAR_FILE!" copy /y "!JAR_FILE!" "!JAR_BAK!" >nul 2>&1
+call .\mvnw.cmd package -DskipTests
 if !errorlevel! neq 0 (
+    if exist "!JAR_BAK!" (
+        echo [WARNING] Build Maven gap loi tren mang hien tai, tu dong khoi phuc file JAR san co de chay ngay...
+        copy /y "!JAR_BAK!" "!JAR_FILE!" >nul 2>&1
+        goto RUN_JAR
+    )
     echo [ERROR] Build that bai! Vui long kiem tra log loi o tren.
     echo.
     pause
     exit /b !errorlevel!
 )
+if exist "!JAR_BAK!" del /f /q "!JAR_BAK!" >nul 2>&1
+powershell -NoProfile -Command "if (Test-Path 'target\boxora-backend-0.0.1-SNAPSHOT.jar') { (Get-Item 'target\boxora-backend-0.0.1-SNAPSHOT.jar').LastWriteTime = Get-Date }" >nul 2>&1
 echo [OK] Build thanh cong file JAR!
 goto RUN_JAR
 
@@ -107,13 +117,20 @@ if defined FOUND_JDK (
     if exist "!FOUND_JDK!\bin\java.exe" set "JAVA_EXE=!FOUND_JDK!\bin\java.exe"
 )
 
-echo [RUNNING] "!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar !JAR_FILE!
+:: Vo hieu hoa QuickEdit Mode tren cua so Console de tranh bi dung hinh khi vo tinh click chuot
+powershell -NoProfile -Command "$sig = '[DllImport(\"kernel32.dll\")] public static extern IntPtr GetStdHandle(int h); [DllImport(\"kernel32.dll\")] public static extern bool GetConsoleMode(IntPtr h, out uint m); [DllImport(\"kernel32.dll\")] public static extern bool SetConsoleMode(IntPtr h, uint m);'; $k = Add-Type -MemberDefinition $sig -Name 'Win32Console' -Namespace 'Boxora' -PassThru -ErrorAction SilentlyContinue; if ($k) { $h = $k::GetStdHandle(-10); $m = 0; if ($k::GetConsoleMode($h, [ref]$m)) { [void]$k::SetConsoleMode($h, ($m -band (-bnot 0x0040)) -bor 0x0080) } }" >nul 2>&1
+
+:RESTART_JAR_LOOP
+echo [RUNNING] "!JAVA_EXE!" -Djava.net.preferIPv4Stack=true -Dserver.address=0.0.0.0 -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar !JAR_FILE!
 echo ------------------------------------------------------------------------------
 echo Nhan Ctrl + C de dung ung dung.
 echo ------------------------------------------------------------------------------
-"!JAVA_EXE!" -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar "!JAR_FILE!"
-if !errorlevel! neq 0 (
-    echo [INFO] Ung dung da dung lai voi ma loi: !errorlevel!
+"!JAVA_EXE!" -Djava.net.preferIPv4Stack=true -Dserver.address=0.0.0.0 -Dfile.encoding=UTF-8 -Xms512m -Xmx1536m -jar "!JAR_FILE!"
+set "EXIT_CODE=!errorlevel!"
+if !EXIT_CODE! neq 0 (
+    echo [WARNING] Backend da dung voi ma !EXIT_CODE!. Dang tu dong khoi dong lai sau 3 giay...
+    timeout /t 3 /nobreak >nul
+    goto RESTART_JAR_LOOP
 )
 pause
 exit /b 0

@@ -76,12 +76,20 @@ public class SecurityConfig {
             "/api/v1/chatbot/**",
             "/api/v1/pricing/**",
             "/api/v1/geocoding/**",
-            "/api/v1/cancellation-policy/**"
+            "/api/v1/cancellation-policy/**",
+            "/api/v1/shared-state",
+            "/api/v1/shared-state/**"
     };
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+                .addFilterBefore((request, response, chain) -> {
+                    if (response instanceof jakarta.servlet.http.HttpServletResponse httpRes) {
+                        httpRes.setHeader("Access-Control-Allow-Private-Network", "true");
+                    }
+                    chain.doFilter(request, response);
+                }, org.springframework.web.filter.CorsFilter.class)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 // Disable CSRF — not needed for stateless JWT APIs
                 .csrf(AbstractHttpConfigurer::disable)
@@ -138,8 +146,19 @@ public class SecurityConfig {
     }
 
     @Bean
+    @org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
     public org.springframework.web.filter.CorsFilter corsFilter() {
-        return new org.springframework.web.filter.CorsFilter(corsConfigurationSource());
+        return new org.springframework.web.filter.CorsFilter(corsConfigurationSource()) {
+            @Override
+            protected void doFilterInternal(
+                    jakarta.servlet.http.HttpServletRequest request,
+                    jakarta.servlet.http.HttpServletResponse response,
+                    jakarta.servlet.FilterChain filterChain
+            ) throws jakarta.servlet.ServletException, java.io.IOException {
+                response.setHeader("Access-Control-Allow-Private-Network", "true");
+                super.doFilterInternal(request, response, filterChain);
+            }
+        };
     }
 
     @Bean
