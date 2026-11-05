@@ -355,7 +355,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
     try {
       await overdueService.sendReminder(contractId, {
         channel: 'MULTI',
-        templateType: autoClassifiedTemplate.key,
+        templateType: autoClassifiedTemplate.key as any,
         notes: remindNotes
       })
       toast.success(`Đã phát thông báo nhắc cước thành công theo mẫu [${autoClassifiedTemplate.label}] qua Web & Email!`)

@@ -53,7 +53,7 @@ export const OverdueManagementPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(0)
   const pageSize = 8
 
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStage, setFilterStage] = useState<'ALL' | 'GRACE_PERIOD' | 'WARNING' | 'PIN_REVOCATION' | 'SEALING_ELIGIBLE' | 'SETTLED' | 'POLICY_UNCONFIGURED'>('ALL')
   const [pinStatusFilter, setPinStatusFilter] = useState<string>('ALL')

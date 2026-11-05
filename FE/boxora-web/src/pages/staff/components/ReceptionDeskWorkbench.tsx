@@ -88,7 +88,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
   onRefresh,
   onMetricsChange,
 }) => {
-  const { user } = useAuth()
+  const { user, role } = useAuth()
   const resolvedRole = (userRole || role || user?.roleName || user?.role?.name || (typeof user?.role === 'string' ? user?.role : 'STAFF')).toUpperCase()
   const isManagementRole = resolvedRole === 'ADMIN' || resolvedRole === 'BUSINESS_MANAGER'
 

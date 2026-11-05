@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, useSearchParams, useLocation, useNavigate, Link } from 'react-router-dom'
@@ -44,6 +45,7 @@ export const AdminDashboard: React.FC = () => {
       : (isDashboardTab(requestedTab) ? requestedTab : 'users'))
   )
   const setActiveTab = (tab: AdminDashboardTab) => {
+    triggerTabDataLoading(340)
     setActiveTabState(tab)
     setSearchParams(current => {
       const next = new URLSearchParams(current)
@@ -78,7 +80,7 @@ export const AdminDashboard: React.FC = () => {
 
   // User state
   const [users, setUsers] = useState<User[]>([])
-  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(false)
+  const [isLoadingUsers, setIsLoadingUsers] = useState<boolean>(true)
   const [isSampleUserData, setIsSampleUserData] = useState(false)
   const [isSampleRoleData, setIsSampleRoleData] = useState(false)
   const [permSearch, setPermSearch] = useState('')
@@ -142,7 +144,7 @@ export const AdminDashboard: React.FC = () => {
 
   const [logs, setLogs] = useState<ActivityLog[]>([])
   const [logsError, setLogsError] = useState(false)
-  const [isLoadingLogs, setIsLoadingLogs] = useState(false)
+  const [isLoadingLogs, setIsLoadingLogs] = useState(true)
   const [logTypeFilter, setLogTypeFilter] = useState<string>('ALL')
   const [logSearch, setLogSearch] = useState('')
   const [isLoginHistoryMode, setIsLoginHistoryMode] = useState(false)

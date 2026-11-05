@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { AttendanceReportTab } from '../../manager/components/AttendanceReportTab'
@@ -153,7 +154,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   const initialTab = searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE' ? 'ATTENDANCE' : 'ROSTER'
 
   // Sub-tabs
-  const [activeSubTab, setActiveSubTab] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>(initialTab)
+  const [activeSubTab, setActiveSubTabState] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>(initialTab); const setActiveSubTab = (t: 'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE') => { triggerTabDataLoading(320); setActiveSubTabState(t); }
 
   useEffect(() => {
     if (searchParams.get('tab')?.toUpperCase() === 'ATTENDANCE') {
@@ -166,7 +167,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   const [swapRequests, setSwapRequests] = useState<ShiftSwapRequest[]>([])
   const [handovers, setHandovers] = useState<ShiftHandover[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Filters & Search for Roster Table
   const [searchTerm, setSearchTerm] = useState('')

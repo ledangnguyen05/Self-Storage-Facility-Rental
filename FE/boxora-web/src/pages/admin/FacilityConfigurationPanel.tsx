@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -122,6 +123,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   }, [subtabParam])
 
   const handleTabChange = (newTab: 'branches' | 'policies' | 'pricing') => {
+    triggerTabDataLoading(340)
     setConfigTab(newTab)
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev)

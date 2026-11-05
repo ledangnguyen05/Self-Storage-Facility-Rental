@@ -1,8 +1,10 @@
-import React from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import React, { useEffect, useRef } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { DashboardLayout } from './components/layout/DashboardLayout'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
+import { triggerTabDataLoading, useTabDataLoading } from './utils/tabLoadingTracker'
+import { BoxoraMinimalLoader } from './components/common/TabDataLoadingGate'
 
 // Public Pages (Authentication & Landing)
 import { LoginPage } from './pages/public/LoginPage'
@@ -48,9 +50,8 @@ function RootRedirect() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-3 text-slate-900">
-        <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-        <span className="text-xs text-slate-500 font-medium">Đang kết nối hệ thống Boxora...</span>
+      <div className="min-h-screen bg-white dark:bg-slate-950 flex items-center justify-center">
+        <BoxoraMinimalLoader />
       </div>
     )
   }
@@ -78,8 +79,30 @@ function RootRedirect() {
 }
 
 function MainContent() {
+  const location = useLocation()
+  const { isTabLoading } = useTabDataLoading()
+  const prevPathRef = useRef<string>(`${location.pathname}${location.search}`)
+  const isPortalRoute = location.pathname.startsWith('/portal')
+
+  useEffect(() => {
+    triggerTabDataLoading(420)
+  }, [])
+
+  useEffect(() => {
+    const key = `${location.pathname}${location.search}`
+    if (prevPathRef.current !== key) {
+      prevPathRef.current = key
+      triggerTabDataLoading(360)
+    }
+  }, [location.pathname, location.search])
+
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)] font-sans antialiased text-[var(--on-surface)]">
+      {!isPortalRoute && isTabLoading && (
+        <div className="fixed inset-0 z-[100] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xs flex items-center justify-center">
+          <BoxoraMinimalLoader />
+        </div>
+      )}
       <main className="flex-1">
         <Routes>
           {/* Public Landing Page & Authentication */}

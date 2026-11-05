@@ -179,7 +179,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                 {t('Chỉnh sửa Loại Kho')}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Mã định danh: <span className="font-mono font-medium text-cyan-600">{unitType.id}</span>
+                Mã định danh: <span className="font-mono font-medium text-cyan-600">{unitType?.id}</span>
               </p>
             </div>
           </div>

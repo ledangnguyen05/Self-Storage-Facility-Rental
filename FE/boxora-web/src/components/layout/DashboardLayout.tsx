@@ -12,6 +12,8 @@ import { QuickThemeLanguageToggle } from '../common/QuickThemeLanguageToggle'
 import { FacilityScopingModal } from '../modals/FacilityScopingModal'
 import NotificationCenter from './NotificationCenter'
 import { useLanguage } from '../../context/LanguageContext'
+import { TabDataLoadingGate } from '../common/TabDataLoadingGate'
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 
 export const DashboardLayout: React.FC = () => {
   const { user, role, logout, isAuthenticated, hasPermission } = useAuth()
@@ -109,6 +111,7 @@ export const DashboardLayout: React.FC = () => {
   }, [isFacilityScopedRole, assignedFacilityId, selectedFacility])
 
   const handleSetSelectedFacility = (facId: string) => {
+    triggerTabDataLoading(360)
     if (isFacilityScopedRole && assignedFacilityId) {
       setSelectedFacility(assignedFacilityId)
       return
@@ -259,7 +262,14 @@ export const DashboardLayout: React.FC = () => {
       )}
 
       {/* Sidebar (Responsive drawer on mobile, fixed column on lg) */}
-      <aside className={`fixed left-0 top-20 bottom-0 w-64 bg-white dark:bg-slate-900 z-40 border-r border-slate-200 dark:border-slate-800 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
+      <aside
+        onClick={(e) => {
+          const anchor = (e.target as HTMLElement)?.closest('a')
+          if (anchor) {
+            triggerTabDataLoading(360)
+          }
+        }}
+        className={`fixed left-0 top-20 bottom-0 w-64 bg-white dark:bg-slate-900 z-40 border-r border-slate-200 dark:border-slate-800 flex flex-col py-4 shadow-[0_1px_8px_rgba(0,0,0,0.02)] transition-transform duration-200 ease-in-out ${
         isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       }`}>
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-3 pb-4">
@@ -757,12 +767,14 @@ export const DashboardLayout: React.FC = () => {
       <div className="lg:pl-64 pt-20 flex-1 min-w-0">
         <main className="min-h-[calc(100vh-5rem)] w-full bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 lg:p-8">
           <div className="dashboard-typography mx-auto w-full max-w-[1600px]">
-            <Outlet context={{
-              selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,
-              setSelectedFacility: handleSetSelectedFacility,
-              facilities,
-              openProfile: () => setIsProfileModalOpen(true)
-            }} />
+            <TabDataLoadingGate>
+              <Outlet context={{
+                selectedFacility: isFacilityScopedRole && assignedFacilityId ? assignedFacilityId : selectedFacility,
+                setSelectedFacility: handleSetSelectedFacility,
+                facilities,
+                openProfile: () => setIsProfileModalOpen(true)
+              }} />
+            </TabDataLoadingGate>
           </div>
         </main>
       </div>

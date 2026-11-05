@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
@@ -112,7 +113,7 @@ export const StaffMyShiftsPage: React.FC = () => {
   const [dateError, setDateError] = useState<string | null>(null)
 
   // View state
-  const [mainTab, setMainTab] = useState<'ROSTER' | 'SWAPS' | 'ATTENDANCE'>('ROSTER')
+  const [mainTab, setMainTabState] = useState<'ROSTER' | 'SWAPS' | 'ATTENDANCE'>('ROSTER'); const setMainTab = (t: 'ROSTER' | 'SWAPS' | 'ATTENDANCE') => { triggerTabDataLoading(320); setMainTabState(t); }
   const [rosterView, setRosterView] = useState<'LIST' | 'WEEK' | 'MONTH'>('LIST')
   const [weekRefDate, setWeekRefDate] = useState<Date>(new Date())
   const [monthRefDate, setMonthRefDate] = useState<Date>(new Date())
@@ -121,7 +122,7 @@ export const StaffMyShiftsPage: React.FC = () => {
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
   const [mySwaps, setMySwaps] = useState<ShiftSwapRequest[]>([])
   const [handovers, setHandovers] = useState<ShiftHandover[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
   const [toastMsg, setToastMsg] = useState<string | null>(null)

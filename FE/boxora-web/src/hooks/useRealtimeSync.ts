@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { markSilentSyncWindow } from '../utils/tabLoadingTracker'
 
 const SYNC_CHANNEL_NAME = 'boxora_realtime_sync_channel'
 const SYNC_STORAGE_KEY = 'boxora_last_sync_event'
@@ -124,6 +125,7 @@ export function useRealtimeSync(
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       isRunningRef.current = true
       lastRunAtRef.current = Date.now()
+      markSilentSyncWindow(400)
       try {
         await onSyncRef.current()
       } catch {

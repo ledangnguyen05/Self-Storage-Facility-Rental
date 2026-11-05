@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { userService } from '../../services/userService'
@@ -173,14 +174,14 @@ export const ShiftRosterPage: React.FC = () => {
   const [dateShortcut, setDateShortcut] = useState<'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH' | 'CUSTOM'>('THIS_WEEK')
   const [dateRangeError, setDateRangeError] = useState<string | null>(null)
 
-  const [activeTab, setActiveTab] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>('ROSTER')
+  const [activeTab, setActiveTabState] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>('ROSTER'); const setActiveTab = (t: 'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE') => { triggerTabDataLoading(320); setActiveTabState(t); }
 
   // Real Data States
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
   const [swapRequests, setSwapRequests] = useState<ShiftSwapRequest[]>([])
   const [handovers, setHandovers] = useState<ShiftHandover[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Filters & Search for Roster Table
   const [searchTerm, setSearchTerm] = useState('')

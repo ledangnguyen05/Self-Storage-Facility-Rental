@@ -956,7 +956,7 @@ export const BookingPage: React.FC = () => {
           dimensions: dims,
           areaM2: area,
           fitsDetailed: [
-            name,
+            name || '',
             `Diện tích sàn: ${area} m² · Thể tích: ${vol} m³`,
             `Kích thước: ${dims}`,
             `Sức chứa: ~${cap} quy chuẩn`,

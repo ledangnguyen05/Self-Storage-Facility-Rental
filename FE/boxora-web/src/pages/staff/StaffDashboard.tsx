@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
@@ -475,7 +476,7 @@ export const StaffDashboard: React.FC = () => {
     const handleSelectPending = (e: Event) => {
       const customEvent = e as CustomEvent<{ bookingCode?: string }>
       const code = customEvent.detail?.bookingCode
-      setStaffActiveTab('pending_orders')
+      triggerTabDataLoading(340); setStaffActiveTab('pending_orders')
       if (code) {
         setHighlightedBookingCode(code)
         setPendingSearchTerm(code)
@@ -1680,7 +1681,7 @@ export const StaffDashboard: React.FC = () => {
           type="button"
           onClick={() => {
             setActiveBookingId('')
-            setStaffActiveTab('pending_orders')
+            triggerTabDataLoading(340); setStaffActiveTab('pending_orders')
             setSearchParams({ tab: 'pending_orders' })
           }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
@@ -1708,7 +1709,7 @@ export const StaffDashboard: React.FC = () => {
           type="button"
           onClick={() => {
             setActiveBookingId('')
-            setStaffActiveTab('reception')
+            triggerTabDataLoading(340); setStaffActiveTab('reception')
             setSearchParams({ tab: 'reception' })
           }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
@@ -1744,7 +1745,7 @@ export const StaffDashboard: React.FC = () => {
           type="button"
           onClick={() => {
             setActiveBookingId('')
-            setStaffActiveTab('returns')
+            triggerTabDataLoading(340); setStaffActiveTab('returns')
             setSearchParams({ tab: 'returns' })
             setTimeout(() => {
               const el = document.getElementById('pending-return-kpi-card') || document.getElementById('return-kpi-metrics-bar')
@@ -1778,7 +1779,7 @@ export const StaffDashboard: React.FC = () => {
           type="button"
           onClick={() => {
             setActiveBookingId('')
-            setStaffActiveTab('renewals')
+            triggerTabDataLoading(340); setStaffActiveTab('renewals')
             setSearchParams({ tab: 'renewals' })
           }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition cursor-pointer whitespace-nowrap ${
@@ -1806,7 +1807,7 @@ export const StaffDashboard: React.FC = () => {
           }}
           onProceedToReception={(bookingId) => {
             setActiveBookingId(bookingId)
-            setStaffActiveTab('reception')
+            triggerTabDataLoading(340); setStaffActiveTab('reception')
             setSearchParams({ tab: 'reception' })
             setTimeout(() => {
               document.getElementById('handover-workbench')?.scrollIntoView({ behavior: 'smooth' })
@@ -2766,7 +2767,7 @@ export const StaffDashboard: React.FC = () => {
                         const target = reviewDetailBooking
                         const proceed = () => {
                           setReviewDetailBooking(null)
-                          setStaffActiveTab('reception')
+                          triggerTabDataLoading(340); setStaffActiveTab('reception')
                           setSearchParams({ tab: 'reception' })
                           setActiveBookingId(target.id)
                           setTimeout(() => {

@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { broadcastDataSync } from '../hooks/useRealtimeSync'
+import { incrementForegroundRequest, decrementForegroundRequest } from '../utils/tabLoadingTracker'
 
 export const getApiBaseUrl = (): string => {
   const envUrl = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '')
@@ -59,6 +60,10 @@ api.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    const method = (config.method || 'get').toLowerCase()
+    if (method === 'get') {
+      ;(config as any)._trackedForegroundLoad = incrementForegroundRequest()
+    }
     return config
   },
   (error) => Promise.reject(error)
@@ -84,6 +89,10 @@ const processQueue = (error: any, token: string | null = null) => {
 
 api.interceptors.response.use(
   (response) => {
+    if ((response.config as any)?._trackedForegroundLoad) {
+      ;(response.config as any)._trackedForegroundLoad = false
+      decrementForegroundRequest(true)
+    }
     const method = (response.config?.method || '').toLowerCase()
     const url = response.config?.url || ''
     const isAuthOnly = url.includes('/api/v1/auth/refresh-token') || url.includes('/api/v1/auth/login') || url.includes('/api/v1/auth/captcha')
@@ -95,6 +104,10 @@ api.interceptors.response.use(
   },
   async (error) => {
     const originalRequest = error.config
+    if (originalRequest?._trackedForegroundLoad) {
+      originalRequest._trackedForegroundLoad = false
+      decrementForegroundRequest(true)
+    }
 
     // CRITICAL: NEVER treat 403 Forbidden as an auth/session expiration!
     // 403 means user is authenticated but not authorized for this specific operation.

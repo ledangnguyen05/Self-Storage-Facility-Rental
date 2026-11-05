@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo } from 'react'
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
@@ -153,6 +154,7 @@ export const ManagerDashboard: React.FC = () => {
   )
 
   const setActiveTab = (tab: ManagerDashboardTab) => {
+    triggerTabDataLoading(340)
     setActiveTabState(tab)
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)

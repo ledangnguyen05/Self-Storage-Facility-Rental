@@ -478,7 +478,6 @@ export interface CancellationPolicyDetail {
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
   cancellationAfter48hRefundPercent?: number
-  cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number
   holdGraceHours?: number
@@ -695,7 +694,6 @@ export interface FacilityPolicy {
   cancellationFullRefundHours?: number
   cancellationPartialRefundHours?: number
   cancellationPartialRefundPercent?: number
-  cancellationAfter48hRefundPercent?: number
   cancellationAfter48hRefundPercent?: number
   returnNoticeDays?: number
   depositRefundSlaDays?: number

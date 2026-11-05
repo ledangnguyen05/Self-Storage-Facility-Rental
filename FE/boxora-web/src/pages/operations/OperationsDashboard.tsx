@@ -150,7 +150,7 @@ export const OperationsDashboard: React.FC = () => {
 
   // Financial Transactions Table State
   const [payments, setPayments] = useState<PaymentItem[]>([])
-  const [isPaymentsLoading, setIsPaymentsLoading] = useState(false)
+  const [isPaymentsLoading, setIsPaymentsLoading] = useState(true)
   const [paymentsPage, setPaymentsPage] = useState(0)
   const [paymentsPageSize, setPaymentsPageSize] = useState(10)
   const [paymentsTotalElements, setPaymentsTotalElements] = useState(0)
@@ -675,7 +675,7 @@ export const OperationsDashboard: React.FC = () => {
       }
       const withBom = '\uFEFF' + finalCsv
       const utf8Blob = new Blob([withBom], { type: 'text/csv;charset=utf-8;' })
-      downloadFile(utf8Blob, `boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`)
+      const url = window.URL.createObjectURL(utf8Blob); const a = document.createElement("a"); a.href = url; a.download = `boxora-bao-cao-doanh-thu-${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url)
       showToast(tr('Đã tải xuống file CSV báo cáo tài chính Boxora (UTF-8 BOM).', 'Boxora financial report CSV downloaded.'))
     } catch (err) {
       console.warn('Server CSV export failed, falling back to local dataset export:', err)

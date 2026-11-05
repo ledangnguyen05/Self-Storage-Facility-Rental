@@ -1,3 +1,4 @@
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
@@ -1302,6 +1303,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [tabParam, loadingContracts, effectiveActiveContracts.length])
 
   const handleTabChange = (tab: CustomerPortalTab) => {
+    triggerTabDataLoading(340)
     setActiveTab(tab)
     setSearchParams({ tab })
   }
