@@ -108,11 +108,12 @@ export function useRealtimeSync(
   onSync: () => void | Promise<unknown>,
   options: UseRealtimeSyncOptions = {}
 ) {
-  const { intervalMs = 5000, enabled = true, debounceMs = 250 } = options
+  const { intervalMs = 3000, enabled = true, debounceMs = 80 } = options
   const onSyncRef = useRef(onSync)
   onSyncRef.current = onSync
 
   const isRunningRef = useRef(false)
+  const pendingRerunRef = useRef(false)
   const debounceTimerRef = useRef<number | null>(null)
   const lastRunAtRef = useRef<number>(0)
 
@@ -120,9 +121,14 @@ export function useRealtimeSync(
     if (typeof window === 'undefined' || !enabled) return
     initCrossTabListeners()
 
-    const executeSync = async () => {
-      if (isRunningRef.current) return
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    const executeSync = async (isPeriodicTick = false) => {
+      if (isPeriodicTick && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+      if (isRunningRef.current) {
+        pendingRerunRef.current = true
+        return
+      }
       isRunningRef.current = true
       lastRunAtRef.current = Date.now()
       markSilentSyncWindow(400)
@@ -132,41 +138,46 @@ export function useRealtimeSync(
         // Silent background sync error handling
       } finally {
         isRunningRef.current = false
+        if (pendingRerunRef.current) {
+          pendingRerunRef.current = false
+          scheduleSync()
+        }
       }
     }
 
-    const scheduleSync = () => {
+    function scheduleSync() {
       if (debounceTimerRef.current !== null) {
         window.clearTimeout(debounceTimerRef.current)
       }
       debounceTimerRef.current = window.setTimeout(() => {
         debounceTimerRef.current = null
-        void executeSync()
+        void executeSync(false)
       }, debounceMs)
     }
 
     const handleVisibilityOrFocus = () => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        // Avoid redundant refetch if one just ran < 1s ago
-        if (Date.now() - lastRunAtRef.current > 1000) {
+        if (Date.now() - lastRunAtRef.current > 300) {
           scheduleSync()
         }
       }
     }
 
     window.addEventListener(DATA_SYNC_EVENT, scheduleSync)
+    window.addEventListener('storage', scheduleSync)
+    window.addEventListener('boxora:storage-units-refresh', scheduleSync)
+    window.addEventListener('boxora:notifications-refresh', scheduleSync)
     window.addEventListener('boxora_reservation_updated', scheduleSync)
     window.addEventListener('boxora_reservation_status_changed', scheduleSync)
     window.addEventListener('boxora_rental_updated', scheduleSync)
     window.addEventListener('focus', handleVisibilityOrFocus)
     document.addEventListener('visibilitychange', handleVisibilityOrFocus)
 
-    const intervalId = intervalMs > 0
+    const effectiveInterval = Math.min(intervalMs, 4000)
+    const intervalId = effectiveInterval > 0
       ? window.setInterval(() => {
-          if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-            void executeSync()
-          }
-        }, intervalMs)
+          void executeSync(true)
+        }, effectiveInterval)
       : null
 
     return () => {
@@ -177,6 +188,9 @@ export function useRealtimeSync(
         window.clearInterval(intervalId)
       }
       window.removeEventListener(DATA_SYNC_EVENT, scheduleSync)
+      window.removeEventListener('storage', scheduleSync)
+      window.removeEventListener('boxora:storage-units-refresh', scheduleSync)
+      window.removeEventListener('boxora:notifications-refresh', scheduleSync)
       window.removeEventListener('boxora_reservation_updated', scheduleSync)
       window.removeEventListener('boxora_reservation_status_changed', scheduleSync)
       window.removeEventListener('boxora_rental_updated', scheduleSync)
