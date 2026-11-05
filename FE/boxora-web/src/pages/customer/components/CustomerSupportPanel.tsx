@@ -84,13 +84,13 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   }, [initialCategory])
 
   useEffect(() => {
-    if (initialContent !== undefined && initialContent !== '') {
+    if (initialContent !== undefined) {
       setTicketContent(initialContent)
     }
   }, [initialContent])
 
   useEffect(() => {
-    if (initialTitle !== undefined && initialTitle !== '') {
+    if (initialTitle !== undefined) {
       setTicketTitle(initialTitle)
     }
   }, [initialTitle])
@@ -920,7 +920,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       type="text"
                       value={ticketTitle}
                       onChange={(e) => setTicketTitle(e.target.value)}
-                      placeholder=""
+                      placeholder="Nhập tiêu đề tóm tắt (tùy chọn)..."
                       className="h-10 px-3 bg-white border border-slate-300 text-slate-900 text-xs rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>

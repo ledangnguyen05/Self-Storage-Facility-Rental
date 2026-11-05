@@ -4928,10 +4928,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               onClick={() => {
                                 setSelectedSupportUnit(c.unitCode)
                                 setSelectedSupportCategory('LOCK_ISSUE')
-                                setSelectedSupportTitle(`Báo sự cố kho #${c.unitCode}`)
-                                setSelectedSupportContent(`Tôi gặp sự cố tại kho #${c.unitCode} (${c.facilityName || ''}). Nhờ nhân viên hỗ trợ kiểm tra.`)
+                                setSelectedSupportTitle('')
+                                setSelectedSupportContent('')
                                 setTicketUnit(c.unitCode)
                                 setTicketType('lock')
+                                setTicketContent('')
                                 handleTabChange('support')
                               }}
                               className="px-3.5 h-10 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -4967,11 +4968,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               onClick={() => {
                                 setSelectedSupportUnit(c.unitCode)
                                 setSelectedSupportCategory('RETURN_REFUND')
-                                setSelectedSupportTitle(`Yêu cầu trả kho trước hạn & hoàn tiền #${c.unitCode}`)
-                                setSelectedSupportContent(`Tôi muốn yêu cầu trả kho #${c.unitCode} (${c.facilityName || ''}). Vui lòng hướng dẫn thủ tục kiểm tra kho và quyết toán hoàn cọc.`)
+                                setSelectedSupportTitle('')
+                                setSelectedSupportContent('')
                                 setTicketUnit(c.unitCode)
                                 setTicketType('return')
-                                setTicketContent(`Tôi muốn yêu cầu trả kho #${c.unitCode}. Vui lòng hướng dẫn thủ tục.`)
+                                setTicketContent('')
                                 handleTabChange('support')
                               }}
                               className="px-3.5 h-10 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
