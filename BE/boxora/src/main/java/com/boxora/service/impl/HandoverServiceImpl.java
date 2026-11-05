@@ -156,8 +156,8 @@ public class HandoverServiceImpl implements HandoverService {
                 contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
                 contractVerificationStatus = "VERIFIED";
             }
-            // TH2.5: Đã có bản scan hợp đồng giấy tại cơ sở
-            else if (isContractSignedOrActive && contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
+            // TH2.5: Đã có bản scan hợp đồng giấy tại cơ sở đã được nhân viên lưu vào hệ thống
+            else if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
                 contractSigned = true;
                 contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
                 contractVerificationStatus = "VERIFIED";
@@ -637,6 +637,18 @@ public class HandoverServiceImpl implements HandoverService {
         boolean contractSigned = false;
         if (contractOpt.isPresent()) {
             RentalContract contract = contractOpt.get();
+            // Tự động kích hoạt xác minh hợp đồng giấy tại quầy nếu nhân viên đã tải lên scan hợp đồng hợp lệ
+            if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
+                if (contract.getPaperVerifiedAt() == null || contract.getStatus() == RentalContractStatus.PENDING_VERIFICATION) {
+                    contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
+                    contract.setPaperVerifiedAt(LocalDateTime.now());
+                    contract.setPaperVerifiedBy(staff);
+                    if (contract.getSignedAt() == null) {
+                        contract.setSignedAt(LocalDateTime.now());
+                    }
+                    rentalContractRepository.save(contract);
+                }
+            }
             boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
             if (isContractSignedOrActive && (contract.getSignedAt() != null || contract.getPaperVerifiedAt() != null)) {
@@ -1952,10 +1964,10 @@ public class HandoverServiceImpl implements HandoverService {
             contract.setPaperContractUrl(cleanPaperUrl);
             if (!wasOnlineSigned) {
                 contract.setSigningMethod("PAPER");
-                contract.setStatus(RentalContractStatus.PENDING_VERIFICATION);
-                contract.setPaperVerifiedAt(null);
-                contract.setPaperVerifiedBy(null);
-                contract.setSignedAt(null);
+                contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
+                contract.setPaperVerifiedAt(LocalDateTime.now());
+                contract.setPaperVerifiedBy(staff);
+                contract.setSignedAt(LocalDateTime.now());
 
                 booking.setSigningMethod("IN_PERSON");
                 bookingRepository.save(booking);
@@ -2763,9 +2775,26 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         String disputeReason = null;
-        if ("DISPUTED".equalsIgnoreCase(approvalStatus)) {
-            if (inspectionRecord != null && inspectionRecord.getApprovalNotes() != null && !inspectionRecord.getApprovalNotes().isBlank()) {
-                disputeReason = inspectionRecord.getApprovalNotes();
+        if (inspectionRecord != null && inspectionRecord.getDisputeReason() != null && !inspectionRecord.getDisputeReason().isBlank()) {
+            disputeReason = inspectionRecord.getDisputeReason().trim();
+        } else if (latestRecord != null && latestRecord.getDisputeReason() != null && !latestRecord.getDisputeReason().isBlank()) {
+            disputeReason = latestRecord.getDisputeReason().trim();
+        } else {
+            for (HandoverRecord r : records) {
+                if (r.getDisputeReason() != null && !r.getDisputeReason().isBlank()) {
+                    disputeReason = r.getDisputeReason().trim();
+                    break;
+                }
+            }
+        }
+
+        if (disputeReason == null || disputeReason.isBlank()) {
+            if (inspectionRecord != null && inspectionRecord.getApprovalNotes() != null && !inspectionRecord.getApprovalNotes().isBlank()
+                    && ("DISPUTED".equalsIgnoreCase(approvalStatus) || "DISPUTED".equalsIgnoreCase(inspectionRecord.getCustomerDecision()))) {
+                disputeReason = inspectionRecord.getApprovalNotes().trim();
+            } else if (inspectionRecord != null && inspectionRecord.getNotes() != null && inspectionRecord.getNotes().contains("[KHÁCH HÀNG KHIẾU NẠI]")) {
+                int idx = inspectionRecord.getNotes().indexOf("[KHÁCH HÀNG KHIẾU NẠI]");
+                disputeReason = inspectionRecord.getNotes().substring(idx + "[KHÁCH HÀNG KHIẾU NẠI]".length()).trim();
             } else if (inspectionRecord != null && inspectionRecord.getNotes() != null && inspectionRecord.getNotes().contains("[KHIẾU NẠI]")) {
                 int idx = inspectionRecord.getNotes().indexOf("[KHIẾU NẠI]");
                 disputeReason = inspectionRecord.getNotes().substring(idx + "[KHIẾU NẠI]".length()).trim();
@@ -2775,7 +2804,7 @@ public class HandoverServiceImpl implements HandoverService {
         String caseStatus = "RETURN_REQUESTED";
         if (booking.getStatus() == BookingStatus.COMPLETED && (inspectionRecord == null || !"PENDING".equalsIgnoreCase(inspectionRecord.getRefundStatus()))) {
             caseStatus = "COMPLETED";
-        } else if ("DISPUTED".equalsIgnoreCase(approvalStatus)) {
+        } else if ("DISPUTED".equalsIgnoreCase(approvalStatus) || (inspectionRecord != null && "DISPUTED".equalsIgnoreCase(inspectionRecord.getCustomerDecision()))) {
             caseStatus = "DISPUTED";
         } else if ("COMPLETED".equalsIgnoreCase(refStatus) || "REFUNDED".equalsIgnoreCase(refStatus)) {
             caseStatus = "REFUNDED";
@@ -3584,6 +3613,9 @@ public class HandoverServiceImpl implements HandoverService {
 
         record.setApprovalStatus("DISPUTED");
         record.setApprovalNotes(disputeReason);
+        record.setDisputeReason(disputeReason);
+        record.setCustomerDecision("DISPUTED");
+        record.setCustomerDecisionAt(LocalDateTime.now());
         record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHIẾU NẠI] " + disputeReason);
         record = handoverRecordRepository.save(record);
 

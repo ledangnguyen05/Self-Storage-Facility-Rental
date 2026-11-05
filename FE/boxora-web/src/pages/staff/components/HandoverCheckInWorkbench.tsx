@@ -281,6 +281,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const [isCreatingVNPayLink, setIsCreatingVNPayLink] = useState<boolean>(false)
   const paymentProofInputRef = useRef<HTMLInputElement | null>(null)
   const paperContractScanInputRef = useRef<HTMLInputElement | null>(null)
+  const initializedBookingTabsRef = useRef<Set<string>>(new Set())
 
   // Step 3: Evidence/Document Image Lightbox Modal State
   const [previewImageModal, setPreviewImageModal] = useState<{
@@ -645,22 +646,25 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       updates.paymentProofName = effectivePaymentProofName
     }
 
-    // Tự động mở tab tương ứng với tiến trình thực tế từ CSDL nếu chưa có chỉ định tab từ người dùng
-    const currentTab = sessions[selectedBookingId]?.activeStepTab
-    if (!currentTab || currentTab === 'verify') {
-      const dbIdDone = Boolean(isPersistedIdVerified || currentSession.identityVerified)
-      const dbUnitDone = Boolean(persistedUnitCode || currentSession.assignedUnitCode)
-      const dbContractAndPaymentDone = Boolean(
-        (isContractMet || effectivePaperContractUrl) &&
-        ((isDepositMet && isRentMet) || effectivePaymentProofUrl)
-      )
+    // Tự động mở tab tương ứng với tiến trình thực tế từ CSDL chỉ 1 lần đầu khi nạp đơn (không ghi đè khi nhân viên chủ động chuyển tab)
+    if (!initializedBookingTabsRef.current.has(selectedBookingId)) {
+      initializedBookingTabsRef.current.add(selectedBookingId)
+      const currentTab = sessions[selectedBookingId]?.activeStepTab
+      if (!currentTab || currentTab === 'verify') {
+        const dbIdDone = Boolean(isPersistedIdVerified || currentSession.identityVerified)
+        const dbUnitDone = Boolean(persistedUnitCode || currentSession.assignedUnitCode)
+        const dbContractAndPaymentDone = Boolean(
+          (isContractMet || effectivePaperContractUrl) &&
+          ((isDepositMet && isRentMet) || effectivePaymentProofUrl)
+        )
 
-      if (dbIdDone && dbUnitDone && dbContractAndPaymentDone) {
-        updates.activeStepTab = 'pin'
-      } else if (dbIdDone && dbUnitDone) {
-        updates.activeStepTab = 'contract_payment'
-      } else if (dbIdDone) {
-        updates.activeStepTab = 'assign'
+        if (dbIdDone && dbUnitDone && dbContractAndPaymentDone) {
+          updates.activeStepTab = 'pin'
+        } else if (dbIdDone && dbUnitDone) {
+          updates.activeStepTab = 'contract_payment'
+        } else if (dbIdDone) {
+          updates.activeStepTab = 'assign'
+        }
       }
     }
 
@@ -1037,6 +1041,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           paperOriginalLocation: 'Tủ lưu trữ hồ sơ cơ sở Boxora',
           notes: 'Khách hàng ký hợp đồng trực tiếp tại quầy và nhân viên đã lưu bản scan.'
         })
+
+        // Tự động kích hoạt xác minh hợp đồng giấy tại quầy
+        try {
+          await handoverService.verifyPaperContract(selectedBookingId, 'Đã đối chiếu chữ ký và xác nhận hợp đồng giấy tại quầy')
+        } catch (verifyErr) {
+          console.warn('Paper contract verify auto-trigger info:', verifyErr)
+        }
 
         await fetchPrerequisitesForBooking(selectedBookingId)
         setDispatchFeedback({ text: `✓ Đã lưu bản scan hợp đồng giấy ${file.name} thành công!` })
@@ -2808,14 +2819,34 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           )}
 
           <div className="pt-2 flex items-center justify-between flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => handleSelectTab('contract_payment')}
-              className="py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <ArrowLeft size={15} />
-              <span>{isHandedOver ? 'Xem lại Bước 3 (Hợp đồng & Thanh toán)' : 'Quay lại Bước 3'}</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleSelectTab('verify')}
+                className="py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                title="Quay lại Bước 1: Xác thực khách hàng"
+              >
+                <ArrowLeft size={13} />
+                <span>Bước 1: Xác thực</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectTab('assign')}
+                className="py-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                title="Quay lại Bước 2: Gán kho vật lý"
+              >
+                <ArrowLeft size={13} />
+                <span>Bước 2: Gán kho</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectTab('contract_payment')}
+                className="py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowLeft size={15} />
+                <span>{isHandedOver ? 'Xem lại Bước 3 (HĐ & Thanh toán)' : 'Quay lại Bước 3'}</span>
+              </button>
+            </div>
 
             {isHandedOver && (
               <button

@@ -246,6 +246,11 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
 
     return scopedArrivals
       .filter((b) => {
+        // 0. Hide currently active booking if it is being processed on the workbench
+        if (activeBookingId && (b.id === activeBookingId || b.bookingCode === activeBookingId)) {
+          return false
+        }
+
         const isHanded = isHandedOverBooking(b)
         const isPending = isPendingCheckInBooking(b)
 
@@ -313,7 +318,7 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
         const timeA = new Date((a as any).createdAt || a.expectedCheckInAt || a.startDate || 0).getTime()
         return timeB - timeA
       })
-  }, [scopedArrivals, receptionStatusFilter, searchQuery, selectedFloor, selectedShiftFilter, unitMapById, unitMapByCodeAndFacility])
+  }, [scopedArrivals, receptionStatusFilter, searchQuery, selectedFloor, selectedShiftFilter, unitMapById, unitMapByCodeAndFacility, activeBookingId])
 
   // Workbench arrivals (supports active check-in or viewing finished handovers)
   const workbenchArrivals = useMemo(() => {

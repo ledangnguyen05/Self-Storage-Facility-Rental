@@ -480,7 +480,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvalNotes: item.approvalNotes,
           completedAt: item.completedAt,
           historyNotes: item.historyNotes || [],
-          isDisputed: item.approvalStatus === 'DISPUTED' || item.status === 'DISPUTED',
+          isDisputed: item.approvalStatus === 'DISPUTED' || item.status === 'DISPUTED' || item.customerDecision === 'DISPUTED',
           disputeReason: item.disputeReason || item.approvalNotes || '',
 
           doorPassed: item.doorPassed ?? true,
@@ -517,7 +517,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           settlementConfirmedAt: item.settlementConfirmedAt,
           customerDecision: item.customerDecision,
           customerDecisionAt: item.customerDecisionAt,
-          disputeEvidenceUrls: item.disputeEvidenceUrls || [],
+          disputeEvidenceUrls: Array.isArray(item.disputeEvidenceUrls)
+            ? item.disputeEvidenceUrls
+            : (typeof item.disputeEvidenceUrls === 'string'
+              ? (item.disputeEvidenceUrls as string).split(/[;,]/).map((s: string) => s.trim()).filter(Boolean)
+              : []),
           disputeResolvedByName: item.disputeResolvedByName,
           disputeResolvedAt: item.disputeResolvedAt,
           disputeResolutionNote: item.disputeResolutionNote,
