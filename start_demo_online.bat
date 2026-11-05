@@ -121,11 +121,27 @@ REM ============================================================================
 echo.
 echo [3/5] Dang mo Cloudflare Quick Tunnel cho Backend (Port 8080)...
 
+set "CLOUDFLARED_EXE="
 where cloudflared >nul 2>&1
-if not errorlevel 1 goto :CLOUDFLARED_OK
+if not errorlevel 1 set "CLOUDFLARED_EXE=cloudflared"
+if defined CLOUDFLARED_EXE goto :CLOUDFLARED_OK
 
-echo [LOI] Khong tim thay 'cloudflared' tren may!
-echo Hay cai dat bang lenh: winget install Cloudflare.cloudflared
+if exist "%LOCALAPPDATA%\cloudflared\cloudflared.exe" set "CLOUDFLARED_EXE=%LOCALAPPDATA%\cloudflared\cloudflared.exe"
+if defined CLOUDFLARED_EXE goto :CLOUDFLARED_OK
+
+if exist "C:\Program Files (x86)\cloudflared\cloudflared.exe" set "CLOUDFLARED_EXE=C:\Program Files (x86)\cloudflared\cloudflared.exe"
+if defined CLOUDFLARED_EXE goto :CLOUDFLARED_OK
+
+if exist "C:\Program Files\cloudflared\cloudflared.exe" set "CLOUDFLARED_EXE=C:\Program Files\cloudflared\cloudflared.exe"
+if defined CLOUDFLARED_EXE goto :CLOUDFLARED_OK
+
+echo   - Chua co 'cloudflared' tren may, dang tu dong tai cloudflared.exe...
+if not exist "%LOCALAPPDATA%\cloudflared" mkdir "%LOCALAPPDATA%\cloudflared" >nul 2>&1
+curl.exe -L -s -o "%LOCALAPPDATA%\cloudflared\cloudflared.exe" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+if exist "%LOCALAPPDATA%\cloudflared\cloudflared.exe" set "CLOUDFLARED_EXE=%LOCALAPPDATA%\cloudflared\cloudflared.exe"
+if defined CLOUDFLARED_EXE goto :CLOUDFLARED_OK
+
+echo [LOI] Khong the tai 'cloudflared.exe'! Vui long kiem tra ket noi mang.
 pause
 exit /b 1
 
@@ -134,7 +150,7 @@ set "TUNNEL_LOG=%TEMP%\boxora_cloudflared.log"
 taskkill /f /im cloudflared.exe >nul 2>&1
 if exist "%TUNNEL_LOG%" del /f /q "%TUNNEL_LOG%" >nul 2>&1
 
-start "BOXORA - CLOUDFLARE TUNNEL" /min cmd /c "cloudflared tunnel --url http://localhost:8080 --logfile "%TUNNEL_LOG%" --no-autoupdate"
+start "BOXORA - CLOUDFLARE TUNNEL" /min "!CLOUDFLARED_EXE!" tunnel --url http://localhost:8080 --logfile "%TUNNEL_LOG%" --no-autoupdate
 
 echo   - Dang lay URL HTTPS tu Cloudflare Tunnel...
 set "TUNNEL_URL="
@@ -142,7 +158,7 @@ set /a TUNNEL_WAIT=0
 
 :WAIT_TUNNEL_LOOP
 timeout /t 2 /nobreak >nul
-for /f "delims=" %%U in ('powershell -NoProfile -Command "if (Test-Path '%TUNNEL_LOG%') { $c = Get-Content '%TUNNEL_LOG%' -Raw -ErrorAction SilentlyContinue; if ($c -match 'https://[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com') { $matches[0] } }"') do (
+for /f "delims=" %%U in ('powershell -NoProfile -Command "if (Test-Path '%TUNNEL_LOG%') { $c = Get-Content '%TUNNEL_LOG%' -Raw -ErrorAction SilentlyContinue; if ($c -match 'https://[a-zA-Z0-9\-]+\.trycloudflare\.com') { $matches[0] } }"') do (
     set "TUNNEL_URL=%%U"
 )
 if defined TUNNEL_URL goto :TUNNEL_FOUND
