@@ -145,6 +145,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const [draft, setDraft] = useState<FacilityDraft>(blankDraft)
   const [selectedFloorIndex, setSelectedFloorIndex] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
+  const [isUploadingFacilityImage, setIsUploadingFacilityImage] = useState(false)
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
@@ -514,6 +515,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
         email: draft.email.trim(),
         description: draft.description.trim(),
         status: draft.status,
+        imageUrl: draft.imageUrl?.trim() || undefined,
         latitude,
         longitude,
         layoutConfig: serializeFacilityFloorPlanConfig(draft.floorPlan),
@@ -847,6 +849,66 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           placeholder="Cơ sở gần trục giao thông chính, trạm sạc xe điện, tiếp nhận container 40ft..."
                           className={`${inputClassName} mt-1.5 resize-y`}
                         />
+                      </div>
+
+                      <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                          <div className="relative w-28 h-20 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-center shrink-0">
+                            {draft.imageUrl ? (
+                              <img
+                                src={draft.imageUrl}
+                                alt={draft.name || 'Ảnh chi nhánh'}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="material-symbols-outlined text-2xl text-slate-300">domain</span>
+                            )}
+                            {isUploadingFacilityImage && (
+                              <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center text-white text-[10px] font-bold">
+                                Đang tải...
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 space-y-1.5">
+                            <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                              {t('Ảnh đại diện chi nhánh (Cloudflare R2)', 'Facility Image (Cloudflare R2)')}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-2xs">
+                                <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                                <span>{draft.imageUrl ? t('Thay ảnh chi nhánh') : t('Tải ảnh lên R2')}</span>
+                                <input
+                                  type="file"
+                                  accept="image/png,image/jpeg,image/webp,image/jpg"
+                                  className="hidden"
+                                  disabled={isUploadingFacilityImage}
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0]
+                                    if (!file) return
+                                    setIsUploadingFacilityImage(true)
+                                    setFormError('')
+                                    try {
+                                      const res = await facilityService.uploadFacilityImage(file)
+                                      if (res?.fileUrl) {
+                                        setDraft((c) => ({ ...c, imageUrl: res.fileUrl }))
+                                      }
+                                    } catch (err) {
+                                      setFormError(getRequestError(err))
+                                    } finally {
+                                      setIsUploadingFacilityImage(false)
+                                      e.target.value = ''
+                                    }
+                                  }}
+                                />
+                              </label>
+                              {draft.imageUrl && (
+                                <span className="text-[10px] font-mono text-slate-500 truncate max-w-xs">
+                                  {draft.imageUrl}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>

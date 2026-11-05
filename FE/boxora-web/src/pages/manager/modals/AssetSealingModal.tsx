@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { sealingService } from '../../../services/sealingService'
+import { supportTicketService } from '../../../services/supportTicketService'
 import { userService } from '../../../services/userService'
 import { User } from '../../../types'
 
@@ -34,6 +35,8 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
   const [witnesses, setWitnesses] = useState<User[]>([])
   const [selectedWitnessId, setSelectedWitnessId] = useState<string>('')
   const [reason, setReason] = useState("Kho quá hạn theo chính sách cơ sở; đề nghị lập biên bản niêm phong.")
+  const [evidenceUrl, setEvidenceUrl] = useState('')
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
@@ -74,6 +77,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
         sealTagNumber: sealStickerCode.trim(),
         witnessId: selectedWitnessId || undefined,
         reason: reason,
+        evidenceUrls: evidenceUrl.trim() || undefined,
         notes: `Niêm phong kho #${unitCode} do quá hạn ${overdueDays} ngày. Tổng nợ ${totalDebt}.`
       })
 
@@ -214,6 +218,46 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
                   onChange={(e) => setReason(e.target.value)}
                   className="w-full px-2.5 py-1.5 bg-slate-50 rounded border border-slate-200 text-xs text-slate-800"
                 />
+              </div>
+              <div className="sm:col-span-2 pt-1">
+                <label className="text-[10px] text-slate-500 font-bold block mb-1">ẢNH HIỆN TRƯỜNG TEM NIÊM PHONG (CLOUDFLARE R2)</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-semibold cursor-pointer transition">
+                    <span className="material-symbols-outlined text-[15px]">add_a_photo</span>
+                    <span>{isUploadingEvidence ? 'Đang tải lên R2...' : (evidenceUrl ? 'Đổi ảnh niêm phong' : 'Tải ảnh niêm phong lên')}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isUploadingEvidence}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        setIsUploadingEvidence(true)
+                        setErrorMessage(null)
+                        try {
+                          const url = await supportTicketService.uploadAttachment(file)
+                          if (url) setEvidenceUrl(url)
+                        } catch (err: any) {
+                          setErrorMessage(err?.response?.data?.message || 'Không thể tải ảnh niêm phong lên R2')
+                        } finally {
+                          setIsUploadingEvidence(false)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                  </label>
+                  {evidenceUrl && (
+                    <a
+                      href={evidenceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-mono text-emerald-700 underline truncate max-w-xs"
+                    >
+                      ✓ Đã tải lên R2 ({evidenceUrl})
+                    </a>
+                  )}
+                </div>
               </div>
             </div>
           </div>

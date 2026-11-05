@@ -319,6 +319,6 @@ export const supportTicketService = {
 
   async uploadAttachment(file: File): Promise<string> {
     const result = await this.uploadEvidence(file)
-    return (result?.url || result || '') as string
+    return (result?.fileUrl || result?.url || (typeof result === 'string' ? result : '')) as string
   },
 }

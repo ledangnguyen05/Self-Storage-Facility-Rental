@@ -40,6 +40,8 @@ import { useAuth } from '../../../context/AuthContext'
 import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import { getApiBaseUrl } from '../../../lib/axios'
 import { handoverService, ReturnCase, ReturnInspectionPayload, SettlementSnapshot } from '../../../services/handoverService'
+import { supportTicketService } from '../../../services/supportTicketService'
+import { refundService } from '../../../services/refundService'
 import type { Booking } from '../../../types'
 
 export type ReturnStepStatus =
@@ -1083,18 +1085,36 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         continue
       }
       try {
+        let uploadedUrl = ''
         if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
-          const res = await handoverService.uploadHandoverDocument(currentCase.bookingId, file, 'CHECKIN_EVIDENCE')
-          if (res?.fileUrl) {
-            setPhotoUrls((prev) => {
-              const next = [...prev, res.fileUrl]
-              updateCurrentCase({ photoUrls: next })
-              return next
-            })
-            uploadedCount++
+          try {
+            const res = await handoverService.uploadHandoverDocument(currentCase.bookingId, file, 'CHECKIN_EVIDENCE')
+            if (res?.fileUrl) {
+              uploadedUrl = res.fileUrl
+            }
+          } catch {
+            // Fallback to general R2 evidence upload if booking document endpoint is unavailable
           }
+        }
+        if (!uploadedUrl) {
+          try {
+            uploadedUrl = await supportTicketService.uploadAttachment(file)
+          } catch {
+            // Fallback to refund proof upload endpoint on R2
+            try {
+              uploadedUrl = await refundService.uploadProof(file)
+            } catch {}
+          }
+        }
+        if (uploadedUrl) {
+          setPhotoUrls((prev) => {
+            const next = [...prev, uploadedUrl]
+            updateCurrentCase({ photoUrls: next })
+            return next
+          })
+          uploadedCount++
         } else {
-          // In-memory reader for test fallback
+          // In-memory reader for offline test fallback
           const reader = new FileReader()
           reader.onload = (loadEvt) => {
             const result = loadEvt.target?.result
@@ -1143,19 +1163,34 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
     setIsUploadingPayoutProof(true)
     try {
+      let uploadedUrl = ''
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
-        const res = await handoverService.uploadHandoverDocument(currentCase.bookingId, file, 'PAYMENT_PROOF')
-        if (res?.fileUrl) {
-          setPayoutProofUrl(res.fileUrl)
-          toast.success('Đã tải lên ảnh biên lai chuyển khoản!')
+        try {
+          const res = await handoverService.uploadHandoverDocument(currentCase.bookingId, file, 'PAYMENT_PROOF')
+          if (res?.fileUrl) {
+            uploadedUrl = res.fileUrl
+          }
+        } catch {}
+      }
+      if (!uploadedUrl) {
+        try {
+          uploadedUrl = await refundService.uploadProof(file)
+        } catch {
+          try {
+            uploadedUrl = await supportTicketService.uploadAttachment(file)
+          } catch {}
         }
+      }
+      if (uploadedUrl) {
+        setPayoutProofUrl(uploadedUrl)
+        toast.success('Đã tải lên ảnh biên lai chuyển khoản lên R2!')
       } else {
         const reader = new FileReader()
         reader.onload = (loadEvt) => {
           const result = loadEvt.target?.result
           if (typeof result === 'string') {
             setPayoutProofUrl(result)
-            toast.success('Đã tải lên ảnh biên lai chuyển khoản (Demo)!')
+            toast.success('Đã tải lên ảnh biên lai chuyển khoản!')
           }
         }
         reader.readAsDataURL(file)

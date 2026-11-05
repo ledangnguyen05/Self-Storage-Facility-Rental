@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { handoverService, ReturnSettlementDetail, SettlementSnapshot } from '../../services/handoverService'
 import { paymentService } from '../../services/paymentService'
+import { supportTicketService } from '../../services/supportTicketService'
 import { toast } from '../../utils/toast'
 import { getApiBaseUrl } from '../../lib/axios'
 
@@ -90,6 +91,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   // Dispute Form State
   const [disputeReason, setDisputeReason] = useState('')
   const [disputeEvidenceUrls, setDisputeEvidenceUrls] = useState('')
+  const [isUploadingDisputeEvidence, setIsUploadingDisputeEvidence] = useState(false)
 
   const fetchSettlement = async () => {
     if (!bookingId) return
@@ -1035,17 +1037,46 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   />
                 </div>
 
-                <div>
+                <div className="space-y-2">
                   <label className="block font-bold text-slate-700 mb-1">
-                    Đường dẫn ảnh / video minh chứng đính kèm (tùy chọn):
+                    Ảnh / Đường dẫn minh chứng đính kèm (tùy chọn):
                   </label>
-                  <input
-                    type="url"
-                    value={disputeEvidenceUrls}
-                    onChange={(e) => setDisputeEvidenceUrls(e.target.value)}
-                    placeholder="https://drive.google.com/... hoặc link ảnh bằng chứng"
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-rose-400"
-                  />
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <label className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs cursor-pointer transition shrink-0">
+                      <Camera size={14} />
+                      <span>{isUploadingDisputeEvidence ? 'Đang tải lên R2...' : 'Tải ảnh minh chứng lên'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={isUploadingDisputeEvidence}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setIsUploadingDisputeEvidence(true)
+                          try {
+                            const url = await supportTicketService.uploadAttachment(file)
+                            if (url) {
+                              setDisputeEvidenceUrls(url)
+                              toast.success('Đã tải ảnh minh chứng lên R2 thành công!')
+                            }
+                          } catch (err: any) {
+                            toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh minh chứng.')
+                          } finally {
+                            setIsUploadingDisputeEvidence(false)
+                            e.target.value = ''
+                          }
+                        }}
+                      />
+                    </label>
+                    <input
+                      type="url"
+                      value={disputeEvidenceUrls}
+                      onChange={(e) => setDisputeEvidenceUrls(e.target.value)}
+                      placeholder="Hoặc dán link ảnh bằng chứng (tự động điền sau khi tải ảnh)"
+                      className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-rose-400"
+                    />
+                  </div>
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-2">

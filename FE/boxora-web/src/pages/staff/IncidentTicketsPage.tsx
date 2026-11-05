@@ -85,6 +85,8 @@ export const IncidentTicketsPage: React.FC = () => {
   const [newPriority, setNewPriority] = useState('MEDIUM')
   const [newDescription, setNewDescription] = useState('')
   const [newFacilityId, setNewFacilityId] = useState<string>('')
+  const [newEvidenceFile, setNewEvidenceFile] = useState<File | null>(null)
+  const [newEvidencePreviewUrl, setNewEvidencePreviewUrl] = useState<string | null>(null)
   const [isSubmittingCreate, setIsSubmittingCreate] = useState(false)
 
   // Assign Modal (FM only)
@@ -569,17 +571,31 @@ export const IncidentTicketsPage: React.FC = () => {
     if (isReadOnly || !newTitle.trim()) return
     setIsSubmittingCreate(true)
     try {
+      let uploadedEvidenceUrl: string | undefined = undefined
+      if (newEvidenceFile) {
+        try {
+          uploadedEvidenceUrl = await supportTicketService.uploadAttachment(newEvidenceFile)
+        } catch (uploadErr) {
+          console.warn('Failed to upload incident evidence to R2:', uploadErr)
+        }
+      }
       await supportTicketService.createTicket({
         category: newCategory,
         title: newTitle.trim(),
         description: newDescription.trim() || 'Báo cáo sự cố tại hiện trường',
         priority: newPriority,
-        facilityId: newFacilityId || user?.facilityId || undefined
+        unitCode: newUnitCode.trim() || undefined,
+        facilityId: newFacilityId || user?.facilityId || undefined,
+        attachmentUrl: uploadedEvidenceUrl,
+        imageEvidence: uploadedEvidenceUrl,
+        evidenceUrls: uploadedEvidenceUrl ? [uploadedEvidenceUrl] : undefined
       })
       setIsCreateModalOpen(false)
       setNewTitle('')
       setNewUnitCode('')
       setNewDescription('')
+      setNewEvidenceFile(null)
+      setNewEvidencePreviewUrl(null)
       await fetchTicketsAndData()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
@@ -2084,6 +2100,46 @@ export const IncidentTicketsPage: React.FC = () => {
                   placeholder="Mô tả chi tiết nguyên nhân, hiện trạng hư hỏng hoặc yêu cầu phối hợp kỹ thuật..."
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none resize-none"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Ảnh chụp hiện trường (tải lên R2)</label>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer px-3.5 py-2 bg-slate-50 border border-dashed border-slate-300 hover:border-rose-500 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors">
+                    <span className="material-symbols-outlined text-[16px] text-rose-600">add_photo_alternate</span>
+                    <span>{newEvidenceFile ? 'Đổi ảnh khác' : 'Chọn ảnh hiện trường'}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        if (file) {
+                          setNewEvidenceFile(file)
+                          setNewEvidencePreviewUrl(URL.createObjectURL(file))
+                        }
+                      }}
+                    />
+                  </label>
+                  {newEvidenceFile && (
+                    <div className="flex items-center gap-2 p-1.5 bg-slate-50 border border-slate-200 rounded-lg">
+                      {newEvidencePreviewUrl && (
+                        <img src={newEvidencePreviewUrl} alt="Preview" className="w-8 h-8 object-cover rounded" />
+                      )}
+                      <span className="text-xs text-slate-600 truncate max-w-[160px]">{newEvidenceFile.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewEvidenceFile(null)
+                          setNewEvidencePreviewUrl(null)
+                        }}
+                        className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
