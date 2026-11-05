@@ -41,18 +41,66 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
     private String localUploadDir;
 
     private static final long MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
+    private static final Set<String> ALLOWED_STRICT_IMAGE_EXTENSIONS = Set.of(
+            "jpg", "jpeg", "png", "webp", "gif"
+    );
     private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of(
-            "jpg", "jpeg", "png", "webp", "gif", "svg", "pdf"
+            "jpg", "jpeg", "png", "webp", "gif", "pdf"
+    );
+    private static final Set<String> ALLOWED_STRICT_IMAGE_MIME_TYPES = Set.of(
+            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "application/octet-stream"
+    );
+    private static final Set<String> ALLOWED_UPLOAD_MIME_TYPES = Set.of(
+            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "application/pdf", "application/octet-stream"
     );
 
     @Override
     public FileUploadResponse uploadUnitImage(MultipartFile file) {
+        validateStrictImageFile(file);
         return uploadFile(file, "units");
     }
 
     @Override
     public FileUploadResponse uploadFacilityImage(MultipartFile file) {
+        validateStrictImageFile(file);
         return uploadFile(file, "facilities");
+    }
+
+    private void validateStrictImageFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Tệp ảnh tải lên không được để trống");
+        }
+        if (file.getSize() > MAX_FILE_SIZE) {
+            throw new AppException(ErrorCode.TICKET_IMAGE_SIZE_EXCEEDED, "Kích thước ảnh vượt quá giới hạn 15MB");
+        }
+        String originalFilename = StringUtils.cleanPath(Objects.requireNonNullElse(file.getOriginalFilename(), ""));
+        if (originalFilename.isBlank() || originalFilename.contains("..") || !originalFilename.contains(".")) {
+            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Tên tệp ảnh không hợp lệ");
+        }
+        String extension = getFileExtension(originalFilename).toLowerCase(Locale.ROOT);
+        if (!ALLOWED_STRICT_IMAGE_EXTENSIONS.contains(extension)) {
+            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                    "Định dạng ảnh không hợp lệ. Chỉ chấp nhận JPG, JPEG, PNG, WEBP, GIF");
+        }
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            String normalizedMime = contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+            if (!ALLOWED_STRICT_IMAGE_MIME_TYPES.contains(normalizedMime)) {
+                throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                        "Loại nội dung tệp (MIME type) không hợp lệ. Chỉ chấp nhận ảnh JPG, PNG, WEBP, GIF");
+            }
+        }
+        try (var is = file.getInputStream()) {
+            byte[] headerBytes = is.readNBytes(12);
+            if (!isValidMagicBytes(extension, headerBytes)) {
+                throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                        "Nội dung tệp ảnh không hợp lệ hoặc bị đổi phần mở rộng giả mạo");
+            }
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Không thể đọc dữ liệu tệp ảnh tải lên");
+        }
     }
 
     @Override
@@ -67,11 +115,35 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
         }
 
         String originalFilename = StringUtils.cleanPath(Objects.requireNonNullElse(file.getOriginalFilename(), "image.jpg"));
-        String extension = getFileExtension(originalFilename).toLowerCase();
+        if (originalFilename.contains("..")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Tên tệp tải lên không hợp lệ");
+        }
+        String extension = getFileExtension(originalFilename).toLowerCase(Locale.ROOT);
 
         if (!ALLOWED_IMAGE_EXTENSIONS.contains(extension)) {
-            log.warn("Invalid file extension: {}. Only image formats allowed.", extension);
-            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, PNG, WEBP, GIF, SVG, PDF");
+            log.warn("Invalid file extension: {}. Only image/PDF formats allowed.", extension);
+            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Định dạng tệp không hợp lệ. Chỉ chấp nhận JPG, PNG, WEBP, GIF, PDF");
+        }
+
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            String normalizedMime = contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+            if (!ALLOWED_UPLOAD_MIME_TYPES.contains(normalizedMime)) {
+                throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                        "Loại nội dung tệp (MIME type) không được phép tải lên");
+            }
+        }
+
+        try (var is = file.getInputStream()) {
+            byte[] headerBytes = is.readNBytes(12);
+            if (!isValidMagicBytes(extension, headerBytes)) {
+                throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                        "Nội dung tệp không hợp lệ hoặc không khớp định dạng " + extension.toUpperCase(Locale.ROOT));
+            }
+        } catch (AppException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT, "Không thể kiểm tra nội dung tệp tải lên");
         }
 
         String safeFolder = sanitizeFolder(folder, "units");
@@ -235,5 +307,49 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
             return "https://pub-e15c7d96a163417fa2a23d5b849ee035.r2.dev";
         }
         return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    private boolean isValidMagicBytes(String extension, byte[] header) {
+        if (header == null || header.length < 3) {
+            return false;
+        }
+        return switch (extension.toLowerCase(Locale.ROOT)) {
+            case "pdf" -> header.length >= 5
+                    && header[0] == 0x25 // '%'
+                    && header[1] == 0x50 // 'P'
+                    && header[2] == 0x44 // 'D'
+                    && header[3] == 0x46 // 'F'
+                    && header[4] == 0x2D; // '-'
+            case "jpg", "jpeg" -> header.length >= 3
+                    && (header[0] & 0xFF) == 0xFF
+                    && (header[1] & 0xFF) == 0xD8
+                    && (header[2] & 0xFF) == 0xFF;
+            case "png" -> header.length >= 8
+                    && (header[0] & 0xFF) == 0x89
+                    && header[1] == 0x50 // 'P'
+                    && header[2] == 0x4E // 'N'
+                    && header[3] == 0x47 // 'G'
+                    && header[4] == 0x0D
+                    && header[5] == 0x0A
+                    && header[6] == 0x1A
+                    && header[7] == 0x0A;
+            case "webp" -> header.length >= 12
+                    && header[0] == 'R'
+                    && header[1] == 'I'
+                    && header[2] == 'F'
+                    && header[3] == 'F'
+                    && header[8] == 'W'
+                    && header[9] == 'E'
+                    && header[10] == 'B'
+                    && header[11] == 'P';
+            case "gif" -> header.length >= 6
+                    && header[0] == 'G'
+                    && header[1] == 'I'
+                    && header[2] == 'F'
+                    && header[3] == '8'
+                    && (header[4] == '7' || header[4] == '9')
+                    && header[5] == 'a';
+            default -> false;
+        };
     }
 }

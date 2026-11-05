@@ -67,11 +67,35 @@ public class FileStorageServiceImpl implements FileStorageService {
         }
 
         String originalFilename = StringUtils.cleanPath(Objects.requireNonNullElse(file.getOriginalFilename(), "image.jpg"));
-        String extension = getFileExtension(originalFilename);
+        if (originalFilename.contains("..")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Tên tệp tải lên không hợp lệ");
+        }
+        String extension = getFileExtension(originalFilename).toLowerCase(Locale.ROOT);
 
-        if (!ALLOWED_IMAGE_EXTENSIONS.contains(extension.toLowerCase())) {
+        if (!ALLOWED_IMAGE_EXTENSIONS.contains(extension)) {
             log.warn("Invalid file extension: {}. Only image formats allowed.", extension);
             throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT);
+        }
+
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            String normalizedMime = contentType.split(";")[0].trim().toLowerCase(Locale.ROOT);
+            if (!normalizedMime.startsWith("image/") && !"application/octet-stream".equals(normalizedMime)) {
+                throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                        "Loại nội dung tệp (MIME type) không hợp lệ. Chỉ chấp nhận ảnh JPG, PNG, WEBP, GIF");
+            }
+        }
+
+        try (var is = file.getInputStream()) {
+            byte[] headerBytes = is.readNBytes(12);
+            if (!isValidMagicBytes(extension, headerBytes)) {
+                throw new AppException(ErrorCode.TICKET_INVALID_IMAGE_FORMAT,
+                        "Nội dung tệp ảnh không hợp lệ hoặc không khớp định dạng " + extension.toUpperCase(Locale.ROOT));
+            }
+        } catch (AppException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new AppException(ErrorCode.TICKET_IMAGE_UPLOAD_FAILED, "Không thể đọc nội dung tệp ảnh tải lên");
         }
 
         String safeSubDir = sanitizeSubDirectory(subDirectory, "general");
@@ -297,7 +321,7 @@ public class FileStorageServiceImpl implements FileStorageService {
     }
 
     private boolean isValidMagicBytes(String extension, byte[] header) {
-        if (header == null || header.length < 4) {
+        if (header == null || header.length < 3) {
             return false;
         }
         return switch (extension) {
@@ -329,6 +353,13 @@ public class FileStorageServiceImpl implements FileStorageService {
                     && header[9] == 'E'
                     && header[10] == 'B'
                     && header[11] == 'P';
+            case "gif" -> header.length >= 6
+                    && header[0] == 'G'
+                    && header[1] == 'I'
+                    && header[2] == 'F'
+                    && header[3] == '8'
+                    && (header[4] == '7' || header[4] == '9')
+                    && header[5] == 'a';
             default -> false;
         };
     }

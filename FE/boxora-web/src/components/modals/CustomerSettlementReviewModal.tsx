@@ -92,6 +92,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   const [disputeReason, setDisputeReason] = useState('')
   const [disputeEvidenceUrls, setDisputeEvidenceUrls] = useState('')
   const [isUploadingDisputeEvidence, setIsUploadingDisputeEvidence] = useState(false)
+  const [showCancelDisputeConfirmModal, setShowCancelDisputeConfirmModal] = useState(false)
 
   const fetchSettlement = async () => {
     if (!bookingId) return
@@ -330,17 +331,20 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     }
   }
 
-  // 5. Customer cancels dispute
-  const handleCancelDispute = async () => {
-    const isConfirmed = window.confirm(
-      'Bạn có chắc chắn muốn hủy yêu cầu khiếu nại này không?\n\nSau khi hủy, biên bản quyết toán sẽ trở về trạng thái chờ bạn phản hồi.'
-    )
-    if (!isConfirmed) return
+  // 5. Customer cancels dispute (opens confirmation modal first)
+  const handleCancelDispute = () => {
+    setShowCancelDisputeConfirmModal(true)
+  }
 
+  const handleConfirmCancelDispute = async () => {
+    if (submitting) return
     setSubmitting(true)
     try {
-      await handoverService.cancelDispute(bookingId)
-      toast.success('Đã hủy yêu cầu khiếu nại thành công!')
+      await handoverService.cancelDispute(bookingId, settlement?.settlementVersion)
+      toast.success(
+        'Đã hủy yêu cầu khiếu nại thành công! Biên bản quyết toán đã trở về trạng thái chờ bạn xem xét và xác nhận.'
+      )
+      setShowCancelDisputeConfirmModal(false)
       setViewStep('VIEW')
       await fetchSettlement()
       if (onUpdated) onUpdated()
@@ -825,7 +829,12 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                 )}
 
                 {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) - CHỈ HIỂN THỊ KHI KHÔNG PHẢI READ-ONLY VÀ ĐANG Ở BẢN MỚI NHẤT */}
-                {!readOnly && isViewingLatestVersion && (!settlement.customerDecision || settlement.customerDecision === 'PENDING') && (
+                {!readOnly &&
+                  isViewingLatestVersion &&
+                  (!settlement.customerDecision ||
+                    settlement.customerDecision === 'PENDING' ||
+                    settlement.customerDecision === 'NONE' ||
+                    settlement.customerDecision === 'AWAITING_CUSTOMER_CONFIRMATION') && (
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
                     {isDepositDeducted && (
                       <button
@@ -845,7 +854,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
                       >
                         <CheckCircle2 size={15} />
-                        <span>Đồng ý &amp; Nhập tài khoản nhận tiền hoàn</span>
+                        <span>Đồng ý với quyết toán của cơ sở &amp; Nhập TK hoàn tiền</span>
                       </button>
                     ) : isOverDeposit ? (
                       <button
@@ -864,7 +873,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
                       >
                         <CheckCircle2 size={15} />
-                        <span>{submitting ? 'Đang gửi...' : 'Đồng ý quyết toán hòa vốn'}</span>
+                        <span>{submitting ? 'Đang gửi...' : 'Đồng ý với quyết toán của cơ sở'}</span>
                       </button>
                     )}
                   </div>
@@ -1192,6 +1201,68 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
               >
                 <CheckCircle2 size={15} />
                 <span>{submitting ? 'Đang gửi...' : 'Xác Nhận & Gửi Cho Quản Lý Cơ Sở'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xác nhận hủy yêu cầu khiếu nại */}
+      {showCancelDisputeConfirmModal && settlement && (
+        <div className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Undo2 size={20} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-sm text-slate-900">
+                  Xác nhận hủy yêu cầu khiếu nại?
+                </h4>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Bạn có chắc muốn rút lại yêu cầu khiếu nại đối với phiên bản quyết toán hiện tại? Sau khi rút lại, bạn có thể xem lại quyết toán và lựa chọn đồng ý với quyết định của cơ sở.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Phiên bản quyết toán:</span>
+                <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                  V{settlement.settlementVersion || currentViewingVersion}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                <span className="text-slate-500">Mã đơn đặt kho:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  #{settlement.bookingCode || '...'} (Kho #{settlement.unitCode || '...'})
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-slate-500">Số tiền hoàn trả dự kiến:</span>
+                <span className="font-mono font-extrabold text-emerald-700 text-sm">
+                  {netRefund.toLocaleString('vi-VN')} ₫
+                </span>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowCancelDisputeConfirmModal(false)}
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs cursor-pointer transition disabled:opacity-50"
+              >
+                Tiếp tục khiếu nại
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelDispute}
+                disabled={submitting}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+              >
+                <Undo2 size={14} className={submitting ? 'animate-spin' : ''} />
+                <span>{submitting ? 'Đang hủy khiếu nại...' : 'Xác nhận hủy khiếu nại'}</span>
               </button>
             </div>
           </div>

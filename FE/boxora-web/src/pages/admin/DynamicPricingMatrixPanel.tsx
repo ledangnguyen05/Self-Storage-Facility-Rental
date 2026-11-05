@@ -761,6 +761,11 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                                 src={ut.imageUrl}
                                 alt={ut.typeName}
                                 className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  target.onerror = null
+                                  target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=200&q=80'
+                                }}
                               />
                             ) : (
                               <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">

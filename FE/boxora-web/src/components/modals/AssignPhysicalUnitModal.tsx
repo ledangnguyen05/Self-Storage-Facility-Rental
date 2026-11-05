@@ -147,25 +147,37 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
     storageUnitService
       .getUnits({
         facilityId: targetFacilityId,
-        status: 'AVAILABLE',
-        forAssignment: true,
       })
       .then((data) => {
-        const availableList = (data || []).filter(
-          (u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống'
-        )
+        const availableList = (data || []).filter((u) => {
+          const st = String(u.status || '').toUpperCase().trim()
+          return (
+            st === 'AVAILABLE' ||
+            st === 'RESERVED' ||
+            st === 'PENDING_HANDOVER' ||
+            (u.status as string) === 'Trống' ||
+            (u.status as string) === 'Chờ bàn giao'
+          )
+        })
         setAllUnits(availableList)
 
         const targetTypeId = booking.unitTypeId
         const targetName = bookedUnitTypeName.trim()
 
-        const matched = availableList.filter((u) => isUnitMatchingBookedSize(u, targetTypeId, targetName))
+        const assignableList = availableList.filter((u) => {
+          const isHeldByOther =
+            (String(u.status || '').toUpperCase() === 'RESERVED' || (u.status as string) === 'Chờ bàn giao') &&
+            u.bookingId &&
+            u.bookingId !== booking.id
+          return !isHeldByOther
+        })
+        const matched = assignableList.filter((u) => isUnitMatchingBookedSize(u, targetTypeId, targetName))
 
         if (matched.length > 0) {
           setSelectedUnitId(matched[0].id)
           setShowAllSizes(false)
-        } else if (availableList.length > 0) {
-          setSelectedUnitId(availableList[0].id)
+        } else if (assignableList.length > 0) {
+          setSelectedUnitId(assignableList[0].id)
           setShowAllSizes(true)
         } else {
           setSelectedUnitId('')
@@ -468,23 +480,63 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
                       {displayUnits.map((unit) => {
                         const isSelected = selectedUnitId === unit.id
                         const isMatchingType = isUnitMatchingBookedSize(unit, bookedUnitTypeId, bookedUnitTypeName)
+                        const isReserved =
+                          String(unit.status || '').toUpperCase() === 'RESERVED' ||
+                          String(unit.status || '').toUpperCase() === 'PENDING_HANDOVER' ||
+                          (unit.status as string) === 'Chờ bàn giao'
+                        const isAssignedToCurrent = Boolean(
+                          (booking.unitCode && booking.unitCode === unit.unitCode) ||
+                          (unit.bookingId && unit.bookingId === booking.id)
+                        )
+                        const isHeldByOther = Boolean(
+                          isReserved && !isAssignedToCurrent && unit.bookingId && unit.bookingId !== booking.id
+                        )
 
                         return (
                           <button
                             key={unit.id}
                             type="button"
-                            onClick={() => setSelectedUnitId(unit.id)}
-                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                              isSelected
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40'
-                                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                            disabled={isHeldByOther}
+                            onClick={() => {
+                              if (!isHeldByOther) setSelectedUnitId(unit.id)
+                            }}
+                            className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                              isHeldByOther
+                                ? 'bg-slate-50 border-slate-200 text-slate-400 opacity-70 cursor-not-allowed'
+                                : isSelected
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40 cursor-pointer'
+                                : isAssignedToCurrent
+                                ? 'bg-emerald-50 border-emerald-400 text-slate-800 cursor-pointer'
+                                : isReserved
+                                ? 'bg-amber-50/50 hover:bg-amber-50 border-amber-300 text-slate-800 cursor-pointer'
+                                : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 cursor-pointer'
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1">
                               <span className="font-mono font-bold text-sm tracking-wide">
                                 {unit.unitCode}
                               </span>
-                              {isMatchingType ? (
+                              {isAssignedToCurrent ? (
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                                    isSelected ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800'
+                                  }`}
+                                >
+                                  Đơn này
+                                </span>
+                              ) : isHeldByOther ? (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold shrink-0 bg-slate-200 text-slate-600">
+                                  Đơn khác
+                                </span>
+                              ) : isReserved ? (
+                                <span
+                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                                    isSelected ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-800'
+                                  }`}
+                                >
+                                  Chờ bàn giao
+                                </span>
+                              ) : isMatchingType ? (
                                 <span
                                   className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
                                     isSelected ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-800'
@@ -508,7 +560,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
                             <div className="text-[10px] mt-0.5 opacity-75">
                               {unit.floorLevel
                                 ? (unit.floorLevel.toLowerCase().startsWith('tầng') ? unit.floorLevel : `Tầng ${unit.floorLevel}`)
-                                : 'Tầng 1'} • Trống
+                                : 'Tầng 1'} • {isAssignedToCurrent ? 'Đã gán / Chờ bàn giao' : isHeldByOther ? 'Giữ cho đơn khác' : isReserved ? 'Chờ bàn giao' : 'Trống'}
                             </div>
                           </button>
                         )

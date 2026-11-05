@@ -403,13 +403,6 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         boolean isOriginalUnit = previousUnit != null && selectedUnit.getId().equals(previousUnit.getId());
-        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
-                || (isOriginalUnit && selectedUnit.getStatus() == UnitStatus.RESERVED);
-        if (!selectedUnitReady) {
-            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
-                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
-        }
-
         boolean hasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
                 selectedUnit.getId(),
                 List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
@@ -418,6 +411,12 @@ public class HandoverServiceImpl implements HandoverService {
         if (hasOtherReservation) {
             throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
                     "Vị trí kho khách hàng chọn đã được đặt bởi một đơn khác.");
+        }
+        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
+                || selectedUnit.getStatus() == UnitStatus.RESERVED;
+        if (!selectedUnitReady) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
         }
 
         if (!isOriginalUnit) {
@@ -588,14 +587,20 @@ public class HandoverServiceImpl implements HandoverService {
             }
         }
 
-        // Tự động xác thực các khoản thanh toán tại cơ sở đã đính kèm chứng từ hợp lệ
+        // Tự động xác thực các khoản thanh toán tại cơ sở đã đính kèm chứng từ / mã phiếu thu hợp lệ khi hoàn tất tiếp nhận Bước 4
         List<Payment> pendingProofPayments = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
-                .filter(p -> p.getStatus() == PaymentStatus.PENDING && p.getProofDocumentUrl() != null && !p.getProofDocumentUrl().isBlank())
+                .filter(p -> p.getStatus() == PaymentStatus.PENDING
+                        && ((p.getProofDocumentUrl() != null && !p.getProofDocumentUrl().isBlank())
+                            || (p.getReceiptVoucherCode() != null && !p.getReceiptVoucherCode().isBlank())
+                            || (p.getReferenceCode() != null && !p.getReferenceCode().isBlank())))
                 .toList();
         for (Payment p : pendingProofPayments) {
             p.setStatus(PaymentStatus.PAID);
             p.setConfirmedByStaff(staff);
             p.setConfirmedAt(LocalDateTime.now());
+            if (p.getPaymentTime() == null) {
+                p.setPaymentTime(LocalDateTime.now());
+            }
             paymentRepository.save(p);
         }
 
@@ -681,12 +686,6 @@ public class HandoverServiceImpl implements HandoverService {
                     "Vị trí khách hàng chọn không cùng loại kho với đơn đặt chỗ.");
         }
         boolean isOriginalUnit = selectedUnit.getId().equals(previousUnit.getId());
-        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
-                || (isOriginalUnit && selectedUnit.getStatus() == UnitStatus.RESERVED);
-        if (!selectedUnitReady) {
-            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
-                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
-        }
         boolean hasOtherReservation = bookingRepository.existsByStorageUnit_IdAndStatusInAndIdNot(
                 selectedUnit.getId(),
                 List.of(BookingStatus.ACTIVE, BookingStatus.CONFIRMED, BookingStatus.PENDING_PAYMENT,
@@ -695,6 +694,12 @@ public class HandoverServiceImpl implements HandoverService {
         if (hasOtherReservation) {
             throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
                     "Vị trí kho khách hàng chọn đã được đặt bởi một đơn khác.");
+        }
+        boolean selectedUnitReady = selectedUnit.getStatus() == UnitStatus.AVAILABLE
+                || selectedUnit.getStatus() == UnitStatus.RESERVED;
+        if (!selectedUnitReady) {
+            throw new AppException(ErrorCode.HANDOVER_UNIT_NOT_READY,
+                    "Vị trí kho khách hàng chọn hiện không còn trống. Vui lòng chọn vị trí khác.");
         }
         if (!isOriginalUnit) {
             booking.setStorageUnit(selectedUnit);
@@ -732,6 +737,9 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setHandoverTime(LocalDateTime.now());
         booking.setHandedOverByStaffId(staff.getId());
         booking.setPaymentStatus("PAID");
+        if (depositPaid.compareTo(BigDecimal.ZERO) > 0) {
+            booking.setDepositPaid(depositPaid);
+        }
         booking.setHoldExpiresAt(null);
         booking.setPaymentExpiresAt(null);
 
@@ -752,12 +760,23 @@ public class HandoverServiceImpl implements HandoverService {
         unit.setStatus(UnitStatus.OCCUPIED);
         storageUnitRepository.save(unit);
 
-        // Kích hoạt trạng thái hợp đồng thuê sang ACTIVE và đồng bộ ngày hiệu lực thực tế
+        // Kích hoạt trạng thái hợp đồng thuê sang ACTIVE và đồng bộ ngày hiệu lực thực tế, tiền cọc đang giữ & liên kết Payment
         contractOpt.ifPresent(contract -> {
             contract.setStartDate(checkInDate);
             contract.setEndDate(effectiveEndDate);
             contract.setStatus(RentalContractStatus.ACTIVE);
+            if (depositPaid.compareTo(BigDecimal.ZERO) > 0) {
+                contract.setDepositHeld(depositPaid);
+            }
             rentalContractRepository.save(contract);
+
+            List<Payment> bookingPaidPayments = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
+                    .filter(p -> p.getStatus() == PaymentStatus.PAID && p.getContract() == null)
+                    .toList();
+            for (Payment p : bookingPaidPayments) {
+                p.setContract(contract);
+                paymentRepository.save(p);
+            }
         });
 
         // Ghi biên bản bàn giao HandoverRecord
@@ -2097,6 +2116,7 @@ public class HandoverServiceImpl implements HandoverService {
                 payment = Payment.builder()
                         .transactionId(txnId)
                         .booking(booking)
+                        .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
                         .amount(request.getAmount())
                         .paymentType(request.getPaymentType())
                         .paymentMethod("CASH")
@@ -2135,6 +2155,7 @@ public class HandoverServiceImpl implements HandoverService {
                 payment = Payment.builder()
                         .transactionId(txnId)
                         .booking(booking)
+                        .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
                         .amount(request.getAmount())
                         .paymentType(request.getPaymentType())
                         .paymentMethod("BANK_TRANSFER")
@@ -4433,16 +4454,37 @@ public class HandoverServiceImpl implements HandoverService {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Khiếu nại này đã được Quản lý cơ sở phân xử giải quyết, không thể hủy.");
             }
 
-            record.setCustomerDecision(null);
+            String previousDecision = record.getCustomerDecision();
+            String previousDisputeReason = record.getDisputeReason();
+            Integer effectiveVersion = record.getSettlementVersion() != null ? record.getSettlementVersion() : 1;
+
+            // Khôi phục trạng thái chờ khách hàng phản hồi quyết toán (PENDING / PENDING_CUSTOMER_REVIEW)
+            record.setCustomerDecision("PENDING");
             record.setCustomerDecisionAt(null);
-            record.setApprovalStatus("NONE");
+            record.setApprovalStatus("PENDING_CUSTOMER_REVIEW");
             record.setDisputeReason(null);
             record.setDisputeEvidenceUrls(null);
 
-            String logMsg = String.format("[%s] KHÁCH HÀNG HỦY KHIẾU NẠI kết quả quyết toán (V%d).\n",
-                    LocalDateTime.now().format(CHECKIN_DT_FMT), record.getSettlementVersion() != null ? record.getSettlementVersion() : 1);
+            if (settlementSnapshotRepository != null && record.getId() != null) {
+                settlementSnapshotRepository.findByHandoverRecord_IdAndSettlementVersion(record.getId(), effectiveVersion)
+                        .ifPresent(s -> {
+                            s.setCustomerDecision("PENDING");
+                            s.setCustomerDecisionAt(null);
+                            settlementSnapshotRepository.save(s);
+                        });
+            }
+
+            String logMsg = String.format("[%s] KHÁCH HÀNG HỦY KHIẾU NẠI kết quả quyết toán (V%d)%s.\n",
+                    LocalDateTime.now().format(CHECKIN_DT_FMT),
+                    effectiveVersion,
+                    previousDisputeReason != null && !previousDisputeReason.isBlank()
+                            ? " — Lý do khiếu nại đã rút: " + previousDisputeReason
+                            : "");
             booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
-            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "") + "[KHÁCH HÀNG HỦY KHIẾU NẠI]");
+            record.setNotes((record.getNotes() != null ? record.getNotes() + "\n" : "")
+                    + String.format("[KHÁCH HÀNG HỦY KHIẾU NẠI V%d%s]",
+                            effectiveVersion,
+                            previousDisputeReason != null && !previousDisputeReason.isBlank() ? ": " + previousDisputeReason : ""));
             record = handoverRecordRepository.save(record);
             bookingRepository.save(booking);
 
@@ -4451,9 +4493,10 @@ public class HandoverServiceImpl implements HandoverService {
                     ActivityAction.CHECKOUT_INSPECTION_COMPLETE,
                     "HandoverRecord",
                     record.getId(),
-                    String.format("Khách hàng đã rút lại yêu cầu khiếu nại quyết toán đơn %s", booking.getBookingCode()),
-                    booking.getStatus(),
-                    booking.getStatus()
+                    String.format("Khách hàng đã rút lại yêu cầu khiếu nại quyết toán đơn %s (Phiên bản V%d)",
+                            booking.getBookingCode(), effectiveVersion),
+                    previousDecision,
+                    "PENDING_CUSTOMER_REVIEW"
             );
 
             // Notify Customer & Facility Manager about dispute cancellation

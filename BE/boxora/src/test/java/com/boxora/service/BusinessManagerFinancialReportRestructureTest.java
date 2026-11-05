@@ -690,6 +690,10 @@ class BusinessManagerFinancialReportRestructureTest {
 
         // Tiền cọc đang giữ CHỈ tính 2 đơn online: 4.500.000 + 1.250.000 = 5.750.000 (KHÔNG tính 1.250.000 của đơn quầy)
         assertThat(report.getSystemSummary().getDepositsHeld()).isEqualByComparingTo("5750000");
+        // Phần phí thuê trong BOOKING_PAYMENT (22.051.250 - 5.750.000 = 16.301.250) phải được ghi nhận vào Doanh thu cho thuê và Doanh thu thuần
+        assertThat(report.getSystemSummary().getRentalRevenue()).isEqualByComparingTo("16301250");
+        assertThat(report.getSystemSummary().getNetRevenue()).isEqualByComparingTo("16301250");
+        assertThat(report.getSystemSummary().getTotalCashIn()).isEqualByComparingTo("22051250");
 
         // Sau khi hoàn tất 4 bước check-in và kích hoạt bàn giao, hợp đồng quầy trở thành ACTIVE
         counterContract.setStatus(RentalContractStatus.ACTIVE);

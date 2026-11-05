@@ -289,8 +289,20 @@ public class ReportServiceImpl implements ReportService {
             } else {
                 // For pending/unactivated contracts (e.g. PENDING_SIGNATURE, PENDING_ACTIVATION, PENDING_VERIFICATION, DRAFT):
                 // Tiền cọc chỉ được tính khi khách thực sự đã thanh toán cọc thành công (VD: thanh toán cọc trực tuyến).
-                // Với đơn ký và thanh toán tại quầy chưa tiếp nhận, tiền cọc chưa thu nên không tính vào tiền cọc đang giữ.
-                if (c.getBooking() != null && c.getBooking().getDepositPaid() != null && c.getBooking().getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                // Với đơn ký và thanh toán tại quầy (IN_PERSON / PAPER) chưa hoàn tất tiếp nhận Bước 4, tiền cọc không tính vào tiền cọc đang giữ.
+                boolean isUnactivatedCounterBooking = "PAPER".equalsIgnoreCase(c.getSigningMethod())
+                        || "IN_PERSON".equalsIgnoreCase(c.getSigningMethod())
+                        || (c.getBooking() != null
+                            && "IN_PERSON".equalsIgnoreCase(c.getBooking().getSigningMethod())
+                            && c.getBooking().getStatus() != BookingStatus.ACTIVE
+                            && c.getBooking().getStatus() != BookingStatus.COMPLETED
+                            && c.getBooking().getStatus() != BookingStatus.OVERDUE
+                            && c.getBooking().getStatus() != BookingStatus.CHECKOUT_REQUESTED
+                            && c.getBooking().getStatus() != BookingStatus.INSPECTED);
+                if (!isUnactivatedCounterBooking
+                        && c.getBooking() != null
+                        && c.getBooking().getDepositPaid() != null
+                        && c.getBooking().getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
                     initDeposit = c.getBooking().getDepositPaid();
                 } else {
                     initDeposit = BigDecimal.ZERO;
@@ -359,6 +371,14 @@ public class ReportServiceImpl implements ReportService {
         for (Booking b : allBookings) {
             if (b == null || contractedBookingIds.contains(b.getId())) continue;
             if (b.getDepositPaid() == null || b.getDepositPaid().compareTo(BigDecimal.ZERO) <= 0) continue;
+            if ("IN_PERSON".equalsIgnoreCase(b.getSigningMethod())
+                    && b.getStatus() != BookingStatus.ACTIVE
+                    && b.getStatus() != BookingStatus.COMPLETED
+                    && b.getStatus() != BookingStatus.OVERDUE
+                    && b.getStatus() != BookingStatus.CHECKOUT_REQUESTED
+                    && b.getStatus() != BookingStatus.INSPECTED) {
+                continue;
+            }
 
             UUID facId = extractFacilityId(b);
             if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
@@ -389,14 +409,21 @@ public class ReportServiceImpl implements ReportService {
         }
 
         // 5. Enrich systemSummary with pure accounting indicators
-        BigDecimal rentalRev = safe(systemSummary.getRentalFeeRevenue()).add(safe(systemSummary.getRenewalFeeRevenue()));
+        BigDecimal sysBookingRentalPortion = resolveBookingPaymentRentalPortion(
+                systemSummary.getRentalFeeRevenue(),
+                systemSummary.getBookingPaymentRevenue(),
+                systemSummary.getDepositRevenue(),
+                systemDepositsHeld);
+        BigDecimal rentalRev = safe(systemSummary.getRentalFeeRevenue())
+                .add(sysBookingRentalPortion)
+                .add(safe(systemSummary.getRenewalFeeRevenue()));
         BigDecimal grossRev = rentalRev.add(safe(systemSummary.getExtraChargeRevenue())).add(safe(systemSummary.getReturnCompensationRevenue()));
         BigDecimal netRev = grossRev.subtract(completedRentalRefundAmount).max(BigDecimal.ZERO);
+        BigDecimal remainingBookingPaymentRev = safe(systemSummary.getBookingPaymentRevenue()).subtract(sysBookingRentalPortion).max(BigDecimal.ZERO);
         BigDecimal cashIn = systemSummary.getTotalCashIn() != null && systemSummary.getTotalCashIn().compareTo(BigDecimal.ZERO) > 0
                 ? systemSummary.getTotalCashIn()
                 : grossRev.add(safe(systemSummary.getDepositRevenue()))
-                          .add(safe(systemSummary.getBookingPaymentRevenue()))
-                          .add(safe(systemSummary.getReturnCompensationRevenue()));
+                          .add(remainingBookingPaymentRev);
 
         systemSummary.setNetRevenue(netRev);
         systemSummary.setTotalCashIn(cashIn);
@@ -443,10 +470,7 @@ public class ReportServiceImpl implements ReportService {
         List<FacilityRevenueResponse> enrichedByFacility = new ArrayList<>();
         for (FacilityRevenueResponse row : facilityMap.values()) {
             UUID fId = row.getFacilityId();
-            BigDecimal fRental = safe(row.getRentalFeeRevenue()).add(safe(row.getRenewalFeeRevenue()));
-            BigDecimal fGross = fRental.add(safe(row.getExtraChargeRevenue())).add(safe(row.getReturnCompensationRevenue()));
             BigDecimal fRentalRefund = facilityCompletedRentalRefunds.getOrDefault(fId, BigDecimal.ZERO);
-            BigDecimal fNet = fGross.subtract(fRentalRefund).max(BigDecimal.ZERO);
             BigDecimal fRefunded = facilityCompletedRefunds.getOrDefault(fId, BigDecimal.ZERO);
             BigDecimal fPendingRefund = facilityPendingRefunds.getOrDefault(fId, BigDecimal.ZERO);
             BigDecimal fDeposits = facilityDepositsHeld.getOrDefault(fId, BigDecimal.ZERO);
@@ -454,13 +478,23 @@ public class ReportServiceImpl implements ReportService {
                 BigDecimal fDepRefund = fRefunded.subtract(fRentalRefund).max(BigDecimal.ZERO);
                 fDeposits = safe(row.getDepositRevenue()).subtract(fDepRefund).max(BigDecimal.ZERO);
             }
+            BigDecimal fBookingRentalPortion = resolveBookingPaymentRentalPortion(
+                    row.getRentalFeeRevenue(),
+                    row.getBookingPaymentRevenue(),
+                    row.getDepositRevenue(),
+                    fDeposits);
+            BigDecimal fRental = safe(row.getRentalFeeRevenue())
+                    .add(fBookingRentalPortion)
+                    .add(safe(row.getRenewalFeeRevenue()));
+            BigDecimal fGross = fRental.add(safe(row.getExtraChargeRevenue())).add(safe(row.getReturnCompensationRevenue()));
+            BigDecimal fNet = fGross.subtract(fRentalRefund).max(BigDecimal.ZERO);
             BigDecimal fOverdue = facilityOverdueMap.getOrDefault(fId, BigDecimal.ZERO).add(facilityUnpaidSettlements.getOrDefault(fId, BigDecimal.ZERO));
 
+            BigDecimal fRemainingBookingPaymentRev = safe(row.getBookingPaymentRevenue()).subtract(fBookingRentalPortion).max(BigDecimal.ZERO);
             BigDecimal fCashIn = row.getTotalCashIn() != null && row.getTotalCashIn().compareTo(BigDecimal.ZERO) > 0
                     ? row.getTotalCashIn()
                     : fGross.add(safe(row.getDepositRevenue()))
-                            .add(safe(row.getBookingPaymentRevenue()))
-                            .add(safe(row.getReturnCompensationRevenue()));
+                            .add(fRemainingBookingPaymentRev);
 
             row.setNetRevenue(fNet);
             row.setTotalCashIn(fCashIn);
@@ -480,7 +514,15 @@ public class ReportServiceImpl implements ReportService {
                 BigDecimal rentalRefAmt = monthlyCompletedRentalRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
                 m.setRefundAmount(refAmt);
                 m.setRentalRefundAmount(rentalRefAmt);
-                BigDecimal mGrossRev = safe(m.getRentalFeeRevenue()).add(safe(m.getRenewalFeeRevenue())).add(safe(m.getExtraChargeRevenue()));
+                BigDecimal mBookingRentalPortion = resolveBookingPaymentRentalPortion(
+                        m.getRentalFeeRevenue(),
+                        m.getBookingPaymentRevenue(),
+                        m.getDepositRevenue(),
+                        safe(m.getDepositRevenue()));
+                BigDecimal mGrossRev = safe(m.getRentalFeeRevenue())
+                        .add(mBookingRentalPortion)
+                        .add(safe(m.getRenewalFeeRevenue()))
+                        .add(safe(m.getExtraChargeRevenue()));
                 m.setNetRevenue(mGrossRev.subtract(rentalRefAmt).max(BigDecimal.ZERO));
                 m.setNetCashFlow(safe(m.getTotalRevenue()).subtract(refAmt));
             }
@@ -1058,6 +1100,23 @@ public class ReportServiceImpl implements ReportService {
         }
         // Partial payments, pending refunds, and unknown legacy statuses need ledger reconciliation.
         return null;
+    }
+
+    private BigDecimal resolveBookingPaymentRentalPortion(
+            BigDecimal rentalFeeRev,
+            BigDecimal bookingPaymentRev,
+            BigDecimal depositRev,
+            BigDecimal heldDeposits) {
+        if (safe(rentalFeeRev).compareTo(BigDecimal.ZERO) > 0 || safe(bookingPaymentRev).compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        // If depositRevenue was already split out from bookingPaymentRevenue (e.g. depositRev > 0),
+        // then bookingPaymentRev is already the pure rental portion of BOOKING_PAYMENT.
+        if (safe(depositRev).compareTo(BigDecimal.ZERO) > 0) {
+            return safe(bookingPaymentRev);
+        }
+        // Otherwise (if bookingPaymentRev includes deposit), subtract heldDeposits.
+        return safe(bookingPaymentRev).subtract(safe(bookingPaymentRev).min(safe(heldDeposits))).max(BigDecimal.ZERO);
     }
 
     private BigDecimal sumIfKnown(List<BigDecimal> amounts) {

@@ -85,7 +85,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
                 .basePricePerMonth(request.getBasePricePerMonth())
                 .acPricePerMonth(request.getAcPricePerMonth())
                 .depositAmount(request.getDepositAmount())
-                .imageUrl(request.getImageUrl() != null && !request.getImageUrl().isBlank() ? request.getImageUrl().trim() : null)
+                .imageUrl(sanitizeAndValidateImageUrl(request.getImageUrl()))
                 .build();
 
         UnitType saved = unitTypeRepository.save(unitType);
@@ -178,7 +178,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
         }
 
         if (request.getImageUrl() != null) {
-            unitType.setImageUrl(request.getImageUrl().trim().isEmpty() ? null : request.getImageUrl().trim());
+            unitType.setImageUrl(sanitizeAndValidateImageUrl(request.getImageUrl()));
         }
 
         if (request.getAcPricePerMonth() != null && request.getAcPricePerMonth().compareTo(BigDecimal.ZERO) > 0) {
@@ -306,5 +306,27 @@ public class UnitTypeServiceImpl implements UnitTypeService {
     @Transactional(readOnly = true)
     public List<StorageUnitPriceHistoryResponse> getPriceHistory(UUID id) {
         return storageUnitPriceHistoryService.getPriceHistoryByUnitType(id);
+    }
+
+    private String sanitizeAndValidateImageUrl(String rawUrl) {
+        if (rawUrl == null) {
+            return null;
+        }
+        String trimmed = rawUrl.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > 1000) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn ảnh mô phỏng không được vượt quá 1000 ký tự");
+        }
+        String lower = trimmed.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("javascript:") || lower.startsWith("vbscript:") || lower.startsWith("data:text/")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Đường dẫn ảnh không hợp lệ");
+        }
+        if (!lower.startsWith("http://") && !lower.startsWith("https://") && !trimmed.startsWith("/uploads/")) {
+            throw new AppException(ErrorCode.INVALID_REQUEST,
+                    "Đường dẫn ảnh mô phỏng phải là URL hợp lệ (http/https) hoặc đường dẫn lưu trữ (/uploads/...)");
+        }
+        return trimmed;
     }
 }

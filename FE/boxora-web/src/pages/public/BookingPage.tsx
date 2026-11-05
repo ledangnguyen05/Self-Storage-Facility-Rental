@@ -496,6 +496,7 @@ export const BookingPage: React.FC = () => {
   const [stockStatusFilter, setStockStatusFilter] = useState<StockStatusFilterType>('ALL')
   const [areaFilter, setAreaFilter] = useState<AreaFilterType>('ALL')
   const [sizeVisualMode, setSizeVisualMode] = useState<'3D' | 'PHOTO'>('3D')
+  const [userForced3DMode, setUserForced3DMode] = useState<boolean>(false)
   const [inspectVisualTab, setInspectVisualTab] = useState<'3D' | 'PHOTO'>('3D')
   const [inspectingSizeUnit, setInspectingSizeUnit] = useState<StorageSizeUnitDef | null>(null)
 
@@ -2447,7 +2448,10 @@ export const BookingPage: React.FC = () => {
                     <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700">
                       <button
                         type="button"
-                        onClick={() => setSizeVisualMode('3D')}
+                        onClick={() => {
+                          setSizeVisualMode('3D')
+                          setUserForced3DMode(true)
+                        }}
                         className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                           sizeVisualMode === '3D'
                             ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
@@ -2459,7 +2463,10 @@ export const BookingPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => setSizeVisualMode('PHOTO')}
+                        onClick={() => {
+                          setSizeVisualMode('PHOTO')
+                          setUserForced3DMode(false)
+                        }}
                         className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                           sizeVisualMode === 'PHOTO'
                             ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
@@ -2601,7 +2608,9 @@ export const BookingPage: React.FC = () => {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setInspectVisualTab(sizeVisualMode)
+                                setInspectVisualTab(
+                                  (sizeUnit as any).imageUrl && !userForced3DMode ? 'PHOTO' : sizeVisualMode
+                                )
                                 setInspectingSizeUnit(sizeUnit)
                               }}
                               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
@@ -2619,7 +2628,7 @@ export const BookingPage: React.FC = () => {
 
                         {/* Visual Container */}
                         <div className="mx-3.5 my-1 rounded-xl bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center h-36 sm:h-38 overflow-hidden relative">
-                          {sizeVisualMode === '3D' ? (
+                          {sizeVisualMode === '3D' && (!((sizeUnit as any).imageUrl) || userForced3DMode) ? (
                             <div className="w-full h-full px-2 py-1 flex items-center justify-center group-hover:scale-[1.04] transition-transform duration-300">
                               <StorageSizeIsometric3D
                                 sizeId={sizeUnit.id}
@@ -2635,6 +2644,11 @@ export const BookingPage: React.FC = () => {
                                 src={(sizeUnit as any).imageUrl || realPhotoInfo.photoUrl}
                                 alt={`Ảnh thực tế kho ${sizeUnit.volumeText}`}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  target.onerror = null
+                                  target.src = realPhotoInfo.photoUrl
+                                }}
                               />
                               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent px-3 py-1.5 flex items-center justify-between text-[10px] text-white">
                                 <span className="font-semibold truncate">{sizeUnit.dimensions.replace('Cao ', '')}</span>
@@ -4060,6 +4074,14 @@ export const BookingPage: React.FC = () => {
                       }
                       alt={`Ảnh thực tế kho ${inspectingSizeUnit.volumeText}`}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        target.onerror = null
+                        target.src = getRealPhotoForSize(
+                          inspectingSizeUnit.volumeNumber,
+                          (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                        ).photoUrl
+                      }}
                     />
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/80 via-slate-950/40 to-transparent px-4 py-2.5 text-[11px] text-white">
                       {

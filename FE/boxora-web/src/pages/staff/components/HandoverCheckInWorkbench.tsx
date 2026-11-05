@@ -716,7 +716,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     return rawId
   }, [currentBooking, currentPrerequisites, facilityId])
 
-  useEffect(() => {
+  const refreshFacilityAssignableUnits = React.useCallback(() => {
     if (!selectedBookingId) {
       setAvailableUnits([])
       return
@@ -725,21 +725,31 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     storageUnitService
       .getUnits({
         facilityId: targetFacilityId,
-        status: 'AVAILABLE',
       })
       .then((data) => {
-        const avail = (data || []).filter(
-          (u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống'
-        )
-        setAvailableUnits(avail)
+        const assignableAndPending = (data || []).filter((u) => {
+          const st = String(u.status || '').toUpperCase().trim()
+          return (
+            st === 'AVAILABLE' ||
+            st === 'RESERVED' ||
+            st === 'PENDING_HANDOVER' ||
+            (u.status as string) === 'Trống' ||
+            (u.status as string) === 'Chờ bàn giao'
+          )
+        })
+        setAvailableUnits(assignableAndPending)
       })
       .catch((err) => {
-        console.warn('Could not fetch available units:', err)
+        console.warn('Could not fetch available/pending-handover units:', err)
       })
       .finally(() => {
         setLoadingAvailableUnits(false)
       })
   }, [selectedBookingId, targetFacilityId])
+
+  useEffect(() => {
+    refreshFacilityAssignableUnits()
+  }, [refreshFacilityAssignableUnits])
 
   // Fetch actual distinct floors for the booking's facility
   useEffect(() => {
@@ -870,6 +880,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       setPrerequisitesCache((prev) => ({ ...prev, [selectedBookingId]: updatedPrereq }))
       setIsChangingAssignedUnit(false)
       setSelectedAssignUnitId('')
+      refreshFacilityAssignableUnits()
       if (onRefreshArrivals) onRefreshArrivals()
       setDispatchFeedback({ text: `✓ Đã gán ô kho ${unit.unitCode} (${unit.unitTypeName || 'Tiêu chuẩn'}) thành công!` })
     } catch (err: any) {
@@ -879,6 +890,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         await fetchPrerequisitesForBooking(selectedBookingId)
         setIsChangingAssignedUnit(false)
         setSelectedAssignUnitId('')
+        refreshFacilityAssignableUnits()
         if (onRefreshArrivals) onRefreshArrivals()
         setDispatchFeedback({ text: `✓ Đã gán ô kho ${unit.unitCode} thành công!` })
       } catch (fallbackErr: any) {
@@ -1853,19 +1865,40 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 max-h-96 overflow-y-auto p-1">
                   {filteredAvailableUnits.map((u) => {
                     const isSelected = selectedAssignUnitId === u.id
-                    const isThisUnitAssigned = unitDisplayCode === u.unitCode
+                    const isThisUnitAssigned = Boolean(
+                      (unitDisplayCode && unitDisplayCode !== 'Chưa gán mã kho' && unitDisplayCode === u.unitCode) ||
+                      (u.bookingId && u.bookingId === selectedBookingId)
+                    )
+                    const isReservedStatus =
+                      String(u.status || '').toUpperCase() === 'RESERVED' ||
+                      String(u.status || '').toUpperCase() === 'PENDING_HANDOVER' ||
+                      (u.status as string) === 'Chờ bàn giao'
+                    const isHeldByOtherBooking = Boolean(
+                      isReservedStatus && !isThisUnitAssigned && u.bookingId && u.bookingId !== selectedBookingId
+                    )
+                    const isPendingHandoverAssignable = Boolean(
+                      isReservedStatus && !isThisUnitAssigned && !isHeldByOtherBooking
+                    )
                     const isMatchBooked = isUnitMatchingBookedSize(u, bookedUnitTypeId, bookedUnitTypeName)
 
                     return (
                       <div
                         key={u.id}
-                        onClick={() => setSelectedAssignUnitId(u.id)}
-                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                          isThisUnitAssigned
-                            ? 'bg-emerald-50/80 border-emerald-500 shadow-md ring-2 ring-emerald-400/40 text-slate-900'
+                        onClick={() => {
+                          if (!isHeldByOtherBooking) {
+                            setSelectedAssignUnitId(u.id)
+                          }
+                        }}
+                        className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                          isHeldByOtherBooking
+                            ? 'bg-slate-50 border-slate-200 text-slate-500 opacity-75 cursor-not-allowed'
+                            : isThisUnitAssigned
+                            ? 'bg-emerald-50/80 border-emerald-500 shadow-md ring-2 ring-emerald-400/40 text-slate-900 cursor-pointer'
                             : isSelected
-                            ? 'bg-blue-50/90 border-blue-600 shadow-sm ring-2 ring-blue-400/40 text-slate-900'
-                            : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                            ? 'bg-blue-50/90 border-blue-600 shadow-sm ring-2 ring-blue-400/40 text-slate-900 cursor-pointer'
+                            : isPendingHandoverAssignable
+                            ? 'bg-amber-50/40 hover:bg-amber-50/80 border-amber-300 text-slate-800 cursor-pointer'
+                            : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 cursor-pointer'
                         }`}
                       >
                         <div>
@@ -1875,7 +1908,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             </span>
                             {isThisUnitAssigned ? (
                               <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-600 text-white flex items-center gap-1">
-                                <Check size={10} /> Đã Gán
+                                <Check size={10} /> Đã Gán Đơn Này
+                              </span>
+                            ) : isHeldByOtherBooking ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
+                                Giữ Đơn Khác
+                              </span>
+                            ) : isPendingHandoverAssignable ? (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                Chờ Bàn Giao
                               </span>
                             ) : isMatchBooked ? (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
@@ -1893,13 +1934,27 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         </div>
 
                         <div className="mt-3 pt-2.5 border-t border-slate-200/70">
-                          <div className="flex items-center justify-between text-[11px] mb-2">
+                          <div className="flex items-center justify-between text-[11px] mb-2 gap-1">
                             <span className="font-bold text-slate-900">
                               {u.pricePerMonth ? `${u.pricePerMonth.toLocaleString('vi-VN')}đ/tháng` : 'N/A'}
                             </span>
-                            <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                              Trống
-                            </span>
+                            {isThisUnitAssigned ? (
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                Đã gán / Chờ bàn giao
+                              </span>
+                            ) : isHeldByOtherBooking ? (
+                              <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                Đang giữ đơn khác
+                              </span>
+                            ) : isPendingHandoverAssignable ? (
+                              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                Chờ bàn giao
+                              </span>
+                            ) : (
+                              <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                Trống - Sẵn sàng gán
+                              </span>
+                            )}
                           </div>
 
                           {isThisUnitAssigned ? (
@@ -1910,6 +1965,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             >
                               <Check size={13} />
                               <span>Đang Gán Kho Này</span>
+                            </button>
+                          ) : isHeldByOtherBooking ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="w-full py-1.5 px-2.5 rounded-lg bg-slate-200 text-slate-500 font-bold text-xs flex items-center justify-center gap-1 cursor-not-allowed"
+                            >
+                              <span>Đang Giữ Cho Đơn Khác</span>
                             </button>
                           ) : (
                             <button
