@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useTransition } from 'react'
 import { getWebSettings, saveWebSettings } from '../utils/webSettings'
+import { MODULAR_DICTIONARY } from '../locales'
 
 export type Language = 'vi' | 'en'
 
@@ -1765,6 +1766,23 @@ Object.assign(DICTIONARY, {
 
 })
 
+// Merge domain-specific modular dictionaries
+Object.assign(DICTIONARY, MODULAR_DICTIONARY)
+
+// Case adaptation helper
+const adaptCase = (original: string, translated: string): string => {
+  if (original === original.toUpperCase() && original !== original.toLowerCase()) {
+    return translated.toUpperCase()
+  }
+  if (original[0] === original[0].toUpperCase() && original.slice(1) === original.slice(1).toLowerCase()) {
+    return translated.charAt(0).toUpperCase() + translated.slice(1)
+  }
+  if (original === original.toLowerCase()) {
+    return translated.toLowerCase()
+  }
+  return translated
+}
+
 // Pre-sorted dictionary keys by length descending to match longest phrases first
 const SORTED_KEYS = Object.keys(DICTIONARY).sort((a, b) => b.length - a.length)
 
@@ -1777,8 +1795,25 @@ for (const [vi, en] of Object.entries(DICTIONARY)) {
 }
 const SORTED_REVERSE_KEYS = Object.keys(REVERSE_DICTIONARY).sort((a, b) => b.length - a.length)
 
+// Lowercase index for case-insensitive lookup
+const LOWERCASE_DICTIONARY: Record<string, string> = {}
+for (const [k, v] of Object.entries(DICTIONARY)) {
+  LOWERCASE_DICTIONARY[k.toLowerCase()] = v
+}
+
+const LOWERCASE_REVERSE_DICTIONARY: Record<string, string> = {}
+for (const [en, vi] of Object.entries(REVERSE_DICTIONARY)) {
+  LOWERCASE_REVERSE_DICTIONARY[en.toLowerCase()] = vi
+}
+
 // Words that should ONLY match exactly as a whole trimmed string, NEVER as substrings inside other words
 const EXACT_MATCH_ONLY = new Set([
+  'Tất cả', 'TẤT CẢ', 'Lưu', 'ngày', 'Ngày', 'NGÀY', 'Kho', 'KHO', 'Ca', 'CA',
+  'Đã', 'Chưa', 'Nợ', 'Cọc', 'Phạt', 'Hoàn', 'Hạn', 'Chi nhánh', 'Cơ sở',
+  'Hoạt động', 'Tạm dừng', 'Sáng', 'Tối', 'Tự động', 'Hệ thống', 'Chi tiết',
+  'GD', 'HĐ', 'kho', 'thuê kho', 'Lọc', 'Lọc cơ sở', 'Active', 'ACTIVE', 'Debt', 'Refund', 'All',
+  'sẵn sàng', 'đang đợi', 'ngưng dùng', 'kho nợ', 'đơn', 'ca', 'Trống', 'Thuê', 'Bảo trì', 'Quá hạn',
+  'và', 'hoặc', 'tại', 'cho', 'của', 'lạnh', 'hầm', 'trước', 'sau', 'Trước', 'Sau', 'Tốt',
   'Tất cả', 'TẤT CẢ', 'Lưu', 'ngày', 'Ngày', 'NGÀY', 'Kho', 'KHO', 'Ca', 'CA',
   'Đã', 'Chưa', 'Nợ', 'Cọc', 'Phạt', 'Hoàn', 'Hạn', 'Chi nhánh', 'Cơ sở',
   'Hoạt động', 'Tạm dừng', 'Sáng', 'Tối', 'Tự động', 'Hệ thống', 'Chi tiết',
