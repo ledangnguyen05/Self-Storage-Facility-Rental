@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { MotionConfig } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
@@ -25,6 +25,8 @@ import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLang
 import { useLanguage } from '../../context/LanguageContext'
 import { SizeTierKey } from '../../components/booking/LandingBookingWizardModal'
 import { checkCustomerPortalAccess } from '../../utils/rentalAccess'
+import { facilityService } from '../../services/facilityService'
+import { Facility } from '../../types'
 
 
 // ============================================================================
@@ -47,6 +49,22 @@ export const HomePage: React.FC = () => {
   // Interactive Size Guide State
   const [selectedSizeTier, setSelectedSizeTier] = useState<SizeTierKey>('STANDARD')
 
+  // Facilities list from database
+  const [facilities, setFacilities] = useState<Facility[]>([])
+
+  useEffect(() => {
+    facilityService
+      .getFacilities({ page: 0, size: 50, status: 'ACTIVE' })
+      .then((res) => {
+        if (res?.content && res.content.length > 0) {
+          setFacilities(res.content)
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load facilities in HomePage:', err)
+      })
+  }, [])
+
   // Policies active tab state
   const [activePolicyTab, setActivePolicyTab] = useState<PolicyTabKey>('deposit')
 
@@ -55,9 +73,13 @@ export const HomePage: React.FC = () => {
   const [activeFaqIndex, setActiveFaqIndex] = useState<number | null>(0)
 
   // Booking Navigation
-  const handleOpenBooking = (tier?: SizeTierKey) => {
+  const handleOpenBooking = (tier?: SizeTierKey, facilityId?: string) => {
+    const params = new URLSearchParams()
     const selected = tier || selectedSizeTier
-    navigate(`/booking?type=${selected}`)
+    if (selected) params.set('type', selected)
+    if (facilityId) params.set('facility', facilityId)
+    const queryString = params.toString()
+    navigate(`/booking${queryString ? `?${queryString}` : ''}`)
   }
 
   return (
@@ -179,9 +201,12 @@ export const HomePage: React.FC = () => {
         <CinematicIotVaultSection />
 
         {/* ============================================================ */}
-        {/* 5. CHAPTER 03: SPATIAL TYPOLOGIES & 4 STRATEGIC HUBS         */}
+        {/* 5. CHAPTER 03: SPATIAL TYPOLOGIES & STRATEGIC HUBS           */}
         {/* ============================================================ */}
-        <CinematicServicesSection onBookNow={() => handleOpenBooking()} />
+        <CinematicServicesSection
+          facilities={facilities}
+          onBookNow={(facilityId) => handleOpenBooking(undefined, facilityId)}
+        />
 
         {/* ============================================================ */}
         {/* 6. CHAPTER 04: THE VOLUMETRIC ATELIER (16 SIZES 1M³ - 24M³)  */}
@@ -302,25 +327,36 @@ export const HomePage: React.FC = () => {
               {/* Column 4: Hệ Thống Cơ Sở & Liên Hệ */}
               <div className="space-y-4">
                 <h4 className="font-headline text-sm font-bold text-slate-900 uppercase tracking-wider">
-                  Hệ Thống 4 Cơ Sở Kho
+                  Hệ Thống {facilities.length > 0 ? `${facilities.length} ` : ''}Cơ Sở Kho
                 </h4>
-                <div className="space-y-3 text-xs text-slate-600">
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-slate-800">Cơ Sở 1 • Boxora Quận 1:</div>
-                    <p className="text-slate-500">123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM</p>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-slate-800">Cơ Sở 2 • Boxora Quận 7 (Nam Sài Gòn):</div>
-                    <p className="text-slate-500">456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM</p>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-slate-800">Cơ Sở 3 • Boxora Thủ Đức Hub:</div>
-                    <p className="text-slate-500">789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM</p>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-slate-800">Cơ Sở 4 • Boxora Tân Bình Mega Hub:</div>
-                    <p className="text-slate-500">102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM</p>
-                  </div>
+                <div className="space-y-3 text-xs text-slate-600 max-h-72 overflow-y-auto pr-1">
+                  {facilities.length > 0 ? (
+                    facilities.map((fac, idx) => (
+                      <div key={fac.id} className="space-y-0.5">
+                        <div className="font-bold text-slate-800">Cơ Sở {idx + 1} • {fac.name}:</div>
+                        <p className="text-slate-500 line-clamp-1">{fac.address || fac.city}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-slate-800">Cơ Sở 1 • Boxora Quận 1:</div>
+                        <p className="text-slate-500">123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-slate-800">Cơ Sở 2 • Boxora Quận 7 (Nam Sài Gòn):</div>
+                        <p className="text-slate-500">456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-slate-800">Cơ Sở 3 • Boxora Thủ Đức Hub:</div>
+                        <p className="text-slate-500">789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM</p>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-slate-800">Cơ Sở 4 • Boxora Tân Bình Mega Hub:</div>
+                        <p className="text-slate-500">102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM</p>
+                      </div>
+                    </>
+                  )}
                   <div className="pt-2 text-blue-700 font-mono font-bold text-xs">
                     Hotline: 1900-BOXORA (24/7)
                   </div>

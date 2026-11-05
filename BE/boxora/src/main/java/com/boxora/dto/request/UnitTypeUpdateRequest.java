@@ -57,8 +57,8 @@ public class UnitTypeUpdateRequest {
     @Schema(description = "Đơn giá tiêu chuẩn mới mỗi tháng (VNĐ)", example = "350000.00")
     private BigDecimal basePricePerMonth;
 
-    @Positive(message = "AC price per month must be greater than zero")
-    @Schema(description = "Đơn giá máy lạnh A/C mới mỗi tháng (VNĐ)", example = "420000.00")
+    @PositiveOrZero(message = "AC price per month cannot be negative")
+    @Schema(description = "Đơn giá máy lạnh A/C mới mỗi tháng (VNĐ) - 0 hoặc null nếu không có máy lạnh", example = "420000.00")
     private BigDecimal acPricePerMonth;
 
     @PositiveOrZero(message = "Deposit amount cannot be negative")

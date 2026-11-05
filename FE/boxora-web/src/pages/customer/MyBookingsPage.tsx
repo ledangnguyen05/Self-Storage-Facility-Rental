@@ -1790,30 +1790,20 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
                           <span>Xem hợp đồng điện tử đã ký</span>
                         </button>
                       ) : stageInfo.stage === 'PENDING_CONTACT' ? (
-                        <div className="space-y-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedBookingForDetail(b)}
-                            className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                          >
-                            <QrCode size={15} />
-                            <span>Xem phiếu hẹn &amp; Mã QR</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
-                            className="w-full py-1.5 px-2 rounded-lg bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 text-blue-600 dark:text-blue-400 text-[11px] font-semibold flex items-center justify-center gap-1 transition-all cursor-pointer border border-blue-100 dark:border-blue-900/50"
-                          >
-                            <span>Chuyển sang Ký HĐ &amp; Thanh toán online</span>
-                            <ArrowRight size={12} />
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/online-booking-contract?bookingId=${encodeURIComponent(b.id)}&autoSign=true`)}
+                          className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          <FileText size={15} />
+                          <span>Chuyển sang Ký HĐ &amp; Thanh toán online</span>
+                          <ArrowRight size={13} />
+                        </button>
                       ) : null}
 
                       {/* Secondary Utility Actions */}
                       <div className="flex items-center gap-2">
-                        {stageInfo.stage !== 'PENDING_CONTACT' &&
-                          stageInfo.stage !== 'CANCELLED' &&
+                        {stageInfo.stage !== 'CANCELLED' &&
                           b.status !== 'CANCELLED' && (
                           <button
                             type="button"

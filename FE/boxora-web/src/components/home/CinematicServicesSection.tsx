@@ -1,16 +1,19 @@
 import { useLanguage } from '../../context/LanguageContext'
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import facilityD1 from '../../assets/facilities/facility-d1.jpg'
 import facilityD7 from '../../assets/facilities/facility-d7.jpg'
 import facilityThuduc from '../../assets/facilities/facility-thuduc.jpg'
 import facilityTanbinh from '../../assets/facilities/facility-tanbinh.jpg'
+import { facilityService } from '../../services/facilityService'
+import { Facility } from '../../types'
 
 gsap.registerPlugin(ScrollTrigger)
 
 interface CinematicServicesSectionProps {
-  onBookNow: () => void
+  onBookNow?: (facilityId?: string) => void
+  facilities?: Facility[]
 }
 
 const STORAGE_UNIT_TYPES = [
@@ -55,26 +58,30 @@ const STORAGE_UNIT_TYPES = [
   }
 ]
 
-const FACILITIES_LIST = [
+const DEFAULT_FACILITIES = [
   {
+    id: 'f7af2794-0d0d-4c68-9e36-c44bf3034f6c',
     code: '01 / QUẬN 1',
     name: 'Boxora Quận 1 — Central Hub',
     address: '123 Nguyễn Huệ, P. Bến Nghé, Quận 1, TP.HCM',
     image: facilityD1
   },
   {
+    id: '45e03ded-5da1-43d5-bea7-96c645d5f96c',
     code: '02 / QUẬN 7',
     name: 'Boxora Quận 7 — Nam Sài Gòn',
     address: '456 Nguyễn Hữu Thọ, P. Tân Hưng, Quận 7, TP.HCM',
     image: facilityD7
   },
   {
+    id: 'fd8f948e-fdff-4a81-ad0f-fc45639b545d',
     code: '03 / THỦ ĐỨC',
     name: 'Boxora TP. Thủ Đức Hub',
     address: '789 Võ Văn Ngân, P. Linh Chiểu, TP. Thủ Đức, TP.HCM',
     image: facilityThuduc
   },
   {
+    id: 'a1111111-2222-3333-4444-555555555555',
     code: '04 / TÂN BÌNH',
     name: 'Boxora Tân Bình Mega Hub',
     address: '102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM',
@@ -82,10 +89,96 @@ const FACILITIES_LIST = [
   }
 ]
 
-export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> = ({ onBookNow }) => {
+const formatFacilityCode = (f: Facility, index: number) => {
+  const prefix = String(index + 1).padStart(2, '0')
+  const nameUpper = (f.name || '').toUpperCase()
+  const codeUpper = (f.code || '').toUpperCase()
+  const addrUpper = (f.address || '').toUpperCase()
+  const combined = `${codeUpper} ${nameUpper} ${addrUpper}`
+
+  if (combined.includes('QUẬN 1') || combined.includes('Q1') || combined.includes('D1') || combined.includes('Q.1')) {
+    return `${prefix} / QUẬN 1`
+  }
+  if (combined.includes('QUẬN 2') || combined.includes('Q2') || combined.includes('THẢO ĐIỀN') || combined.includes('THAO DIEN')) {
+    return `${prefix} / QUẬN 2`
+  }
+  if (combined.includes('QUẬN 3') || combined.includes('Q3') || combined.includes('Q.3')) {
+    return `${prefix} / QUẬN 3`
+  }
+  if (combined.includes('QUẬN 7') || combined.includes('Q7') || combined.includes('D7') || combined.includes('Q.7')) {
+    return `${prefix} / QUẬN 7`
+  }
+  if (combined.includes('TÂN BÌNH') || combined.includes('TAN BINH') || combined.includes('TB')) {
+    return `${prefix} / TÂN BÌNH`
+  }
+  if (combined.includes('THỦ ĐỨC') || combined.includes('THU DUC') || combined.includes('TD')) {
+    return `${prefix} / THỦ ĐỨC`
+  }
+  if (combined.includes('VINHOMES') || combined.includes('VGP') || combined.includes('GRAND PARK')) {
+    return `${prefix} / VINHOMES`
+  }
+  if (f.code) {
+    return `${prefix} / ${f.code.toUpperCase()}`
+  }
+  return `${prefix} / CHI NHÁNH`
+}
+
+const getFacilityPhoto = (f: Facility, index: number): string => {
+  if (f.imageUrl && f.imageUrl.trim().length > 0 && (f.imageUrl.startsWith('http') || f.imageUrl.startsWith('/'))) {
+    return f.imageUrl
+  }
+  const nameUpper = (f.name || '').toUpperCase()
+  const codeUpper = (f.code || '').toUpperCase()
+  const combined = `${codeUpper} ${nameUpper}`
+
+  if (combined.includes('QUẬN 1') || combined.includes('D1') || combined.includes('Q1')) return facilityD1
+  if (combined.includes('QUẬN 7') || combined.includes('D7') || combined.includes('Q7')) return facilityD7
+  if (combined.includes('THỦ ĐỨC') || combined.includes('THU DUC') || combined.includes('TD')) return facilityThuduc
+  if (combined.includes('TÂN BÌNH') || combined.includes('TAN BINH') || combined.includes('TB')) return facilityTanbinh
+  if (combined.includes('QUẬN 3') || combined.includes('Q3')) return facilityD1
+  if (combined.includes('QUẬN 2') || combined.includes('Q2')) return facilityD7
+  if (combined.includes('VINHOMES') || combined.includes('VGP')) return facilityThuduc
+
+  const fallbackList = [facilityD1, facilityD7, facilityThuduc, facilityTanbinh]
+  return fallbackList[index % fallbackList.length]
+}
+
+export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> = ({ onBookNow, facilities }) => {
   const { t } = useLanguage();
 
   const sectionRef = useRef<HTMLElement | null>(null)
+  const [dbFacilities, setDbFacilities] = useState<Facility[]>(facilities || [])
+
+  useEffect(() => {
+    if (facilities && facilities.length > 0) {
+      setDbFacilities(facilities)
+      return
+    }
+    let isMounted = true
+    facilityService
+      .getFacilities({ page: 0, size: 50, status: 'ACTIVE' })
+      .then((res) => {
+        if (isMounted && res?.content && res.content.length > 0) {
+          setDbFacilities(res.content)
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to load active facilities for CinematicServicesSection:', err)
+      })
+    return () => {
+      isMounted = false
+    }
+  }, [facilities])
+
+  const displayFacilities = dbFacilities.length > 0
+    ? dbFacilities.map((f, index) => ({
+        id: f.id,
+        code: formatFacilityCode(f, index),
+        name: f.name,
+        address: f.address || f.city || 'TP. Hồ Chí Minh',
+        image: getFacilityPhoto(f, index)
+      }))
+    : DEFAULT_FACILITIES
 
   useEffect(() => {
     const section = sectionRef.current
@@ -143,13 +236,25 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
           )
         }
       })
+    }, section)
 
-      // 3D perspective glide for the 4 facilities
+    return () => ctx.revert()
+  }, [])
+
+  useEffect(() => {
+    const section = sectionRef.current
+    if (!section) return
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReducedMotion) return
+
+    const ctx = gsap.context(() => {
+      // 3D perspective glide for all facilities
       const hubs = gsap.utils.toArray<HTMLElement>('[data-hub-3d]')
       hubs.forEach((hub, i) => {
+        const colPos = (i % 4) - 1.5
         gsap.fromTo(
           hub,
-          { rotateY: (i - 1.5) * 14, rotateX: 14, y: 45, opacity: 0.2 },
+          { rotateY: colPos * 8, rotateX: 10, y: 35, opacity: 0.2 },
           {
             rotateY: 0,
             rotateX: 0,
@@ -158,8 +263,8 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
             ease: 'power2.out',
             scrollTrigger: {
               trigger: hub,
-              start: 'top 92%',
-              end: 'top 55%',
+              start: 'top 95%',
+              end: 'top 65%',
               scrub: 0.6,
               invalidateOnRefresh: true
             }
@@ -169,7 +274,7 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
     }, section)
 
     return () => ctx.revert()
-  }, [])
+  }, [displayFacilities.length])
 
   return (
     <section
@@ -286,7 +391,7 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
                     </span>
                     <button
                       type="button"
-                      onClick={onBookNow}
+                      onClick={() => onBookNow?.()}
                       className="inline-flex items-center gap-2 text-sm font-semibold text-slate-950 hover:text-blue-600 transition-colors cursor-pointer"
                     >
                       <span>Chọn kích cỡ &amp; Đặt thuê</span>
@@ -299,12 +404,12 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
           })}
         </div>
 
-        {/* 4 Strategic Hubs in 3D Perspective Row */}
+        {/* Strategic Facilities Grid in 3D Perspective */}
         <div className="space-y-10 pt-8 border-t border-slate-200/80">
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 text-left">
             <div className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600">
-                {t('HỆ THỐNG 4 CƠ SỞ CHO THUÊ KHO TẠI TP. HỒ CHÍ MINH')}
+                {`HỆ THỐNG ${displayFacilities.length} CƠ SỞ CHO THUÊ KHO TẠI TP. HỒ CHÍ MINH`}
               </div>
               <h3 className="font-headline text-2xl sm:text-4xl font-semibold text-slate-950 tracking-[-0.03em]">
                 Chọn cơ sở gần bạn, kiểm tra buồng kho trống tức thì.
@@ -312,10 +417,10 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
             </div>
             <button
               type="button"
-              onClick={onBookNow}
-              className="self-start sm:self-auto inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white hover:border-blue-600 hover:text-blue-600 px-6 py-3 text-xs font-semibold text-slate-900 transition-all cursor-pointer"
+              onClick={() => onBookNow?.()}
+              className="self-start sm:self-auto inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white hover:border-blue-600 hover:text-blue-600 px-6 py-3 text-xs font-semibold text-slate-900 transition-all cursor-pointer shadow-xs"
             >
-              <span>Kiểm tra phòng trống tại 4 cơ sở</span>
+              <span>{`Kiểm tra phòng trống tại ${displayFacilities.length} cơ sở`}</span>
               <span>→</span>
             </button>
           </div>
@@ -324,29 +429,31 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
             className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left"
             style={{ perspective: '1400px' }}
           >
-            {FACILITIES_LIST.map((hub) => (
+            {displayFacilities.map((hub, index) => (
               <div
-                key={hub.code}
+                key={hub.id || hub.code || index}
                 data-hub-3d
-                onClick={onBookNow}
-                className="group rounded-[26px] bg-white border border-slate-200/90 hover:border-blue-500 overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.05)] hover:shadow-[0_24px_50px_rgba(8,102,245,0.12)] transition-all duration-300 cursor-pointer will-change-transform"
+                onClick={() => onBookNow?.(hub.id)}
+                className="group rounded-[26px] bg-white border border-slate-200/90 hover:border-blue-500 overflow-hidden shadow-[0_12px_36px_rgba(15,23,42,0.05)] hover:shadow-[0_24px_50px_rgba(8,102,245,0.12)] transition-all duration-300 cursor-pointer will-change-transform flex flex-col"
               >
-                <div className="aspect-[4/3] w-full overflow-hidden bg-slate-100">
+                <div className="aspect-[4/3] w-full overflow-hidden bg-slate-100 shrink-0">
                   <img
                     src={hub.image}
-                    alt={t(hub.name)}
+                    alt={hub.name}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 </div>
-                <div className="p-5 space-y-1.5">
-                  <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-blue-600">
-                    {hub.code}
+                <div className="p-5 space-y-1.5 flex flex-col flex-1 justify-between">
+                  <div>
+                    <div className="font-mono text-[10px] font-bold uppercase tracking-widest text-blue-600">
+                      {hub.code}
+                    </div>
+                    <h4 className="font-headline text-base font-bold text-slate-950 group-hover:text-blue-600 transition-colors line-clamp-1">
+                      {hub.name}
+                    </h4>
                   </div>
-                  <h4 className="font-headline text-base font-bold text-slate-950 group-hover:text-blue-600 transition-colors">
-                    {hub.name}
-                  </h4>
-                  <p className="text-xs text-slate-500 leading-relaxed">{hub.address}</p>
+                  <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">{hub.address}</p>
                 </div>
               </div>
             ))}

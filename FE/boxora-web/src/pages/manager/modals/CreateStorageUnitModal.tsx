@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../../../context/AuthContext'
 import { Facility, StorageUnit, UnitType } from '../../../types'
 import { storageUnitService } from '../../../services/storageUnitService'
+import { facilityUnitTypeService } from '../../../services/facilityUnitTypeService'
 import { useLanguage } from '../../../context/LanguageContext'
 import { parseFacilityFloorPlanConfig } from '../../../utils/facilityLayout'
 
@@ -124,8 +125,9 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
     storageUnitService
       .getUnitTypes()
       .then((types) => {
-        const availableTypes = Array.isArray(types)
-          ? types.filter((ut) => ut.isActive !== false) // Only show active unit types for new creation
+        const facTypes = effectiveFacilityId ? facilityUnitTypeService.getFacilityUnitTypes(effectiveFacilityId, types) : types
+        const availableTypes = Array.isArray(facTypes)
+          ? facTypes.filter((ut) => ut.isActive !== false)
           : []
         setUnitTypes(availableTypes)
         if (availableTypes.length > 0) {

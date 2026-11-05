@@ -238,6 +238,9 @@ public class BookingServiceImpl implements BookingService {
                 unitType = unitTypeRepository.findByIdForUpdate(request.getUnitTypeId())
                         .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
             }
+            if (unitType != null && Boolean.FALSE.equals(unitType.getIsActive())) {
+                throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho đã chọn hiện đang tạm ngưng hoạt động, không thể đặt giữ chỗ.");
+            }
             if (facility != null) {
                 if (facility.getStatus() == com.boxora.enums.FacilityStatus.INACTIVE) {
                     throw new AppException(ErrorCode.FACILITY_INACTIVE, "Chi nhánh " + facility.getName() + " hiện đang tạm ngưng hoạt động.");

@@ -1144,19 +1144,6 @@ export const IncidentTicketsPage: React.FC = () => {
                             </button>
                           )}
 
-                          {/* FM Action: Contact BOM (Liên hệ hỗ trợ quản lý) */}
-                          {isFacilityManager && (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenContactBomModal(t)}
-                              className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 font-semibold text-[11px] transition-all cursor-pointer flex items-center gap-0.5"
-                              title="Liên hệ Ban Quản Lý (BOM) khi vượt thẩm quyền"
-                            >
-                              <span className="material-symbols-outlined text-[13px]">phone_forwarded</span>
-                              <span>Báo BOM</span>
-                            </button>
-                          )}
-
                           {/* View details (All roles) */}
                           <button
                             type="button"

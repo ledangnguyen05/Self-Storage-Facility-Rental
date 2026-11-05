@@ -1597,12 +1597,6 @@ export const ManagerDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Đang thuê', 'Rented')}</span>
-            <div className="flex items-center gap-1.5">
-              {statusFilter === 'Rented' && (
-                <span className="px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
-              )}
-              <span className="px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 font-mono text-[10px] font-bold">{rentedPercent}%</span>
-            </div>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-slate-900 leading-none">{rentedUnitsCount}</span>
@@ -1626,12 +1620,7 @@ export const ManagerDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Kho trống', 'Available Units')}</span>
-            <div className="flex items-center gap-1.5">
-              {statusFilter === 'Available' && (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
-              )}
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-            </div>
+
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-emerald-600 leading-none">{availableUnitsCount}</span>
@@ -1655,12 +1644,7 @@ export const ManagerDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Chờ bàn giao', 'Pending Handover')}</span>
-            <div className="flex items-center gap-1.5">
-              {statusFilter === 'Pending' && (
-                <span className="px-1.5 py-0.5 rounded bg-amber-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
-              )}
-              <span className="material-symbols-outlined text-amber-500 text-[18px]">pending_actions</span>
-            </div>
+
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-amber-600 leading-none">
@@ -1686,12 +1670,7 @@ export const ManagerDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Bảo trì kỹ thuật', 'Technical Maintenance')}</span>
-            <div className="flex items-center gap-1.5">
-              {statusFilter === 'Maintenance' && (
-                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
-              )}
-              <span className="material-symbols-outlined text-purple-600 text-[18px]">build_circle</span>
-            </div>
+
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-purple-600 leading-none">
@@ -1717,12 +1696,7 @@ export const ManagerDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Nợ quá hạn', 'Overdue Payments')}</span>
-            <div className="flex items-center gap-1.5">
-              {statusFilter === 'Overdue' && (
-                <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-bold tracking-tight">{tr('Đang lọc', 'Active')}</span>
-              )}
-              <span className="material-symbols-outlined text-rose-600 text-[18px]">lock_clock</span>
-            </div>
+
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-rose-700 leading-none">

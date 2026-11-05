@@ -567,6 +567,63 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isPaymentDone = Boolean((isDepositMet && isRentMet) || effectivePaymentProofUrl)
   const isContractAndPaymentSatisfied = Boolean(isContractDone && isPaymentDone)
 
+  // 4. Tính toán chính xác các khoản tiền cần thu tại cơ sở (tránh hiển thị 0đ khi chưa đối soát xong)
+  const displayDepositDue = useMemo(() => {
+    if (currentPrerequisites?.depositRemaining != null && Number(currentPrerequisites.depositRemaining) > 0) {
+      return Number(currentPrerequisites.depositRemaining)
+    }
+    if (currentPrerequisites?.requiredDeposit != null && Number(currentPrerequisites.requiredDeposit) > 0) {
+      return Number(currentPrerequisites.requiredDeposit)
+    }
+    if (currentBooking?.depositAmount != null && Number(currentBooking.depositAmount) > 0) {
+      return Number(currentBooking.depositAmount)
+    }
+    if (currentBooking?.depositPaid != null && Number(currentBooking.depositPaid) > 0) {
+      return Number(currentBooking.depositPaid)
+    }
+    const unitDeposit = (currentBooking as any)?.storageUnit?.unitType?.depositAmount || (currentBooking as any)?.unitType?.depositAmount
+    if (unitDeposit && Number(unitDeposit) > 0) {
+      return Number(unitDeposit)
+    }
+    return 0
+  }, [currentPrerequisites, currentBooking])
+
+  const displayFirstMonthRentDue = useMemo(() => {
+    if (currentPrerequisites?.firstMonthRentRemaining != null && Number(currentPrerequisites.firstMonthRentRemaining) > 0) {
+      return Number(currentPrerequisites.firstMonthRentRemaining)
+    }
+    if (currentPrerequisites?.requiredFirstMonthRent != null && Number(currentPrerequisites.requiredFirstMonthRent) > 0) {
+      return Number(currentPrerequisites.requiredFirstMonthRent)
+    }
+    if (currentBooking?.totalRentalFee != null && Number(currentBooking.totalRentalFee) > 0) {
+      const months = currentBooking.rentalMonths || 1
+      return Math.round(Number(currentBooking.totalRentalFee) / months)
+    }
+    const unitPrice = (currentBooking as any)?.storageUnit?.effectiveBasePrice || (currentBooking as any)?.storageUnit?.unitType?.basePriceMonthly
+    if (unitPrice && Number(unitPrice) > 0) {
+      return Number(unitPrice)
+    }
+    return 0
+  }, [currentPrerequisites, currentBooking])
+
+  const displayTotalDueAtFacility = useMemo(() => {
+    if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
+      return Number(currentBooking.initialPaymentAmount)
+    }
+    if (displayDepositDue > 0 || displayFirstMonthRentDue > 0) {
+      return displayDepositDue + displayFirstMonthRentDue
+    }
+    const prereqRemaining =
+      Number(currentPrerequisites?.depositRemaining || 0) +
+      Number(currentPrerequisites?.firstMonthRentRemaining || 0)
+    if (prereqRemaining > 0) return prereqRemaining
+
+    if (currentBooking?.totalRentalFee != null && Number(currentBooking.totalRentalFee) > 0) {
+      return Number(currentBooking.totalRentalFee) + Number(currentBooking.depositAmount || 0)
+    }
+    return displayDepositDue
+  }, [currentBooking, currentPrerequisites, displayDepositDue, displayFirstMonthRentDue])
+
   // Đồng bộ hai chiều từ CSDL backend vào workbench session khi nạp dữ liệu đơn
   useEffect(() => {
     if (!selectedBookingId) return
@@ -905,8 +962,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
           paymentProofName: file.name
         })
 
-        const reqDeposit = currentPrerequisites?.depositRemaining || 0
-        const reqRent = currentPrerequisites?.firstMonthRentRemaining || 0
+        const reqDeposit = (currentPrerequisites?.depositRemaining && Number(currentPrerequisites.depositRemaining) > 0)
+          ? Number(currentPrerequisites.depositRemaining)
+          : displayDepositDue
+        const reqRent = (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
+          ? Number(currentPrerequisites.firstMonthRentRemaining)
+          : displayFirstMonthRentDue
 
         if (reqDeposit > 0) {
           await handoverService.recordManualPayment({
@@ -983,10 +1044,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setCheckInError(null)
     try {
       const payableTotal =
-        (currentPrerequisites?.depositRemaining || 0) +
-        (currentPrerequisites?.firstMonthRentRemaining || 0) ||
-        (currentBooking.totalRentalFee || 0) + (currentBooking.depositAmount || 0) ||
-        1000000
+        displayTotalDueAtFacility > 0
+          ? displayTotalDueAtFacility
+          : (currentPrerequisites?.depositRemaining || 0) +
+            (currentPrerequisites?.firstMonthRentRemaining || 0) ||
+            (currentBooking.totalRentalFee || 0) + (currentBooking.depositAmount || 0) ||
+            1000000
 
       const res = await paymentService.createVNPayPayment({
         bookingId: currentBooking.id,
@@ -2047,13 +2110,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền cọc bảo đảm:</span>
                     <span className="font-mono font-bold text-emerald-900">
-                      {(currentPrerequisites?.depositPaid || 0).toLocaleString('vi-VN')}đ
+                      {(currentPrerequisites?.depositPaid || currentBooking?.depositPaid || displayDepositDue || 0).toLocaleString('vi-VN')}đ
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-slate-600">
                     <span>Tiền thuê tháng đầu:</span>
                     <span className="font-mono font-bold text-emerald-900">
-                      {(currentPrerequisites?.firstMonthRentPaid || 0).toLocaleString('vi-VN')}đ
+                      {(currentPrerequisites?.firstMonthRentPaid || displayFirstMonthRentDue || 0).toLocaleString('vi-VN')}đ
                     </span>
                   </div>
                   <div className="pt-1 border-t border-emerald-200 flex items-center justify-between font-bold text-emerald-950">
@@ -2069,25 +2132,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
             </div>
           ) : (
-            /* TRƯỜNG HỢP 2: CHƯA KÝ HOẶC CHƯA THANH TOÁN -> HIỂN THỊ 2 PHẦN UPLOAD */
+            /* TRƯỜNG HỢP 2: CHƯA KÝ HOẶC CHƯA THANH TOÁN -> HIỂN THỊ 2 KHOẢN TIỀN & 2 PHẦN UPLOAD */
             <div className="space-y-6">
-              <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                <div>
-                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Tiền Cọc Cần Thu:</span>
-                  <span className="font-mono font-bold text-amber-950 text-sm">
-                    {(currentPrerequisites?.depositRemaining || 0).toLocaleString('vi-VN')}đ
+              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs shadow-2xs">
+                <div className="bg-white/70 p-3 rounded-lg border border-amber-100">
+                  <span className="text-slate-500 text-[11px] uppercase font-bold block mb-1">Tiền Cọc Cần Thu:</span>
+                  <span className="font-mono font-bold text-amber-950 text-base">
+                    {displayDepositDue.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
-                <div>
-                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Tiền Thuê Tháng Đầu Cần Thu:</span>
-                  <span className="font-mono font-bold text-amber-950 text-sm">
-                    {(currentPrerequisites?.firstMonthRentRemaining || 0).toLocaleString('vi-VN')}đ
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-500 text-[10px] uppercase font-bold block">Tổng Tiền Thu Tại Cơ Sở:</span>
-                  <span className="font-mono font-extrabold text-rose-700 text-sm">
-                    {((currentPrerequisites?.depositRemaining || 0) + (currentPrerequisites?.firstMonthRentRemaining || 0)).toLocaleString('vi-VN')}đ
+                <div className="bg-white/70 p-3 rounded-lg border border-amber-100">
+                  <span className="text-slate-500 text-[11px] uppercase font-bold block mb-1">Tổng Tiền Thu Tại Cơ Sở:</span>
+                  <span className="font-mono font-extrabold text-rose-700 text-base">
+                    {displayTotalDueAtFacility.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import { useLanguage } from '../../context/LanguageContext'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
 import {
   AlertCircle,
   X,
@@ -182,6 +183,29 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const wizardDiscount3M = Number(facilityPolicy?.discount3MonthPercent ?? 5)
   const wizardDiscount6M = Number(facilityPolicy?.discount6MonthPercent ?? 10)
   const wizardDiscount12M = Number(facilityPolicy?.discount12MonthPercent ?? 15)
+
+  const [customDiscounts, setCustomDiscounts] = useState<CustomDiscount[]>([])
+
+  const loadCustomDiscounts = useCallback(() => {
+    const list = customDiscountService.getActiveDiscounts(selectedFacility?.id)
+    setCustomDiscounts(list)
+  }, [selectedFacility?.id])
+
+  useEffect(() => {
+    loadCustomDiscounts()
+    const handleDiscountsUpdated = () => {
+      loadCustomDiscounts()
+    }
+    window.addEventListener('boxora_custom_discounts_updated', handleDiscountsUpdated)
+    window.addEventListener('storage', handleDiscountsUpdated)
+    window.addEventListener('focus', handleDiscountsUpdated)
+
+    return () => {
+      window.removeEventListener('boxora_custom_discounts_updated', handleDiscountsUpdated)
+      window.removeEventListener('storage', handleDiscountsUpdated)
+      window.removeEventListener('focus', handleDiscountsUpdated)
+    }
+  }, [selectedFacility?.id, loadCustomDiscounts])
 
   // Step 2: Storage Size Selection
   const [selectedTierKey, setSelectedTierKey] = useState<SizeTierKey>(initialTier)
@@ -492,7 +516,10 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
     const baseMonthly = tier.rateNumber
 
     let discountPercent = 0
-    if (rentalMonths >= 24) discountPercent = wizardDiscount12M
+    const customMatch = customDiscounts.find((cd) => cd.months === rentalMonths)
+    if (customMatch) {
+      discountPercent = customMatch.percent
+    } else if (rentalMonths >= 24) discountPercent = wizardDiscount12M
     else if (rentalMonths >= 12) discountPercent = wizardDiscount12M
     else if (rentalMonths >= 6) discountPercent = wizardDiscount6M
     else if (rentalMonths >= 3) discountPercent = wizardDiscount3M
@@ -514,7 +541,33 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
       depositAmount,
       totalEstimate: totalRent + depositAmount,
     }
-  }, [selectedTierKey, rentalMonths, wizardDiscount3M, wizardDiscount6M, wizardDiscount12M, facilityPolicy])
+  }, [selectedTierKey, rentalMonths, wizardDiscount3M, wizardDiscount6M, wizardDiscount12M, customDiscounts, facilityPolicy])
+
+  const activeDurationOptions = useMemo(() => {
+    return [
+      { m: 1, label: '1 tháng', discount: 'Chuẩn', sortOrder: 1 },
+      { m: 3, label: '3 tháng', discount: `Giảm ${wizardDiscount3M}%`, sortOrder: 3 },
+      { m: 6, label: '6 tháng', discount: `Giảm ${wizardDiscount6M}%`, sortOrder: 6 },
+      { m: 12, label: '12 tháng', discount: `Giảm ${wizardDiscount12M}%`, sortOrder: 12 },
+      ...customDiscounts
+        .filter((cd) => cd.isActive && ![1, 3, 6, 12].includes(cd.months))
+        .map((cd) => ({
+          m: cd.months,
+          label: `${cd.months} tháng`,
+          discount: `Giảm ${cd.percent}%`,
+          sortOrder: cd.months,
+        })),
+    ].sort((a, b) => a.sortOrder - b.sortOrder)
+  }, [wizardDiscount3M, wizardDiscount6M, wizardDiscount12M, customDiscounts])
+
+  const durationGridColsClass = useMemo(() => {
+    const count = activeDurationOptions.length
+    if (count <= 3) return 'grid-cols-2 sm:grid-cols-3'
+    if (count === 4) return 'grid-cols-2 sm:grid-cols-4'
+    if (count === 5) return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'
+    if (count === 6) return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'
+    return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'
+  }, [activeDurationOptions.length])
 
   // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
   const captureSigningSnapshot = useCallback(() => ({
@@ -1292,13 +1345,8 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { m: 1, label: '1 tháng', discount: 'Chuẩn' },
-                    { m: 3, label: '3 tháng', discount: 'Giảm 5%' },
-                    { m: 6, label: '6 tháng', discount: 'Giảm 10%' },
-                    { m: 12, label: '12 tháng', discount: 'Giảm 15%' },
-                  ].map((dur) => (
+                <div className={`grid ${durationGridColsClass} gap-2`}>
+                  {activeDurationOptions.map((dur) => (
                     <button
                       key={dur.m}
                       type="button"

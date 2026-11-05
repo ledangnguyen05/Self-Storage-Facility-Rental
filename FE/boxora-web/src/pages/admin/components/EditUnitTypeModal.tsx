@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { UnitType } from '../../../types'
+import { UnitType, FacilityPolicy } from '../../../types'
 import { storageUnitService } from '../../../services/storageUnitService'
+import { facilityUnitTypeService } from '../../../services/facilityUnitTypeService'
 import { useLanguage } from '../../../context/LanguageContext'
 
 interface EditUnitTypeModalProps {
@@ -8,6 +9,9 @@ interface EditUnitTypeModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: (updated: UnitType) => void
+  facilityId?: string
+  facilityName?: string
+  policy?: FacilityPolicy | null
 }
 
 export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
@@ -15,6 +19,9 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  facilityId,
+  facilityName,
+  policy,
 }) => {
   const { t } = useLanguage()
 
@@ -24,7 +31,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
   const [heightM, setHeightM] = useState<number | ''>('')
   const [volumeM3, setVolumeM3] = useState<number | ''>('')
   const [areaSqm, setAreaSqm] = useState<number | ''>('')
-  const [capacityBoxes, setCapacityBoxes] = useState<number | ''>('')
   const [basePrice, setBasePrice] = useState<number | ''>('')
   const [acPrice, setAcPrice] = useState<number | ''>('')
   const [isActive, setIsActive] = useState<boolean>(true)
@@ -45,9 +51,8 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setHeightM(unitType.heightM ?? 2.5)
       setVolumeM3(unitType.volumeM3 ?? '')
       setAreaSqm(unitType.areaSqm ?? '')
-      setCapacityBoxes(unitType.capacityBoxes ?? '')
       setBasePrice(unitType.basePricePerMonth ?? 0)
-      setAcPrice(unitType.acPricePerMonth ?? Math.round((unitType.basePricePerMonth || 0) * 1.2))
+      setAcPrice(unitType.acPricePerMonth != null && unitType.acPricePerMonth > 0 ? unitType.acPricePerMonth : '')
       setIsActive(unitType.isActive ?? true)
       setImageUrl(unitType.imageUrl || '')
       setPriceChangeReason('')
@@ -60,7 +65,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setHeightM(2.5)
       setVolumeM3('')
       setAreaSqm('')
-      setCapacityBoxes('')
       setBasePrice('')
       setAcPrice('')
       setIsActive(true)
@@ -93,12 +97,46 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
     setShowStatusConfirm(true)
   }
 
-  const confirmStatusChange = () => {
-    if (pendingStatus !== null) {
-      setIsActive(pendingStatus)
-    }
+  const confirmStatusChange = async () => {
+    if (pendingStatus === null) return
+    const newStatus = pendingStatus
+    setIsActive(newStatus)
     setShowStatusConfirm(false)
-    setPendingStatus(null)
+
+    if (unitType) {
+      setIsSaving(true)
+      try {
+        if (facilityId) {
+          facilityUnitTypeService.toggleFacilityUnitTypeStatus(facilityId, unitType.id, newStatus)
+          onSuccess({ ...unitType, isActive: newStatus })
+        } else {
+          const payload = {
+            typeName: typeName.trim() || unitType.typeName,
+            lengthM: lengthM !== '' ? Number(lengthM) : undefined,
+            widthM: widthM !== '' ? Number(widthM) : undefined,
+            heightM: heightM !== '' ? Number(heightM) : undefined,
+            volumeM3: volumeM3 !== '' ? Number(volumeM3) : undefined,
+            areaSqm: areaSqm !== '' ? Number(areaSqm) : undefined,
+            basePricePerMonth: basePrice !== '' ? Number(basePrice) : unitType.basePricePerMonth,
+            acPricePerMonth: acPrice !== '' && Number(acPrice) > 0 ? Number(acPrice) : 0,
+            isActive: newStatus,
+            priceChangeReason: newStatus
+              ? 'Kích hoạt lại loại kho'
+              : (priceChangeReason.trim() || 'Tạm ngưng hoạt động loại kho'),
+          }
+          const res = await storageUnitService.updateUnitType(unitType.id, payload)
+          onSuccess(res || { ...unitType, ...payload, isActive: newStatus })
+        }
+        onClose()
+      } catch (err: any) {
+        setErrorMsg(err.response?.data?.message || err.message || 'Không thể cập nhật trạng thái loại kho')
+      } finally {
+        setIsSaving(false)
+        setPendingStatus(null)
+      }
+    } else {
+      setPendingStatus(null)
+    }
   }
 
   const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,32 +183,42 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       return
     }
 
-    if (acPrice === '' || Number(acPrice) < 0) {
-      setErrorMsg('Giá thuê máy lạnh A/C phải lớn hơn hoặc bằng 0.')
+    if (acPrice !== '' && Number(acPrice) < 0) {
+      setErrorMsg('Giá thuê máy lạnh A/C không thể là số âm.')
       return
     }
 
     setIsSaving(true)
     try {
       const calcArea = areaSqm !== '' ? Number(areaSqm) : (lengthM && widthM ? Number(lengthM) * Number(widthM) : 1)
+      const numAcPrice = acPrice !== '' && Number(acPrice) > 0 ? Number(acPrice) : undefined
+
       if (unitType) {
-        const payload = {
+        const payload: UnitType = {
+          ...unitType,
           typeName: typeName.trim(),
           lengthM: lengthM !== '' ? Number(lengthM) : undefined,
           widthM: widthM !== '' ? Number(widthM) : undefined,
           heightM: heightM !== '' ? Number(heightM) : undefined,
           volumeM3: volumeM3 !== '' ? Number(volumeM3) : undefined,
           areaSqm: calcArea,
-          capacityBoxes: capacityBoxes !== '' ? Number(capacityBoxes) : undefined,
           basePricePerMonth: Number(basePrice),
-          acPricePerMonth: Number(acPrice),
+          acPricePerMonth: numAcPrice,
           isActive,
           imageUrl: imageUrl.trim() || undefined,
-          priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
         }
 
-        const res = await storageUnitService.updateUnitType(unitType.id, payload)
-        onSuccess(res || { ...unitType, ...payload })
+        if (facilityId) {
+          const res = await facilityUnitTypeService.saveFacilityUnitType(facilityId, payload, policy)
+          onSuccess(res)
+        } else {
+          const res = await storageUnitService.updateUnitType(unitType.id, {
+            ...payload,
+            acPricePerMonth: numAcPrice ?? 0,
+            priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
+          })
+          onSuccess(res || payload)
+        }
       } else {
         const dims = (lengthM && widthM && heightM)
           ? `${lengthM}m x ${widthM}m x ${heightM}m`
@@ -183,15 +231,23 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
           lengthM: lengthM !== '' ? Number(lengthM) : undefined,
           widthM: widthM !== '' ? Number(widthM) : undefined,
           heightM: heightM !== '' ? Number(heightM) : 2.5,
-          capacityBoxes: capacityBoxes !== '' ? Number(capacityBoxes) : Math.round(calcArea * 15),
           depositAmount: Number(basePrice),
           basePricePerMonth: Number(basePrice),
-          acPricePerMonth: Number(acPrice),
+          acPricePerMonth: numAcPrice,
           isActive,
           imageUrl: imageUrl.trim() || undefined,
         }
-        const created = await storageUnitService.createUnitType(createPayload)
-        onSuccess(created)
+
+        if (facilityId) {
+          const res = await facilityUnitTypeService.createFacilityUnitType(facilityId, createPayload, policy)
+          onSuccess(res)
+        } else {
+          const created = await storageUnitService.createUnitType({
+            ...createPayload,
+            acPricePerMonth: numAcPrice ?? 0,
+          })
+          onSuccess(created)
+        }
       }
       onClose()
     } catch (err: any) {
@@ -212,8 +268,13 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
             </span>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {t('Chỉnh sửa Loại Kho')}
+                {unitType ? t('Chỉnh sửa Loại Kho') : t('Thêm loại kho mới')}
               </h3>
+              {facilityName && (
+                <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                  {t('Áp dụng cho cơ sở:')} <span className="font-bold">{facilityName}</span>
+                </p>
+              )}
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Mã định danh: <span className="font-mono font-medium text-cyan-600">{unitType?.id || 'Mới'}</span>
               </p>
@@ -407,8 +468,8 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
               </div>
             </div>
 
-            {/* Auto metrics: Area, Volume, Capacity */}
-            <div className="grid grid-cols-3 gap-3 pt-1">
+            {/* Auto metrics: Area & Volume (Sức chứa đã loại bỏ hoàn toàn theo yêu cầu) */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
               <div className="space-y-1">
                 <label className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
                   {t('Diện tích (m²)')}
@@ -433,18 +494,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                   className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-cyan-700"
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                  {t('Sức chứa (hộp/thùng)')}
-                </label>
-                <input
-                  type="number"
-                  value={capacityBoxes}
-                  onChange={(e) => setCapacityBoxes(e.target.value === '' ? '' : Number(e.target.value))}
-                  placeholder="VD: 48"
-                  className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
-                />
-              </div>
             </div>
           </div>
 
@@ -459,14 +508,8 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                 step="10000"
                 min="0"
                 value={basePrice}
-                onChange={(e) => {
-                  const val = e.target.value === '' ? '' : Number(e.target.value)
-                  setBasePrice(val)
-                  // Propose AC price if unset or linked
-                  if (typeof val === 'number') {
-                    setAcPrice(Math.round(val * 1.2))
-                  }
-                }}
+                onChange={(e) => setBasePrice(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="VD: 4500000"
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-slate-800 dark:text-slate-100"
                 required
               />
@@ -476,7 +519,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
             </div>
             <div className="space-y-1">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                {t('Giá Máy lạnh A/C / tháng (VNĐ)')} <span className="text-rose-500">*</span>
+                {t('Giá Máy lạnh / tháng (VNĐ)')}{' '}
               </label>
               <input
                 type="number"
@@ -484,11 +527,13 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                 min="0"
                 value={acPrice}
                 onChange={(e) => setAcPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="VD: 5400000 (Để trống nếu kho không hỗ trợ A/C)"
                 className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono font-bold text-teal-700 dark:text-teal-400"
-                required
               />
               <p className="text-[10px] text-slate-400">
-                {typeof acPrice === 'number' ? acPrice.toLocaleString('vi-VN') + ' đ' : ''}
+                {typeof acPrice === 'number' && acPrice > 0
+                  ? acPrice.toLocaleString('vi-VN') + ' đ'
+                  : t('Kho này không có máy lạnh A/C (sẽ ẩn tùy chọn A/C khi khách đặt kho)')}
               </p>
             </div>
           </div>

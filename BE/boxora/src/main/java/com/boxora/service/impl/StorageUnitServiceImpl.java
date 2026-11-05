@@ -309,6 +309,10 @@ public class StorageUnitServiceImpl implements StorageUnitService {
         UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
 
+        if (Boolean.FALSE.equals(unitType.getIsActive())) {
+            throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho này đang ở trạng thái tạm ngưng, không thể tạo thêm ngăn kho mới");
+        }
+
         if (request.getPricePerMonth() != null && request.getPricePerMonth().compareTo(BigDecimal.ZERO) < 0) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Giá thuê hàng tháng phải lớn hơn hoặc bằng 0");
         }
@@ -471,6 +475,10 @@ public class StorageUnitServiceImpl implements StorageUnitService {
 
         UnitType unitType = unitTypeRepository.findById(request.getUnitTypeId())
                 .orElseThrow(() -> new AppException(ErrorCode.UNIT_TYPE_NOT_FOUND));
+
+        if (Boolean.FALSE.equals(unitType.getIsActive())) {
+            throw new AppException(ErrorCode.UNIT_TYPE_INACTIVE, "Loại kho này đang ở trạng thái tạm ngưng, không thể tạo thêm ngăn kho mới");
+        }
 
         unit.setUnitCode(trimmedCode);
         unit.setFloorLevel(request.getFloorLevel().trim());

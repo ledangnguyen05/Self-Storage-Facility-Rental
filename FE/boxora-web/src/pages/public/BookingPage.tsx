@@ -48,6 +48,8 @@ import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
 import { cancellationPolicyService } from '../../services/cancellationPolicyService'
+import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
+import { facilityUnitTypeService } from '../../services/facilityUnitTypeService'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { FacilityNoUnitsModal } from '../../components/modals/FacilityNoUnitsModal'
 import { PayLaterAppointmentConfirmModal } from '../../components/modals/PayLaterAppointmentConfirmModal'
@@ -118,6 +120,7 @@ export interface StorageSizeUnitDef {
   fitsDetailed: string[]
   nonAcRate: number
   acRate: number
+  hasAc?: boolean
   dbUnitTypeId?: string
   typeName?: string
 }
@@ -423,12 +426,22 @@ export const BookingPage: React.FC = () => {
   // Step 1: Facility Selection
   const [selectedFacility, setSelectedFacility] = useState<Facility | null>(null)
   const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
-  const [customDiscounts, setCustomDiscounts] = useState<{ id?: string; months: number; percent: number; label?: string }[]>([])
+  const [customDiscounts, setCustomDiscounts] = useState<CustomDiscount[]>([])
+
+  const loadCustomDiscounts = useCallback(() => {
+    const facId =
+      selectedFacility?.id ||
+      localStorage.getItem('boxora_selected_facility_id') ||
+      sessionStorage.getItem('boxora_selected_facility_id') ||
+      localStorage.getItem('boxora_admin_selected_facility_id')
+    const active = customDiscountService.getActiveDiscounts(facId)
+    setCustomDiscounts(active)
+  }, [selectedFacility?.id])
 
   useEffect(() => {
+    loadCustomDiscounts()
     if (!selectedFacility?.id) {
       setFacilityPolicy(null)
-      setCustomDiscounts([])
       return
     }
     let isCancelled = false
@@ -444,21 +457,30 @@ export const BookingPage: React.FC = () => {
     }
     void loadPolicy()
 
-    try {
-      const saved = localStorage.getItem(`boxora_custom_discounts_${selectedFacility.id}`)
-      if (saved) {
-        setCustomDiscounts(JSON.parse(saved))
-      } else {
-        setCustomDiscounts([])
-      }
-    } catch {
-      setCustomDiscounts([])
+    const handleDiscountsUpdated = () => {
+      loadCustomDiscounts()
+      void loadPolicy()
     }
+    window.addEventListener('boxora_custom_discounts_updated', handleDiscountsUpdated)
+    window.addEventListener('boxora_facility_unittypes_updated', handleDiscountsUpdated)
+    window.addEventListener('storage', handleDiscountsUpdated)
+    window.addEventListener('focus', handleDiscountsUpdated)
 
     return () => {
       isCancelled = true
+      window.removeEventListener('boxora_custom_discounts_updated', handleDiscountsUpdated)
+      window.removeEventListener('boxora_facility_unittypes_updated', handleDiscountsUpdated)
+      window.removeEventListener('storage', handleDiscountsUpdated)
+      window.removeEventListener('focus', handleDiscountsUpdated)
     }
-  }, [selectedFacility?.id])
+  }, [selectedFacility?.id, loadCustomDiscounts])
+
+  // Also ensure custom discounts are fresh when entering Step 3
+  useEffect(() => {
+    if (currentStep === 3) {
+      loadCustomDiscounts()
+    }
+  }, [currentStep, loadCustomDiscounts])
 
   const facilityDiscount3M = Number(facilityPolicy?.discount3MonthPercent ?? 5)
   const facilityDiscount6M = Number(facilityPolicy?.discount6MonthPercent ?? 10)
@@ -677,8 +699,14 @@ export const BookingPage: React.FC = () => {
           const draftStr = sessionStorage.getItem('boxora_booking_draft') || localStorage.getItem('boxora_booking_draft')
           if (draftStr) {
             const draft = JSON.parse(draftStr)
-            const targetFacId = draft.facilityId || savedFacId
-            let matchedFac = targetFacId ? activeList.find((f) => String(f.id) === String(targetFacId)) : undefined
+            const targetFacId = facParam || draft.facilityId || savedFacId
+            let matchedFac = targetFacId
+              ? activeList.find((f) =>
+                  String(f.id) === String(targetFacId) ||
+                  (f.code && f.code.toLowerCase() === String(targetFacId).toLowerCase()) ||
+                  (f.name && f.name.toLowerCase().includes(String(targetFacId).toLowerCase()))
+                )
+              : undefined
             if (!matchedFac && draft.facilityName) {
               matchedFac = activeList.find((f) => 
                 f.name?.toLowerCase().trim() === draft.facilityName.toLowerCase().trim() ||
@@ -887,9 +915,14 @@ export const BookingPage: React.FC = () => {
         u.facilityId === selectedFacility.id &&
         (u.status === 'AVAILABLE' || (u.status as string) === 'Trống') &&
         !localReservedUnitIds.has(u.id) &&
-        !localReservedUnitCodes.has(u.unitCode)
+        !localReservedUnitCodes.has(u.unitCode) &&
+        (() => {
+          if (!u.unitTypeId) return true
+          const dbType = dbUnitTypes.find((ut) => ut.id === u.unitTypeId)
+          return !dbType || dbType.isActive !== false
+        })()
     )
-  }, [storageUnits, selectedFacility])
+  }, [storageUnits, selectedFacility, dbUnitTypes])
 
   // Lắng nghe sự kiện toàn hệ thống để tự động đồng bộ số lượng kho khả dụng thời gian thực
   const refreshAvailableUnits = useCallback(async () => {
@@ -924,15 +957,12 @@ export const BookingPage: React.FC = () => {
             if (pol) setFacilityPolicy(pol)
           })
           .catch(() => {})
-        try {
-          const saved = localStorage.getItem(`boxora_custom_discounts_${selectedFacility.id}`)
-          setCustomDiscounts(saved ? JSON.parse(saved) : [])
-        } catch {}
+        loadCustomDiscounts()
       }
     } catch (e) {
       console.warn('Refresh available units error:', e)
     }
-  }, [selectedFacility?.id])
+  }, [selectedFacility?.id, loadCustomDiscounts])
 
   useRealtimeSync(() => {
     void refreshAvailableUnits()
@@ -954,57 +984,76 @@ export const BookingPage: React.FC = () => {
     const matchedSizes: StorageSizeUnitDef[] = []
     const processedKeys = new Set<string>()
 
+    const facilityUnitTypes = selectedFacility?.id
+      ? facilityUnitTypeService.getFacilityUnitTypes(selectedFacility.id, dbUnitTypes, facilityPolicy)
+      : dbUnitTypes
+
     unitsSource.forEach((unit) => {
-      // 1. Try to find matching dbUnitType
-      const dbType = dbUnitTypes.find((ut) => ut.id === unit.unitTypeId)
-      const key = dbType ? dbType.id : (unit.unitTypeName || `${unit.areaSqMeters}m2`)
+      // 1. Try to find matching unit type in facilityUnitTypes
+      const dbType = facilityUnitTypes.find((ut) => ut.id === unit.unitTypeId)
+      if (dbType && dbType.isActive === false) {
+        return // Bỏ qua loại kho đang tạm ngưng hoạt động tại cơ sở này
+      }
+      const dbTypeByName = !dbType && unit.unitTypeName ? facilityUnitTypes.find((ut) => ut.typeName.toLowerCase() === unit.unitTypeName.toLowerCase()) : null
+      if (dbTypeByName && dbTypeByName.isActive === false) {
+        return // Bỏ qua loại kho đang tạm ngưng hoạt động tại cơ sở này
+      }
+
+      const targetType = dbType || dbTypeByName
+      const key = targetType ? targetType.id : (unit.unitTypeName || `${unit.areaSqMeters}m2`)
       if (processedKeys.has(key)) return
       processedKeys.add(key)
 
       // Try to find a matching static catalog item
       let matchedCatalog = STORAGE_SIZES_CATALOG.find((s) => {
-        if (dbType && (dbType.volumeM3 === s.volumeNumber || Math.abs((dbType.areaSqm || 0) - s.areaM2) < 0.5)) return true
+        if (targetType && (targetType.volumeM3 === s.volumeNumber || Math.abs((targetType.areaSqm || 0) - s.areaM2) < 0.5)) return true
         const name = (unit.unitTypeName || '').toLowerCase()
         if (name.includes(s.id)) return true
         return unit.areaSqMeters && Math.abs(unit.areaSqMeters - s.areaM2) < 0.6
       })
 
-      if (dbType) {
-        const vol = dbType.volumeM3 != null ? Number(dbType.volumeM3) : (matchedCatalog ? matchedCatalog.volumeNumber : Math.round((dbType.areaSqm || unit.areaSqMeters || 1) * 3))
-        const area = dbType.areaSqm != null ? Number(dbType.areaSqm) : (matchedCatalog ? matchedCatalog.areaM2 : (unit.areaSqMeters || 1))
-        const dims = dbType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${dbType.lengthM || 2}m × ${dbType.widthM || 1.5}m × ${dbType.heightM || 2.6}m`)
-        const cap = dbType.capacityBoxes ? `${dbType.capacityBoxes} boxes` : (matchedCatalog ? matchedCatalog.capacityText : `${Math.round(area * 8)} boxes`)
-        const name = (dbType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn') || 'Kho tiêu chuẩn') as string
+      if (targetType) {
+        const vol = targetType.volumeM3 != null ? Number(targetType.volumeM3) : (matchedCatalog ? matchedCatalog.volumeNumber : Math.round((targetType.areaSqm || unit.areaSqMeters || 1) * 3))
+        const area = targetType.areaSqm != null ? Number(targetType.areaSqm) : (matchedCatalog ? matchedCatalog.areaM2 : (unit.areaSqMeters || 1))
+        const dims = targetType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${targetType.lengthM || 2}m × ${targetType.widthM || 1.5}m × ${targetType.heightM || 2.6}m`)
+        const cap = matchedCatalog ? matchedCatalog.capacityText : `${Math.round(area * 8)} boxes`
+        const name = targetType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn')
+        const hasAc = targetType.acPricePerMonth != null && Number(targetType.acPricePerMonth) > 0
+        const nonAcRate = Number(targetType.basePricePerMonth || (matchedCatalog ? matchedCatalog.nonAcRate : 5000000))
+        const acRate = hasAc ? Number(targetType.acPricePerMonth) : 0
 
         matchedSizes.push({
           ...(matchedCatalog || STORAGE_SIZES_CATALOG[0]),
-          id: dbType.id,
-          dbUnitTypeId: dbType.id,
+          id: targetType.id,
+          dbUnitTypeId: targetType.id,
           typeName: name,
           volumeText: `${vol} m³`,
           volumeNumber: vol,
           capacityText: cap,
-          image: dbType.imageUrl || (vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image)),
-          imageUrl: dbType.imageUrl || undefined,
+          image: targetType?.imageUrl || dbType?.imageUrl || (vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image)),
+          imageUrl: targetType?.imageUrl || dbType?.imageUrl || undefined,
           dimensions: dims,
           areaM2: area,
           fitsDetailed: [
-            name || '',
+            name || 'Kho tiêu chuẩn',
             `Diện tích sàn: ${area} m² · Thể tích: ${vol} m³`,
             `Kích thước: ${dims}`,
-            `Sức chứa: ~${cap} quy chuẩn`,
             'Bảo quản an ninh 24/7 với kiểm soát độ ẩm và camera thông minh',
           ],
-          nonAcRate: dbType.basePricePerMonth || (matchedCatalog ? matchedCatalog.nonAcRate : 5000000),
-          acRate: dbType.acPricePerMonth || (matchedCatalog ? matchedCatalog.acRate : Math.round((dbType.basePricePerMonth || 5000000) * 1.2)),
+          nonAcRate,
+          acRate,
+          hasAc,
         })
       } else if (matchedCatalog) {
-        matchedSizes.push(matchedCatalog)
+        matchedSizes.push({
+          ...matchedCatalog,
+          hasAc: matchedCatalog.acRate > 0,
+        })
       }
     })
 
     return matchedSizes.sort((a, b) => a.volumeNumber - b.volumeNumber)
-  }, [selectedFacility, storageUnits, availableFacilityUnits, dbUnitTypes])
+  }, [selectedFacility, storageUnits, availableFacilityUnits, dbUnitTypes, facilityPolicy])
 
   // Count available units for a size in the selected facility
   const getAvailableCountForSize = (sizeUnit: StorageSizeUnitDef) => {
@@ -1092,7 +1141,11 @@ export const BookingPage: React.FC = () => {
     return STORAGE_SIZES_CATALOG[2]
   }, [selectedSizeId, availableSizesInFacility])
 
-  const isAcActive = acSelectionMap[currentSelectedSize.id] === 'AC'
+  const isAcActive = Boolean(
+    currentSelectedSize.hasAc !== false &&
+    currentSelectedSize.acRate > 0 &&
+    acSelectionMap[currentSelectedSize.id] === 'AC'
+  )
 
   // Rental duration helpers & validation
   const isCustomDuration = durationMode === 'CUSTOM_DAYS'
@@ -1115,23 +1168,63 @@ export const BookingPage: React.FC = () => {
     return d.toISOString().split('T')[0]
   }, [startDate, isCustomDuration, customDays, rentalMonths])
 
+  const maxActiveDiscountPercent = useMemo(() => {
+    let maxPct = Math.max(facilityDiscount3M, facilityDiscount6M, facilityDiscount12M)
+    customDiscounts.forEach((cd) => {
+      if ((cd.isActive === true || String(cd.isActive) === 'true') && Number(cd.percent) > maxPct) {
+        maxPct = Number(cd.percent)
+      }
+    })
+    return maxPct
+  }, [facilityDiscount3M, facilityDiscount6M, facilityDiscount12M, customDiscounts])
+
+  const activeDurationOptions = useMemo(() => {
+    return [
+      { m: 1, label: '1 tháng', badge: 'Tiêu chuẩn', sortOrder: 1 },
+      { m: 3, label: '3 tháng', badge: facilityDiscount3M > 0 ? `Tiết kiệm ${facilityDiscount3M}%` : 'Tiêu chuẩn', sortOrder: 3 },
+      { m: 6, label: '6 tháng', badge: facilityDiscount6M > 0 ? `Tiết kiệm ${facilityDiscount6M}%` : 'Tiêu chuẩn', sortOrder: 6 },
+      { m: 12, label: '12 tháng', badge: facilityDiscount12M > 0 ? `Tiết kiệm ${facilityDiscount12M}%` : 'Tiêu chuẩn', sortOrder: 12 },
+      ...customDiscounts
+        .filter((cd) => (cd.isActive === true || String(cd.isActive) === 'true') && Number(cd.percent) > 0 && ![1, 3, 6, 12].includes(Number(cd.months)))
+        .map((cd) => ({
+          m: Number(cd.months),
+          label: `${cd.months} tháng`,
+          badge: `Tiết kiệm ${cd.percent}%`,
+          sortOrder: Number(cd.months),
+        })),
+    ].sort((a, b) => a.sortOrder - b.sortOrder)
+  }, [facilityDiscount3M, facilityDiscount6M, facilityDiscount12M, customDiscounts])
+
+  const durationGridColsClass = useMemo(() => {
+    const count = activeDurationOptions.length
+    if (count <= 3) return 'grid-cols-2 sm:grid-cols-3'
+    if (count === 4) return 'grid-cols-2 sm:grid-cols-4'
+    if (count === 5) return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'
+    if (count === 6) return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'
+    return 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'
+  }, [activeDurationOptions.length])
+
   const getDynamicPriceForSize = useCallback((sizeUnit: StorageSizeUnitDef, isAc: boolean) => {
     const utId = resolveUnitTypeIdForSelectedSize(sizeUnit)
-    const matchingUnit = availableFacilityUnits.find((u) => u.unitTypeId === utId && u.pricePerMonth && u.pricePerMonth > 0)
-    if (matchingUnit?.pricePerMonth) {
-      return isAc ? Math.round(matchingUnit.pricePerMonth * 1.2) : matchingUnit.pricePerMonth
-    }
-    const matchingUt = dbUnitTypes.find((ut) => ut.id === utId && ut.basePricePerMonth && ut.basePricePerMonth > 0)
-    if (matchingUt?.basePricePerMonth) {
-      if (isAc) {
-        return matchingUt.acPricePerMonth != null && Number(matchingUt.acPricePerMonth) > 0
-          ? Number(matchingUt.acPricePerMonth)
-          : Math.round(matchingUt.basePricePerMonth * 1.2)
+    const facilityUnitTypes = selectedFacility?.id
+      ? facilityUnitTypeService.getFacilityUnitTypes(selectedFacility.id, dbUnitTypes, facilityPolicy)
+      : dbUnitTypes
+    const matchingUt = facilityUnitTypes.find((ut) => ut.id === utId)
+    if (matchingUt && matchingUt.basePricePerMonth && matchingUt.basePricePerMonth > 0) {
+      if (isAc && sizeUnit.hasAc !== false && matchingUt.acPricePerMonth != null && Number(matchingUt.acPricePerMonth) > 0) {
+        return Number(matchingUt.acPricePerMonth)
       }
       return matchingUt.basePricePerMonth
     }
-    return isAc ? sizeUnit.acRate : sizeUnit.nonAcRate
-  }, [availableFacilityUnits, dbUnitTypes])
+    const matchingUnit = availableFacilityUnits.find((u) => u.unitTypeId === utId && u.pricePerMonth && u.pricePerMonth > 0)
+    if (matchingUnit?.pricePerMonth) {
+      if (isAc && sizeUnit.hasAc !== false && sizeUnit.acRate > 0) {
+        return sizeUnit.acRate
+      }
+      return matchingUnit.pricePerMonth
+    }
+    return isAc && sizeUnit.hasAc !== false && sizeUnit.acRate > 0 ? sizeUnit.acRate : sizeUnit.nonAcRate
+  }, [availableFacilityUnits, dbUnitTypes, selectedFacility?.id, facilityPolicy])
 
   // Pricing calculation
   const quoteCalculation = useMemo(() => {
@@ -1145,11 +1238,17 @@ export const BookingPage: React.FC = () => {
       else if (customDays >= 180) discountPercent = facilityDiscount6M
       else if (customDays >= 90) discountPercent = facilityDiscount3M
     } else {
-      const customMatch = customDiscounts.find((cd) => cd.months === rentalMonths)
-      if (customMatch) {
-        discountPercent = customMatch.percent
-      } else if (rentalMonths >= 24) {
+      const customMatch = customDiscounts.find(
+        (cd) => Number(cd.months) === Number(rentalMonths) && (cd.isActive === true || String(cd.isActive) === 'true')
+      )
+      if (customMatch && Number(customMatch.percent) > 0) {
+        discountPercent = Number(customMatch.percent)
+      } else if (rentalMonths === 12) {
         discountPercent = facilityDiscount12M
+      } else if (rentalMonths === 6) {
+        discountPercent = facilityDiscount6M
+      } else if (rentalMonths === 3) {
+        discountPercent = facilityDiscount3M
       } else if (rentalMonths >= 12) {
         discountPercent = facilityDiscount12M
       } else if (rentalMonths >= 6) {
@@ -2370,7 +2469,7 @@ export const BookingPage: React.FC = () => {
                   Chọn kho hoặc loại kho lưu trữ
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Lựa chọn thể tích phù hợp và tùy chỉnh chế độ điều hòa nhiệt ẩm (A/C) hoặc thông gió tự nhiên (Non-A/C).
+                  Lựa chọn thể tích phù hợp và tùy chỉnh chế độ điều hòa nhiệt ẩm  hoặc thông gió tự nhiên.
                 </p>
               </div>
 
@@ -2419,8 +2518,8 @@ export const BookingPage: React.FC = () => {
             ) : (
               <>
                 {/* Category Filter Tabs & Visual Mode Switcher */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 p-2 sm:p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs">
+                  <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-nowrap py-0.5">
                     {[
                       { key: 'ALL', label: `Tất cả (${availableSizesInFacility.length})` },
                       { key: 'PERSONAL', label: 'Cá nhân & Mini (≤ 4 m³)' },
@@ -2432,7 +2531,7 @@ export const BookingPage: React.FC = () => {
                         key={cat.key}
                         type="button"
                         onClick={() => setSizeFilterCategory(cat.key as any)}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        className={`whitespace-nowrap shrink-0 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           sizeFilterCategory === cat.key
                             ? 'bg-blue-600 text-white shadow-xs'
                             : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -2443,122 +2542,21 @@ export const BookingPage: React.FC = () => {
                     ))}
                   </div>
 
-                  <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 px-1">
-                    <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700">
-                      <button
-                        type="button"
-                        onClick={() => setSizeVisualMode('3D')}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          sizeVisualMode === '3D'
-                            ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        <Box size={12} />
-                        <span>Mô hình 3D</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSizeVisualMode('PHOTO')}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          sizeVisualMode === 'PHOTO'
-                            ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        <Building2 size={12} />
-                        <span>Ảnh thực tế</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      <span>Đang chọn:</span>
-                      <strong className="text-blue-600 dark:text-blue-400 font-bold">
-                        Kho {currentSelectedSize.volumeText} ({isAcActive ? 'A/C Máy lạnh' : 'Non-A/C'})
-                      </strong>
-                    </div>
+                  <div className="flex items-center justify-end gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium shrink-0 px-2 border-t xl:border-t-0 pt-2 xl:pt-0 border-slate-100 dark:border-slate-800">
+                    <span className="whitespace-nowrap">Đang chọn:</span>
+                    <strong className="text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                      Kho {currentSelectedSize.volumeText} ({isAcActive ? 'A/C Máy lạnh' : 'Non-A/C'})
+                    </strong>
                   </div>
                 </div>
 
-                {/* Secondary Multi-Criteria Filters Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs text-xs">
-                  <div className="flex flex-wrap items-center gap-3">
-                    {/* Area m² Filter */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-semibold text-[11px] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px]">aspect_ratio</span>
-                        Diện tích:
-                      </span>
-                      <select
-                        value={areaFilter}
-                        onChange={(e) => setAreaFilter(e.target.value as any)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs outline-none focus:border-blue-500 cursor-pointer"
-                      >
-                        <option value="ALL">Tất cả diện tích</option>
-                        <option value="LE_3">Nhỏ (≤ 3 m²)</option>
-                        <option value="3_TO_6">Tiêu chuẩn (3.1 – 6 m²)</option>
-                        <option value="GT_6">Lớn (&gt; 6 m²)</option>
-                      </select>
-                    </div>
-
-                    {/* Preservation Condition Filter */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-semibold text-[11px] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px]">ac_unit</span>
-                        Bảo quản:
-                      </span>
-                      <select
-                        value={preservationFilter}
-                        onChange={(e) => setPreservationFilter(e.target.value as any)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs outline-none focus:border-blue-500 cursor-pointer"
-                      >
-                        <option value="ALL">Tất cả điều kiện</option>
-                        <option value="AC">A/C (Kho lạnh / kiểm soát ẩm)</option>
-                        <option value="NON_AC">Non-A/C (Tiêu chuẩn thông gió)</option>
-                      </select>
-                    </div>
-
-                    {/* Stock Status Filter */}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-slate-500 font-semibold text-[11px] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[15px]">inventory_2</span>
-                        Tình trạng:
-                      </span>
-                      <select
-                        value={stockStatusFilter}
-                        onChange={(e) => setStockStatusFilter(e.target.value as any)}
-                        className="px-2.5 py-1 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-medium text-xs outline-none focus:border-blue-500 cursor-pointer"
-                      >
-                        <option value="ALL">Tất cả tình trạng</option>
-                        <option value="AVAILABLE">Còn trống (Sẵn sàng)</option>
-                        <option value="OUT_OF_STOCK">Hết chỗ</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Reset Filters button if any active */}
-                  {(sizeFilterCategory !== 'ALL' || areaFilter !== 'ALL' || preservationFilter !== 'ALL' || stockStatusFilter !== 'ALL') && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSizeFilterCategory('ALL')
-                        setAreaFilter('ALL')
-                        setPreservationFilter('ALL')
-                        setStockStatusFilter('ALL')
-                      }}
-                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 cursor-pointer"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">restart_alt</span>
-                      <span>Xóa bộ lọc</span>
-                    </button>
-                  )}
-                </div>
 
                 {/* Available Sizes Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4">
                   {filteredSizesCatalog.map((sizeUnit) => {
                     const isSelected = selectedSizeId === sizeUnit.id
-                    const unitAcMode = acSelectionMap[sizeUnit.id] || 'NON_AC'
+                    const unitHasAc = Boolean(sizeUnit.hasAc !== false && sizeUnit.acRate > 0)
+                    const unitAcMode = unitHasAc ? (acSelectionMap[sizeUnit.id] || 'NON_AC') : 'NON_AC'
                     const displayPrice = getDynamicPriceForSize(sizeUnit, unitAcMode === 'AC')
                     const realPhotoInfo = getRealPhotoForSize(sizeUnit.volumeNumber, unitAcMode === 'AC')
                     const availCount = getAvailableCountForSize(sizeUnit)
@@ -2591,9 +2589,6 @@ export const BookingPage: React.FC = () => {
                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
                               {sizeUnit.dimensions}
                             </div>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block mt-0.5">
-                              Sức chứa: {sizeUnit.capacityText}
-                            </span>
                           </div>
 
                           <div className="flex items-center gap-1.5">
@@ -2661,33 +2656,42 @@ export const BookingPage: React.FC = () => {
                             )}
                           </div>
 
-                          {/* Segmented A/C Toggle */}
-                          <div className="p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center text-xs font-semibold">
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleAc(sizeUnit.id, 'NON_AC', e)}
-                              className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
-                                unitAcMode === 'NON_AC'
-                                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
-                                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                              }`}
-                            >
-                              <Wind size={11} />
-                              <span>Tiêu chuẩn</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleAc(sizeUnit.id, 'AC', e)}
-                              className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
-                                unitAcMode === 'AC'
-                                  ? 'bg-blue-600 text-white shadow-2xs font-bold'
-                                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-                              }`}
-                            >
-                              <ThermometerSnowflake size={11} />
-                              <span>Máy lạnh A/C</span>
-                            </button>
-                          </div>
+                          {/* Segmented A/C Toggle: Ẩn nút Máy lạnh A/C nếu kho không hỗ trợ A/C */}
+                          {unitHasAc ? (
+                            <div className="p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center text-xs font-semibold">
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleAc(sizeUnit.id, 'NON_AC', e)}
+                                className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
+                                  unitAcMode === 'NON_AC'
+                                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-2xs font-bold'
+                                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                                }`}
+                              >
+                                <Wind size={11} />
+                                <span>Tiêu chuẩn</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => handleToggleAc(sizeUnit.id, 'AC', e)}
+                                className={`flex-1 py-1 rounded-md text-center transition-all cursor-pointer flex items-center justify-center gap-1 text-[11px] ${
+                                  unitAcMode === 'AC'
+                                      ? 'bg-blue-600 text-white shadow-2xs font-bold'
+                                      : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
+                                }`}
+                              >
+                                <ThermometerSnowflake size={11} />
+                                <span>Máy lạnh A/C</span>
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="p-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 flex items-center text-xs font-semibold">
+                              <div className="flex-1 py-1 rounded-md text-center bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 shadow-2xs font-bold flex items-center justify-center gap-1 text-[11px]">
+                                <Wind size={11} className="text-slate-500" />
+                                <span>Tiêu chuẩn (Thông gió)</span>
+                              </div>
+                            </div>
+                          )}
 
                           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
                             <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -2725,7 +2729,7 @@ export const BookingPage: React.FC = () => {
                   Thời hạn thuê &amp; Bảng kê báo giá
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {t('Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến {pct}% và xem bảng phân rã chi phí minh bạch.', { pct: `${facilityDiscount12M}%` }) || `Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến ${facilityDiscount12M}% và xem bảng phân rã chi phí minh bạch.`}
+                  {t('Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến {pct}% và xem bảng phân rã chi phí minh bạch.', { pct: `${maxActiveDiscountPercent}%` }) || `Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến ${maxActiveDiscountPercent}% và xem bảng phân rã chi phí minh bạch.`}
                 </p>
               </div>
 
@@ -2752,7 +2756,7 @@ export const BookingPage: React.FC = () => {
                           1. Chọn thời hạn thuê kho &amp; Ưu đãi kỳ hạn
                         </h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {t('Cam kết từ 3 tháng trở lên được giảm trực tiếp từ {min}% đến {max}% vào đơn giá hàng tháng', { min: `${facilityDiscount3M}%`, max: `${facilityDiscount12M}%` }) || `Cam kết từ 3 tháng trở lên được giảm trực tiếp từ ${facilityDiscount3M}% đến ${facilityDiscount12M}% vào đơn giá hàng tháng`}
+                          {t('Cam kết từ 3 tháng trở lên được giảm trực tiếp từ {min}% đến {max}% vào đơn giá hàng tháng', { min: `${facilityDiscount3M}%`, max: `${maxActiveDiscountPercent}%` }) || `Cam kết từ 3 tháng trở lên được giảm trực tiếp từ ${facilityDiscount3M}% đến ${maxActiveDiscountPercent}% vào đơn giá hàng tháng`}
                         </p>
                       </div>
                     </div>
@@ -2761,18 +2765,8 @@ export const BookingPage: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {[
-                      { m: 1, label: '1 tháng', badge: 'Tiêu chuẩn' },
-                      { m: 3, label: '3 tháng', badge: `Tiết kiệm ${facilityDiscount3M}%` },
-                      { m: 6, label: '6 tháng', badge: `Tiết kiệm ${facilityDiscount6M}%` },
-                      { m: 12, label: '12 tháng', badge: `Tiết kiệm ${facilityDiscount12M}%` },
-                      ...customDiscounts.map((cd) => ({
-                        m: cd.months,
-                        label: `${cd.months} tháng`,
-                        badge: `Tiết kiệm ${cd.percent}%`,
-                      })),
-                    ].map((dur) => {
+                  <div className={`grid ${durationGridColsClass} gap-2.5`}>
+                    {activeDurationOptions.map((dur) => {
                       const active = durationMode === 'MONTHS' && rentalMonths === dur.m
                       return (
                         <button
@@ -2782,14 +2776,14 @@ export const BookingPage: React.FC = () => {
                             setDurationMode('MONTHS')
                             setRentalMonths(dur.m)
                           }}
-                          className={`p-3.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                          className={`p-3 sm:p-3.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
                             active
                               ? 'bg-blue-50/90 dark:bg-blue-950/60 border-blue-600 text-blue-950 dark:text-blue-100 ring-2 ring-blue-500/20'
                               : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                           }`}
                         >
-                          <span className="font-extrabold text-sm text-slate-900 dark:text-white">{dur.label}</span>
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                          <span className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white whitespace-nowrap">{dur.label}</span>
+                          <span className={`text-[10px] sm:text-[11px] font-bold px-1.5 sm:px-2 py-0.5 rounded-md whitespace-nowrap ${
                             active
                               ? 'bg-blue-600 text-white'
                               : 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
@@ -2853,7 +2847,7 @@ export const BookingPage: React.FC = () => {
                       </span>
                     </div>
                     <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-1">
-                      <strong className="text-slate-900 dark:text-white font-bold block">Đã gồm VAT 8%</strong>
+                      <strong className="text-slate-900 dark:text-white font-bold block">Đã gồm VAT</strong>
                       <span className="text-slate-500 dark:text-slate-400 leading-relaxed block">
                         Xuất hóa đơn điện tử VAT tự động, không phát sinh bất kỳ khoản phụ phí ẩn nào.
                       </span>
@@ -4001,7 +3995,7 @@ export const BookingPage: React.FC = () => {
                   Chi tiết quy cách kho {inspectingSizeUnit.volumeText}
                 </h3>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  Sức chứa tương đương {inspectingSizeUnit.capacityText}
+                  {inspectingSizeUnit.dimensions} • {inspectingSizeUnit.areaM2} m²
                 </span>
               </div>
             </div>
@@ -4009,7 +4003,7 @@ export const BookingPage: React.FC = () => {
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Minh họa không gian &amp; sức chứa:
+                  Minh họa không gian:
                 </span>
                 <div className="inline-flex p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                   <button
@@ -4341,8 +4335,8 @@ export const BookingPage: React.FC = () => {
                 <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.dimensions}</strong>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Sức chứa ước tính:</span>
-                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.capacityText}</strong>
+                <span className="text-slate-500">Diện tích sàn:</span>
+                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.areaM2} m²</strong>
               </div>
               <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Vật dụng phù hợp:</span>

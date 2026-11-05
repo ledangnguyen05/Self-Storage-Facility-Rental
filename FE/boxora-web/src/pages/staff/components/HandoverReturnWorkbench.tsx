@@ -3823,32 +3823,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             </div>
                           </div>
                         )}
-                        <div className="pt-1 flex items-center justify-between">
-                          {isFacilityManager ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAdjDoorFee(currentCase.doorFee || 0)
-                                setAdjCleanFee(currentCase.cleaningFee || 0)
-                                setAdjDamageFee(currentCase.damageFee || 0)
-                                setAdjLockFee(currentCase.smartLockFee || 0)
-                                setAdjWallFee(currentCase.wallStructureFee || 0)
-                                setAdjLostCardFee(currentCase.lostCardFee || 0)
-                                setDisputeAction('ADJUST_SETTLEMENT')
-                                setDisputeResolutionNote('')
-                                setShowDisputeResolveModal(true)
-                              }}
-                              className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
-                            >
-                              <ShieldCheck size={14} />
-                              <span>Xử Lý Khiếu Nại (Chỉ Facility Manager)</span>
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-rose-700 italic">
-                              ℹ️ Hồ sơ đang tạm ngưng mọi giao dịch để chờ Quản lý cơ sở (Facility Manager) xem xét hòa giải.
-                            </span>
-                          )}
-                        </div>
                       </div>
                     )}
                   </div>
@@ -3977,42 +3951,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         </div>
                       ) : (
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
-                        {/* Thông báo tiến trình quyết toán & hoàn tiền */}
-                        {!isOverDeposit && currentCase.status !== 'REFUNDED' && currentCase.refundStatus !== 'REFUNDED' && currentCase.refundStatus !== 'COMPLETED' && (
-                          (() => {
-                            const hasCustomerAgreed =
-                              currentCase.customerDecision === 'AGREED' ||
-                              currentCase.approvalStatus === 'CUSTOMER_AGREED' ||
-                              currentCase.refundStatus === 'PENDING_PAYOUT'
-                            const hasBankInfo = Boolean(currentCase.bankAccountNumber && currentCase.bankAccountNumber.trim())
-
-                            if (hasCustomerAgreed && !hasBankInfo) {
-                              return (
-                                <div className="px-3.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200 text-xs font-semibold flex items-center gap-1.5">
-                                  <Clock size={14} className="text-blue-600 shrink-0" />
-                                  <span>Chờ khách hàng gửi số tài khoản ngân hàng để hoàn tiền ({netRefundAmount.toLocaleString('vi-VN')}đ)</span>
-                                </div>
-                              )
-                            }
-                            if (hasCustomerAgreed && hasBankInfo) {
-                              return (
-                                <div className="px-3.5 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-semibold flex items-center gap-1.5">
-                                  <Clock size={14} className="text-emerald-600 shrink-0" />
-                                  <span>Khách đã gửi thông tin ngân hàng — Hồ sơ chuyển cho Quản lý cơ sở thực hiện chuyển khoản ({netRefundAmount.toLocaleString('vi-VN')}đ) tại mục "Xử lý hoàn tiền hủy đơn"</span>
-                                </div>
-                              )
-                            }
-                            if (!hasCustomerAgreed && currentCase.status !== 'DISPUTED' && currentCase.approvalStatus !== 'DISPUTED') {
-                              return (
-                                <div className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-semibold flex items-center gap-1.5">
-                                  <Clock size={14} className="text-amber-600 shrink-0" />
-                                  <span>Chờ khách hàng xác nhận đồng ý biên bản quyết toán</span>
-                                </div>
-                              )
-                            }
-                            return null
-                          })()
-                        )}
 
                         {/* Action: Thu tiền bồi thường tại quầy (khi vượt cọc) */}
                         {isOverDeposit &&

@@ -3,6 +3,7 @@ import { bookingService } from '../../services/bookingService'
 import { paymentService } from '../../services/paymentService'
 import { pricingService, PricingQuoteResponse } from '../../services/pricingService'
 import { useLanguage } from '../../context/LanguageContext'
+import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
 
 export interface PortalBookingUnitData {
     id: string
@@ -19,7 +20,7 @@ export interface PortalBookingUnitData {
 }
 
 type BookingWorkflow = 'HOLD_ONLY' | 'ONLINE_NOW'
-type BookingPackage = '15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom'
+type BookingPackage = '15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom' | string
 
 interface PortalBookingReservationModalProps {
   unit: PortalBookingUnitData
@@ -78,6 +79,38 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
   const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState(false)
   const [bookingWorkflow, setBookingWorkflow] = useState<BookingWorkflow>('HOLD_ONLY')
   const [isSubmittingBooking, setIsSubmittingBooking] = useState(false)
+
+  // Load active custom discounts from localStorage for this facility (or global fallback)
+  const activeCustomDiscounts = useMemo<CustomDiscount[]>(() => {
+    return customDiscountService.getActiveDiscounts(selectedBookingUnit?.facilityId)
+  }, [selectedBookingUnit?.facilityId])
+
+  // Build dynamic term options: base options + active custom discounts
+  const termOptions = useMemo(() => {
+    const baseOptions: { id: string; title: string; sub: string; months: number }[] = [
+      { id: '15d', title: '15 ngày', sub: 'Ngắn hạn', months: 0.5 },
+      { id: '1m', title: '1 tháng', sub: 'Linh hoạt', months: 1 },
+      { id: '3m', title: '3 tháng', sub: 'Giảm 5%', months: 3 },
+      { id: '6m', title: '6 tháng', sub: 'Giảm 10%', months: 6 },
+      { id: '12m', title: '12 tháng', sub: 'Giảm 15%', months: 12 },
+      { id: '24m', title: '24 tháng', sub: 'Giảm 20%', months: 24 },
+    ]
+    // Add active custom discounts that don't duplicate built-in months
+    const builtInMonths = new Set([0.5, 1, 3, 6, 12, 24])
+    const customOptions = activeCustomDiscounts
+      .filter(cd => !builtInMonths.has(cd.months))
+      .map(cd => ({
+        id: `custom_${cd.months}m`,
+        title: `${cd.months} tháng`,
+        sub: `Giảm ${cd.percent}%`,
+        months: cd.months,
+      }))
+    // Merge and sort by months
+    const merged = [...baseOptions, ...customOptions].sort((a, b) => a.months - b.months)
+    // Add custom option at the end
+    merged.push({ id: 'custom', title: 'Tùy chỉnh', sub: 'Chọn thời hạn', months: -1 })
+    return merged
+  }, [activeCustomDiscounts])
 
   // Validation: Check-in appointment must be at least 5 hours from current time
   const minAllowedDateTime = new Date(Date.now() + 5 * 60 * 60 * 1000)
@@ -262,6 +295,15 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
       else if (months >= 6) condition = 'Giảm 10% thời hạn tùy chỉnh từ 6 tháng trở lên'
       else if (months >= 3) condition = 'Giảm 5% thời hạn tùy chỉnh từ 3 tháng trở lên'
       else condition = 'Đơn giá tiêu chuẩn theo số tháng thực tế'
+    } else if (bookingPackage.startsWith('custom_')) {
+      // Custom activated discount term (e.g., custom_9m)
+      const customMonths = parseInt(bookingPackage.replace('custom_', '').replace('m', ''), 10)
+      const customDiscount = activeCustomDiscounts.find(cd => cd.months === customMonths)
+      months = customMonths || 1
+      days = months * 30
+      condition = customDiscount
+        ? `Giảm ${customDiscount.percent}% khi cam kết thuê ${months} tháng`
+        : `Đơn giá tiêu chuẩn theo kỳ hạn ${months} tháng`
     }
 
     if (serverBookingQuote) {
@@ -289,7 +331,11 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
     const deposit = selectedBookingUnit.depositNumber || monthlyPrice
     const rawRent = monthlyPrice * months
     let discountPercent = 0
-    if (months >= 24) discountPercent = 20
+    // Check if this is a custom activated discount term
+    const customDiscountMatch = activeCustomDiscounts.find(cd => cd.months === months)
+    if (customDiscountMatch) {
+      discountPercent = customDiscountMatch.percent
+    } else if (months >= 24) discountPercent = 20
     else if (months >= 12) discountPercent = 15
     else if (months >= 6) discountPercent = 10
     else if (months >= 3) discountPercent = 5
@@ -633,15 +679,7 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {[
-                      { id: '15d', title: '15 ngày', sub: 'Ngắn hạn' },
-                      { id: '1m', title: '1 tháng', sub: 'Linh hoạt' },
-                      { id: '3m', title: '3 tháng', sub: 'Giảm 5%' },
-                      { id: '6m', title: '6 tháng', sub: 'Giảm 10%' },
-                      { id: '12m', title: '12 tháng', sub: 'Giảm 15%' },
-                      { id: '24m', title: '24 tháng', sub: 'Giảm 20%' },
-                      { id: 'custom', title: 'Tùy chỉnh', sub: 'Chọn thời hạn' }
-                    ].map(pkg => {
+                    {termOptions.map(pkg => {
                       const isSelected = bookingPackage === pkg.id
                       return (
                         <button

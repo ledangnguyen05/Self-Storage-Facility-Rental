@@ -83,7 +83,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
                 .capacityBoxes(request.getCapacityBoxes())
                 .isActive(request.getIsActive() != null ? request.getIsActive() : true)
                 .basePricePerMonth(request.getBasePricePerMonth())
-                .acPricePerMonth(request.getAcPricePerMonth())
+                .acPricePerMonth(request.getAcPricePerMonth() != null && request.getAcPricePerMonth().compareTo(BigDecimal.ZERO) > 0 ? request.getAcPricePerMonth() : null)
                 .depositAmount(request.getDepositAmount())
                 .imageUrl(request.getImageUrl() != null && !request.getImageUrl().isBlank() ? request.getImageUrl().trim() : null)
                 .build();
@@ -181,8 +181,12 @@ public class UnitTypeServiceImpl implements UnitTypeService {
             unitType.setImageUrl(request.getImageUrl().trim().isEmpty() ? null : request.getImageUrl().trim());
         }
 
-        if (request.getAcPricePerMonth() != null && request.getAcPricePerMonth().compareTo(BigDecimal.ZERO) > 0) {
-            unitType.setAcPricePerMonth(request.getAcPricePerMonth());
+        if (request.getAcPricePerMonth() != null) {
+            if (request.getAcPricePerMonth().compareTo(BigDecimal.ZERO) > 0) {
+                unitType.setAcPricePerMonth(request.getAcPricePerMonth());
+            } else {
+                unitType.setAcPricePerMonth(null);
+            }
         }
 
         // BR-RULE-011: Nếu có cập nhật basePricePerMonth, lưu vào lịch sử giá

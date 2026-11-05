@@ -6,6 +6,8 @@ import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { EditUnitTypeModal } from './components/EditUnitTypeModal'
+import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
+import { facilityUnitTypeService } from '../../services/facilityUnitTypeService'
 
 interface DynamicPricingMatrixPanelProps {
   facilities: Facility[]
@@ -20,12 +22,31 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     hasPermission('POLICY_UPDATE') ||
     hasPermission('UNIT_TYPE_UPDATE')
 
-  // Task 5.5: Remove 'all' option. Force select specific facility, default to facilities[0]?.id
+  // Task 5.5: Force select specific facility, default to saved admin facility or facilities[0]?.id
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>(() => {
+    const saved = localStorage.getItem('boxora_admin_selected_facility_id')
+    if (saved && facilities.some(f => f.id === saved)) return saved
     return facilities.length > 0 ? facilities[0].id : ''
   })
-  const [unitTypes, setUnitTypes] = useState<UnitType[]>([])
+  const [rawUnitTypes, setRawUnitTypes] = useState<UnitType[]>([])
   const [currentPolicy, setCurrentPolicy] = useState<FacilityPolicy | null>(null)
+
+  // Persist selected facility for admin session
+  useEffect(() => {
+    if (selectedFacilityId) {
+      localStorage.setItem('boxora_admin_selected_facility_id', selectedFacilityId)
+    }
+  }, [selectedFacilityId])
+
+  // Unit types dynamically scoped and customized for the currently selected facility
+  const unitTypes = React.useMemo(() => {
+    if (!selectedFacilityId) return rawUnitTypes
+    return facilityUnitTypeService.getFacilityUnitTypes(
+      selectedFacilityId,
+      rawUnitTypes,
+      currentPolicy
+    )
+  }, [selectedFacilityId, rawUnitTypes, currentPolicy])
 
   // Task 4: Duration discount states (3M, 6M, 12M)
   const [discount3M, setDiscount3M] = useState<number>(5)
@@ -49,7 +70,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   const [newDiscountMonths, setNewDiscountMonths] = useState<number>(9)
   const [newDiscountPercent, setNewDiscountPercent] = useState<number>(10)
   const [newDiscountLabel, setNewDiscountLabel] = useState<string>('')
-  const [customDiscounts, setCustomDiscounts] = useState<{ id: string; months: number; percent: number; label: string }[]>([])
+  const [customDiscounts, setCustomDiscounts] = useState<CustomDiscount[]>([])
+  const [activateConfirmDiscount, setActivateConfirmDiscount] = useState<string | null>(null)
+  const [editingCustomDiscount, setEditingCustomDiscount] = useState<string | null>(null)
+  const [tempCustomDiscountPercent, setTempCustomDiscountPercent] = useState<string>('')
 
   const [isSavingDiscounts, setIsSavingDiscounts] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -64,7 +88,9 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   // Ensure selected facility is always valid
   useEffect(() => {
     if (!selectedFacilityId && facilities.length > 0) {
-      setSelectedFacilityId(facilities[0].id)
+      const saved = localStorage.getItem('boxora_admin_selected_facility_id')
+      const target = saved && facilities.some((f) => f.id === saved) ? saved : facilities[0].id
+      setSelectedFacilityId(target)
     }
   }, [facilities, selectedFacilityId])
 
@@ -74,7 +100,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       const uts = await storageUnitService.getUnitTypes()
       if (uts && Array.isArray(uts)) {
         uts.sort((a, b) => (a.areaSqm || 0) - (b.areaSqm || 0))
-        setUnitTypes(uts)
+        setRawUnitTypes(uts)
       }
     } catch (err) {
       console.warn('Failed to load unit types:', err)
@@ -112,16 +138,28 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   useEffect(() => {
     if (selectedFacilityId) {
       void loadFacilityPolicy(selectedFacilityId)
-      try {
-        const saved = localStorage.getItem(`boxora_custom_discounts_${selectedFacilityId}`)
-        if (saved) {
-          setCustomDiscounts(JSON.parse(saved))
-        } else {
-          setCustomDiscounts([])
-        }
-      } catch {
-        setCustomDiscounts([])
+      setCustomDiscounts(customDiscountService.getAllDiscounts(selectedFacilityId))
+    }
+  }, [selectedFacilityId])
+
+  useEffect(() => {
+    const handleDiscountsSync = () => {
+      if (selectedFacilityId) {
+        setCustomDiscounts(customDiscountService.getAllDiscounts(selectedFacilityId))
       }
+    }
+    const handleUnitTypesSync = () => {
+      void loadUnitTypes()
+    }
+    window.addEventListener('boxora_custom_discounts_updated', handleDiscountsSync)
+    window.addEventListener('boxora_facility_unittypes_updated', handleUnitTypesSync)
+    window.addEventListener('storage', handleDiscountsSync)
+    window.addEventListener('storage', handleUnitTypesSync)
+    return () => {
+      window.removeEventListener('boxora_custom_discounts_updated', handleDiscountsSync)
+      window.removeEventListener('boxora_facility_unittypes_updated', handleUnitTypesSync)
+      window.removeEventListener('storage', handleDiscountsSync)
+      window.removeEventListener('storage', handleUnitTypesSync)
     }
   }, [selectedFacilityId])
 
@@ -155,30 +193,69 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
       await handleSaveDiscounts(u3, u6, u12)
       showToast(`Đã lưu chiết khấu ${percent}% cho kỳ hạn chuẩn ${months} tháng.`)
     } else {
-      const newCustom = {
+      const newCustom: CustomDiscount = {
         id: `disc_${Date.now()}`,
         months,
         percent,
         label: newDiscountLabel.trim() || `Kỳ hạn ưu đãi ${months} tháng`,
+        isActive: false,
       }
-      const updated = [...customDiscounts.filter(c => c.months !== months), newCustom].sort((a, b) => a.months - b.months)
+      const updated = customDiscountService.normalizeDiscounts([
+        ...customDiscounts.filter((c) => c.months !== months),
+        newCustom,
+      ])
       setCustomDiscounts(updated)
-      try {
-        localStorage.setItem(`boxora_custom_discounts_${selectedFacilityId}`, JSON.stringify(updated))
-      } catch {}
-      showToast(`Đã cấu hình thêm kỳ hạn ${months} tháng với chiết khấu ${percent}%.`)
+      customDiscountService.saveDiscounts(selectedFacilityId, updated)
+      showToast(`Đã thêm kỳ hạn ${months} tháng (-${percent}%). Nhấn "Kích hoạt" để áp dụng vào bước đặt kho.`)
     }
     setIsAddDiscountModalOpen(false)
     setNewDiscountLabel('')
   }
 
   const handleDeleteCustomDiscount = (id: string) => {
-    const updated = customDiscounts.filter(c => c.id !== id)
+    const updated = customDiscounts.filter((c) => c.id !== id)
     setCustomDiscounts(updated)
-    try {
-      localStorage.setItem(`boxora_custom_discounts_${selectedFacilityId}`, JSON.stringify(updated))
-    } catch {}
+    customDiscountService.saveDiscounts(selectedFacilityId, updated)
     showToast('Đã xóa kỳ hạn chiết khấu.')
+  }
+
+  const handleActivateCustomDiscount = (id: string) => {
+    setActivateConfirmDiscount(id)
+  }
+
+  const handleConfirmActivateCustomDiscount = () => {
+    if (!activateConfirmDiscount) return
+    const updated = customDiscounts.map((c) =>
+      c.id === activateConfirmDiscount ? { ...c, isActive: true } : c
+    )
+    setCustomDiscounts(updated)
+    customDiscountService.saveDiscounts(selectedFacilityId, updated)
+    const cd = updated.find((c) => c.id === activateConfirmDiscount)
+    showToast(`Đã kích hoạt kỳ hạn ${cd?.months ?? ''} tháng! Kỳ hạn này đã hiển thị tại Bước 3 khi đặt kho.`)
+    setActivateConfirmDiscount(null)
+  }
+
+  const handleStartEditCustomDiscount = (id: string) => {
+    const cd = customDiscounts.find((c) => c.id === id)
+    if (!cd) return
+    setEditingCustomDiscount(id)
+    setTempCustomDiscountPercent(String(cd.percent))
+  }
+
+  const handleSaveEditCustomDiscount = () => {
+    if (!editingCustomDiscount) return
+    const num = Number(tempCustomDiscountPercent)
+    if (isNaN(num) || num < 0 || num > 100) {
+      showToast('Mức chiết khấu phải là số từ 0% đến 100%', true)
+      return
+    }
+    const updated = customDiscounts.map((c) =>
+      c.id === editingCustomDiscount ? { ...c, percent: num } : c
+    )
+    setCustomDiscounts(updated)
+    customDiscountService.saveDiscounts(selectedFacilityId, updated)
+    showToast('Đã cập nhật mức chiết khấu.')
+    setEditingCustomDiscount(null)
   }
 
   // Save Duration Discounts to backend
@@ -259,18 +336,19 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     showToast(`Đã xóa mức chiết khấu kỳ hạn ${deleteConfirmTerm} tháng (áp dụng 0%).`)
   }
 
-  // Handle Active / Inactive Status Toggle
+  // Handle Active / Inactive Status Toggle strictly for the selected facility
   const handleConfirmToggleStatus = async () => {
-    if (!statusConfirmUnitType) return
+    if (!statusConfirmUnitType || !selectedFacilityId) return
     const newStatus = !statusConfirmUnitType.isActive
 
     try {
-      await storageUnitService.updateUnitType(statusConfirmUnitType.id, {
-        isActive: newStatus,
-        priceChangeReason: `Chuyển trạng thái hoạt động sang ${newStatus ? 'Hoạt động' : 'Tạm ngưng'}`,
-      })
+      facilityUnitTypeService.toggleFacilityUnitTypeStatus(
+        selectedFacilityId,
+        statusConfirmUnitType.id,
+        newStatus
+      )
       showToast(
-        `Đã ${newStatus ? 'kích hoạt' : 'tạm ngưng'} loại kho "${statusConfirmUnitType.typeName}".`
+        `Đã ${newStatus ? 'kích hoạt' : 'tạm ngưng'} loại kho "${statusConfirmUnitType.typeName}" cho cơ sở này.`
       )
       setStatusConfirmUnitType(null)
       await loadUnitTypes()
@@ -307,7 +385,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     return {
       volume: volume ? `${volume} m³` : '—',
       areaLabel: area ? `${area} m²` : '—',
-      boxes: ut.capacityBoxes ? `${ut.capacityBoxes} boxes` : `${Math.round(area * 8)} boxes`,
       category,
       badgeClass,
     }
@@ -406,7 +483,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             {/* 3 Months Discount Row */}
             <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
               <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-emerald-600 text-lg">calendar_today</span>
                 <div>
                   <div className="text-xs font-bold text-slate-800">{t('Thuê 3 tháng')}</div>
                   <div className="text-[10px] text-slate-400">Kỳ hạn ngắn tiêu chuẩn</div>
@@ -484,7 +560,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             {/* 6 Months Discount Row */}
             <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
               <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-teal-600 text-lg">event_repeat</span>
                 <div>
                   <div className="text-xs font-bold text-slate-800">{t('Thuê 6 tháng')}</div>
                   <div className="text-[10px] text-slate-400">Kỳ hạn trung bình ưu đãi</div>
@@ -562,7 +637,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             {/* 12 Months Discount Row */}
             <div className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs">
               <div className="flex items-center gap-2.5">
-                <span className="material-symbols-outlined text-indigo-600 text-lg">verified</span>
                 <div>
                   <div className="text-xs font-bold text-slate-800">{t('Thuê 12 tháng')}</div>
                   <div className="text-[10px] text-slate-400">Kỳ hạn dài hạn tiết kiệm tối đa</div>
@@ -641,36 +715,99 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             {customDiscounts.map((cd) => (
               <div
                 key={cd.id}
-                className="p-3 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between shadow-2xs"
+                className={`p-3 bg-white rounded-xl border flex items-center justify-between shadow-2xs ${
+                  cd.isActive ? 'border-slate-200/80' : 'border-amber-200/80 bg-amber-50/30'
+                }`}
               >
                 <div className="flex items-center gap-2.5">
-                  <span className="material-symbols-outlined text-purple-600 text-lg">loyalty</span>
                   <div>
-                    <div className="text-xs font-bold text-slate-800">
-                      {t('Thuê')} {cd.months} {t('tháng')}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-800">
+                        {t('Thuê')} {cd.months} {t('tháng')}
+                      </span>
+                      {!cd.isActive && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+                          {t('Chưa kích hoạt')}
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10px] text-slate-400">{cd.label}</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`text-xs font-mono font-bold ${
-                      cd.percent > 0
-                        ? 'text-purple-700'
-                        : 'text-slate-500'
-                    }`}
-                  >
-                    {cd.percent > 0 ? `-${cd.percent}%` : '0%'}
-                  </span>
-                  {canManagePolicies && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCustomDiscount(cd.id)}
-                      className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                      title={t('Xóa kỳ hạn')}
-                    >
-                      <span className="material-symbols-outlined text-[16px]">delete</span>
-                    </button>
+                <div className="flex items-center gap-2">
+                  {editingCustomDiscount === cd.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        value={tempCustomDiscountPercent}
+                        onChange={(e) => setTempCustomDiscountPercent(e.target.value)}
+                        className="w-16 px-2 py-1 text-xs font-mono font-bold rounded border border-cyan-400 outline-none text-center"
+                      />
+                      <span className="text-xs font-bold text-slate-600">%</span>
+                      <button
+                        type="button"
+                        onClick={handleSaveEditCustomDiscount}
+                        className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition cursor-pointer"
+                        title={t('Lưu')}
+                      >
+                        <span className="material-symbols-outlined text-sm">done</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingCustomDiscount(null)}
+                        className="p-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                        title={t('Hủy')}
+                      >
+                        <span className="material-symbols-outlined text-sm">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span
+                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                          cd.percent > 0
+                            ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                        }`}
+                      >
+                        {cd.percent > 0 ? `-${cd.percent}%` : '0%'}
+                      </span>
+                      {canManagePolicies && (
+                        <div className="flex items-center gap-1">
+                          {!cd.isActive ? (
+                            <button
+                              type="button"
+                              onClick={() => handleActivateCustomDiscount(cd.id)}
+                              className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                              title={t('Kích hoạt kỳ hạn này')}
+                            >
+                              <span className="material-symbols-outlined text-[14px]">check_circle</span>
+                              <span>{t('Kích hoạt')}</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditCustomDiscount(cd.id)}
+                              className="p-1 rounded text-slate-400 hover:text-cyan-700 hover:bg-cyan-50 transition cursor-pointer"
+                              title={t('Chỉnh sửa mức chiết khấu')}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">edit</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomDiscount(cd.id)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                            title={t('Xóa kỳ hạn')}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -719,9 +856,9 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                     <th className="py-3 px-3.5">{t('Quy mô / Thể tích')}</th>
                     <th className="py-3 px-3.5">{t('Tên loại kho')}</th>
                     <th className="py-3 px-3.5">{t('Kích thước quy chuẩn')}</th>
-                    <th className="py-3 px-3.5">{t('Diện tích / Sức chứa')}</th>
-                    <th className="py-3 px-3.5 min-w-[130px]">{t('Giá Tiêu chuẩn / tháng')}</th>
-                    <th className="py-3 px-3.5 min-w-[140px]">{t('Giá Máy lạnh A/C / tháng')}</th>
+                    <th className="py-3 px-3.5">{t('Diện tích')}</th>
+                    <th className="py-3 px-3.5 min-w-[130px]">{t('Giá Tiêu chuẩn/tháng')}</th>
+                    <th className="py-3 px-3.5 min-w-[140px]">{t('Giá Máy lạnh/tháng')}</th>
                     <th className="py-3 px-3.5 text-center">{t('Trạng thái')}</th>
                     <th className="py-3 px-3.5 text-right">{t('Thao tác')}</th>
                   </tr>
@@ -729,11 +866,8 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {unitTypes.map((ut) => {
                     const dbBase = Number(ut.basePricePerMonth || 0)
-                    const dbAc = Number(
-                      ut.acPricePerMonth != null
-                        ? ut.acPricePerMonth
-                        : Math.round(dbBase * 1.2)
-                    )
+                    const hasAc = ut.acPricePerMonth != null && Number(ut.acPricePerMonth) > 0
+                    const dbAc = hasAc ? Number(ut.acPricePerMonth) : null
                     const spec = getUnitTypeSpec(ut)
                     const isActive = ut.isActive ?? true
 
@@ -784,10 +918,9 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                               : '—')}
                         </td>
 
-                        {/* 4. Diện tích & Sức chứa */}
+                        {/* 4. Diện tích */}
                         <td className="py-3 px-3.5 font-mono text-slate-600">
                           <div>{spec.areaLabel}</div>
-                          <div className="text-[10px] text-slate-400">{spec.boxes}</div>
                         </td>
 
                         {/* 5. Giá Tiêu chuẩn (Task 5.4: synchronized directly) */}
@@ -795,9 +928,17 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                           {dbBase.toLocaleString('vi-VN')} đ
                         </td>
 
-                        {/* 6. Giá Máy lạnh A/C (Task 5.4: no double +20%) */}
-                        <td className="py-3 px-3.5 font-mono font-bold text-teal-700">
-                          {dbAc.toLocaleString('vi-VN')} đ
+                        {/* 6. Giá Máy lạnh A/C (chỉ hiển thị khi có cấu hình giá A/C) */}
+                        <td className="py-3 px-3.5 font-mono">
+                          {dbAc != null ? (
+                            <span className="font-bold text-teal-700">
+                              {dbAc.toLocaleString('vi-VN')} đ
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-medium text-[11px] italic">
+                              {t('Không có A/C')}
+                            </span>
+                          )}
                         </td>
 
                         {/* 7. Trạng thái (Task 5.3) */}
@@ -867,18 +1008,30 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         </div>
       </div>
 
-      {/* Edit / Create Unit Type Modal (Task 3.3 & Task 5.1-5.4) */}
+      {/* Edit / Create Unit Type Modal strictly for the selected facility */}
       {isEditModalOpen && (
         <EditUnitTypeModal
           unitType={selectedUnitTypeToEdit}
           isOpen={isEditModalOpen}
+          facilityId={selectedFacilityId}
+          facilityName={facilities.find((f) => f.id === selectedFacilityId)?.name}
+          policy={currentPolicy}
           onClose={() => {
             setIsEditModalOpen(false)
             setSelectedUnitTypeToEdit(null)
           }}
-          onSuccess={() => {
-            showToast(selectedUnitTypeToEdit ? 'Đã lưu thông tin loại kho thành công!' : 'Đã tạo mới loại kho chuẩn thành công!')
+          onSuccess={(updated) => {
+            showToast(
+              updated && updated.isActive === false
+                ? `Đã tạm ngưng loại kho "${updated.typeName}" cho cơ sở này.`
+                : selectedUnitTypeToEdit
+                ? `Đã lưu thông tin loại kho "${updated?.typeName || ''}" cho cơ sở này!`
+                : `Đã tạo mới loại kho "${updated?.typeName || ''}" cho cơ sở này!`
+            )
             void loadUnitTypes()
+            if (selectedFacilityId) {
+              void loadFacilityPolicy(selectedFacilityId)
+            }
           }}
         />
       )}
@@ -934,10 +1087,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
             <p className="text-xs text-slate-600 leading-relaxed">
               {statusConfirmUnitType.isActive
                 ? t(
-                    `Bạn có chắc muốn tạm ngưng loại kho "${statusConfirmUnitType.typeName}"? Khách hàng sẽ bị chặn không thể đặt chỗ mới với loại kho này (các hợp đồng cũ vẫn duy trì bình thường).`
+                    `Bạn có chắc muốn tạm ngưng loại kho "${statusConfirmUnitType.typeName}" tại cơ sở này? Khách hàng sẽ bị chặn không thể đặt chỗ mới với loại kho này tại cơ sở đang chọn (các cơ sở khác không bị ảnh hưởng).`
                   )
                 : t(
-                    `Bạn có chắc muốn kích hoạt lại loại kho "${statusConfirmUnitType.typeName}"? Khách hàng sẽ có thể đặt chỗ loại kho này ngay lập tức.`
+                    `Bạn có chắc muốn kích hoạt lại loại kho "${statusConfirmUnitType.typeName}" tại cơ sở này? Khách hàng sẽ có thể đặt chỗ loại kho này ngay lập tức.`
                   )}
             </p>
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -963,6 +1116,41 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
           </div>
         </div>
       )}
+      {/* Confirmation Dialog: Activate Custom Discount */}
+      {activateConfirmDiscount && (() => {
+        const cd = customDiscounts.find(c => c.id === activateConfirmDiscount)
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-2xs">
+            <div className="bg-white rounded-2xl p-5 shadow-2xl border border-slate-200 max-w-sm w-full space-y-3 animate-scale-in">
+              <div className="flex items-center gap-2.5 text-emerald-600">
+                <span className="material-symbols-outlined text-2xl">check_circle</span>
+                <h4 className="text-sm font-bold text-slate-900">
+                  {t('Kích hoạt kỳ hạn')} {cd?.months} {t('tháng')}
+                </h4>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {t(`Bạn có chắc chắn muốn kích hoạt kỳ hạn ${cd?.months} tháng với chiết khấu ${cd?.percent}%? Sau khi kích hoạt, kỳ hạn này sẽ hiển thị cho khách hàng khi đặt kho.`)}
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setActivateConfirmDiscount(null)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  {t('Hủy bỏ')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmActivateCustomDiscount}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  {t('Xác nhận kích hoạt')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
       {/* Modal Cấu hình kỳ hạn mới */}
       {isAddDiscountModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-2xs">
