@@ -320,6 +320,18 @@ public class StorageUnitPriceHistoryServiceImpl implements StorageUnitPriceHisto
                 .build();
 
         storageUnitPriceHistoryRepository.save(initialHistory);
+
+        if (activityLogService != null) {
+            activityLogService.record(
+                    unit.getFacility() != null ? unit.getFacility().getId() : null,
+                    ActivityAction.PRICE_CREATE,
+                    "StorageUnit",
+                    unit.getId(),
+                    String.format("Khởi tạo giá ban đầu cho kho %s: %s VNĐ", unit.getUnitCode(), price),
+                    null,
+                    price
+            );
+        }
     }
 
     @Override
@@ -346,5 +358,16 @@ public class StorageUnitPriceHistoryServiceImpl implements StorageUnitPriceHisto
                 .build();
 
         storageUnitPriceHistoryRepository.save(initialHistory);
+
+        if (activityLogService != null) {
+            activityLogService.record(
+                    ActivityAction.PRICE_CREATE,
+                    "UnitType",
+                    unitType.getId(),
+                    String.format("Khởi tạo giá niêm yết ban đầu cho loại kho %s: %s VNĐ", unitType.getTypeName(), price),
+                    null,
+                    price
+            );
+        }
     }
 }

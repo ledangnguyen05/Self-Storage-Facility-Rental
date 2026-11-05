@@ -5,6 +5,8 @@ import com.boxora.dto.response.FacilityRevenueResponse;
 import com.boxora.dto.response.OccupancyReportResponse;
 import com.boxora.dto.response.OverdueDebtReportResponse;
 import com.boxora.dto.response.RevenueReportResponse;
+import com.boxora.enums.ActivityAction;
+import com.boxora.service.ActivityLogService;
 import com.boxora.service.ReportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +31,7 @@ import java.util.UUID;
 public class ReportController {
 
     private final ReportService reportService;
+    private final ActivityLogService activityLogService;
 
     @GetMapping("/revenue")
     @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
@@ -67,6 +70,20 @@ public class ReportController {
             UUID facilityId
     ) {
         RevenueReportResponse report = reportService.getRevenueReport(fromDate, toDate, facilityId);
+
+        if (activityLogService != null) {
+            activityLogService.record(
+                    facilityId,
+                    ActivityAction.REPORT_EXPORTED,
+                    "Report",
+                    facilityId,
+                    String.format("Xuất file báo cáo doanh thu & tài chính (CSV) cho kỳ %s - %s",
+                            fromDate != null ? fromDate : "Toàn bộ", toDate != null ? toDate : "Hiện tại"),
+                    null,
+                    null
+            );
+        }
+
         StringBuilder sb = new StringBuilder();
         sb.append('\uFEFF'); // UTF-8 BOM
         sb.append("sep=,\r\n"); // Excel delimiter directive

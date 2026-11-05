@@ -127,6 +127,15 @@ public class AuthServiceImpl implements AuthService {
 
         if (refreshToken.getUser() != null) {
             activityLogService.recordLogout(refreshToken.getUser().getId());
+            activityLogService.recordForUser(
+                    refreshToken.getUser().getId(),
+                    ActivityAction.REFRESH_TOKEN_REVOKED,
+                    "RefreshToken",
+                    refreshToken.getId(),
+                    "Thu hoi refresh token khi dang xuat cho: " + refreshToken.getUser().getEmail(),
+                    null,
+                    null
+            );
         }
 
     }

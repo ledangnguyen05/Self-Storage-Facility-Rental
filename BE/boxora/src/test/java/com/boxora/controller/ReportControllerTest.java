@@ -30,6 +30,9 @@ class ReportControllerTest {
     @Mock
     private ReportService reportService;
 
+    @Mock
+    private com.boxora.service.ActivityLogService activityLogService;
+
     @InjectMocks
     private ReportController reportController;
 

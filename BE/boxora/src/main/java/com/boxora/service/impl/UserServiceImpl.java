@@ -122,6 +122,29 @@ public class UserServiceImpl implements UserService {
                 saved.getUsername()
         );
 
+        if (role != null) {
+            activityLogService.record(
+                    saved.getFacility() != null ? saved.getFacility().getId() : null,
+                    ActivityAction.USER_ASSIGN_ROLE,
+                    "User",
+                    saved.getId(),
+                    "Gán vai trò " + role.getName() + " cho người dùng " + saved.getUsername(),
+                    null,
+                    role.getName()
+            );
+        }
+        if (saved.getFacility() != null) {
+            activityLogService.record(
+                    saved.getFacility().getId(),
+                    ActivityAction.USER_ASSIGN_FACILITY_SCOPE,
+                    "User",
+                    saved.getId(),
+                    "Phân quyền quản lý cơ sở " + saved.getFacility().getName() + " cho người dùng " + saved.getUsername(),
+                    null,
+                    saved.getFacility().getId().toString()
+            );
+        }
+
         return userMapper.toResponse(saved);
     }
 
@@ -130,6 +153,9 @@ public class UserServiceImpl implements UserService {
 
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
+
+        Role oldRole = user.getRole();
+        Facility oldFacility = user.getFacility();
 
         if (facilityAccessGuard.isFacilityScoped() && user.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(user.getFacility().getId());
@@ -177,6 +203,35 @@ public class UserServiceImpl implements UserService {
                 null,
                 updated.getUsername()
         );
+
+        boolean roleChanged = (oldRole == null && updated.getRole() != null)
+                || (oldRole != null && updated.getRole() != null && !oldRole.getId().equals(updated.getRole().getId()));
+        if (roleChanged) {
+            activityLogService.record(
+                    updated.getFacility() != null ? updated.getFacility().getId() : null,
+                    ActivityAction.USER_ASSIGN_ROLE,
+                    "User",
+                    updated.getId(),
+                    "Thay đổi vai trò người dùng " + updated.getUsername() + ": " + (oldRole != null ? oldRole.getName() : "None") + " -> " + (updated.getRole() != null ? updated.getRole().getName() : "None"),
+                    oldRole != null ? oldRole.getName() : null,
+                    updated.getRole() != null ? updated.getRole().getName() : null
+            );
+        }
+
+        boolean facilityChanged = (oldFacility == null && updated.getFacility() != null)
+                || (oldFacility != null && updated.getFacility() == null)
+                || (oldFacility != null && updated.getFacility() != null && !oldFacility.getId().equals(updated.getFacility().getId()));
+        if (facilityChanged) {
+            activityLogService.record(
+                    updated.getFacility() != null ? updated.getFacility().getId() : null,
+                    ActivityAction.USER_ASSIGN_FACILITY_SCOPE,
+                    "User",
+                    updated.getId(),
+                    "Thay đổi cơ sở phân quyền của người dùng " + updated.getUsername() + ": " + (oldFacility != null ? oldFacility.getName() : "None") + " -> " + (updated.getFacility() != null ? updated.getFacility().getName() : "None"),
+                    oldFacility != null ? oldFacility.getName() : null,
+                    updated.getFacility() != null ? updated.getFacility().getName() : null
+            );
+        }
 
         return userMapper.toResponse(updated);
     }

@@ -7,8 +7,10 @@ import com.boxora.dto.response.PermissionResponse;
 import com.boxora.entity.Permission;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
+import com.boxora.enums.ActivityAction;
 import com.boxora.mapper.PermissionMapper;
 import com.boxora.repository.PermissionRepository;
+import com.boxora.service.ActivityLogService;
 import com.boxora.service.PermissionService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -29,6 +31,7 @@ public class PermissionServiceImpl implements PermissionService {
 
     private final PermissionRepository permissionRepository;
     private final PermissionMapper permissionMapper;
+    private final ActivityLogService activityLogService;
 
     @Override
     public PermissionResponse getById(UUID id) {
@@ -45,6 +48,15 @@ public class PermissionServiceImpl implements PermissionService {
         Permission permission = permissionMapper.toEntity(request);
         Permission saved = permissionRepository.save(permission);
 
+        activityLogService.record(
+                ActivityAction.PERMISSION_CREATE,
+                "Permission",
+                saved.getId(),
+                "Tạo mới quyền: " + saved.getName(),
+                null,
+                saved.getName()
+        );
+
         return permissionMapper.toResponse(saved);
     }
 
@@ -59,6 +71,16 @@ public class PermissionServiceImpl implements PermissionService {
 
         permissionMapper.updateEntityFromRequest(request, permission);
         Permission updated = permissionRepository.save(permission);
+
+        activityLogService.record(
+                ActivityAction.PERMISSION_UPDATE,
+                "Permission",
+                updated.getId(),
+                "Cập nhật quyền: " + updated.getName(),
+                null,
+                updated.getName()
+        );
+
         return permissionMapper.toResponse(updated);
     }
 
@@ -67,6 +89,15 @@ public class PermissionServiceImpl implements PermissionService {
         Permission permission = permissionRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.PERMISSION_NOT_FOUND));
         permissionRepository.deleteById(permission.getId());
+
+        activityLogService.record(
+                ActivityAction.PERMISSION_DELETE,
+                "Permission",
+                permission.getId(),
+                "Xóa quyền: " + permission.getName(),
+                permission.getName(),
+                null
+        );
     }
 
     @Override

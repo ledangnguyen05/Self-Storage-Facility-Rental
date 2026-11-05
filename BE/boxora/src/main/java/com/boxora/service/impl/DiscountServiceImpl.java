@@ -183,21 +183,34 @@ public class DiscountServiceImpl implements DiscountService {
                     .orElseThrow(() -> new AppException(ErrorCode.FACILITY_NOT_FOUND));
             discount.setFacility(facility);
         }
+        Boolean wasActive = discount.getIsActive();
         if (request.getIsActive() != null) {
             discount.setIsActive(request.getIsActive());
         }
 
         Discount saved = discountRepository.save(discount);
 
-        activityLogService.record(
-                saved.getFacility() != null ? saved.getFacility().getId() : null,
-                ActivityAction.DISCOUNT_UPDATE,
-                "Discount",
-                saved.getId(),
-                String.format("Cập nhật chương trình ưu đãi %s (%s)", saved.getName(), saved.getCode()),
-                null,
-                null
-        );
+        if (Boolean.FALSE.equals(wasActive) && Boolean.TRUE.equals(saved.getIsActive())) {
+            activityLogService.record(
+                    saved.getFacility() != null ? saved.getFacility().getId() : null,
+                    ActivityAction.DISCOUNT_ACTIVATE,
+                    "Discount",
+                    saved.getId(),
+                    String.format("Kích hoạt lại chương trình ưu đãi %s (%s)", saved.getName(), saved.getCode()),
+                    false,
+                    true
+            );
+        } else {
+            activityLogService.record(
+                    saved.getFacility() != null ? saved.getFacility().getId() : null,
+                    ActivityAction.DISCOUNT_UPDATE,
+                    "Discount",
+                    saved.getId(),
+                    String.format("Cập nhật chương trình ưu đãi %s (%s)", saved.getName(), saved.getCode()),
+                    null,
+                    null
+            );
+        }
 
         return discountMapper.toResponse(saved);
     }

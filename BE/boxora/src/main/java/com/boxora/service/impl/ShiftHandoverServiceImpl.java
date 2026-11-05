@@ -178,12 +178,18 @@ public class ShiftHandoverServiceImpl implements ShiftHandoverService {
 
         ShiftHandover updated = shiftHandoverRepository.save(handover);
 
+        ActivityAction action = nextStatus == ShiftHandoverStatus.REJECTED
+                ? ActivityAction.SHIFT_HANDOVER_REJECT
+                : ActivityAction.SHIFT_HANDOVER_ACKNOWLEDGE;
+
         activityLogService.record(
                 handover.getFacility().getId(),
-                ActivityAction.SHIFT_HANDOVER_ACKNOWLEDGE,
+                action,
                 "ShiftHandover",
                 updated.getId(),
-                String.format("Tiếp nhận bàn giao ca trực id=%s trạng thái: %s", updated.getId(), request.getStatus()),
+                nextStatus == ShiftHandoverStatus.REJECTED
+                        ? String.format("Từ chối tiếp nhận bàn giao ca trực id=%s bởi %s", updated.getId(), currentUser != null ? currentUser.getFullName() : "nhân sự")
+                        : String.format("Tiếp nhận bàn giao ca trực id=%s trạng thái: %s", updated.getId(), request.getStatus()),
                 null,
                 updated.getId().toString()
         );

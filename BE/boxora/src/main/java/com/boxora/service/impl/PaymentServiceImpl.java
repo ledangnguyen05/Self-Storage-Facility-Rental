@@ -948,6 +948,17 @@ public class PaymentServiceImpl implements PaymentService {
         // 2. Idempotency check: if already confirmed as PAID, return existing
         if (payment.getStatus() == PaymentStatus.PAID) {
             log.info("Payment with txnRef={} has already been marked as PAID.", txnRef);
+            if (activityLogService != null) {
+                activityLogService.record(
+                        extractFacilityId(payment),
+                        ActivityAction.PAYMENT_DUPLICATE_IGNORED,
+                        "Payment",
+                        payment.getId(),
+                        "Bỏ qua phản hồi VNPay do giao dịch " + txnRef + " đã được xác nhận thanh toán trước đó",
+                        payment.getStatus(),
+                        payment.getStatus()
+                );
+            }
             if (payment.getPaymentType() == PaymentType.RETURN_COMPENSATION) {
                 return paymentMapper.toResponse(payment);
             }
@@ -1207,6 +1218,17 @@ public class PaymentServiceImpl implements PaymentService {
 
         // 3. Check if already confirmed
         if (payment.getStatus() == PaymentStatus.PAID) {
+            if (activityLogService != null) {
+                activityLogService.record(
+                        extractFacilityId(payment),
+                        ActivityAction.PAYMENT_DUPLICATE_IGNORED,
+                        "Payment",
+                        payment.getId(),
+                        "Bỏ qua IPN VNPay do giao dịch " + txnRef + " đã được xác nhận thanh toán trước đó",
+                        payment.getStatus(),
+                        payment.getStatus()
+                );
+            }
             return VNPayIpnResponse.alreadyConfirmed();
         }
 

@@ -8,6 +8,7 @@ import com.boxora.entity.Booking;
 import com.boxora.entity.BookingPolicyConfirmation;
 import com.boxora.entity.Facility;
 import com.boxora.entity.FacilityPolicy;
+import com.boxora.enums.ActivityAction;
 import com.boxora.enums.BookingStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
@@ -16,6 +17,7 @@ import com.boxora.repository.BookingRepository;
 import com.boxora.repository.FacilityPolicyRepository;
 import com.boxora.repository.FacilityRepository;
 import com.boxora.security.RequestContext;
+import com.boxora.service.ActivityLogService;
 import com.boxora.service.CancellationPolicyService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,7 @@ public class CancellationPolicyServiceImpl implements CancellationPolicyService 
     private final BookingRepository bookingRepository;
     private final BookingPolicyConfirmationRepository confirmationRepository;
     private final RequestContext requestContext;
+    private final ActivityLogService activityLogService;
 
     @Override
     @Transactional(readOnly = true)
@@ -187,6 +190,19 @@ public class CancellationPolicyServiceImpl implements CancellationPolicyService 
         booking.setPolicyConfirmedAt(now);
         booking.setPolicyVersion(currentVersion);
         bookingRepository.save(booking);
+
+        if (activityLogService != null) {
+            activityLogService.record(
+                    booking.getFacility() != null ? booking.getFacility().getId() : null,
+                    ActivityAction.RESERVATION_UPDATE,
+                    "BookingPolicyConfirmation",
+                    saved.getId(),
+                    String.format("Khách hàng đã xác nhận điều khoản hủy & hoàn tiền phiên bản %s cho đơn %s",
+                            currentVersion, booking.getBookingCode()),
+                    null,
+                    currentVersion
+            );
+        }
 
         log.info("Policy confirmation saved for booking {} (code={}) by customer {} with policy version {}",
                 booking.getId(), booking.getBookingCode(), booking.getCustomer().getId(), currentVersion);

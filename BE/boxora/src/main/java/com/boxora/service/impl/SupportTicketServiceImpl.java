@@ -1166,6 +1166,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                     .newValue(newValue)
                     .description(description)
                     .status(ActivityLogStatus.SUCCESS)
+                    .ipAddress(requestContext != null ? requestContext.currentIpAddress() : null)
+                    .userAgent(requestContext != null ? requestContext.currentUserAgent() : null)
                     .build();
 
             activityLogRepository.save(logEntry);
@@ -1525,6 +1527,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
 
         String details = "Điều chỉnh / miễn trừ phụ phí (" + (amount != null ? String.format("%,dđ", amount.longValue()) : "0đ") + "): " + (note != null ? note : "Theo yêu cầu rà soát của khách hàng");
 
+        logActivity(ticket, ActivityAction.FEE_WAIVE, ticket.getStatus().name(), ticket.getStatus().name(), details);
         logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(), details);
 
         SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
