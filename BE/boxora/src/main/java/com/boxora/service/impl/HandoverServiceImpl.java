@@ -2494,11 +2494,36 @@ public class HandoverServiceImpl implements HandoverService {
                             return false;
                         }
                     }
+                    boolean hasReturnTicket = false;
+                    if (supportTicketRepository != null) {
+                        hasReturnTicket = supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(b.getId())
+                                .stream()
+                                .anyMatch(t -> t.getCategory() == TicketCategory.RETURN_REFUND
+                                        || t.getCategory() == TicketCategory.RETURN_EXPIRED
+                                        || (t.getTitle() != null && t.getTitle().toLowerCase().contains("trả kho"))
+                                        || (t.getDescription() != null && t.getDescription().toLowerCase().contains("trả kho")));
+                    }
+
                     return b.getStatus() == BookingStatus.CHECKOUT_REQUESTED
                             || b.getStatus() == BookingStatus.INSPECTED
                             || (b.getStatus() == BookingStatus.COMPLETED && b.getReturnTime() != null)
                             || (b.getStatus() == BookingStatus.ACTIVE && (b.getReturnTime() != null || b.getEndDate() != null))
-                            || !handoverRecordRepository.findByBooking_Id(b.getId()).isEmpty();
+                            || !handoverRecordRepository.findByBooking_Id(b.getId()).isEmpty()
+                            || hasReturnTicket;
+                })
+                .peek(b -> {
+                    if (b.getStatus() == BookingStatus.ACTIVE && supportTicketRepository != null) {
+                        boolean hasReturnTicket = supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(b.getId())
+                                .stream()
+                                .anyMatch(t -> t.getCategory() == TicketCategory.RETURN_REFUND
+                                        || t.getCategory() == TicketCategory.RETURN_EXPIRED
+                                        || (t.getTitle() != null && t.getTitle().toLowerCase().contains("trả kho"))
+                                        || (t.getDescription() != null && t.getDescription().toLowerCase().contains("trả kho")));
+                        if (hasReturnTicket) {
+                            b.setStatus(BookingStatus.CHECKOUT_REQUESTED);
+                            bookingRepository.save(b);
+                        }
+                    }
                 })
                 .map(this::buildReturnCaseResponse)
                 .filter(c -> {

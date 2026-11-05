@@ -182,7 +182,24 @@ export const IncidentTicketsPage: React.FC = () => {
       ])
 
       if (queueRes.status === 'fulfilled' && Array.isArray(queueRes.value)) {
-        setTickets(queueRes.value)
+        // Loại bỏ toàn bộ yêu cầu trả kho khỏi bảng sự cố kỹ thuật (chuyển sang Phần Trả Kho)
+        const incidentOnly = queueRes.value.filter((t: any) => {
+          if (t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED') return false
+          const tit = (t.title || '').toLowerCase()
+          const desc = (t.description || '').toLowerCase()
+          if (
+            tit.includes('trả kho') ||
+            desc.includes('trả kho') ||
+            tit.includes('hoàn tiền cọc') ||
+            desc.includes('hoàn tiền cọc') ||
+            tit.includes('hoàn cọc') ||
+            desc.includes('hoàn cọc')
+          ) {
+            return false
+          }
+          return true
+        })
+        setTickets(incidentOnly)
       } else {
         setTickets([])
         if (queueRes.status === 'rejected') {
@@ -607,6 +624,21 @@ export const IncidentTicketsPage: React.FC = () => {
   // Filtered Tickets
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
+      // Loại bỏ toàn bộ yêu cầu trả kho khỏi xử lý sự cố
+      if (t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED') return false
+      const tit = (t.title || '').toLowerCase()
+      const desc = (t.description || '').toLowerCase()
+      if (
+        tit.includes('trả kho') ||
+        desc.includes('trả kho') ||
+        tit.includes('hoàn tiền cọc') ||
+        desc.includes('hoàn tiền cọc') ||
+        tit.includes('hoàn cọc') ||
+        desc.includes('hoàn cọc')
+      ) {
+        return false
+      }
+
       // Facility scope enforcement (Staff & Scoped Manager can strictly only access assigned facility)
       if (isFacilityScoped && user?.facilityId && t.facilityId !== user.facilityId) return false
 
@@ -789,7 +821,7 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-slate-900 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats?.totalTickets ?? tickets.length)}
+              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : tickets.length}
             </div>
           </div>
         </div>
@@ -804,9 +836,7 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-blue-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats
-                ? stats.openTickets + stats.inProgressTickets + stats.reopenedTickets
-                : tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN' || t.status === 'REOPENED').length)}
+              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : tickets.filter(t => t.status === 'IN_PROGRESS' || t.status === 'OPEN' || t.status === 'REOPENED').length}
             </div>
           </div>
         </div>
@@ -824,7 +854,7 @@ export const IncidentTicketsPage: React.FC = () => {
               {isLoading ? (
                 <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span>
               ) : (
-                ((stats?.overdueTickets ?? stats?.overdueSlaTickets) ?? tickets.filter(t => t.isOverdue || t.isOverdueSla).length)
+                tickets.filter(t => t.isOverdue || t.isOverdueSla).length
               )}
             </div>
           </div>
@@ -840,9 +870,7 @@ export const IncidentTicketsPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-emerald-700 tracking-tight">
-              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : (stats
-                ? stats.resolvedTickets + stats.closedTickets
-                : tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length)}
+              {isLoading ? <span className="inline-block w-16 h-7 bg-slate-100 animate-pulse rounded"></span> : tickets.filter(t => t.status === 'RESOLVED' || t.status === 'CLOSED').length}
             </div>
           </div>
         </div>

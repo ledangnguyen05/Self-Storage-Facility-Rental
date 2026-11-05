@@ -188,6 +188,13 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             facility = storageUnit.getFacility();
         }
 
+        if (booking == null && storageUnit != null) {
+            booking = bookingRepository.findFirstByStorageUnit_IdAndStatusInOrderByCreatedAtDesc(
+                    storageUnit.getId(),
+                    List.of(BookingStatus.ACTIVE, BookingStatus.CHECKOUT_REQUESTED, BookingStatus.OVERDUE)
+            ).orElse(null);
+        }
+
         String ticketCode = generateUniqueTicketCode();
 
         TicketCategory category = TicketCategory.OTHER;
@@ -195,6 +202,16 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             try {
                 category = TicketCategory.valueOf(request.getCategory().trim().toUpperCase());
             } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        boolean isReturnCategory = category == TicketCategory.RETURN_REFUND || category == TicketCategory.RETURN_EXPIRED;
+        if (!isReturnCategory) {
+            String tit = request.getTitle() != null ? request.getTitle().toLowerCase() : "";
+            String desc = request.getDescription() != null ? request.getDescription().toLowerCase() : "";
+            if (tit.contains("trả kho") || desc.contains("trả kho") || tit.contains("hoàn tiền cọc") || desc.contains("hoàn tiền cọc") || tit.contains("hoàn cọc") || desc.contains("hoàn cọc")) {
+                category = TicketCategory.RETURN_REFUND;
+                isReturnCategory = true;
             }
         }
 
@@ -209,11 +226,15 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         String combinedEvidence = resolveImageEvidence(request.getImageEvidence(), request.getEvidenceUrls());
 
         String initialRefundStatus = "NONE";
-        if (category == TicketCategory.RETURN_REFUND) {
-            initialRefundStatus = "PENDING_FM_APPROVAL";
-        } else if (category == TicketCategory.RETURN_EXPIRED) {
+        if (isReturnCategory) {
+            initialRefundStatus = (category == TicketCategory.RETURN_REFUND) ? "PENDING_FM_APPROVAL" : "NONE";
             if (booking != null && (booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.OVERDUE)) {
                 booking.setStatus(BookingStatus.CHECKOUT_REQUESTED);
+                String note = String.format("[%s] Khách hàng gửi yêu cầu trả kho (%s): %s\n",
+                        LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")),
+                        category == TicketCategory.RETURN_REFUND ? "Trả kho trước hạn & hoàn tiền cọc" : "Trả kho khi hết hạn hợp đồng",
+                        request.getDescription() != null ? request.getDescription().trim() : "");
+                booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + note);
                 bookingRepository.save(booking);
             }
         }
@@ -338,6 +359,19 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         // Apply in-memory filters for status, category, priority
         return rawList.stream()
                 .filter(t -> {
+                    // Loại bỏ yêu cầu trả kho khỏi hàng đợi sự cố kỹ thuật của nhân viên / quản lý
+                    // Các yêu cầu trả kho được xử lý tập trung tại Phần Trả Kho (HandoverReturnWorkbench)
+                    if (!"CUSTOMER".equalsIgnoreCase(currentUserRole)) {
+                        boolean isReturn = t.getCategory() == TicketCategory.RETURN_REFUND || t.getCategory() == TicketCategory.RETURN_EXPIRED;
+                        String tit = t.getTitle() != null ? t.getTitle().toLowerCase() : "";
+                        String desc = t.getDescription() != null ? t.getDescription().toLowerCase() : "";
+                        if (isReturn || tit.contains("trả kho") || desc.contains("trả kho")
+                                || tit.contains("hoàn tiền cọc") || desc.contains("hoàn tiền cọc")
+                                || tit.contains("hoàn cọc") || desc.contains("hoàn cọc")) {
+                            return false;
+                        }
+                    }
+
                     if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
                         if (t.getStatus() == null || !t.getStatus().name().equalsIgnoreCase(status.trim())) {
                             return false;
@@ -1024,6 +1058,18 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         List<SupportTicket> list = targetFacilityId != null
                 ? supportTicketRepository.findByFacility_Id(targetFacilityId)
                 : supportTicketRepository.findAll();
+
+        // Loại bỏ các ticket trả kho khỏi thống kê sự cố kỹ thuật vận hành
+        list = list.stream()
+                .filter(t -> t.getCategory() != TicketCategory.RETURN_REFUND && t.getCategory() != TicketCategory.RETURN_EXPIRED)
+                .filter(t -> {
+                    String tit = t.getTitle() != null ? t.getTitle().toLowerCase() : "";
+                    String desc = t.getDescription() != null ? t.getDescription().toLowerCase() : "";
+                    return !tit.contains("trả kho") && !desc.contains("trả kho")
+                            && !tit.contains("hoàn tiền cọc") && !desc.contains("hoàn tiền cọc")
+                            && !tit.contains("hoàn cọc") && !desc.contains("hoàn cọc");
+                })
+                .collect(Collectors.toList());
 
         long total = list.size();
         long open = list.stream().filter(t -> t.getStatus() == TicketStatus.OPEN).count();
