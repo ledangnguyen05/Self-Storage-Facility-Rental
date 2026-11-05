@@ -165,8 +165,10 @@ Write-Host ""
 Write-Host "[2/5] Kiem tra Backend Spring Boot (Port 8080)..." -ForegroundColor Yellow
 
 # Dung cac tien trinh watchdog start_demo_online.ps1 cu (neu co) de tranh xung dot khi khoi dong lai
+$selfProc = Get-CimInstance Win32_Process -Filter "ProcessId = $PID" -ErrorAction SilentlyContinue
+$parentPid = if ($selfProc) { $selfProc.ParentProcessId } else { 0 }
 Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -match 'start_demo_online\.ps1' } |
+    Where-Object { $_.ProcessId -ne $PID -and $_.ProcessId -ne $parentPid -and $_.CommandLine -match 'start_demo_online\.ps1' } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 $bePortOpen = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue
