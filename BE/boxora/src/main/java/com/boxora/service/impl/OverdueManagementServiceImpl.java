@@ -1730,9 +1730,21 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             boolean smartLockRevoked = (revokeRes != null && revokeRes.success());
 
             if (returnRecordOpt.isEmpty()) {
-                // Physical return has not taken place: do NOT release unit to AVAILABLE!
-                log.info("Contract {} settled debt, but physical return handover is pending. Unit {} remains in status {}",
-                        contract.getContractCode(), unitCode, unit.getStatus());
+                if (Boolean.TRUE.equals(contract.getIsDemo()) || booking == null) {
+                    if (smartLockRevoked) {
+                        unit.setStatus(UnitStatus.AVAILABLE);
+                        log.info("Demo/counter contract {} settled and SmartLock revoked successfully. Released unit {} to AVAILABLE",
+                                contract.getContractCode(), unitCode);
+                        storageUnitRepository.save(unit);
+                    } else {
+                        log.warn("Contract {} settled, but SmartLock IoT revocation failed for unit {}. Unit cannot be AVAILABLE.",
+                                contract.getContractCode(), unitCode);
+                    }
+                } else {
+                    // Physical return has not taken place: do NOT release unit to AVAILABLE!
+                    log.info("Contract {} settled debt, but physical return handover is pending. Unit {} remains in status {}",
+                            contract.getContractCode(), unitCode, unit.getStatus());
+                }
             } else if (!smartLockRevoked) {
                 // SmartLock IoT device revocation failed: do NOT release unit to AVAILABLE!
                 log.warn("Contract {} settled and inspected, but SmartLock IoT revocation failed for unit {}. Unit cannot be AVAILABLE.",
