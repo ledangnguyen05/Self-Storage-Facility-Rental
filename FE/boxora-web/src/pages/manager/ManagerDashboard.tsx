@@ -549,11 +549,11 @@ export const ManagerDashboard: React.FC = () => {
         }
         filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
         setUpcomingHandovers(filteredArrivals)
-        setHandoverPage(1)
+        if (!silent) setHandoverPage(1)
       } else {
         const localArrivals = mergeGuestArrivals([], targetId)
         setUpcomingHandovers(localArrivals)
-        setHandoverPage(1)
+        if (!silent) setHandoverPage(1)
       }
 
       // 5. Active Rentals / Returns
@@ -563,7 +563,7 @@ export const ManagerDashboard: React.FC = () => {
           filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
         }
         setActiveRentals(filteredRentals)
-        setRentalPage(1)
+        if (!silent) setRentalPage(1)
       } else {
         setActiveRentals([])
       }

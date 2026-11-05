@@ -122,16 +122,71 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
     }
 
     if (!silent) setIsInternalLoading(true)
+    const targetId = (!facilityId || facilityId === 'ALL') ? undefined : facilityId
+    const mergeLocalGuestReservations = (baseList: Booking[]): Booking[] => {
+      let merged = [...baseList]
+      try {
+        const rawLocal = localStorage.getItem('boxora_guest_reservations')
+        if (rawLocal) {
+          const parsed = JSON.parse(rawLocal)
+          if (Array.isArray(parsed)) {
+            const localArrivals: Booking[] = parsed
+              .filter((r: any) => !targetId || r.facility?.id === targetId || r.facilityId === targetId)
+              .map((r: any) => ({
+                id: r.id || `LOCAL-RES-${r.bookingCode}`,
+                bookingCode: r.bookingCode,
+                customerName: r.customer?.fullName || r.customerName || 'Khách đặt giữ chỗ',
+                customerPhone: r.customer?.phone || r.customerPhone || 'N/A',
+                identityCardNumber: r.customer?.idCard || r.customerIdCard || r.identityCardNumber,
+                customerEmail: r.customer?.email || r.customerEmail,
+                facilityId: r.facility?.id || r.facilityId || targetId || '',
+                facilityName: r.facility?.name || r.facilityName || 'Cơ sở Boxora',
+                unitTypeId: r.unitTypeId,
+                unitTypeName: r.unitTypeName || r.sizeName || r.size?.volumeText,
+                unitCode: r.unitCode || r.sizeName || r.size?.volumeText || 'Kho tự quản',
+                storageUnitId: r.storageUnitId || '',
+                startDate: r.startDate && !r.startDate.includes('undefined') ? r.startDate : new Date().toISOString().slice(0, 10),
+                endDate: r.rentalEndDate || '',
+                expectedCheckInAt:
+                  r.expectedCheckInAt && !r.expectedCheckInAt.includes('undefined') && !isNaN(new Date(r.expectedCheckInAt).getTime())
+                    ? r.expectedCheckInAt
+                    : r.checkInDate && !r.checkInDate.includes('undefined')
+                      ? `${r.checkInDate}T${r.checkInTime ? r.checkInTime.split(' - ')[0] || '09:00' : '09:00'}:00`
+                      : r.startDate && !r.startDate.includes('undefined')
+                        ? `${r.startDate}T09:00:00`
+                        : undefined,
+                checkInTime: r.checkInTime || '09:00',
+                status: (r.status || 'PENDING_CONTACT') as any,
+                customerId: r.customerId || 'guest',
+                accessCode: r.accessCode || r.bookingCode || '',
+                rentalMonths: r.rentalMonths || 1,
+                totalRentalFee: r.totalRentalFee || r.totalRent || 0,
+                depositAmount: r.depositAmount || 0,
+                depositPaid: r.depositPaid ?? (r.paymentStatus === 'PAID' ? (r.depositAmount || 0) : 0),
+                paymentStatus: r.paymentStatus === 'PAID' ? 'PAID' : 'UNPAID',
+                signingMethod: r.signingMethod || (r.paymentMethod === 'AT_FACILITY' || r.paymentMethod === 'IN_PERSON' ? 'IN_PERSON' : 'ONLINE'),
+                assignedStaffName: r.assignedStaffName,
+                contractCode: r.contractCode,
+                contractSigned: r.contractSigned,
+                paperContractUrl: r.paperContractUrl,
+                paymentProofUrl: r.paymentProofUrl,
+                checkinOverdueReminderSentAt: r.checkinOverdueReminderSentAt,
+                createdAt: r.createdAt,
+              }))
+            const existingCodes = new Set(merged.map((b) => b.bookingCode))
+            const newLocal = localArrivals.filter((b) => !existingCodes.has(b.bookingCode))
+            merged = [...merged, ...newLocal]
+          }
+        }
+      } catch {}
+      return merged
+    }
+
     try {
-      const targetId = (!facilityId || facilityId === 'ALL') ? undefined : facilityId
       const data = await bookingService.getUpcomingArrivals(targetId, { timeframe: 'ALL' })
-      if (Array.isArray(data)) {
-        setInternalArrivals(data)
-      } else {
-        setInternalArrivals([])
-      }
+      setInternalArrivals(mergeLocalGuestReservations(Array.isArray(data) ? data : []))
     } catch {
-      setInternalArrivals([])
+      setInternalArrivals(mergeLocalGuestReservations([]))
     } finally {
       setIsInternalLoading(false)
     }

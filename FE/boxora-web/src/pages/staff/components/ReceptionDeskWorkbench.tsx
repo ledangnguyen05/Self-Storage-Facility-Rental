@@ -6,6 +6,7 @@ import { handoverService, HandoverPrerequisites } from '../../../services/handov
 import { reservationEmailService } from '../../../services/reservationEmailService'
 import { storageUnitService } from '../../../services/storageUnitService'
 import { useAuth } from '../../../context/AuthContext'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import { toast } from '../../../utils/toast'
 import {
   EarlyCheckInConfirmModal,
@@ -109,9 +110,12 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
   }, [onSelectBooking])
 
   // Fetch internal arrivals if propArrivals is undefined
-  const fetchInternalArrivals = useCallback(async () => {
-    if (propArrivals !== undefined) return
-    setInternalLoading(true)
+  const fetchInternalArrivals = useCallback(async (silent = false) => {
+    if (propArrivals !== undefined) {
+      if (silent && onRefresh) onRefresh()
+      return
+    }
+    if (!silent) setInternalLoading(true)
     try {
       const targetFac = facilityId && facilityId !== 'ALL' ? facilityId : undefined
       const [arrivalsRes, unitsRes] = await Promise.allSettled([
@@ -131,15 +135,19 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
     } catch (err) {
       console.error('Failed to load arrivals for ReceptionDeskWorkbench:', err)
     } finally {
-      setInternalLoading(false)
+      if (!silent) setInternalLoading(false)
     }
-  }, [propArrivals, facilityId])
+  }, [propArrivals, facilityId, onRefresh])
 
   useEffect(() => {
     if (propArrivals === undefined) {
-      fetchInternalArrivals()
+      void fetchInternalArrivals(false)
     }
   }, [propArrivals, fetchInternalArrivals])
+
+  useRealtimeSync(() => {
+    void fetchInternalArrivals(true)
+  }, { intervalMs: 3000 })
 
   const rawArrivals = propArrivals !== undefined ? propArrivals : internalArrivals
   const radarUnits = propRadarUnits !== undefined ? propRadarUnits : internalUnits

@@ -5,6 +5,7 @@ import { facilityService } from '../../services/facilityService'
 import { userService } from '../../services/userService'
 import { useLanguage } from '../../context/LanguageContext'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { FacilityPolicyModal } from '../operations/components/FacilityPolicyModal'
 
 interface FacilityOperatingPoliciesPanelProps {
@@ -41,31 +42,38 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
     setTimeout(() => setToastMessage(null), 3000)
   }
 
-  const loadPolicies = async () => {
-    setIsLoading(true)
-    setPolicyLoadError(false)
-    setAllPolicies([])
+  const loadPolicies = async (silent = false) => {
+    if (!silent) {
+      setIsLoading(true)
+      setPolicyLoadError(false)
+    }
     try {
       const res = await facilityPolicyService.getAll({ size: 100 })
       if (Array.isArray(res)) {
         setAllPolicies(res)
       } else if (res && Array.isArray((res as any).content)) {
         setAllPolicies((res as any).content)
-      } else {
+      } else if (!silent) {
         setPolicyLoadError(true)
       }
     } catch (err: any) {
       console.warn('Failed to load facility policies:', err)
-      setAllPolicies([])
-      setPolicyLoadError(true)
+      if (!silent) {
+        setAllPolicies([])
+        setPolicyLoadError(true)
+      }
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    void loadPolicies()
+    void loadPolicies(false)
   }, [])
+
+  useRealtimeSync(() => {
+    void loadPolicies(true)
+  }, { intervalMs: 4000 })
 
   const handleOpenCreatePolicy = (fac?: Facility) => {
     setEditingPolicyFacility(fac || null)

@@ -7,6 +7,7 @@ import {
   calculateShiftWorkHours
 } from '../../../services/staffAssignmentService'
 import { BOXORA_SHIFTS } from '../../../constants/shiftConstants'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import { User } from '../../../types'
 
 interface AttendanceReportTabProps {
@@ -122,9 +123,9 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
   }
 
   // Fetch assignments with range
-  const fetchAttendanceData = useCallback(async () => {
+  const fetchAttendanceData = useCallback(async (silent = false) => {
     if (!facilityId) return
-    setIsLoading(true)
+    if (!silent) setIsLoading(true)
     try {
       const res = await staffAssignmentService.getAllAssignments({
         facilityId,
@@ -135,15 +136,19 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
       setAssignments(res.content || [])
     } catch (err) {
       console.error('Lỗi tải dữ liệu chấm công:', err)
-      setAssignments([])
+      if (!silent) setAssignments([])
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }, [facilityId, fromDate, toDate])
 
   useEffect(() => {
-    fetchAttendanceData()
+    void fetchAttendanceData(false)
   }, [fetchAttendanceData])
+
+  useRealtimeSync(() => {
+    void fetchAttendanceData(true)
+  }, { intervalMs: 3500 })
 
   // Filtered list
   const filteredList = useMemo(() => {

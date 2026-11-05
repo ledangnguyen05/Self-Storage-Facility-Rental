@@ -15,6 +15,7 @@ import {
   calculateShiftWorkHours
 } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 import { Facility, User } from '../../../types'
 import { ShiftSwapModal } from '../../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../../manager/modals/ShiftHandoverModal'
@@ -259,8 +260,8 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   }
 
   // Fetch all operational shift data for this facility
-  const fetchData = async () => {
-    setIsLoading(true)
+  const fetchData = async (silent = false) => {
+    if (!silent) setIsLoading(true)
     try {
       const targetFacilityId = (!currentFacilityId || currentFacilityId === 'ALL') ? undefined : currentFacilityId
 
@@ -349,13 +350,17 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
     } catch (err) {
       console.warn('Failed to load staff roster data:', err)
     } finally {
-      setIsLoading(false)
+      if (!silent) setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchData()
+    void fetchData(false)
   }, [currentFacilityId, appliedStartDate, appliedEndDate])
+
+  useRealtimeSync(() => {
+    void fetchData(true)
+  }, { intervalMs: 3500 })
 
   // Real KPI calculations
   const totalStaffCount = staffList.length
@@ -583,7 +588,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={fetchData}
+              onClick={() => void fetchData(false)}
               disabled={isLoading}
               className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
             >
