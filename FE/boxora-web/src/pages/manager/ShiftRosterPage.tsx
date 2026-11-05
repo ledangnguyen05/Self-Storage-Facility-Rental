@@ -14,6 +14,7 @@ import {
 } from '../../services/staffAssignmentService'
 import { AttendanceReportTab } from './components/AttendanceReportTab'
 import { useAuth } from '../../context/AuthContext'
+import { useLanguage } from '../../context/LanguageContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility, User } from '../../types'
 import { ShiftAssignmentModal } from './modals/ShiftAssignmentModal'
@@ -122,6 +123,7 @@ const getStaffRoleBadge = (roleName?: string) => {
 
 export const ShiftRosterPage: React.FC = () => {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const { selectedFacility: contextFacilityId, setSelectedFacility: setContextFacilityId, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
     setSelectedFacility?: (facId: string) => void
@@ -654,8 +656,8 @@ export const ShiftRosterPage: React.FC = () => {
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                   {isBusinessManager
-                    ? 'Giám Sát Ca Toàn Chuỗi & Phân Bổ Quản Lý'
-                    : 'Xử Lý Trực Ca & Điều Phối Nhân Sự'}
+                    ? t('Giám Sát Ca Toàn Chuỗi & Phân Bổ Quản Lý', 'Chain Workforce Monitoring & Manager Scheduling')
+                    : t('Xử Lý Trực Ca & Điều Phối Nhân Sự', 'Shift Operations & Staff Dispatch')}
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
                   {dateRangeLabel}
@@ -663,8 +665,8 @@ export const ShiftRosterPage: React.FC = () => {
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 {isBusinessManager
-                  ? 'Theo dõi ca làm toàn hệ thống ở chế độ chỉ đọc; điều phối và phân công ca cho Quản lý cơ sở'
-                  : 'Điều phối ca trực quầy tiếp đón, kiểm tra buồng kho, chấm công vào/ra ca, đổi ca và biên bản bàn giao'}
+                  ? t('Theo dõi ca làm toàn hệ thống ở chế độ chỉ đọc; điều phối và phân công ca cho Quản lý cơ sở', 'System-wide view in read-only mode; schedule and allocate shifts for facility managers')
+                  : t('Điều phối ca trực quầy tiếp đón, kiểm tra buồng kho, chấm công vào/ra ca, đổi ca và biên bản bàn giao', 'Coordinate reception desk shifts, unit inspections, attendance tracking, shift swaps, and handovers')}
               </p>
             </div>
           </div>
@@ -680,7 +682,7 @@ export const ShiftRosterPage: React.FC = () => {
               <span className={`material-symbols-outlined text-[16px] ${isLoading ? 'animate-spin' : ''}`}>
                 refresh
               </span>
-              <span>Làm mới</span>
+              <span>{t('Làm mới', 'Refresh')}</span>
             </button>
 
             {isAdmin ? (
@@ -696,7 +698,7 @@ export const ShiftRosterPage: React.FC = () => {
                 title="Phân công ca trực cho Quản lý cơ sở"
               >
                 <span className="material-symbols-outlined text-[18px]">manage_accounts</span>
-                <span>Phân công Quản lý cơ sở</span>
+                <span>{t('Phân công Quản lý cơ sở', 'Assign Facility Manager')}</span>
               </button>
             ) : (
               <button
@@ -705,7 +707,7 @@ export const ShiftRosterPage: React.FC = () => {
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[18px]">person_add</span>
-                <span>Phân ca nhân viên</span>
+                <span>{t('Phân ca nhân viên', 'Assign Staff Shift')}</span>
               </button>
             )}
           </div>
@@ -724,7 +726,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Tuần trước
+              {t('Tuần trước', 'Previous Week')}
             </button>
             <button
               type="button"
@@ -735,7 +737,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Tuần này
+              {t('Tuần này', 'This Week')}
             </button>
             <button
               type="button"
@@ -746,7 +748,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Tuần sau
+              {t('Tuần sau', 'Next Week')}
             </button>
             <button
               type="button"
@@ -757,7 +759,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Hôm nay
+              {t('Hôm nay', 'Today')}
             </button>
             <button
               type="button"
@@ -768,7 +770,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Tháng này
+              {t('Tháng này', 'This Month')}
             </button>
           </div>
 
@@ -808,7 +810,7 @@ export const ShiftRosterPage: React.FC = () => {
               className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">check</span>
-              <span>Áp dụng</span>
+              <span>{t('Áp dụng', 'Apply')}</span>
             </button>
 
             <button
@@ -817,7 +819,7 @@ export const ShiftRosterPage: React.FC = () => {
               className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-semibold transition-all cursor-pointer"
               title="Đặt lại về ngày hôm nay"
             >
-              Đặt lại
+              {t('Đặt lại', 'Reset')}
             </button>
           </div>
         </div>
@@ -840,7 +842,7 @@ export const ShiftRosterPage: React.FC = () => {
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span>Tổng nhân sự cơ sở</span>
+              <span>{t('Tổng Nhân Sự Cơ Sở', 'Total Facility Staff')}</span>
             </div>
             <div className="p-1.5 rounded-lg bg-slate-100 text-slate-700 group-hover:bg-slate-200 transition-colors">
               <span className="material-symbols-outlined text-[18px]">group</span>
@@ -851,7 +853,7 @@ export const ShiftRosterPage: React.FC = () => {
               {totalStaffCount}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Nhân viên thuộc biên chế chi nhánh
+              {t('Staff thuộc biên chế chi nhánh', 'Branch permanent staff members')}
             </div>
           </div>
         </div>
@@ -874,10 +876,10 @@ export const ShiftRosterPage: React.FC = () => {
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span className={filterStatus === 'CHECKED_IN' ? 'text-emerald-700 font-bold' : ''}>Đang trực ca</span>
+              <span className={filterStatus === 'CHECKED_IN' ? 'text-emerald-700 font-bold' : ''}>{t('Đang trực ca', 'On Duty')}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Thời gian thực
+                {t('Thời gian thực', 'Real-time')}
               </span>
             </div>
             <div className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 group-hover:bg-emerald-100 transition-colors">
@@ -889,12 +891,12 @@ export const ShiftRosterPage: React.FC = () => {
               <span>{checkedInCount}</span>
               {checkedInCount > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold">
-                  Có mặt tại quầy
+                  {t('Có mặt tại quầy', 'Present at counter')}
                 </span>
               )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Đã điểm danh vào ca và đang có mặt làm nhiệm vụ
+              {t('Đã điểm danh vào ca và đang có mặt làm nhiệm vụ', 'Checked in and actively on duty')}
             </div>
           </div>
         </div>
@@ -917,9 +919,9 @@ export const ShiftRosterPage: React.FC = () => {
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span className={filterStatus === 'ASSIGNED' ? 'text-amber-700 font-bold' : ''}>Chưa vào ca</span>
+              <span className={filterStatus === 'ASSIGNED' ? 'text-amber-700 font-bold' : ''}>{t('Chưa vào ca', 'Upcoming')}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                Khoảng ngày
+                {t('Khoảng ngày', 'Scheduled')}
               </span>
             </div>
             <div className="p-1.5 rounded-lg bg-amber-50 text-amber-600 group-hover:bg-amber-100 transition-colors">
@@ -931,12 +933,12 @@ export const ShiftRosterPage: React.FC = () => {
               <span>{assignedCount}</span>
               {assignedCount > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold">
-                  Chờ tới giờ
+                  {t('Chờ tới giờ', 'Upcoming')}
                 </span>
               )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Phân công sắp tới chưa bắt đầu
+              {t('Phân công sắp tới chưa bắt đầu', 'Upcoming assignment not started yet')}
             </div>
           </div>
         </div>
@@ -963,9 +965,9 @@ export const ShiftRosterPage: React.FC = () => {
         >
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
-              <span className={absentCount > 0 ? 'text-rose-700 font-bold' : ''}>Không đi làm</span>
+              <span className={absentCount > 0 ? 'text-rose-700 font-bold' : ''}>{t('Không đi làm', 'Absent')}</span>
               <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                Khoảng ngày
+                {t('Khoảng ngày', 'Scheduled')}
               </span>
             </div>
             <div className="p-1.5 rounded-lg bg-rose-50 text-rose-600 group-hover:bg-rose-100 transition-colors">
@@ -977,12 +979,12 @@ export const ShiftRosterPage: React.FC = () => {
               <span>{absentCount}</span>
               {absentCount > 0 && (
                 <span className="text-xs px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold">
-                  Vắng mặt
+                  {t('Vắng mặt', 'Absent')}
                 </span>
               )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Hết giờ ca trực nhưng không điểm danh vào/ra
+              {t('Hết giờ ca trực nhưng không điểm danh vào/ra', 'Shift ended without check-in or checkout')}
             </div>
           </div>
         </div>
@@ -1004,7 +1006,7 @@ export const ShiftRosterPage: React.FC = () => {
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
             <div className="flex items-center gap-1.5">
               <span className={filterStatus === 'COMPLETED' ? 'text-blue-700 font-bold' : ''}>
-                Ca trực &amp; Hoàn thành
+                {t('Ca trực & Hoàn thành', 'Shifts & Completion')}
               </span>
             </div>
             <div className={`p-1.5 rounded-lg transition-colors ${
@@ -1015,21 +1017,21 @@ export const ShiftRosterPage: React.FC = () => {
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-blue-700 tracking-tight flex items-center gap-2">
-              <span>{assignments.length} ca trực</span>
+              <span>{assignments.length} {t('ca trực', 'shifts')}</span>
               {completedCount > 0 && (
                 <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                   filterStatus === 'COMPLETED' ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800'
                 }`}>
-                  {completedCount} hoàn thành
+                  {completedCount} {t('hoàn thành', 'completed')}
                 </span>
               )}
             </div>
             <div className="text-[11px] text-slate-500 mt-1 flex items-center justify-between">
               <div>
                 <span className={filterStatus === 'COMPLETED' ? 'font-bold text-blue-700 underline' : 'font-medium text-slate-700'}>
-                  {completedCount} hoàn thành
+                  {completedCount} {t('hoàn thành', 'completed')}
                 </span>{' '}
-                • {distinctShiftsCount} khung ca • {pendingSwapCount} yêu cầu đổi ca
+                • {distinctShiftsCount} {t('khung ca', 'shift slots')} • {pendingSwapCount} {t('yêu cầu đổi ca', 'swap requests')}
               </div>
               {filterStatus === 'COMPLETED' && (
                 <button
@@ -1041,7 +1043,7 @@ export const ShiftRosterPage: React.FC = () => {
                   className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer shrink-0 ml-1"
                   title="Bỏ lọc ca hoàn thành"
                 >
-                  Bỏ lọc
+                  {t('Bỏ lọc', 'Clear filter')}
                 </button>
               )}
             </div>
@@ -1067,7 +1069,7 @@ export const ShiftRosterPage: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">view_timeline</span>
-          <span>Bảng Lịch Trực &amp; Chấm Công ({assignments.length})</span>
+          <span>{t('Bảng Lịch Trực & Chấm Công', 'Roster & Attendance Board')} ({assignments.length})</span>
         </button>
 
         <button
@@ -1080,7 +1082,7 @@ export const ShiftRosterPage: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
-          <span>Yêu Cầu Đổi Ca ({swapRequests.length})</span>
+          <span>{t('Yêu Cầu Đổi Ca', 'Shift Swap Requests')} ({swapRequests.length})</span>
           {pendingSwapCount > 0 && (
             <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">
               {pendingSwapCount}
@@ -1098,7 +1100,7 @@ export const ShiftRosterPage: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">badge</span>
-          <span>Danh Sách Nhân Sự Cơ Sở ({staffList.length})</span>
+          <span>{t('Danh Sách Nhân Sự Cơ Sở', 'Facility Staff Directory')} ({staffList.length})</span>
         </button>
 
         <button
@@ -1111,7 +1113,7 @@ export const ShiftRosterPage: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">fact_check</span>
-          <span>Bảng Chấm Công & Báo Cáo</span>
+          <span>{t('Bảng Chấm Công & Báo Cáo', 'Timesheet & Reports')}</span>
         </button>
       </div>
 
@@ -1126,14 +1128,14 @@ export const ShiftRosterPage: React.FC = () => {
                 {(['ALL', 'MORNING', 'AFTERNOON', 'NIGHT', 'FULL_DAY'] as const).map(sh => {
                   const label =
                     sh === 'ALL'
-                      ? 'Tất cả ca'
+                      ? t('Tất cả các ca', 'All Shifts')
                       : sh === 'MORNING'
-                      ? 'Ca Sáng'
+                      ? t('Ca Sáng', 'Morning Shift')
                       : sh === 'AFTERNOON'
-                      ? 'Ca Chiều'
+                      ? t('Ca Chiều', 'Afternoon Shift')
                       : sh === 'NIGHT'
-                      ? 'Ca Đêm'
-                      : 'Cả Ngày'
+                      ? t('Ca Tối', 'Night Shift')
+                      : t('Cả Ngày', 'All Day')
                   return (
                     <button
                       key={sh}
@@ -1166,7 +1168,7 @@ export const ShiftRosterPage: React.FC = () => {
                     setSearchTerm(e.target.value)
                     setCurrentPage(1)
                   }}
-                  placeholder="Tìm nhân sự, email, phân khu, ghi chú..."
+                  placeholder={t('Tìm nhân sự, email, phân khu, ghi chú...', 'Search staff, email, zone, notes...')}
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold outline-none focus:border-blue-500 focus:bg-white"
                 />
               </div>
@@ -1183,7 +1185,7 @@ export const ShiftRosterPage: React.FC = () => {
                 }}
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-400"
               >
-                <option value="ALL">Tất cả nhân sự ({staffList.length})</option>
+                <option value="ALL">{t('Tất cả nhân sự', 'All Staff')} ({staffList.length})</option>
                 {staffList.map(s => (
                   <option key={s.id} value={s.id}>
                     {s.fullName || s.username} [{getStaffRoleBadge(s.roleName || s.role?.name || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')).label}] ({s.email})
@@ -1200,7 +1202,7 @@ export const ShiftRosterPage: React.FC = () => {
                 }}
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-400"
               >
-                <option value="ALL">Tất cả phân khu</option>
+                <option value="ALL">{t('Tất cả phân khu', 'All Zones')}</option>
                 {availableZones.map(z => (
                   <option key={z} value={z}>
                     {z}
@@ -1217,12 +1219,12 @@ export const ShiftRosterPage: React.FC = () => {
                 }}
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-400"
               >
-                <option value="ALL">Tất cả trạng thái chấm công</option>
-                <option value="ASSIGNED">Chưa vào ca</option>
-                <option value="CHECKED_IN">Đang trực ca</option>
-                <option value="COMPLETED">Đã hoàn thành</option>
-                <option value="ABSENT">Không đi làm</option>
-                <option value="CANCELLED">Đã hủy ca</option>
+                <option value="ALL">{t('Tất cả trạng thái chấm công', 'All Attendance Statuses')}</option>
+                <option value="ASSIGNED">{t('Chưa vào ca', 'Upcoming')}</option>
+                <option value="CHECKED_IN">{t('Đang trực ca', 'On Duty')}</option>
+                <option value="COMPLETED">{t('Đã hoàn thành', 'Completed')}</option>
+                <option value="ABSENT">{t('Không đi làm', 'Absent')}</option>
+                <option value="CANCELLED">{t('Đã hủy ca', 'Cancelled Shift')}</option>
               </select>
 
             </div>
@@ -1233,13 +1235,13 @@ export const ShiftRosterPage: React.FC = () => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                  <th className="py-3 px-4">Nhân sự trực ca</th>
-                  <th className="py-3 px-4">Ngày làm việc</th>
-                  <th className="py-3 px-4">Ca &amp; Khung giờ làm</th>
-                  <th className="py-3 px-4">Phân khu &amp; Vai trò</th>
-                  <th className="py-3 px-4 text-center whitespace-nowrap">Trạng thái chấm công</th>
-                  <th className="py-3 px-4 text-center whitespace-nowrap">Giờ thực tế</th>
-                  <th className="py-3 px-4 text-right">Tác vụ điều phối</th>
+                  <th className="py-3 px-4">{t('Nhân sự trực ca', 'Roster Staff')}</th>
+                  <th className="py-3 px-4">{t('Ngày làm việc', 'Work Date')}</th>
+                  <th className="py-3 px-4">{t('Ca & Khung giờ làm', 'Shift & Working Hours')}</th>
+                  <th className="py-3 px-4">{t('Phân khu & Vai trò', 'Zone & Role')}</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">{t('Trạng thái chấm công', 'Attendance Status')}</th>
+                  <th className="py-3 px-4 text-center whitespace-nowrap">{t('Giờ thực tế', 'Actual Hours')}</th>
+                  <th className="py-3 px-4 text-right">{t('Tác vụ điều phối', 'Actions / Dispatch')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1353,7 +1355,7 @@ export const ShiftRosterPage: React.FC = () => {
                           </div>
                           {isToday && (
                             <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                              Hôm nay
+                              {t('Hôm nay', 'Today')}
                             </span>
                           )}
                         </td>
@@ -1361,12 +1363,12 @@ export const ShiftRosterPage: React.FC = () => {
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-bold text-slate-800">
                             {assignment.shift === 'MORNING'
-                              ? 'Ca Sáng'
+                              ? t('Ca Sáng', 'Morning Shift')
                               : assignment.shift === 'AFTERNOON'
-                              ? 'Ca Chiều'
+                              ? t('Ca Chiều', 'Afternoon Shift')
                               : assignment.shift === 'NIGHT'
                               ? 'Ca Đêm (Qua đêm)'
-                              : 'Cả Ngày'}
+                              : t('Cả Ngày', 'All Day')}
                           </div>
                           <div className="text-[11px] text-blue-600 font-mono font-semibold">{shiftTimeStr}</div>
                         </td>

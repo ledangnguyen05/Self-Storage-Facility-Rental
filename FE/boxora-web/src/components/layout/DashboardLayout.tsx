@@ -268,14 +268,14 @@ export const DashboardLayout: React.FC = () => {
           <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
             <div className="flex items-center justify-between mb-1.5">
               <span className="font-mono text-[9px] uppercase font-bold text-slate-400">
-                Phiên Đăng Nhập
+                {t('Phiên Đăng Nhập', 'Login Session')}
               </span>
             </div>
             <div className="text-xs font-bold text-slate-900 truncate">
-              {user?.fullName || 'Khách vãng lai'}
+              {t(user?.fullName || '') || user?.fullName || t('Khách vãng lai', 'Guest')}
             </div>
             <div className="text-[11px] font-mono text-slate-500 truncate">
-              {user?.email || 'Chưa đăng nhập'}
+              {user?.email || t('Chưa đăng nhập', 'Not signed in')}
             </div>
           </div>
 
@@ -283,7 +283,7 @@ export const DashboardLayout: React.FC = () => {
           {role && role !== 'CUSTOMER' && !isFacilitiesPolicyPage && (
             <div className="sm:hidden p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 text-left">
               <span className="font-mono text-[9px] uppercase font-bold text-slate-400 block mb-1 tracking-wider">
-                CƠ SỞ TRỰC THUỘC
+                {t('CƠ SỞ TRỰC THUỘC', 'ASSIGNED FACILITY')}
               </span>
               {isFacilityScopedRole ? (
                 <div className="font-mono text-xs text-slate-900 font-bold p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between">
@@ -299,7 +299,7 @@ export const DashboardLayout: React.FC = () => {
                   className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-xs text-slate-900 font-bold focus:outline-none cursor-pointer"
                 >
                   {!isFacilityManagerPage && (
-                    <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
+                    <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
                   )}
                   {facilities.length > 0 && facilities.map(f => (
                     <option key={f.id} value={f.id}>
@@ -316,7 +316,7 @@ export const DashboardLayout: React.FC = () => {
             <div>
               <div className="px-3 pb-2">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Dịch Vụ Khách Thuê
+                  {t('Dịch Vụ Khách Thuê', 'Tenant Services')}
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
@@ -329,7 +329,7 @@ export const DashboardLayout: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-                  <span>Kho của tôi &amp; Mã PIN</span>
+                  <span>{t('Kho của tôi & Mã PIN', 'My Units & SmartKey PIN')}</span>
                 </Link>
 
                 <Link
@@ -341,7 +341,7 @@ export const DashboardLayout: React.FC = () => {
                   }`}
                 >
                   <span className="material-symbols-outlined text-[18px]">history</span>
-                  <span>Lịch sử kho &amp; Thông báo</span>
+                  <span>{t('Lịch sử kho & Thông báo', 'History & Notifications')}</span>
                 </Link>
 
                 <Link
@@ -399,7 +399,7 @@ export const DashboardLayout: React.FC = () => {
                     className="flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-800 dark:hover:text-slate-100 transition-all"
                   >
                     <span className="material-symbols-outlined text-[18px]">home</span>
-                    <span>Về trang chủ</span>
+                    <span>{t('Về trang chủ', 'Back to Home')}</span>
                   </Link>
                 </div>
               </nav>
@@ -411,7 +411,7 @@ export const DashboardLayout: React.FC = () => {
             <div>
               <div className="px-3 pb-2">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Nghiệp Vụ Quầy
+                  {t('Nghiệp Vụ Quầy', 'Counter Ops')}
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
@@ -479,7 +479,7 @@ export const DashboardLayout: React.FC = () => {
             <div>
               <div className="px-3 pb-2">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Quản Lý Cơ Sở
+                  {t('Quản Lý Cơ Sở', 'Facility Management')}
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">
@@ -575,7 +575,7 @@ export const DashboardLayout: React.FC = () => {
             <div>
               <div className="px-3 pb-2">
                 <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-slate-400">
-                  Điều Hành &amp; Kinh Doanh
+                  {t('Điều Hành & Kinh Doanh', 'Operations & Business')}
                 </span>
               </div>
               <nav className="flex flex-col gap-1 text-left">

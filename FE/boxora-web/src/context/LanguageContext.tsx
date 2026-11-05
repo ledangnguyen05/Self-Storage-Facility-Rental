@@ -376,7 +376,9 @@ export const DICTIONARY: Record<string, string> = {
   'Lọc theo cơ sở': 'Filter by Facility',
   'Tất cả cơ sở': 'All Facilities',
   'Danh mục kho': 'Unit Category',
-  'Tất cả': 'All Units',
+  'Tất cả': 'All',
+  'Tất cả buồng': 'All Units',
+  'Tất cả buồng kho': 'All Storage Units',
   'Kho Mini': 'Mini Storage',
   'Kho Cá Nhân': 'Personal Storage',
   'Kho Doanh Nghiệp': 'Business Storage',
@@ -627,9 +629,10 @@ export const DICTIONARY: Record<string, string> = {
   'HỆ THỐNG': 'SYSTEM',
   'Quản lý hệ thống': 'System Manager',
   'Quản Lý Hệ Thống': 'System Manager',
-  'System Manager': 'Quản lý Hệ thống',
-  'Business Manager': 'Quản lý Kinh doanh',
-  'Facility Manager': 'Quản lý Cơ sở',
+  'Quản lý kinh doanh': 'Business Manager',
+  'Quản Lý Kinh Doanh': 'Business Manager',
+  'Quản lý cơ sở': 'Facility Manager',
+  'Quản Lý Cơ Sở': 'Facility Manager',
   'Theo hệ điều hành': 'Sync with operating system',
   'Kích thước phông chữ': 'Font Scaling',
   'Tiêu chuẩn (100%)': 'Standard (100%)',
@@ -1541,6 +1544,205 @@ Object.assign(DICTIONARY, {
   'Tùy chỉnh trải nghiệm làm việc theo nhu cầu cá nhân': 'Customize your workspace preferences',
   'Hoạt động': 'Active',
   'Tạm dừng': 'Inactive',
+
+  // Overdue & Delinquency Management
+  'Xử Lý Nợ Cước Quá Hạn & Thu Hồi PIN/QR': 'Overdue Delinquency & Access Revocation',
+  'Xử lý nợ cước quá hạn & thu hồi PIN/QR': 'Overdue Delinquency & Access Revocation',
+  'Xử Lý Nợ Cước Quá Hạn': 'Overdue Delinquency',
+  'Xử lý nợ cước quá hạn': 'Overdue Delinquency',
+  'XỬ LÝ NỢ CƯỚC QUÁ HẠN': 'OVERDUE DELINQUENCY',
+  'Theo dõi chu kỳ quá hạn (+1 ngày ân hạn, +3 ngày thu hồi PIN SmartLock, +7 ngày xem xét niêm phong kho & kiểm kê)':
+    'Track overdue cycle (+1 grace day, +3 PIN revocation days, +7 sealing & inventory review days)',
+  'Xuất Báo Cáo CSV': 'Export CSV Report',
+  'Làm Mới': 'Refresh',
+  'Tổng Công Nợ Quá Hạn': 'Total Overdue Delinquency',
+  'Phí phạt tích lũy:': 'Accrued late fees:',
+  'Phí phạt tích lũy': 'Accrued late fees',
+  'Chờ đối soát': 'Pending reconciliation',
+  'Tổng Tiền Cọc Cần Hoàn': 'Total Deposit to Refund',
+  'Tổng tiền cọc giữ:': 'Total deposit held:',
+  'Tổng tiền cọc giữ': 'Total deposit held',
+  'Đã cấn trừ phí phạt:': 'Late fees deducted:',
+  'Đã cấn trừ phí phạt': 'Late fees deducted',
+  'Tổng Hợp Đồng Quá Hạn': 'Total Overdue Contracts',
+  'hợp đồng': 'contracts',
+  'buồng kho': 'units',
+  'Ân hạn miễn phạt:': 'Grace period (no fine):',
+  'Ân hạn miễn phạt': 'Grace period (no fine)',
+  'Cảnh báo quá hạn:': 'Overdue warning:',
+  'Cảnh báo quá hạn': 'Overdue warning',
+  'Warning Stage quá hạn:': 'Warning stage overdue:',
+  'Warning Stage quá hạn': 'Warning stage overdue',
+  'Ngưỡng Thu Hồi PIN (3-6N)': 'PIN Revocation Threshold (3-6D)',
+  'Ngưỡng Thu Hồi PIN': 'PIN Revocation Threshold',
+  'Có thể thực hiện thu hồi': 'Eligible for PIN revocation',
+  'Đủ ĐK Niêm Phong (>= 7N)': 'Sealing Eligible (>= 7D)',
+  'Đủ ĐK Niêm Phong': 'Sealing Eligible',
+  'Chờ duyệt niêm phong:': 'Pending sealing approval:',
+  'Chờ duyệt niêm phong': 'Pending sealing approval',
+  'chờ duyệt': 'pending',
+  '0 chờ duyệt': '0 pending',
+  'Có thể giải phóng kho:': 'Eligible to release unit:',
+  'Có thể giải phóng kho': 'Eligible to release unit',
+  'sẵn sàng': 'ready',
+  'Ân hạn (1 ngày)': 'Grace Period (1 Day)',
+  'Cảnh báo (2 ngày)': 'Warning Stage (2 Days)',
+  'Thu hồi PIN (3-6 ngày)': 'PIN Revoked (3-6 Days)',
+  'Đủ ĐK Niêm phong (>= 7 ngày)': 'Sealing Eligible (>= 7 Days)',
+  'Đã thanh toán & trả kho': 'Settled & Checked Out',
+  'Đã xử lý & Trả kho': 'Settled & Checked Out',
+  'Chuyển sang hoàn tất': 'Customer Checked Out',
+  'Đang bật': 'Active',
+  'Cơ sở lưu trữ:': 'Storage facility:',
+  'Cơ sở lưu trữ': 'Storage facility',
+  'Cơ Sở Lưu Trữ': 'Storage Facility',
+  'Trạng thái SmartLock:': 'SmartLock Status:',
+  'Trạng thái SmartLock': 'SmartLock Status',
+  'Tất cả trạng thái PIN': 'All PIN Statuses',
+  'PIN Active (Mở bình thường)': 'PIN Active (Normal Access)',
+  'PIN Active': 'PIN Active',
+  'Chờ thu hồi PIN': 'Pending PIN Revocation',
+  'Chờ thu hồi': 'Pending Revocation',
+  'Đã thu hồi PIN (Locked)': 'PIN Revoked (Locked)',
+  'Đã thu hồi (Lock)': 'Revoked (Locked)',
+  'Thu hồi PIN thất bại': 'PIN Revocation Failed',
+  'Thu hồi lỗi': 'Revocation Failed',
+  'Trạng thái Niêm phong:': 'Sealing Status:',
+  'Trạng thái Niêm phong': 'Sealing Status',
+  'Trạng thái niêm phong:': 'Sealing Status:',
+  'Trạng thái niêm phong': 'Sealing Status',
+  'Tất cả trạng thái niêm phong': 'All Sealing Statuses',
+  'Tất cả niêm phong': 'All Sealing',
+  'Chưa niêm phong': 'Not Sealed',
+  'Đủ ĐK niêm phong (>= 7 ngày)': 'Sealing Eligible (>= 7 Days)',
+  'Đủ ĐK niêm phong': 'Sealing Eligible',
+  'Đã duyệt (Chờ niêm phong)': 'Approved (Pending Seal)',
+  'Đã duyệt NP': 'Approved Seal',
+  'Chờ duyệt NP': 'Pending Seal',
+  'Từ chối NP': 'Rejected Seal',
+  'Đã niêm phong hoàn tất': 'Sealed Completed',
+  'Đã niêm phong': 'Sealed',
+  'Đề xuất bị từ chối': 'Proposal Rejected',
+  'Hợp Đồng & Buồng Kho': 'Contract & Storage Unit',
+  'Khách Hàng': 'Customer',
+  'Ngày Đến Hạn': 'Due Date',
+  'Ngày Đến Hạn & Quá Hạn': 'Due Date & Overdue Days',
+  'Tình Trạng Nợ': 'Debt Status',
+  'Chi Tiết Công Nợ': 'Debt Breakdown',
+  'Trạng Thái Đơn': 'Order Status',
+  'Thời Gian Hoàn Tất': 'Settled At',
+  'Thao Tác': 'Actions',
+  'Hoàn tất đơn': 'Complete Settle',
+  'Hồ Sơ Niêm Phong': 'Sealing Dossier',
+  'Đang truy vấn danh sách công nợ quá hạn...': 'Loading overdue contracts...',
+  'Chưa có đơn nợ cước nào được xác nhận khách đã tới thanh toán và hoàn tất trả kho.': 'No overdue contracts have been settled and checked out yet.',
+  'Buồng': 'Unit',
+  'Buồng #': 'Unit #',
+  'Cọc giữ:': 'Deposit held:',
+  'Cọc giữ': 'Deposit held',
+  'Phạt': 'Penalty',
+  'Hoàn:': 'Refund:',
+  'Hoàn': 'Refund',
+  'Nợ:': 'Debt:',
+  'Nợ': 'Debt',
+  'Chi tiết': 'Details',
+  'Đã xong': 'Done',
+  'Xác nhận đã xong': 'Confirm Done',
+  'Không tìm thấy hợp đồng nợ cước nào khớp với bộ lọc.': 'No overdue contracts matched the filter.',
+  'Hiển thị': 'Showing',
+  'trên tổng số': 'of total',
+  'Trang trước': 'Previous page',
+  'Trang sau': 'Next page',
+  'Trang': 'Page',
+  'Đã thanh lý tài sản': 'Assets Liquidated',
+  'Đã thanh toán đủ': 'Paid in Full',
+  'Đã xong (Khách trả kho)': 'Done (Checked Out)',
+  'Ân hạn': 'Grace',
+  'Ngưỡng PIN': 'PIN Threshold',
+  'Ngưỡng Niêm phong': 'Sealing Threshold',
+
+  // Shift Roster & Workforce Management
+  'Giám Sát Ca Toàn Chuỗi & Phân Bổ Quản Lý': 'Workforce Monitoring & Manager Scheduling',
+  'Xử Lý Trực Ca & Điều Phối Nhân Sự': 'Shift Roster & Workforce Coordination',
+  'XỬ LÝ TRỰC CA': 'SHIFT ROSTER',
+  'Theo dõi ca làm toàn hệ thống ở chế độ chỉ đọc; điều phối và phân công ca cho Quản lý cơ sở':
+    'System-wide view in read-only mode; schedule and allocate shifts for facility managers',
+  'Điều phối ca trực quầy tiếp đón, kiểm tra buồng kho, chấm công vào/ra ca, đổi ca và biên bản bàn giao':
+    'Coordinate reception desk shifts, unit inspections, attendance tracking, shift swaps, and handovers',
+  'Phân công Quản lý cơ sở': 'Assign Facility Manager',
+  'Tuần trước': 'Previous Week',
+  'Tuần này': 'This Week',
+  'Tuần sau': 'Next Week',
+  'Hôm nay': 'Today',
+  'Tháng này': 'This Month',
+  'Month này': 'This Month',
+  'Từ:': 'From:',
+  'Đến:': 'To:',
+  'Áp dụng': 'Apply',
+  'Đặt lại': 'Reset',
+  'Tổng Nhân Sự Cơ Sở': 'Total Facility Staff',
+  'Staff thuộc biên chế chi nhánh': 'Branch permanent staff members',
+  'Thời gian thực': 'Real-time',
+  'Đang trực ca': 'On Duty',
+  'Đã điểm danh vào ca và đang có mặt làm nhiệm vụ': 'Checked in and actively on duty',
+  'Chưa điểm danh': 'Not Checked In',
+  'Khoảng ngày': 'Scheduled',
+  'Khoảng days': 'Scheduled',
+  'Chờ tới giờ': 'Upcoming',
+  'Phân công sắp tới chưa bắt đầu': 'Upcoming assignment not started yet',
+  'Vắng mặt': 'Absent',
+  'Hết giờ ca trực nhưng không điểm danh vào/ra': 'Shift ended without check-in or checkout',
+  'Ca trực & Hoàn thành': 'Shifts & Completion',
+  'hoàn thành': 'completed',
+  'khung ca': 'shifts',
+  'yêu cầu đổi ca': 'swap requests',
+  'Bảng Lịch Trực & Chấm Công': 'Roster & Attendance Board',
+  'Yêu Cầu Đổi Ca': 'Shift Swap Requests',
+  'Danh Sách Nhân Sự Cơ Sở': 'Facility Staff Directory',
+  'Bảng Chấm Công & Báo Cáo': 'Timesheet & Reports',
+  'Tất cả các ca': 'All Shifts',
+  'Ca Sáng': 'Morning Shift',
+  'Ca sáng': 'Morning Shift',
+  'Ca Chiều': 'Afternoon Shift',
+  'Ca chiều': 'Afternoon Shift',
+  'Ca Tối': 'Night Shift',
+  'Ca tối': 'Night Shift',
+  'Cả Ngày': 'All Day',
+  'Cả ngày': 'All Day',
+  'Tất cả nhân sự': 'All Staff',
+  'Tất cả phân khu': 'All Zones',
+  'Quầy tiếp tân': 'Reception Desk',
+  'Khu văn phòng': 'Office Zone',
+  'Tất cả trạng thái chấm công': 'All Attendance Statuses',
+  'Đã hoàn thành': 'Completed',
+  'Đã hủy ca': 'Cancelled Shift',
+  'Nhân sự trực ca': 'Roster Staff',
+  'Ngày làm việc': 'Work Date',
+  'Ca & Khung giờ làm': 'Shift & Working Hours',
+  'Phân khu & Vai trò': 'Zone & Role',
+  'Trạng thái chấm công': 'Attendance Status',
+  'Giờ thực tế': 'Actual Hours',
+  'Tác vụ điều phối': 'Actions / Dispatch',
+  'Chưa vào': 'Not checked in',
+  'Chưa vào ca': 'Upcoming Shift',
+  'Đã vào ca': 'Checked In',
+  'Đã ra ca': 'Checked Out',
+  'Quên ra ca': 'Forgotten Checkout',
+  'Không đi làm (Quên ra ca)': 'Absent (Forgotten Checkout)',
+  'Không đi làm': 'Absent',
+  'Đang trực...': 'On duty...',
+  'Vào:': 'In:',
+  'Ra:': 'Out:',
+  'Vào ca': 'Check In',
+  'Ra ca': 'Check Out',
+  'Đổi ca': 'Swap Shift',
+  'Phân công ca trực ngay': 'Schedule Shift Now',
+  'Xem toàn bộ tuần này': 'View Whole Week',
+  'Không tìm thấy ca trực nào phù hợp với bộ lọc': 'No shifts found matching filters',
+  'Xóa bộ lọc để xem tất cả': 'Clear filters to view all',
+  'Đang tải lịch phân công ca trực...': 'Loading shift roster schedule...',
+  'Toàn chuỗi (Tất cả cơ sở)': 'All Facilities Chain',
+  'Cơ sở Boxora': 'Boxora Facility',
 })
 
 // Pre-sorted dictionary keys by length descending to match longest phrases first
@@ -1555,6 +1757,13 @@ for (const [vi, en] of Object.entries(DICTIONARY)) {
 }
 const SORTED_REVERSE_KEYS = Object.keys(REVERSE_DICTIONARY).sort((a, b) => b.length - a.length)
 
+// Words that should ONLY match exactly as a whole trimmed string, NEVER as substrings inside other words
+const EXACT_MATCH_ONLY = new Set([
+  'Tất cả', 'TẤT CẢ', 'Lưu', 'ngày', 'Ngày', 'NGÀY', 'Kho', 'KHO', 'Ca', 'CA',
+  'Đã', 'Chưa', 'Nợ', 'Cọc', 'Phạt', 'Hoàn', 'Hạn', 'Chi nhánh', 'Cơ sở',
+  'Hoạt động', 'Tạm dừng', 'Sáng', 'Tối', 'Tự động', 'Hệ thống', 'Chi tiết'
+])
+
 // WeakMaps storing original Vietnamese text and attributes
 const originalTextMap = new WeakMap<Node, string>()
 const originalAttrMap = new WeakMap<Element, Record<string, string>>()
@@ -1567,7 +1776,8 @@ let isTranslatingDOM = false
 const translateText = (value: string) => {
   let translated = value
   for (const phrase of SORTED_KEYS) {
-    if (translated.includes(phrase)) {
+    if (EXACT_MATCH_ONLY.has(phrase)) continue
+    if (phrase.length >= 4 && translated.includes(phrase)) {
       translated = translated.split(phrase).join(DICTIONARY[phrase])
     }
   }
@@ -1642,7 +1852,7 @@ function applyDOMTranslation(root: Node, lang: Language) {
           const parent = node.parentElement
           if (!parent) return NodeFilter.FILTER_REJECT
           const tag = parent.tagName.toLowerCase()
-          if (parent.closest('[data-no-translate], [translate="no"], .no-translate, .font-mono')) {
+          if (parent.closest('[data-no-translate], .no-translate')) {
             return NodeFilter.FILTER_REJECT
           }
           if (tag === 'script' || tag === 'style' || tag === 'code' || tag === 'pre' || tag === 'noscript' || tag === 'input' || tag === 'textarea') {
@@ -1818,7 +2028,8 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Partial replace for dynamic strings
         let res = key
         for (const phrase of SORTED_KEYS) {
-          if (res.includes(phrase)) {
+          if (EXACT_MATCH_ONLY.has(phrase)) continue
+          if (phrase.length >= 4 && res.includes(phrase)) {
             res = res.split(phrase).join(DICTIONARY[phrase])
           }
         }

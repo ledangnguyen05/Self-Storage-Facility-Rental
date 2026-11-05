@@ -7,6 +7,7 @@ import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility } from '../../types'
 import { OverdueContractDetailModal } from './modals/OverdueContractDetailModal'
 import { toast } from '../../utils/toast'
+import { useLanguage } from '../../context/LanguageContext'
 
 const formatSettledTime = (timeVal?: string | null, fallbackDate?: string | null): string => {
   if (timeVal && typeof timeVal === 'string' && timeVal.trim() && timeVal.trim() !== 'Vừa xong') {
@@ -36,6 +37,7 @@ const formatSettledTime = (timeVal?: string | null, fallbackDate?: string | null
 
 export const OverdueManagementPage: React.FC = () => {
   const { user } = useAuth()
+  const { t } = useLanguage()
   const navigate = useNavigate()
   const { selectedFacility: contextFacilityId, facilities: contextFacilities } = useOutletContext<{
     selectedFacility?: string
@@ -347,11 +349,11 @@ export const OverdueManagementPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2.5">
               <h1 className="text-xl font-bold text-slate-900">
-                Xử Lý Nợ Cước Quá Hạn &amp; Thu Hồi PIN/QR
+                {t('Xử Lý Nợ Cước Quá Hạn & Thu Hồi PIN/QR', 'Overdue Delinquency & Access Revocation')}
               </h1>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Theo dõi chu kỳ quá hạn (+1 ngày ân hạn, +3 ngày thu hồi PIN SmartLock, +7 ngày xem xét niêm phong kho &amp; kiểm kê)
+              {t('Theo dõi chu kỳ quá hạn (+1 ngày ân hạn, +3 ngày thu hồi PIN SmartLock, +7 ngày xem xét niêm phong kho & kiểm kê)', 'Track overdue cycle (+1 grace day, +3 PIN revocation days, +7 sealing & inventory review days)')}
             </p>
           </div>
         </div>
@@ -363,7 +365,7 @@ export const OverdueManagementPage: React.FC = () => {
             className="px-4 py-2 bg-white text-slate-700 text-xs font-bold rounded-xl border border-slate-300 hover:bg-slate-50 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px] text-slate-500">download</span>
-            Xuất Báo Cáo CSV
+            {t('Xuất Báo Cáo CSV', 'Export CSV Report')}
           </button>
           <button
             type="button"
@@ -371,7 +373,7 @@ export const OverdueManagementPage: React.FC = () => {
             className="px-4 py-2 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
           >
             <span className="material-symbols-outlined text-[18px]">sync</span>
-            Làm Mới
+            {t('Làm Mới', 'Refresh')}
           </button>
         </div>
       </div>
@@ -382,7 +384,7 @@ export const OverdueManagementPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tổng Công Nợ Quá Hạn</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('Tổng Công Nợ Quá Hạn', 'Total Overdue Delinquency')}</span>
               <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 material-symbols-outlined text-[20px]">
                 attach_money
               </span>
@@ -393,12 +395,12 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
             <div className="flex justify-between">
-              <span>Phí phạt tích lũy:</span>
+              <span>{t('Phí phạt tích lũy:', 'Accrued late fees:')}</span>
               <span className="font-bold text-rose-700">{formatVND(summary?.totalLateFees)}</span>
             </div>
             {summary && summary.unverifiedPaymentsAmount > 0 && (
               <div className="flex justify-between text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-                <span>Chờ đối soát ({summary.unverifiedPaymentsCount} đơn):</span>
+                <span>{t('Chờ đối soát', 'Pending reconciliation')} ({summary.unverifiedPaymentsCount} {t('đơn', 'orders')}):</span>
                 <span className="font-bold">{formatVND(summary.unverifiedPaymentsAmount)}</span>
               </div>
             )}
@@ -409,7 +411,7 @@ export const OverdueManagementPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tổng Tiền Cọc Cần Hoàn</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('Tổng Tiền Cọc Cần Hoàn', 'Total Deposit to Refund')}</span>
               <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 material-symbols-outlined text-[20px]">
                 account_balance_wallet
               </span>
@@ -420,11 +422,11 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
             <div className="flex justify-between">
-              <span>Tổng tiền cọc giữ:</span>
+              <span>{t('Tổng tiền cọc giữ:', 'Total deposit held:')}</span>
               <span className="font-bold text-slate-800">{formatVND(summary?.totalDepositHeld)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Đã cấn trừ phí phạt:</span>
+              <span>{t('Đã cấn trừ phí phạt:', 'Late fees deducted:')}</span>
               <span className="font-bold text-rose-600">
                 -{formatVND(Math.max(0, (summary?.totalDepositHeld ?? 0) - (summary?.totalCustomerRefundAmount ?? 0)))}
               </span>
@@ -436,22 +438,22 @@ export const OverdueManagementPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Tổng Hợp Đồng Quá Hạn</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('Tổng Hợp Đồng Quá Hạn', 'Total Overdue Contracts')}</span>
               <span className="p-1.5 rounded-lg bg-slate-50 text-slate-600 border border-slate-200 material-symbols-outlined text-[20px]">
                 description
               </span>
             </div>
             <p className="text-2xl font-black text-slate-900 mt-2">
-              {summary?.totalOverdueContracts ?? 0} <span className="text-xs font-medium text-slate-500">hợp đồng</span>
+              {summary?.totalOverdueContracts ?? 0} <span className="text-xs font-medium text-slate-500">{t('hợp đồng', 'contracts')}</span>
             </p>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1 text-[11px] text-slate-500">
             <div className="flex justify-between">
-              <span>Ân hạn miễn phạt:</span>
+              <span>{t('Ân hạn miễn phạt:', 'Grace period (no fine):')}</span>
               <span className="font-bold text-emerald-700">{summary?.graceCount ?? 0}</span>
             </div>
             <div className="flex justify-between">
-              <span>Cảnh báo quá hạn:</span>
+              <span>{t('Cảnh báo quá hạn:', 'Overdue warning:')}</span>
               <span className="font-bold text-amber-700">{summary?.warningCount ?? 0}</span>
             </div>
           </div>
@@ -461,17 +463,17 @@ export const OverdueManagementPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ngưỡng Thu Hồi PIN (3-6N)</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('Ngưỡng Thu Hồi PIN (3-6N)', 'PIN Revocation Threshold (3-6D)')}</span>
               <span className="p-1.5 rounded-lg bg-rose-50 text-rose-600 border border-rose-100 material-symbols-outlined text-[20px]">
                 pin
               </span>
             </div>
             <p className="text-2xl font-black text-rose-700 mt-2">
-              {summary?.pinThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">buồng kho</span>
+              {summary?.pinThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">{t('buồng kho', 'units')}</span>
             </p>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-500">Có thể thực hiện thu hồi</span>
+            <span className="text-slate-500">{t('Có thể thực hiện thu hồi', 'Eligible for PIN revocation')}</span>
           </div>
         </div>
 
@@ -479,24 +481,24 @@ export const OverdueManagementPage: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Đủ ĐK Niêm Phong (&gt;= 7N)</span>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t('Đủ ĐK Niêm Phong (>= 7N)', 'Sealing Eligible (>= 7D)')}</span>
               <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600 border border-purple-100 material-symbols-outlined text-[20px]">
                 door_sensor
               </span>
             </div>
             <p className="text-2xl font-black text-purple-800 mt-2">
-              {summary?.sealingThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">buồng kho</span>
+              {summary?.sealingThresholdCount ?? 0} <span className="text-xs font-medium text-slate-500">{t('buồng kho', 'units')}</span>
             </p>
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-1.5 text-[11px]">
             <div className="flex items-center justify-between">
-              <span className="text-slate-500">Chờ duyệt niêm phong:</span>
+              <span className="text-slate-500">{t('Chờ duyệt niêm phong:', 'Pending sealing approval:')}</span>
               {summary && summary.pendingSealingApprovalsCount > 0 ? (
                 <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold animate-pulse">
-                  {summary.pendingSealingApprovalsCount} chờ duyệt
+                  {summary.pendingSealingApprovalsCount} {t('chờ duyệt', 'pending')}
                 </span>
               ) : (
-                <span className="font-bold text-slate-700">0 chờ duyệt</span>
+                <span className="font-bold text-slate-700">0 {t('chờ duyệt', 'pending')}</span>
               )}
             </div>
 
@@ -505,10 +507,10 @@ export const OverdueManagementPage: React.FC = () => {
               <div className="flex items-center justify-between pt-1 border-t border-slate-100">
                 <span className="text-rose-600 font-semibold flex items-center gap-1">
                   <span className="material-symbols-outlined text-[14px] text-rose-500">meeting_room</span>
-                  Có thể giải phóng kho:
+                  {t('Có thể giải phóng kho:', 'Eligible to release unit:')}
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 font-bold animate-pulse">
-                  {summary.eligibleLiquidationReleaseCount} sẵn sàng
+                  {summary.eligibleLiquidationReleaseCount} {t('sẵn sàng', 'ready')}
                 </span>
               </div>
             )}
@@ -531,7 +533,7 @@ export const OverdueManagementPage: React.FC = () => {
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              Tất cả ({summary?.totalOverdueContracts ?? 0})
+              {t('Tất cả', 'All')} ({summary?.totalOverdueContracts ?? 0})
             </button>
 
             <button
@@ -544,7 +546,7 @@ export const OverdueManagementPage: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-              Ân hạn (1 ngày)
+              {t('Ân hạn (1 ngày)', 'Grace Period (1 Day)')}
             </button>
 
             <button
@@ -557,7 +559,7 @@ export const OverdueManagementPage: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-              Cảnh báo (2 ngày)
+              {t('Cảnh báo (2 ngày)', 'Warning Stage (2 Days)')}
             </button>
 
             <button
@@ -570,7 +572,7 @@ export const OverdueManagementPage: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-rose-400"></span>
-              Thu hồi PIN (3-6 ngày)
+              {t('Thu hồi PIN (3-6 ngày)', 'PIN Revoked (3-6 Days)')}
             </button>
 
             <button
@@ -583,7 +585,7 @@ export const OverdueManagementPage: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-purple-400"></span>
-              Đủ ĐK Niêm phong (&gt;= 7 ngày)
+              {t('Đủ ĐK Niêm phong (>= 7 ngày)', 'Sealing Eligible (>= 7 Days)')}
             </button>
 
             {/* Filter Đã thanh toán & trả kho */}
@@ -597,7 +599,7 @@ export const OverdueManagementPage: React.FC = () => {
               }`}
             >
               <span className="w-2 h-2 rounded-full bg-teal-400"></span>
-              Đã thanh toán &amp; trả kho ({summary?.settledCount ?? settledContracts.length})
+              {t('Đã thanh toán & trả kho', 'Settled & Checked Out')} ({summary?.settledCount ?? settledContracts.length})
             </button>
           </div>
 
@@ -611,15 +613,15 @@ export const OverdueManagementPage: React.FC = () => {
                   ? 'bg-emerald-600 text-white ring-2 ring-emerald-400 shadow-md'
                   : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow'
               }`}
-              title={isCustomerArrivalMode ? 'Nhấn để tắt chế độ Khách đã tới hoàn tất' : 'Nhấn để bật chế độ Khách đã tới hoàn tất'}
+              title={isCustomerArrivalMode ? t('Nhấn để tắt chế độ Khách đã tới hoàn tất', 'Click to disable customer checkout mode') : t('Nhấn để bật chế độ Khách đã tới hoàn tất', 'Click to enable customer checkout mode')}
             >
               <span className="material-symbols-outlined text-[18px]">
                 {isCustomerArrivalMode ? 'check_circle' : 'how_to_reg'}
               </span>
-              <span>Chuyển sang hoàn tất</span>
+              <span>{t('Chuyển sang hoàn tất', 'Customer Checked Out')}</span>
               {isCustomerArrivalMode && (
                 <span className="text-[10px] bg-emerald-800/80 text-emerald-100 px-1.5 py-0.5 rounded-full font-normal">
-                  Đang bật
+                  {t('Đang bật', 'Active')}
                 </span>
               )}
             </button>
@@ -632,13 +634,13 @@ export const OverdueManagementPage: React.FC = () => {
           {/* Facility Select (if not strictly scoped) */}
           {!isFacilityScoped && (
             <div>
-              <label className="text-slate-500 font-medium block mb-1">Cơ sở lưu trữ:</label>
+              <label className="text-slate-500 font-medium block mb-1">{t('Cơ sở lưu trữ:', 'Storage Facility:')}</label>
               <select
                 value={selectedFacilityFilter}
                 onChange={e => { setSelectedFacilityFilter(e.target.value); setCurrentPage(0) }}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white transition-all"
               >
-                <option value="ALL">Toàn hệ thống (Tất cả cơ sở)</option>
+                <option value="ALL">{t('Toàn hệ thống (Tất cả cơ sở)', 'All Facilities System')}</option>
                 {facilities.map(f => (
                   <option key={f.id} value={f.id}>{f.name}</option>
                 ))}
@@ -648,35 +650,35 @@ export const OverdueManagementPage: React.FC = () => {
 
           {/* SmartLock Filter */}
           <div>
-            <label className="text-slate-500 font-medium block mb-1">Trạng thái SmartLock:</label>
+            <label className="text-slate-500 font-medium block mb-1">{t('Trạng thái SmartLock:', 'SmartLock Status:')}</label>
             <select
               value={pinStatusFilter}
               onChange={e => { setPinStatusFilter(e.target.value); setCurrentPage(0) }}
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white transition-all"
             >
-              <option value="ALL">Tất cả trạng thái PIN</option>
-              <option value="PIN_ACTIVE">PIN Active (Mở bình thường)</option>
-              <option value="PIN_REVOCATION_PENDING">Chờ thu hồi PIN</option>
-              <option value="PIN_REVOKED">Đã thu hồi PIN (Locked)</option>
-              <option value="PIN_REVOCATION_FAILED">Thu hồi PIN thất bại</option>
+              <option value="ALL">{t('Tất cả trạng thái PIN', 'All PIN Statuses')}</option>
+              <option value="PIN_ACTIVE">{t('PIN Active (Mở bình thường)', 'PIN Active (Normal Access)')}</option>
+              <option value="PIN_REVOCATION_PENDING">{t('Chờ thu hồi PIN', 'Pending PIN Revocation')}</option>
+              <option value="PIN_REVOKED">{t('Đã thu hồi PIN (Locked)', 'PIN Revoked (Locked)')}</option>
+              <option value="PIN_REVOCATION_FAILED">{t('Thu hồi PIN thất bại', 'PIN Revocation Failed')}</option>
             </select>
           </div>
 
           {/* Sealing Status Filter */}
           <div>
-            <label className="text-slate-500 font-medium block mb-1">Trạng thái Niêm phong:</label>
+            <label className="text-slate-500 font-medium block mb-1">{t('Trạng thái Niêm phong:', 'Sealing Status:')}</label>
             <select
               value={sealingStatusFilter}
               onChange={e => { setSealingStatusFilter(e.target.value); setCurrentPage(0) }}
               className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-semibold text-slate-800 focus:bg-white transition-all"
             >
-              <option value="ALL">Tất cả niêm phong</option>
-              <option value="NONE">Chưa niêm phong</option>
-              <option value="SEALING_ELIGIBLE">Đủ ĐK niêm phong (&gt;= 7 ngày)</option>
-              <option value="SEALING_REQUESTED">Chờ duyệt niêm phong</option>
-              <option value="SEALING_APPROVED">Đã duyệt (Chờ niêm phong)</option>
-              <option value="SEALING_COMPLETED">Đã niêm phong hoàn tất</option>
-              <option value="SEALING_REJECTED">Đề xuất bị từ chối</option>
+              <option value="ALL">{t('Tất cả trạng thái niêm phong', 'All Sealing Statuses')}</option>
+              <option value="NONE">{t('Chưa niêm phong', 'Not Sealed')}</option>
+              <option value="SEALING_ELIGIBLE">{t('Đủ ĐK niêm phong (>= 7 ngày)', 'Sealing Eligible (>= 7 Days)')}</option>
+              <option value="SEALING_REQUESTED">{t('Chờ duyệt niêm phong', 'Pending Sealing Approval')}</option>
+              <option value="SEALING_APPROVED">{t('Đã duyệt (Chờ niêm phong)', 'Approved (Pending Seal)')}</option>
+              <option value="SEALING_COMPLETED">{t('Đã niêm phong hoàn tất', 'Sealed Completed')}</option>
+              <option value="SEALING_REJECTED">{t('Đề xuất bị từ chối', 'Proposal Rejected')}</option>
             </select>
           </div>
 
@@ -688,7 +690,7 @@ export const OverdueManagementPage: React.FC = () => {
               </span>
               <input
                 type="text"
-                placeholder="Tìm mã HĐ, số kho, tên khách, SĐT..."
+                placeholder={t('Tìm mã HĐ, số kho, tên khách, SĐT...', 'Search contract, unit code, customer, phone...')}
                 value={searchTerm}
                 onChange={e => { setSearchTerm(e.target.value); setCurrentPage(0) }}
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white transition-all"
@@ -705,34 +707,34 @@ export const OverdueManagementPage: React.FC = () => {
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-100 text-slate-700 border-b border-slate-200">
               <tr>
-                <th className="p-3.5 font-bold">Hợp Đồng &amp; Buồng Kho</th>
-                <th className="p-3.5 font-bold">Khách Hàng</th>
-                <th className="p-3.5 font-bold">Cơ Sở Lưu Trữ</th>
+                <th className="p-3.5 font-bold">{t('Hợp Đồng & Buồng Kho', 'Contract & Unit')}</th>
+                <th className="p-3.5 font-bold">{t('Khách Hàng', 'Customer')}</th>
+                <th className="p-3.5 font-bold">{t('Cơ Sở Lưu Trữ', 'Storage Facility')}</th>
                 <th className="p-3.5 font-bold">
-                  {filterStage === 'SETTLED' ? 'Ngày Đến Hạn' : 'Ngày Đến Hạn & Quá Hạn'}
+                  {filterStage === 'SETTLED' ? t('Ngày Đến Hạn', 'Due Date') : t('Ngày Đến Hạn & Quá Hạn', 'Due & Overdue Date')}
                 </th>
                 <th className="p-3.5 font-bold">
-                  {filterStage === 'SETTLED' ? 'Tình Trạng Nợ' : 'Chi Tiết Công Nợ'}
+                  {filterStage === 'SETTLED' ? t('Tình Trạng Nợ', 'Debt Status') : t('Chi Tiết Công Nợ', 'Delinquency Breakdown')}
                 </th>
 
                 {/* Khi không ở chế độ Khách đã tới hoàn tất và không ở filter SETTLED: hiển thị SmartLock PIN/QR */}
                 {!isCustomerArrivalMode && filterStage !== 'SETTLED' && (
-                  <th className="p-3.5 font-bold">SmartLock PIN/QR</th>
+                  <th className="p-3.5 font-bold">{t('SmartLock PIN/QR', 'SmartLock PIN/QR')}</th>
                 )}
 
                 {filterStage === 'SETTLED' ? (
                   <>
-                    <th className="p-3.5 font-bold">Trạng Thái Đơn</th>
-                    <th className="p-3.5 font-bold">Thời Gian Hoàn Tất</th>
-                    <th className="p-3.5 font-bold text-right">Thao Tác</th>
+                    <th className="p-3.5 font-bold">{t('Trạng Thái Đơn', 'Order Status')}</th>
+                    <th className="p-3.5 font-bold">{t('Thời Gian Hoàn Tất', 'Completion Time')}</th>
+                    <th className="p-3.5 font-bold text-right">{t('Thao Tác', 'Actions')}</th>
                   </>
                 ) : (
                   <>
-                    <th className="p-3.5 font-bold">Hồ Sơ Niêm Phong</th>
-                    <th className="p-3.5 font-bold">Thao Tác</th>
+                    <th className="p-3.5 font-bold">{t('Hồ Sơ Niêm Phong', 'Sealing Record')}</th>
+                    <th className="p-3.5 font-bold">{t('Thao Tác', 'Actions')}</th>
                     {isCustomerArrivalMode && (
                       <th className="p-3.5 font-bold text-right text-emerald-800 bg-emerald-50/80 border-l border-emerald-200">
-                        Hoàn tất đơn
+                        {t('Hoàn tất đơn', 'Complete Checkout')}
                       </th>
                     )}
                   </>
@@ -745,7 +747,7 @@ export const OverdueManagementPage: React.FC = () => {
                   <td colSpan={8} className="p-12 text-center text-slate-400">
                     <div className="flex flex-col items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[32px]">sync</span>
-                      <span className="text-xs font-semibold">Đang truy vấn danh sách công nợ quá hạn...</span>
+                      <span className="text-xs font-semibold">{t('Đang truy vấn danh sách công nợ quá hạn...', 'Fetching overdue delinquency records...')}</span>
                     </div>
                   </td>
                 </tr>
@@ -766,7 +768,7 @@ export const OverdueManagementPage: React.FC = () => {
                           </div>
                           <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[14px]">grid_view</span>
-                            Buồng #{item.unitCode}
+                            {t('Buồng', 'Unit')} #{item.unitCode}
                           </span>
                         </div>
                       </td>
@@ -797,12 +799,12 @@ export const OverdueManagementPage: React.FC = () => {
                               <span className="font-mono font-bold text-indigo-700 text-xs">
                                 {item.totalDebt > 0 ? formatVND(item.totalDebt) : '0 ₫'}
                               </span>
-                              <span className="text-[11px] text-purple-700 font-medium">Đã thanh lý tài sản</span>
+                              <span className="text-[11px] text-purple-700 font-medium">{t('Đã thanh lý tài sản', 'Assets Liquidated')}</span>
                             </>
                           ) : (
                             <>
                               <span className="font-mono font-bold text-emerald-700 text-xs">0 ₫</span>
-                              <span className="text-[11px] text-emerald-600 font-medium">Đã thanh toán đủ</span>
+                              <span className="text-[11px] text-emerald-600 font-medium">{t('Đã thanh toán đủ', 'Fully Settled')}</span>
                             </>
                           )}
                         </div>
@@ -818,7 +820,7 @@ export const OverdueManagementPage: React.FC = () => {
                           <span className="material-symbols-outlined text-[13px]">
                             {item.stageLabel?.includes('thanh lý') ? 'gavel' : 'check_circle'}
                           </span>
-                          {item.stageLabel || 'Đã xong (Khách trả kho)'}
+                          {t(item.stageLabel || 'Đã xong (Khách trả kho)', item.stageLabel?.includes('thanh lý') ? 'Assets Liquidated' : 'Completed (Unit Returned)')}
                         </span>
                       </td>
 
@@ -839,7 +841,7 @@ export const OverdueManagementPage: React.FC = () => {
                           className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shadow-xs flex items-center gap-1 cursor-pointer transition-all ml-auto"
                         >
                           <span className="material-symbols-outlined text-[15px]">visibility</span>
-                          Chi tiết
+                          {t('Chi tiết', 'Details')}
                         </button>
                       </td>
                     </tr>
@@ -848,7 +850,7 @@ export const OverdueManagementPage: React.FC = () => {
                   <tr>
                     <td colSpan={8} className="p-12 text-center text-slate-400">
                       <span className="material-symbols-outlined text-[36px] text-slate-300 mb-1">done_all</span>
-                      <p className="text-xs font-semibold">Chưa có đơn nợ cước nào được xác nhận khách đã tới thanh toán và hoàn tất trả kho.</p>
+                      <p className="text-xs font-semibold">{t('Chưa có đơn nợ cước nào được xác nhận khách đã tới thanh toán và hoàn tất trả kho.', 'No settled overdue contracts found.')}</p>
                     </td>
                   </tr>
                 )
@@ -869,7 +871,7 @@ export const OverdueManagementPage: React.FC = () => {
                         </div>
                         <span className="text-xs font-semibold text-rose-600 flex items-center gap-1">
                           <span className="material-symbols-outlined text-[14px]">grid_view</span>
-                          Buồng #{item.unitCode} {item.unitTypeName ? `• ${item.unitTypeName}` : ''}
+                          {t('Buồng', 'Unit')} #{item.unitCode} {item.unitTypeName ? `• ${t(item.unitTypeName)}` : ''}
                         </span>
                       </div>
                     </td>
@@ -897,7 +899,7 @@ export const OverdueManagementPage: React.FC = () => {
                           item.daysOverdue < 7 ? 'text-rose-700' : 'text-purple-700'
                         }`}>
                           <span className="material-symbols-outlined text-[14px]">schedule</span>
-                          +{item.daysOverdue} ngày ({item.daysOverdue <= 1 ? 'Ân hạn' : item.daysOverdue < 7 ? 'Ngưỡng PIN' : 'Ngưỡng Niêm phong'})
+                          +{item.daysOverdue} {t('ngày', 'days')} ({item.daysOverdue <= 1 ? t('Ân hạn', 'Grace') : item.daysOverdue < 7 ? t('Ngưỡng PIN', 'PIN Threshold') : t('Ngưỡng Niêm phong', 'Sealing Threshold')})
                         </span>
                       </div>
                     </td>
@@ -906,21 +908,21 @@ export const OverdueManagementPage: React.FC = () => {
                     <td className="p-3.5">
                       <div className="flex flex-col gap-0.5">
                         <div className="flex items-center gap-1">
-                          <span className="text-[11px] text-slate-400">Cọc giữ:</span>
+                          <span className="text-[11px] text-slate-400">{t('Cọc giữ:', 'Deposit held:')}</span>
                           <span className="text-emerald-700 font-medium">{formatVND(item.depositHeld)}</span>
                         </div>
                         <div className="flex items-center gap-1 text-[11px] text-rose-600">
-                          <span>Phạt ({item.lateFeePercentage ?? 100}%/d):</span>
+                          <span>{t('Phạt', 'Penalty')} ({item.lateFeePercentage ?? 100}%):</span>
                           <span className="font-bold">+{formatVND(item.lateFee)}</span>
                         </div>
                         {item.totalDebt > 0 ? (
-                          <div className="font-mono font-black text-rose-700 text-sm mt-0.5" title="Công nợ khách phải thanh toán thêm">
-                            Nợ: {formatVND(item.totalDebt)}
+                          <div className="font-mono font-black text-rose-700 text-sm mt-0.5" title={t('Công nợ khách phải thanh toán thêm', 'Additional debt customer must pay')}>
+                            {t('Nợ:', 'Debt:')} {formatVND(item.totalDebt)}
                           </div>
                         ) : (
-                          <div className="font-mono font-bold text-emerald-700 text-xs mt-0.5 flex items-center gap-1" title="Số tiền cọc còn lại hoàn khách khi trả kho">
+                          <div className="font-mono font-bold text-emerald-700 text-xs mt-0.5 flex items-center gap-1" title={t('Số tiền cọc còn lại hoàn khách khi trả kho', 'Remaining deposit to refund to customer')}>
                             <span className="material-symbols-outlined text-[13px]">replay</span>
-                            Hoàn: {formatVND(item.customerRefundAmount ?? Math.max(0, (item.depositHeld || 0) - (item.lateFee || 0)))}
+                            {t('Hoàn:', 'Refund:')} {formatVND(item.customerRefundAmount ?? Math.max(0, (item.depositHeld || 0) - (item.lateFee || 0)))}
                           </div>
                         )}
                       </div>
@@ -937,9 +939,9 @@ export const OverdueManagementPage: React.FC = () => {
                             'bg-slate-200 text-slate-700'
                           }`}>
                             {item.pinStatus === 'PIN_ACTIVE' ? 'PIN Active' :
-                             item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi' :
-                             item.pinStatus === 'PIN_REVOKED' ? 'Đã thu hồi (Lock)' :
-                             'Thu hồi lỗi'}
+                             item.pinStatus === 'PIN_REVOCATION_PENDING' ? t('Chờ thu hồi', 'Revocation Pending') :
+                             item.pinStatus === 'PIN_REVOKED' ? t('Đã thu hồi (Lock)', 'Revoked (Lock)') :
+                             t('Thu hồi lỗi', 'Revocation Failed')}
                           </span>
                         </div>
                       </td>
@@ -955,12 +957,12 @@ export const OverdueManagementPage: React.FC = () => {
                         item.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800' :
                         'bg-slate-100 text-slate-500'
                       }`}>
-                        {item.sealingStatus === 'SEALING_COMPLETED' ? 'Đã niêm phong' :
-                         item.sealingStatus === 'SEALING_APPROVED' ? 'Đã duyệt NP' :
-                         item.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ duyệt NP' :
-                         item.sealingStatus === 'SEALING_REJECTED' ? 'Từ chối NP' :
-                         item.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ ĐK niêm phong' :
-                         'Chưa niêm phong'}
+                        {item.sealingStatus === 'SEALING_COMPLETED' ? t('Đã niêm phong', 'Sealed') :
+                         item.sealingStatus === 'SEALING_APPROVED' ? t('Đã duyệt NP', 'Sealing Approved') :
+                         item.sealingStatus === 'SEALING_REQUESTED' ? t('Chờ duyệt NP', 'Pending Sealing') :
+                         item.sealingStatus === 'SEALING_REJECTED' ? t('Từ chối NP', 'Sealing Rejected') :
+                         item.sealingStatus === 'SEALING_ELIGIBLE' ? t('Đủ ĐK niêm phong', 'Sealing Eligible') :
+                         t('Chưa niêm phong', 'Not Sealed')}
                       </span>
                     </td>
 
@@ -977,7 +979,7 @@ export const OverdueManagementPage: React.FC = () => {
                           className="px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 shadow-xs flex items-center gap-1 cursor-pointer transition-all"
                         >
                           <span className="material-symbols-outlined text-[15px]">visibility</span>
-                          Chi tiết
+                          {t('Chi tiết', 'Details')}
                         </button>
                       </div>
                     </td>
@@ -991,7 +993,7 @@ export const OverdueManagementPage: React.FC = () => {
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 cursor-pointer transition-all ml-auto"
                         >
                           <span className="material-symbols-outlined text-[16px]">task_alt</span>
-                          Đã xong
+                          {t('Đã xong', 'Done')}
                         </button>
                       </td>
                     )}
@@ -1002,7 +1004,7 @@ export const OverdueManagementPage: React.FC = () => {
                 <tr>
                   <td colSpan={8} className="p-12 text-center text-slate-400">
                     <span className="material-symbols-outlined text-[36px] text-slate-300 mb-1">inbox</span>
-                    <p className="text-xs font-semibold">Không tìm thấy hợp đồng nợ cước nào khớp với bộ lọc.</p>
+                    <p className="text-xs font-semibold">{t('Không tìm thấy hợp đồng nợ cước nào khớp với bộ lọc.', 'No overdue contracts found matching the filters.')}</p>
                   </td>
                 </tr>
               )}
@@ -1013,7 +1015,7 @@ export const OverdueManagementPage: React.FC = () => {
         {/* Pagination Footer */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500 relative">
           <div className="text-center md:text-left">
-            Hiển thị <span className="font-bold text-slate-800 dark:text-slate-200">{displayedContracts.length}</span> trên tổng số <span className="font-bold text-slate-800 dark:text-slate-200">{filterStage === 'SETTLED' ? settledContracts.length : totalElements}</span> hợp đồng
+            {t('Hiển thị', 'Showing')} <span className="font-bold text-slate-800 dark:text-slate-200">{displayedContracts.length}</span> {t('trên tổng số', 'of total')} <span className="font-bold text-slate-800 dark:text-slate-200">{filterStage === 'SETTLED' ? settledContracts.length : totalElements}</span> {t('hợp đồng', 'contracts')}
           </div>
           <div className="flex items-center justify-center gap-1.5 md:absolute md:left-1/2 md:-translate-x-1/2">
             <button
@@ -1021,21 +1023,22 @@ export const OverdueManagementPage: React.FC = () => {
               disabled={currentPage === 0}
               onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
               className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
-              title="Trang trước"
+              title={t('Trang trước', 'Previous page')}
             >
               <span className="material-symbols-outlined text-[18px]">chevron_left</span>
             </button>
             <span className="px-3 font-semibold text-slate-700 dark:text-slate-300 select-none">
-              Trang {currentPage + 1} / {Math.max(1, totalPages)}
+              {t('Trang', 'Page')} {currentPage + 1} / {Math.max(1, totalPages)}
             </span>
             <button
               type="button"
               disabled={currentPage >= totalPages - 1}
               onClick={() => setCurrentPage(p => p + 1)}
               className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors shadow-2xs"
-              title="Trang sau"
+              title={t('Trang sau', 'Next page')}
             >
               <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+            </button>
             </button>
           </div>
           {/* Empty right spacer to keep right edge clear of floating AI chat button */}
