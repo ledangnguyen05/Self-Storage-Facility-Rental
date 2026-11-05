@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Building2, MapPin, Phone, Filter, Loader2 } from 'lucide-react'
 import { Badge } from '../../components/ui/Badge'
@@ -8,6 +8,7 @@ import { storageUnitService } from '../../services/storageUnitService'
 import { Facility, StorageUnit } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 
 import facilityD1Img from '../../assets/facilities/facility-d1.jpg'
 import facilityD7Img from '../../assets/facilities/facility-d7.jpg'
@@ -31,31 +32,36 @@ export const FacilitiesPage: React.FC = () => {
   const [selectedDetailUnit, setSelectedDetailUnit] = useState<StorageUnit | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true)
-        const [facRes, unitRes] = await Promise.all([
-          facilityService.getFacilities({ size: 100, status: 'ACTIVE' }),
-          storageUnitService.getUnits()
-        ])
-        const facList = (facRes?.content || []).filter(
-          facility => facility.status === 'ACTIVE' || (!facility.status && (facility as any).isActive !== false)
-        )
-        const unitList = Array.isArray(unitRes) ? unitRes : []
-        setFacilities(facList)
-        setUnits(unitList)
-        if (facList.length > 0) {
-          setSelectedFacilityId(facList[0].id)
-        }
-      } catch (err) {
-        console.error('Failed to load facilities/units from database:', err)
-      } finally {
-        setIsLoading(false)
+  const fetchData = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setIsLoading(true)
+      const [facRes, unitRes] = await Promise.all([
+        facilityService.getFacilities({ size: 100, status: 'ACTIVE' }),
+        storageUnitService.getUnits()
+      ])
+      const facList = (facRes?.content || []).filter(
+        facility => facility.status === 'ACTIVE' || (!facility.status && (facility as any).isActive !== false)
+      )
+      const unitList = Array.isArray(unitRes) ? unitRes : []
+      setFacilities(facList)
+      setUnits(unitList)
+      if (facList.length > 0) {
+        setSelectedFacilityId(prev => (prev && facList.some(f => f.id === prev) ? prev : facList[0].id))
       }
+    } catch (err) {
+      console.error('Failed to load facilities/units from database:', err)
+    } finally {
+      if (!silent) setIsLoading(false)
     }
-    fetchData()
   }, [])
+
+  useEffect(() => {
+    void fetchData(false)
+  }, [fetchData])
+
+  useRealtimeSync(() => {
+    void fetchData(true)
+  }, { intervalMs: 3500 })
 
   const selectedFacility = facilities.find(f => f.id === selectedFacilityId) || facilities[0]
   

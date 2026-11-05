@@ -1157,10 +1157,21 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     void fetchCustomerBookings(true)
     void fetchCustomerPayments(true)
     void fetchAvailableUnits(true)
+    void fetchFacilities()
     void fetchMyRenewals(true)
     void fetchCustomerNotifications(true)
     void fetchBookingRequests(true)
-  }, { intervalMs: 30000 })
+    void fetchCustomerTickets(true)
+    setCancelledReturnEpoch(prev => prev + 1)
+    try {
+      const savedUnlocked = localStorage.getItem('boxora_unlocked_units')
+      setUnlockedUnits(savedUnlocked ? JSON.parse(savedUnlocked) : {})
+    } catch {}
+    try {
+      const rawLogs = localStorage.getItem(activityStorageKey)
+      setUnitActivityLogs(rawLogs ? JSON.parse(rawLogs) : [])
+    } catch {}
+  }, { intervalMs: 3000 })
 
   useEffect(() => {
     let isCurrent = true
@@ -1633,9 +1644,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return Number(contractItem?.monthlyFee || 0)
   }, [customerPayments, customerBookings])
 
-  const fetchCustomerTickets = useCallback(async () => {
+  const fetchCustomerTickets = useCallback(async (silent = false) => {
     try {
-      setLoadingTickets(true)
+      if (!silent) setLoadingTickets(true)
       const res = await supportTicketService.getMyTickets()
       if (Array.isArray(res)) {
         setCustomerTickets(res)
@@ -1643,7 +1654,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     } catch (err) {
       console.error('Failed to load customer support tickets:', err)
     } finally {
-      setLoadingTickets(false)
+      if (!silent) setLoadingTickets(false)
     }
   }, [])
 

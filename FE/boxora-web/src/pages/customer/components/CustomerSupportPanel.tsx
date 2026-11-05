@@ -8,6 +8,7 @@ import {
 import { toast } from '../../../utils/toast'
 import { handoverService } from '../../../services/handoverService'
 import { paymentService } from '../../../services/paymentService'
+import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
 
 export interface CustomerSupportPanelProps {
   user: User | null
@@ -159,22 +160,39 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   }, [activeContracts, ticketUnit])
 
   // Fetch Tickets strictly for current user
-  const loadMyTickets = useCallback(async () => {
+  const loadMyTickets = useCallback(async (silent = false) => {
     if (!user?.id) return
-    setIsLoadingTickets(true)
+    if (!silent) setIsLoadingTickets(true)
     try {
       const data = await supportTicketService.getMyTickets(user.id)
-      setTickets(Array.isArray(data) ? data : [])
+      const list = Array.isArray(data) ? data : []
+      setTickets(list)
+      setSelectedTicket((prev) => {
+        if (!prev) return null
+        return list.find((t) => t.id === prev.id) || prev
+      })
     } catch (err: any) {
       console.warn('Failed to load customer tickets:', err)
     } finally {
-      setIsLoadingTickets(false)
+      if (!silent) setIsLoadingTickets(false)
     }
   }, [user?.id])
 
   useEffect(() => {
-    loadMyTickets()
+    void loadMyTickets(false)
   }, [loadMyTickets])
+
+  useRealtimeSync(() => {
+    void loadMyTickets(true)
+    if (selectedTicket?.bookingId && (selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED')) {
+      const bId = selectedTicket.bookingId
+      handoverService.calculateSettlement(bId).then(res => {
+        if (res) {
+          setReturnSettlementMap(prev => ({ ...prev, [bId]: res }))
+        }
+      }).catch(() => {})
+    }
+  }, { intervalMs: 3000 })
 
   // Handle Create Ticket
   const handleSubmitTicket = async (e: React.FormEvent) => {
@@ -1012,7 +1030,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
             <button
               type="button"
-              onClick={loadMyTickets}
+              onClick={() => void loadMyTickets(false)}
               disabled={isLoadingTickets}
               className="px-3.5 py-2 rounded-xl border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer self-start sm:self-auto"
             >

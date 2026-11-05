@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react'
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { RoleType, Facility } from '../../types'
 import { facilityService } from '../../services/facilityService'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { BrandLogo } from '../common/BrandLogo'
 import { AccountProfileModal } from '../common/AccountProfileModal'
 import { LogoutConfirmModal } from '../common/LogoutConfirmModal'
@@ -41,7 +42,7 @@ export const DashboardLayout: React.FC = () => {
     (location.pathname.startsWith('/portal/admin') &&
       (new URLSearchParams(location.search).get('tab') === 'facilities' || role === 'BUSINESS_MANAGER'))
 
-  useEffect(() => {
+  const loadLayoutFacilities = useCallback((isInitial = false) => {
     facilityService.getFacilities()
       .then(res => {
         let list = res?.content || []
@@ -64,18 +65,28 @@ export const DashboardLayout: React.FC = () => {
         }
         setFacilities(list)
 
-        if (isFacilityScopedRole && assignedFacilityId) {
-          setSelectedFacility(assignedFacilityId)
-        } else if (isFacilityManagerPage && list.length > 0) {
-          setSelectedFacility(list[0].id)
-        } else {
-          setSelectedFacility('ALL')
+        if (isInitial) {
+          if (isFacilityScopedRole && assignedFacilityId) {
+            setSelectedFacility(assignedFacilityId)
+          } else if (isFacilityManagerPage && list.length > 0) {
+            setSelectedFacility(list[0].id)
+          } else {
+            setSelectedFacility('ALL')
+          }
         }
       })
       .catch(err => {
         console.warn('Failed to load facilities in DashboardLayout:', err)
       })
   }, [isFacilityScopedRole, assignedFacilityId, user?.facilityName, user?.facilityCode, isFacilityManagerPage])
+
+  useEffect(() => {
+    loadLayoutFacilities(true)
+  }, [loadLayoutFacilities])
+
+  useRealtimeSync(() => {
+    loadLayoutFacilities(false)
+  }, { intervalMs: 4000 })
 
   // When switching between dashboard sections, default facility filter to 'ALL' (Toàn hệ thống),
   // except for SƠ ĐỒ CƠ SỞ KHO (/portal/facility-manager) where a concrete facility branch must be selected.

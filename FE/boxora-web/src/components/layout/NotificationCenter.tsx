@@ -5,6 +5,7 @@ import { NotificationLog, notificationService } from '../../services/notificatio
 import { reservationEmailService } from '../../services/reservationEmailService'
 import { bookingService } from '../../services/bookingService'
 import { useAuth } from '../../context/AuthContext'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Check, X, Phone, Mail, Building2, Calendar, Clock, AlertCircle, FileText, Send, User, ChevronRight } from 'lucide-react'
 import { toast } from '../../utils/toast'
 
@@ -182,7 +183,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     setIsLoading(false)
   }, [userId])
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (silent = false) => {
     if (!userId || !UUID_PATTERN.test(userId)) {
       requestIdRef.current += 1
       setItems([])
@@ -191,46 +192,35 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     }
 
     const requestId = ++requestIdRef.current
-    setIsLoading(true)
+    if (!silent) setIsLoading(true)
     setError('')
     try {
       const page = await notificationService.getRecent({ recipientId: userId, page: 0, size: 6 })
       if (requestId === requestIdRef.current) setItems(page?.content ?? [])
     } catch {
-      if (requestId === requestIdRef.current) setError('Không tải được thông báo. Vui lòng thử lại.')
+      if (requestId === requestIdRef.current && !silent) setError('Không tải được thông báo. Vui lòng thử lại.')
     } finally {
-      if (requestId === requestIdRef.current) setIsLoading(false)
+      if (requestId === requestIdRef.current && !silent) setIsLoading(false)
     }
   }, [userId])
 
   useEffect(() => {
     if (userId && UUID_PATTERN.test(userId)) {
-      void loadNotifications()
+      void loadNotifications(false)
     }
   }, [userId, loadNotifications])
 
+  useRealtimeSync(() => {
+    if (userId && UUID_PATTERN.test(userId)) {
+      void loadNotifications(true)
+    }
+  }, { intervalMs: 3000 })
+
   useEffect(() => {
-    const refreshAfterBooking = () => { void loadNotifications() }
+    const refreshAfterBooking = () => { void loadNotifications(true) }
     window.addEventListener('boxora:notifications-refresh', refreshAfterBooking)
     return () => window.removeEventListener('boxora:notifications-refresh', refreshAfterBooking)
   }, [loadNotifications])
-
-  useEffect(() => {
-    if (!userId || !UUID_PATTERN.test(userId)) return
-
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') void loadNotifications()
-    }
-    const intervalId = window.setInterval(refreshWhenVisible, 30_000)
-    window.addEventListener('focus', refreshWhenVisible)
-    document.addEventListener('visibilitychange', refreshWhenVisible)
-
-    return () => {
-      window.clearInterval(intervalId)
-      window.removeEventListener('focus', refreshWhenVisible)
-      document.removeEventListener('visibilitychange', refreshWhenVisible)
-    }
-  }, [userId, loadNotifications])
 
   useEffect(() => {
     if (!isOpen) return

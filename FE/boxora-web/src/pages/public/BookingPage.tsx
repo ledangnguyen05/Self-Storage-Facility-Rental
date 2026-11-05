@@ -894,19 +894,49 @@ export const BookingPage: React.FC = () => {
   // Lắng nghe sự kiện toàn hệ thống để tự động đồng bộ số lượng kho khả dụng thời gian thực
   const refreshAvailableUnits = useCallback(async () => {
     try {
-      const unitRes = await storageUnitService.getUnits({ status: 'AVAILABLE' })
-      const list = Array.isArray(unitRes) ? unitRes : ((unitRes as any)?.content || [])
-      if (Array.isArray(list)) {
-        setStorageUnits(list)
+      const [unitRes, facRes, typeRes] = await Promise.allSettled([
+        storageUnitService.getUnits({ status: 'AVAILABLE' }),
+        facilityService.getFacilities({ size: 100 }),
+        storageUnitService.getUnitTypes(),
+      ])
+      if (unitRes.status === 'fulfilled') {
+        const list = Array.isArray(unitRes.value) ? unitRes.value : ((unitRes.value as any)?.content || [])
+        if (Array.isArray(list)) {
+          setStorageUnits(list)
+        }
+      }
+      if (facRes.status === 'fulfilled' && Array.isArray(facRes.value?.content)) {
+        const activeList = facRes.value.content.filter(
+          (f) => f.status === 'ACTIVE' || (!f.status && (f as any).isActive !== false)
+        )
+        if (activeList.length > 0) {
+          setFacilities(activeList)
+          setSelectedFacility((prev) => (prev ? activeList.find((f) => f.id === prev.id) || prev : activeList[0]))
+        }
+      }
+      if (typeRes.status === 'fulfilled' && Array.isArray(typeRes.value) && typeRes.value.length > 0) {
+        setDbUnitTypes(typeRes.value)
+      }
+      if (selectedFacility?.id) {
+        facilityPolicyService
+          .getByFacilityId(selectedFacility.id)
+          .then((pol) => {
+            if (pol) setFacilityPolicy(pol)
+          })
+          .catch(() => {})
+        try {
+          const saved = localStorage.getItem(`boxora_custom_discounts_${selectedFacility.id}`)
+          setCustomDiscounts(saved ? JSON.parse(saved) : [])
+        } catch {}
       }
     } catch (e) {
       console.warn('Refresh available units error:', e)
     }
-  }, [])
+  }, [selectedFacility?.id])
 
   useRealtimeSync(() => {
     void refreshAvailableUnits()
-  }, { intervalMs: 6000 })
+  }, { intervalMs: 3000 })
 
   useEffect(() => {
     if (currentStep === 2) {

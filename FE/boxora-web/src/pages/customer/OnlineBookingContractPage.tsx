@@ -12,6 +12,7 @@ import { ContractDocumentModal } from '../../components/modals/ContractDocumentM
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { facilityService } from '../../services/facilityService'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
+import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 
 const money = (value?: number | null) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`
 const date = (value?: string | null) => value ? new Date(value).toLocaleDateString('vi-VN') : 'Chưa xác định'
@@ -85,10 +86,9 @@ export const OnlineBookingContractPage = () => {
     return () => { active = false }
   }, [booking?.facilityId])
 
-  useEffect(() => {
-    const timer = window.setInterval(() => void refresh(), 4000)
-    return () => window.clearInterval(timer)
-  }, [refresh])
+  useRealtimeSync(() => {
+    void refresh(false)
+  }, { intervalMs: 2500 })
 
   const paidTransactions = payments.filter(payment => payment.status === 'PAID'
     && ['BOOKING_PAYMENT', 'DEPOSIT', 'RENTAL_FEE'].includes(payment.paymentType))
