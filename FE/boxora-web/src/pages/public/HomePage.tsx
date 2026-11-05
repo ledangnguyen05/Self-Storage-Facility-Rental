@@ -54,7 +54,7 @@ export const HomePage: React.FC = () => {
 
   useEffect(() => {
     facilityService
-      .getFacilities({ page: 0, size: 50, status: 'ACTIVE' })
+      .getFacilities({ page: 0, size: 100, publicView: true })
       .then((res) => {
         if (res?.content && res.content.length > 0) {
           setFacilities(res.content)

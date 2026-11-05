@@ -3,7 +3,7 @@ import { Facility, FacilityPolicy } from '../types'
 import { PageResult } from './userService'
 
 export const facilityService = {
-  async getFacilities(params?: { search?: string; status?: string; page?: number; size?: number }) {
+  async getFacilities(params?: { search?: string; status?: string; page?: number; size?: number; publicView?: boolean }) {
     const response = await api.get('/api/v1/facilities', { params: { size: 50, ...params } })
     return response.data?.data as PageResult<Facility>
   },

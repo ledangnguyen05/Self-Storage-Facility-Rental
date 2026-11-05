@@ -97,10 +97,10 @@ public class SecurityConfig {
                 // Configure route permissions
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_URLS).permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/facilities/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/storage-units/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/unit-types/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/facility-policies/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facilities", "/api/v1/facilities/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/storage-units", "/api/v1/storage-units/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/unit-types", "/api/v1/unit-types/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/facility-policies", "/api/v1/facility-policies/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/bookings").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/bookings/*").permitAll()

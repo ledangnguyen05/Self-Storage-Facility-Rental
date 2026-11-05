@@ -86,6 +86,13 @@ const DEFAULT_FACILITIES = [
     name: 'Boxora Tân Bình Mega Hub',
     address: '102 Trường Sơn, Phường 2, Quận Tân Bình, TP.HCM',
     image: facilityTanbinh
+  },
+  {
+    id: '33333333-3333-3333-3333-333333333333',
+    code: '05 / QUẬN 3',
+    name: 'Boxora Quận 3 Hub',
+    address: '180 Nam Kỳ Khởi Nghĩa, Phường Võ Thị Sáu, Quận 3, TP.HCM',
+    image: facilityD1
   }
 ]
 
@@ -156,7 +163,7 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
     }
     let isMounted = true
     facilityService
-      .getFacilities({ page: 0, size: 50, status: 'ACTIVE' })
+      .getFacilities({ page: 0, size: 100, publicView: true })
       .then((res) => {
         if (isMounted && res?.content && res.content.length > 0) {
           setDbFacilities(res.content)

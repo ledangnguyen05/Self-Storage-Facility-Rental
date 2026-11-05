@@ -177,13 +177,19 @@ public class FacilityServiceImpl implements FacilityService {
     @Override
     public PageResponse<FacilityResponse> getAll(
             String search, FacilityStatus status, int page, int size, String sortBy, String sortDir) {
+        return getAll(search, status, page, size, sortBy, sortDir, false);
+    }
+
+    @Override
+    public PageResponse<FacilityResponse> getAll(
+            String search, FacilityStatus status, int page, int size, String sortBy, String sortDir, boolean publicView) {
         Sort sort = sortDir.equalsIgnoreCase("desc")
                 ? Sort.by(sortBy).descending()
                 : Sort.by(sortBy).ascending();
         Pageable pageable = PageRequest.of(page, size, sort);
 
-        // STAFF/FACILITY_MANAGER chỉ thấy facility của chính mình trong list
-        UUID scopedFacilityId = facilityAccessGuard.scopedFacilityIdOrNull();
+        // STAFF/FACILITY_MANAGER chỉ thấy facility của chính mình trong list nội bộ khi không phải publicView
+        UUID scopedFacilityId = publicView ? null : facilityAccessGuard.scopedFacilityIdOrNull();
 
         Page<FacilityResponse> result = facilityRepository
                 .findAllWithFilters(search, status, scopedFacilityId, pageable)

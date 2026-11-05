@@ -273,6 +273,10 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   // 3. Customer agrees to pay additional compensation via VNPay Sandbox
   const handleProceedVNPayCompensation = async () => {
     if (!settlement) return
+    if (!isViewingLatestVersion) {
+      toast.warning(`Chỉ có thể mở cổng thanh toán VNPay Sandbox cho phiên bản quyết toán mới nhất (V${settlement.settlementVersion || 1}).`)
+      return
+    }
     setSubmitting(true)
     try {
       // First ensure decision is marked AGREED
@@ -424,7 +428,10 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                       <button
                         key={s.id || s.settlementVersion}
                         type="button"
-                        onClick={() => setSelectedVersion(s.settlementVersion)}
+                        onClick={() => {
+                          setSelectedVersion(s.settlementVersion)
+                          setViewStep('VIEW')
+                        }}
                         className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-400'
@@ -749,7 +756,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         ) : (
                           <div className="flex items-center justify-between">
                             <span className="text-rose-700 font-semibold">Chưa hoàn tất thanh toán bổ sung</span>
-                            {!readOnly && (
+                            {!readOnly && isViewingLatestVersion && (
                               <button
                                 type="button"
                                 onClick={handleProceedVNPayCompensation}
@@ -978,45 +985,69 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
               </form>
             )}
 
-            {/* FORM 2: THANH TOÁN BỒI THƯỜNG BỔ SUNG QUA VNPAY SANDBOX */}
+            {/* FORM 2: THANH TOÁN BỒI THƯỜNG BỔ SUNG QUA VNPAY SANDBOX (CHỈ HIỂN THỊ CHO PHIÊN BẢN MỚI NHẤT) */}
             {viewStep === 'FORM_PAY' && (
-              <div className="space-y-4 text-xs">
-                <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
-                  <div className="font-bold flex items-center gap-1.5 text-indigo-900">
-                    <CreditCard size={16} />
-                    <span>Xác nhận đồng ý &amp; Thanh toán bồi thường bổ sung</span>
+              isViewingLatestVersion ? (
+                <div className="space-y-4 text-xs">
+                  <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
+                    <div className="font-bold flex items-center gap-1.5 text-indigo-900">
+                      <CreditCard size={16} />
+                      <span>Xác nhận đồng ý &amp; Thanh toán bồi thường bổ sung (Phiên bản V{currentViewingVersion})</span>
+                    </div>
+                    <p className="text-[11px] text-indigo-800 leading-relaxed">
+                      Bạn đồng ý với kết quả quyết toán và tiến hành thanh toán số tiền bồi thường vượt cọc là <strong>{additionalDue.toLocaleString('vi-VN')} ₫</strong>.
+                    </p>
+                    <div className="p-2.5 rounded-lg bg-white border border-indigo-200 flex items-center justify-between font-mono font-bold text-slate-800">
+                      <span>Số tiền cần thanh toán ngay:</span>
+                      <span className="text-rose-600 text-sm">+{additionalDue.toLocaleString('vi-VN')} ₫</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      Hình thức: Cổng thanh toán trực tuyến <strong>VNPay Sandbox</strong> (Hỗ trợ quét mã VietQR, Thẻ ATM nội địa, Visa, MasterCard). Sau khi thanh toán xong, hệ thống sẽ tự động gửi thông báo web và email biên lai cho bạn.
+                    </p>
                   </div>
-                  <p className="text-[11px] text-indigo-800 leading-relaxed">
-                    Bạn đồng ý với kết quả quyết toán và tiến hành thanh toán số tiền bồi thường vượt cọc là <strong>{additionalDue.toLocaleString('vi-VN')} ₫</strong>.
-                  </p>
-                  <div className="p-2.5 rounded-lg bg-white border border-indigo-200 flex items-center justify-between font-mono font-bold text-slate-800">
-                    <span>Số tiền cần thanh toán ngay:</span>
-                    <span className="text-rose-600 text-sm">+{additionalDue.toLocaleString('vi-VN')} ₫</span>
-                  </div>
-                  <p className="text-[10px] text-slate-500">
-                    Hình thức: Cổng thanh toán trực tuyến <strong>VNPay Sandbox</strong> (Hỗ trợ quét mã VietQR, Thẻ ATM nội địa, Visa, MasterCard). Sau khi thanh toán xong, hệ thống sẽ tự động gửi thông báo web và email biên lai cho bạn.
-                  </p>
-                </div>
 
-                <div className="pt-2 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setViewStep('VIEW')}
-                    className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
-                  >
-                    Quay lại
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleProceedVNPayCompensation}
-                    disabled={submitting}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                  >
-                    <ExternalLink size={14} />
-                    <span>{submitting ? 'Đang tạo giao dịch...' : 'Mở Cổng Thanh Toán VNPay Sandbox'}</span>
-                  </button>
+                  <div className="pt-2 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewStep('VIEW')}
+                      className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
+                    >
+                      Quay lại
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleProceedVNPayCompensation}
+                      disabled={submitting}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                    >
+                      <ExternalLink size={14} />
+                      <span>{submitting ? 'Đang tạo giao dịch...' : 'Mở Cổng Thanh Toán VNPay Sandbox'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-3">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                    <AlertTriangle size={16} />
+                    <span>Không thể mở cổng thanh toán trên phiên bản cũ (V{currentViewingVersion})</span>
+                  </div>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Biên bản quyết toán đã được cơ sở cập nhật lên phiên bản mới nhất (Phiên bản V{settlement?.settlementVersion || 1}). Cổng thanh toán VNPay Sandbox chỉ chấp nhận giao dịch cho phiên bản quyết toán hiện hành.
+                  </p>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedVersion(settlement?.settlementVersion || 1)
+                        setViewStep('VIEW')
+                      }}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs cursor-pointer shadow-xs"
+                    >
+                      Chuyển sang Phiên bản V{settlement?.settlementVersion || 1} (Mới nhất)
+                    </button>
+                  </div>
+                </div>
+              )
             )}
 
             {/* FORM 3: GỬI KHIẾU NẠI CHO FACILITY MANAGER */}

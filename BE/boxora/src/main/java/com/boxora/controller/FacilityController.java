@@ -89,10 +89,11 @@ public class FacilityController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false, defaultValue = "false") boolean publicView
     ) {
         PageResponse<FacilityResponse> response =
-                facilityService.getAll(search, status, page, size, sortBy, sortDir);
+                facilityService.getAll(search, status, page, size, sortBy, sortDir, publicView);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

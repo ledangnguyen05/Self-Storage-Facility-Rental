@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -2520,7 +2520,10 @@ export const BookingPage: React.FC = () => {
               <>
                 {/* Category Filter Tabs & Visual Mode Switcher */}
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 p-2 sm:p-2.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs">
-                  <div className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-nowrap py-0.5">
+                  <div
+                    className="flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth flex-nowrap py-0.5 min-w-0 flex-1"
+                    style={{ flexWrap: 'nowrap' }}
+                  >
                     {[
                       { key: 'ALL', label: `Táº¥t cáº£ (${availableSizesInFacility.length})` },
                       { key: 'PERSONAL', label: 'CÃ¡ nhÃ¢n & Mini (â‰¤ 4 mÂ³)' },

@@ -14,4 +14,5 @@ public interface FacilityService {
     FacilityResponse update(UUID id, FacilityUpdateRequest request);
     void delete(UUID id);
     PageResponse<FacilityResponse> getAll(String search, FacilityStatus status, int page, int size, String sortBy, String sortDir);
+    PageResponse<FacilityResponse> getAll(String search, FacilityStatus status, int page, int size, String sortBy, String sortDir, boolean publicView);
 }
