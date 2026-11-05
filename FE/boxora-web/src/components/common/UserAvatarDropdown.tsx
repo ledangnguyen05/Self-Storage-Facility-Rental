@@ -1,45 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { User, RoleType } from '../../types'
 import { useLanguage } from '../../context/LanguageContext'
-import {
-  WebSettings,
-  getResolvedTheme,
-  getWebSettings,
-  saveWebSettings,
-} from '../../utils/webSettings'
 
 interface UserAvatarDropdownProps {
   user: User | null
   role: RoleType | string | null
   onOpenProfile: () => void
-  onOpenSettings: () => void
+  onOpenSettings?: () => void
   onOpenLogoutConfirm: () => void
   extraActions?: React.ReactNode
 }
 
 export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
   user,
-  role,
+  role: _role,
   onOpenProfile,
-  onOpenSettings,
+  onOpenSettings: _onOpenSettings,
   onOpenLogoutConfirm,
   extraActions,
 }) => {
-  const { language, setLanguage, t } = useLanguage()
+  const { t } = useLanguage()
   const [isOpen, setIsOpen] = useState(false)
-  const [webSettings, setWebSettings] = useState<WebSettings>(getWebSettings())
-  const [systemIsDark, setSystemIsDark] = useState(() => getResolvedTheme({ theme: 'system' }) === 'dark')
-  const isDark = webSettings.theme === 'dark' || (webSettings.theme === 'system' && systemIsDark)
   const dropdownRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const updateSystemTheme = (event: MediaQueryListEvent) => setSystemIsDark(event.matches)
-    setSystemIsDark(media.matches)
-    media.addEventListener?.('change', updateSystemTheme)
-    return () => media.removeEventListener?.('change', updateSystemTheme)
-  }, [])
 
   // Listen for outside click to close
   useEffect(() => {
@@ -62,27 +44,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
     }
   }, [isOpen])
 
-  // Sync settings when custom event fires
-  useEffect(() => {
-    const handleSettingsChange = (e: any) => {
-      if (e.detail) setWebSettings(e.detail)
-    }
-    window.addEventListener('boxora_settings_changed', handleSettingsChange)
-    return () => {
-      window.removeEventListener('boxora_settings_changed', handleSettingsChange)
-    }
-  }, [])
-
-  const handleToggleDark = () => {
-    const nextTheme = isDark ? 'light' : 'dark'
-    const updated = saveWebSettings({ theme: nextTheme })
-    setWebSettings(updated)
-  }
-
-  const handleSwitchLanguage = (lang: 'vi' | 'en') => {
-    setLanguage(lang)
-  }
-
   const userInitials = user?.fullName
     ? user.fullName
         .split(' ')
@@ -93,21 +54,6 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
     : user?.username
     ? user.username.slice(0, 2).toUpperCase()
     : 'US'
-
-  const getRoleStyle = (r: string | null | undefined) => {
-    switch (r) {
-      case 'ADMIN':
-        return 'bg-rose-50 text-rose-700 border-rose-200'
-      case 'BUSINESS_MANAGER':
-        return 'bg-purple-50 text-purple-700 border-purple-200'
-      case 'FACILITY_MANAGER':
-        return 'bg-blue-50 text-blue-700 border-blue-200'
-      case 'STAFF':
-        return 'bg-emerald-50 text-emerald-700 border-emerald-200'
-      default:
-        return 'bg-slate-100 text-slate-700 border-slate-200'
-    }
-  }
 
   return (
     <div className="relative inline-block text-left" ref={dropdownRef}>
@@ -122,7 +68,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
         }`}
         aria-expanded={isOpen}
         aria-haspopup="true"
-        title={t('Cài đặt web & hệ thống')}
+        title={user?.fullName || t('Tài khoản', 'Account')}
       >
         <div className="relative">
           <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-white">
@@ -133,7 +79,7 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
 
         <div className="hidden md:flex flex-col text-left notranslate" translate="no" data-no-translate="true">
           <span className="text-xs font-bold text-slate-900 leading-tight max-w-[130px] truncate notranslate" translate="no">
-            {t(user?.fullName || '') || user?.fullName || user?.username || t('Tài khoản')}
+            {user?.fullName || user?.username || t('Tài khoản', 'Account')}
           </span>
         </div>
 
@@ -156,10 +102,10 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
             </div>
             <div className="flex flex-col min-w-0">
               <span className="text-xs font-bold text-slate-900 dark:text-white truncate notranslate" translate="no">
-                {t(user?.fullName || '') || user?.fullName || user?.username || t('Người dùng')}
+                {user?.fullName || user?.username || t('Người dùng', 'User')}
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {user?.email || t('Chưa cập nhật email')}
+                {user?.email || t('Chưa cập nhật email', 'No email updated')}
               </span>
               <div className="flex items-center gap-1.5 mt-1">
                 {user?.phone && (
@@ -190,86 +136,16 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
               </div>
               <div className="flex flex-col min-w-0">
                 <span className="text-xs font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
-                  {t('Tài khoản & Bảo mật')}
+                  {t('Tài khoản & Bảo mật', 'Account & Security')}
                 </span>
                 <span className="text-[10px] text-slate-500">
-                  {t('Hồ sơ cá nhân và mật khẩu')}
+                  {t('Hồ sơ cá nhân và mật khẩu', 'Personal profile and password')}
                 </span>
               </div>
               <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
                 chevron_right
               </span>
             </button>
-
-            {/* Cài đặt web */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsOpen(false)
-                onOpenSettings()
-              }}
-              className="w-full flex items-center gap-3 p-2 rounded-xl text-left hover:bg-slate-50 transition-colors cursor-pointer group"
-            >
-              <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center shrink-0 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                <span className="material-symbols-outlined text-[18px]">settings</span>
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-semibold text-slate-900 group-hover:text-purple-600 transition-colors">
-                  {t('Cài đặt web & hệ thống')}
-                </span>
-                <span className="text-[10px] text-slate-500">
-                  {t('Chủ đề, phông chữ, ngôn ngữ')}
-                </span>
-              </div>
-              <span className="material-symbols-outlined text-[16px] text-slate-400 ml-auto group-hover:translate-x-0.5 transition-transform">
-                chevron_right
-              </span>
-            </button>
-          </div>
-
-          {/* Quick Settings Toggles */}
-          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-100 dark:border-slate-800 flex flex-col gap-2 text-xs">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              {t('Tùy chỉnh nhanh')}
-            </span>
-
-            {/* Language switch */}
-            <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-              <span className="text-[11px] font-medium text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[15px] text-slate-500">language</span>
-                {t('Ngôn ngữ')}
-              </span>
-              <div className="flex items-center gap-1 bg-slate-200/70 dark:bg-slate-900/80 p-0.5 rounded-lg text-[10px] font-bold">
-                <button
-                  type="button"
-                  onClick={() => handleSwitchLanguage('vi')}
-                  aria-pressed={language === 'vi'}
-                  aria-label={t('Tiếng Việt', 'Vietnamese')}
-                  title={t('Tiếng Việt', 'Vietnamese')}
-                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                    language === 'vi'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  VI
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleSwitchLanguage('en')}
-                  aria-pressed={language === 'en'}
-                  aria-label={t('Tiếng Anh', 'English')}
-                  title={t('Tiếng Anh', 'English')}
-                  className={`min-w-9 px-2 py-1 rounded cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                    language === 'en'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  EN
-                </button>
-              </div>
-            </div>
           </div>
 
           {/* Logout Action */}
@@ -286,8 +162,8 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
                 <span className="material-symbols-outlined text-[18px]">logout</span>
               </div>
               <div className="flex flex-col text-left">
-                <span className="text-xs font-bold leading-tight">{t('Đăng xuất')}</span>
-                <span className="text-[10px] text-rose-500/80">{t('Kết thúc phiên làm việc')}</span>
+                <span className="text-xs font-bold leading-tight">{t('Đăng xuất', 'Logout')}</span>
+                <span className="text-[10px] text-rose-500/80">{t('Kết thúc phiên làm việc', 'End current session')}</span>
               </div>
             </button>
           </div>
@@ -297,4 +173,3 @@ export const UserAvatarDropdown: React.FC<UserAvatarDropdownProps> = ({
   )
 }
 export default UserAvatarDropdown
-
