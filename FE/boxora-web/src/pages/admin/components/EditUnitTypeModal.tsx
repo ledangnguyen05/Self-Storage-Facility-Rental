@@ -29,6 +29,8 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
   const [acPrice, setAcPrice] = useState<number | ''>('')
   const [isActive, setIsActive] = useState<boolean>(true)
   const [priceChangeReason, setPriceChangeReason] = useState('')
+  const [imageUrl, setImageUrl] = useState<string>('')
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false)
 
   const [isSaving, setIsSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -47,6 +49,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setBasePrice(unitType.basePricePerMonth ?? 0)
       setAcPrice(unitType.acPricePerMonth ?? Math.round((unitType.basePricePerMonth || 0) * 1.2))
       setIsActive(unitType.isActive ?? true)
+      setImageUrl(unitType.imageUrl || '')
       setPriceChangeReason('')
       setErrorMsg(null)
       setShowStatusConfirm(false)
@@ -61,6 +64,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setBasePrice('')
       setAcPrice('')
       setIsActive(true)
+      setImageUrl('')
       setPriceChangeReason('')
       setErrorMsg(null)
       setShowStatusConfirm(false)
@@ -97,6 +101,36 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
     setPendingStatus(null)
   }
 
+  const handleImageFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('Vui lòng chọn tệp hình ảnh hợp lệ (PNG, JPG, WEBP).')
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg('Dung lượng ảnh không được vượt quá 10MB.')
+      return
+    }
+
+    setIsUploadingImage(true)
+    setErrorMsg(null)
+    try {
+      const res = await storageUnitService.uploadUnitImage(file)
+      if (res?.fileUrl) {
+        setImageUrl(res.fileUrl)
+      }
+    } catch (err: any) {
+      setErrorMsg(err.response?.data?.message || err.message || 'Không thể tải lên ảnh mô phỏng.')
+    } finally {
+      setIsUploadingImage(false)
+      // reset file input value
+      e.target.value = ''
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
@@ -131,6 +165,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
           basePricePerMonth: Number(basePrice),
           acPricePerMonth: Number(acPrice),
           isActive,
+          imageUrl: imageUrl.trim() || undefined,
           priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
         }
 
@@ -153,6 +188,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
           basePricePerMonth: Number(basePrice),
           acPricePerMonth: Number(acPrice),
           isActive,
+          imageUrl: imageUrl.trim() || undefined,
         }
         const created = await storageUnitService.createUnitType(createPayload)
         onSuccess(created)
@@ -234,6 +270,73 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                   </span>
                   <span>{isActive ? t('Hoạt động') : t('Tạm ngưng')}</span>
                 </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Upload ảnh mô phỏng loại kho */}
+          <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-cyan-600 text-[18px]">image</span>
+                <span>{t('Ảnh mô phỏng loại kho (Hiển thị ở bước 2 đặt kho)')}</span>
+              </div>
+              {imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => setImageUrl('')}
+                  className="text-[11px] text-rose-600 hover:text-rose-700 font-medium flex items-center gap-0.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[14px]">delete</span>
+                  <span>{t('Gỡ ảnh')}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              {/* Preview Thumbnail */}
+              <div className="w-full sm:w-36 h-24 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden flex items-center justify-center shrink-0 relative group">
+                {imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt={typeName || 'Ảnh mô phỏng kho'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-slate-400 p-2 text-center">
+                    <span className="material-symbols-outlined text-2xl text-slate-300">hide_image</span>
+                    <span className="text-[10px] mt-0.5">Chưa có ảnh</span>
+                  </div>
+                )}
+                {isUploadingImage && (
+                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center text-white text-[11px] font-bold">
+                    <span className="animate-spin material-symbols-outlined text-lg mr-1">progress_activity</span>
+                    Tải lên...
+                  </div>
+                )}
+              </div>
+
+              {/* Upload controls */}
+              <div className="flex-1 w-full space-y-1.5 text-left">
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-xs">
+                  <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                  <span>{imageUrl ? t('Thay ảnh khác') : t('Tải ảnh mô phỏng lên')}</span>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    onChange={handleImageFileChange}
+                    className="hidden"
+                    disabled={isUploadingImage}
+                  />
+                </label>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Hỗ trợ định dạng PNG, JPG, WEBP tối đa 10MB. Ảnh này sẽ được tự động kế thừa khi tạo buồng kho và xuất hiện trực quan cho khách hàng ở bước 2 chọn kho.
+                </p>
+                {imageUrl && (
+                  <div className="text-[10px] text-slate-400 font-mono truncate max-w-sm">
+                    URL: {imageUrl}
+                  </div>
+                )}
               </div>
             </div>
           </div>

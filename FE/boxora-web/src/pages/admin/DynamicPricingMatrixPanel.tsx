@@ -755,11 +755,24 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
 
                         {/* 2. Tên loại kho */}
                         <td className="py-3 px-3.5 font-bold text-slate-800">
-                          <div className="flex items-center gap-1.5">
-                            <span>{ut.typeName}</span>
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-normal">
-                            {spec.category}
+                          <div className="flex items-center gap-2.5">
+                            {ut.imageUrl ? (
+                              <img
+                                src={ut.imageUrl}
+                                alt={ut.typeName}
+                                className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
+                              />
+                            ) : (
+                              <div className="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                                <span className="material-symbols-outlined text-[18px]">inventory_2</span>
+                              </div>
+                            )}
+                            <div>
+                              <span>{ut.typeName}</span>
+                              <div className="text-[10px] text-slate-400 font-normal">
+                                {spec.category}
+                              </div>
+                            </div>
                           </div>
                         </td>
 

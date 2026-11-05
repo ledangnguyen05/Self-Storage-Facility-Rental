@@ -50,4 +50,7 @@ public class UnitType extends BaseEntity {
 
     @Column(name = "capacity_boxes")
     private Integer capacityBoxes;
+
+    @Column(name = "image_url", length = 1000)
+    private String imageUrl;
 }

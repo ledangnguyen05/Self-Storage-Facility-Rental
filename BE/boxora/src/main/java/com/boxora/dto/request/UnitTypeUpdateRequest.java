@@ -68,4 +68,7 @@ public class UnitTypeUpdateRequest {
     @Schema(description = "Lý do thay đổi giá bắt buộc theo BR-RULE-011 nếu có thay đổi basePricePerMonth",
             example = "Điều chỉnh giá niêm yết theo định kỳ quý 4")
     private String priceChangeReason;
+
+    @Schema(description = "URL ảnh mô phỏng loại kho cập nhật", example = "https://example.com/unit-type.jpg")
+    private String imageUrl;
 }

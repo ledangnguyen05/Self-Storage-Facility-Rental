@@ -423,7 +423,9 @@ public class StorageUnitServiceImpl implements StorageUnitService {
                 .facility(facility)
                 .unitType(unitType)
                 .pricePerMonth(initialPrice)
-                .imageUrl(request.getImageUrl() != null && !request.getImageUrl().isBlank() ? request.getImageUrl().trim() : null)
+                .imageUrl(request.getImageUrl() != null && !request.getImageUrl().isBlank()
+                        ? request.getImageUrl().trim()
+                        : (unitType != null ? unitType.getImageUrl() : null))
                 .build();
 
         unit = storageUnitRepository.save(unit);

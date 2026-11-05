@@ -30,6 +30,7 @@ public class UnitTypeResponse {
     private Double widthM;
     private Double heightM;
     private Integer capacityBoxes;
+    private String imageUrl;
     private Long activeUnitsCount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

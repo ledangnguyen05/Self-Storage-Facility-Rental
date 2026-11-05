@@ -173,6 +173,7 @@ export interface UnitType {
   widthM?: number
   heightM?: number
   capacityBoxes?: number
+  imageUrl?: string
   isActive?: boolean
 }
 

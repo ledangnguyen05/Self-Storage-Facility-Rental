@@ -97,6 +97,7 @@ export const storageUnitService = {
     depositAmount: number
     basePricePerMonth: number
     acPricePerMonth?: number
+    imageUrl?: string
     isActive?: boolean
   }): Promise<UnitType> {
     const response = await api.post('/api/v1/unit-types', data)
@@ -117,6 +118,7 @@ export const storageUnitService = {
       depositAmount?: number
       basePricePerMonth?: number
       acPricePerMonth?: number
+      imageUrl?: string
       isActive?: boolean
       priceChangeReason?: string
     }

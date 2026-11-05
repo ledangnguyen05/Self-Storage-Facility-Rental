@@ -345,6 +345,40 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                   </option>
                 ))}
               </select>
+
+              {/* Simulation Image Preview for Selected Unit Type */}
+              {selectedType && (
+                <div className="mt-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center gap-3">
+                  {selectedType.imageUrl ? (
+                    <img
+                      src={selectedType.imageUrl}
+                      alt={selectedType.typeName}
+                      className="w-16 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-2xs"
+                    />
+                  ) : (
+                    <div className="w-16 h-14 rounded-lg bg-slate-200 dark:bg-slate-700/60 flex flex-col items-center justify-center text-slate-400 text-center shrink-0">
+                      <span className="material-symbols-outlined text-[18px]">inventory_2</span>
+                      <span className="text-[9px]">Chưa có ảnh</span>
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1 text-left">
+                    <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                      {selectedType.typeName}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                      <span>{selectedType.dimensions || `${selectedType.areaSqm}m²`}</span>
+                      <span>•</span>
+                      <span>~{selectedType.capacityBoxes || Math.round((selectedType.areaSqm || 1) * 8)} thùng</span>
+                    </div>
+                    {selectedType.imageUrl && (
+                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
+                        <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                        <span>Đã gắn ảnh mô phỏng quy chuẩn (tự động kế thừa)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Dynamic Floor Selector (Task 6.2: only ACTIVE floors) */}

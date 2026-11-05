@@ -72,4 +72,7 @@ public class UnitTypeCreateRequest {
     @PositiveOrZero(message = "Deposit amount cannot be negative")
     @Schema(description = "Tiền đặt cọc chuẩn (VNĐ)", example = "450000.00")
     private BigDecimal depositAmount;
+
+    @Schema(description = "URL ảnh mô phỏng loại kho", example = "https://example.com/unit-type.jpg")
+    private String imageUrl;
 }

@@ -112,6 +112,7 @@ export interface StorageSizeUnitDef {
   volumeNumber: number
   capacityText: string
   image: string
+  imageUrl?: string
   dimensions: string
   areaM2: number
   fitsDetailed: string[]
@@ -953,7 +954,8 @@ export const BookingPage: React.FC = () => {
           volumeText: `${vol} m³`,
           volumeNumber: vol,
           capacityText: cap,
-          image: vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image),
+          image: dbType.imageUrl || (vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image)),
+          imageUrl: dbType.imageUrl || undefined,
           dimensions: dims,
           areaM2: area,
           fitsDetailed: [
@@ -2600,7 +2602,7 @@ export const BookingPage: React.FC = () => {
                           ) : (
                             <div className="w-full h-full relative overflow-hidden">
                               <img
-                                src={realPhotoInfo.photoUrl}
+                                src={(sizeUnit as any).imageUrl || realPhotoInfo.photoUrl}
                                 alt={`Ảnh thực tế kho ${sizeUnit.volumeText}`}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               />
@@ -4019,10 +4021,13 @@ export const BookingPage: React.FC = () => {
                 ) : (
                   <div className="w-full h-full relative">
                     <img
-                      src={getRealPhotoForSize(
-                        inspectingSizeUnit.volumeNumber,
-                        (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
-                      ).photoUrl}
+                      src={
+                        (inspectingSizeUnit as any)?.imageUrl ||
+                        getRealPhotoForSize(
+                          inspectingSizeUnit.volumeNumber,
+                          (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                        ).photoUrl
+                      }
                       alt={`Ảnh thực tế kho ${inspectingSizeUnit.volumeText}`}
                       className="w-full h-full object-cover"
                     />

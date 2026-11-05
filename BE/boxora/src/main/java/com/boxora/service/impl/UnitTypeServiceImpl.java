@@ -85,6 +85,7 @@ public class UnitTypeServiceImpl implements UnitTypeService {
                 .basePricePerMonth(request.getBasePricePerMonth())
                 .acPricePerMonth(request.getAcPricePerMonth())
                 .depositAmount(request.getDepositAmount())
+                .imageUrl(request.getImageUrl() != null && !request.getImageUrl().isBlank() ? request.getImageUrl().trim() : null)
                 .build();
 
         UnitType saved = unitTypeRepository.save(unitType);
@@ -174,6 +175,10 @@ public class UnitTypeServiceImpl implements UnitTypeService {
 
         if (request.getDepositAmount() != null) {
             unitType.setDepositAmount(request.getDepositAmount());
+        }
+
+        if (request.getImageUrl() != null) {
+            unitType.setImageUrl(request.getImageUrl().trim().isEmpty() ? null : request.getImageUrl().trim());
         }
 
         if (request.getAcPricePerMonth() != null && request.getAcPricePerMonth().compareTo(BigDecimal.ZERO) > 0) {
