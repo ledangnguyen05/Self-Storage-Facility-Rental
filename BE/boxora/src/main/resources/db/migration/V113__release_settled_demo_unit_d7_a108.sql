@@ -7,3 +7,4 @@ UPDATE storage_units
 SET status = 'AVAILABLE', updated_at = NOW()
 WHERE id = 'b9e35b7e-4f70-45ce-a26e-e875d70c8794'
   AND status = 'OCCUPIED';
+

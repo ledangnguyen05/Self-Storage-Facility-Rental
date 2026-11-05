@@ -1045,7 +1045,6 @@ export const OverdueManagementPage: React.FC = () => {
             >
               <span className="material-symbols-outlined text-[18px]">chevron_right</span>
             </button>
-            </button>
           </div>
           {/* Empty right spacer to keep right edge clear of floating AI chat button */}
           <div className="hidden md:block w-28 pointer-events-none" aria-hidden="true" />
