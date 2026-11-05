@@ -55,6 +55,48 @@ const getPaymentTypeBadge = (paymentType: string) => {
   }
 }
 
+const getPaymentMethodBadge = (method?: string | null) => {
+  const m = (method || '').toUpperCase()
+  switch (m) {
+    case 'VNPAY':
+      return {
+        labelVi: 'Cổng VNPay',
+        labelEn: 'VNPay Gateway',
+        bg: 'bg-blue-50 text-blue-700 border-blue-200',
+      }
+    case 'BANK_TRANSFER':
+      return {
+        labelVi: 'Chuyển khoản NH',
+        labelEn: 'Bank Transfer',
+        bg: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+      }
+    case 'CASH':
+      return {
+        labelVi: 'Tiền mặt',
+        labelEn: 'Cash',
+        bg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      }
+    case 'DEPOSIT_DEDUCTION':
+      return {
+        labelVi: 'Khấu trừ tiền cọc',
+        labelEn: 'Deposit Deduction',
+        bg: 'bg-purple-50 text-purple-800 border-purple-200',
+      }
+    case 'COUNTER':
+      return {
+        labelVi: 'Tại quầy',
+        labelEn: 'At Counter',
+        bg: 'bg-amber-50 text-amber-800 border-amber-200',
+      }
+    default:
+      return {
+        labelVi: method || '—',
+        labelEn: method || '—',
+        bg: 'bg-slate-100 text-slate-800 border-slate-200',
+      }
+  }
+}
+
 export const OperationsDashboard: React.FC = () => {
   const { t, language } = useLanguage()
   const tr = (vietnamese: string, english: string) => t(vietnamese, english)
@@ -735,7 +777,7 @@ export const OperationsDashboard: React.FC = () => {
         { val: language === 'vi' ? typeBadge.labelVi : typeBadge.labelEn },
         { val: language === 'vi' ? finCat.labelVi : finCat.labelEn },
         { val: p.amount || 0, type: 'Number', style: 'Number' },
-        { val: p.paymentMethod || '—' },
+        { val: language === 'vi' ? getPaymentMethodBadge(p.paymentMethod).labelVi : getPaymentMethodBadge(p.paymentMethod).labelEn },
         { val: p.status || '—' },
         { val: p.reconciliationStatus || 'UNRECONCILED' },
         { val: p.confirmedByName || p.collectedByName || 'Hệ thống' },
@@ -781,7 +823,7 @@ export const OperationsDashboard: React.FC = () => {
         language === 'vi' ? typeBadge.labelVi : typeBadge.labelEn,
         language === 'vi' ? finCat.labelVi : finCat.labelEn,
         p.amount || 0,
-        p.paymentMethod || '—',
+        language === 'vi' ? getPaymentMethodBadge(p.paymentMethod).labelVi : getPaymentMethodBadge(p.paymentMethod).labelEn,
         p.status || '—',
         p.reconciliationStatus || 'UNRECONCILED',
         p.confirmedByName || p.collectedByName || 'Hệ thống',
@@ -1888,6 +1930,7 @@ export const OperationsDashboard: React.FC = () => {
                 <option value="VNPAY">VNPay</option>
                 <option value="BANK_TRANSFER">{tr('Chuyển khoản NH', 'Bank Transfer')}</option>
                 <option value="CASH">{tr('Tiền mặt', 'Cash')}</option>
+                <option value="DEPOSIT_DEDUCTION">{tr('Khấu trừ tiền cọc', 'Deposit Deduction')}</option>
               </select>
             </div>
 
@@ -1971,9 +2014,14 @@ export const OperationsDashboard: React.FC = () => {
                         </td>
                         {/* 9. Kênh thanh toán */}
                         <td className="py-3 px-3 text-center">
-                          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 font-mono">
-                            {p.paymentMethod || '—'}
-                          </span>
+                          {(() => {
+                            const methodBadge = getPaymentMethodBadge(p.paymentMethod)
+                            return (
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border ${methodBadge.bg}`}>
+                                {language === 'vi' ? methodBadge.labelVi : methodBadge.labelEn}
+                              </span>
+                            )
+                          })()}
                         </td>
                         {/* 10. Trạng thái thanh toán */}
                         <td className="py-3 px-3 text-center">
@@ -2093,7 +2141,14 @@ export const OperationsDashboard: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">{tr('Kênh thanh toán', 'Method')}</span>
-                    <span className="font-mono font-semibold">{selectedPaymentDetail.paymentMethod || '—'}</span>
+                    {(() => {
+                      const badge = getPaymentMethodBadge(selectedPaymentDetail.paymentMethod)
+                      return (
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-bold border ${badge.bg}`}>
+                          {language === 'vi' ? badge.labelVi : badge.labelEn}
+                        </span>
+                      )
+                    })()}
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">{tr('Trạng thái TT', 'Payment Status')}</span>
