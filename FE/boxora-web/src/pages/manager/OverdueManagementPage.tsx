@@ -337,6 +337,12 @@ export const OverdueManagementPage: React.FC = () => {
     return `${safe.toLocaleString('vi-VN')} ₫`
   }
 
+  const formatNumber = (num?: number | null) => {
+    if (num == null) return '0'
+    const safe = Math.max(0, Math.round(Number(num) || 0))
+    return safe.toLocaleString('vi-VN')
+  }
+
   return (
     <div className="flex flex-col gap-6 w-full text-left pb-12">
       
@@ -792,18 +798,18 @@ export const OverdueManagementPage: React.FC = () => {
                       </td>
 
                       {/* Debt Status */}
-                      <td className="p-3.5">
+                      <td className="p-3.5 whitespace-nowrap">
                         <div className="flex flex-col">
                           {item.stageLabel?.includes('thanh lý') ? (
                             <>
                               <span className="font-mono font-bold text-indigo-700 text-xs">
-                                {item.totalDebt > 0 ? formatVND(item.totalDebt) : '0 ₫'}
+                                {item.totalDebt > 0 ? formatNumber(item.totalDebt) : '0'}
                               </span>
                               <span className="text-[11px] text-purple-700 font-medium">{t('Đã thanh lý tài sản', 'Assets Liquidated')}</span>
                             </>
                           ) : (
                             <>
-                              <span className="font-mono font-bold text-emerald-700 text-xs">0 ₫</span>
+                              <span className="font-mono font-bold text-emerald-700 text-xs">0</span>
                               <span className="text-[11px] text-emerald-600 font-medium">{t('Đã thanh toán đủ', 'Fully Settled')}</span>
                             </>
                           )}
@@ -905,24 +911,24 @@ export const OverdueManagementPage: React.FC = () => {
                     </td>
 
                     {/* Debt Breakdown */}
-                    <td className="p-3.5">
+                    <td className="p-3.5 whitespace-nowrap">
                       <div className="flex flex-col gap-0.5">
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 whitespace-nowrap">
                           <span className="text-[11px] text-slate-400">{t('Cọc giữ:', 'Deposit held:')}</span>
-                          <span className="text-emerald-700 font-medium">{formatVND(item.depositHeld)}</span>
+                          <span className="text-emerald-700 font-medium">{formatNumber(item.depositHeld)}</span>
                         </div>
-                        <div className="flex items-center gap-1 text-[11px] text-rose-600">
+                        <div className="flex items-center gap-1 text-[11px] text-rose-600 whitespace-nowrap">
                           <span>{t('Phạt', 'Penalty')} ({item.lateFeePercentage ?? 100}%):</span>
-                          <span className="font-bold">+{formatVND(item.lateFee)}</span>
+                          <span className="font-bold">+{formatNumber(item.lateFee)}</span>
                         </div>
                         {item.totalDebt > 0 ? (
-                          <div className="font-mono font-black text-rose-700 text-sm mt-0.5" title={t('Công nợ khách phải thanh toán thêm', 'Additional debt customer must pay')}>
-                            {t('Nợ:', 'Debt:')} {formatVND(item.totalDebt)}
+                          <div className="font-mono font-black text-rose-700 text-sm mt-0.5 whitespace-nowrap" title={t('Công nợ khách phải thanh toán thêm', 'Additional debt customer must pay')}>
+                            {t('Nợ:', 'Debt:')} {formatNumber(item.totalDebt)}
                           </div>
                         ) : (
-                          <div className="font-mono font-bold text-emerald-700 text-xs mt-0.5 flex items-center gap-1" title={t('Số tiền cọc còn lại hoàn khách khi trả kho', 'Remaining deposit to refund to customer')}>
+                          <div className="font-mono font-bold text-emerald-700 text-xs mt-0.5 flex items-center gap-1 whitespace-nowrap" title={t('Số tiền cọc còn lại hoàn khách khi trả kho', 'Remaining deposit to refund to customer')}>
                             <span className="material-symbols-outlined text-[13px]">replay</span>
-                            {t('Hoàn:', 'Refund:')} {formatVND(item.customerRefundAmount ?? Math.max(0, (item.depositHeld || 0) - (item.lateFee || 0)))}
+                            {t('Hoàn:', 'Refund:')} {formatNumber(item.customerRefundAmount ?? Math.max(0, (item.depositHeld || 0) - (item.lateFee || 0)))}
                           </div>
                         )}
                       </div>
