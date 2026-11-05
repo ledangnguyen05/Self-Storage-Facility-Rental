@@ -50,6 +50,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
     private final HandoverRecordRepository handoverRecordRepository;
+    private final RefundRequestRepository refundRequestRepository;
 
     private final OverdueNoticeLogRepository overdueNoticeLogRepository;
     private final PinRevocationRequestRepository pinRevocationRequestRepository;
@@ -1576,6 +1577,9 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
         OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
         BigDecimal remainingDebt = (calc != null && calc.totalDebt() != null) ? calc.totalDebt() : BigDecimal.ZERO;
+        BigDecimal lateFee = (calc != null && calc.lateFee() != null) ? calc.lateFee() : BigDecimal.ZERO;
+        BigDecimal depositHeld = (calc != null && calc.depositHeld() != null) ? calc.depositHeld() : (contract.getDepositHeld() != null ? contract.getDepositHeld() : BigDecimal.ZERO);
+        BigDecimal customerRefund = (calc != null && calc.customerRefundAmount() != null) ? calc.customerRefundAmount() : BigDecimal.ZERO;
 
         // Strict Financial Audit:
         // Do NOT blindly create a PAID CASH payment merely from clicking "Đã xong".
@@ -1628,8 +1632,57 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     .build();
             paymentRepository.save(payment);
         }
-        // Note: If remainingDebt <= 0, customer ALREADY paid in full.
-        // We do NOT create any duplicate payment! (Test 2: Đã thanh toán hợp lệ -> không thu trùng)
+
+        // 2. Penalty fee deducted from deposit -> Earned EXTRA_CHARGE revenue
+        BigDecimal penaltyDeductedFromDeposit = lateFee.min(depositHeld);
+        if (penaltyDeductedFromDeposit.compareTo(BigDecimal.ZERO) > 0) {
+            String deductTxnId = "PENALTY-DEDUCT-" + contract.getContractCode() + "-" + System.currentTimeMillis();
+            Payment deductPayment = Payment.builder()
+                    .transactionId(deductTxnId)
+                    .booking(booking)
+                    .contract(contract)
+                    .amount(penaltyDeductedFromDeposit)
+                    .paymentType(PaymentType.EXTRA_CHARGE)
+                    .paymentMethod("DEPOSIT_DEDUCTION")
+                    .status(PaymentStatus.PAID)
+                    .paymentTime(LocalDateTime.now())
+                    .collectedByStaff(currentUser)
+                    .confirmedByStaff(currentUser)
+                    .confirmedAt(LocalDateTime.now())
+                    .paymentNotes("Khấu trừ phí phạt trễ hạn từ tiền cọc hợp đồng " + contract.getContractCode())
+                    .build();
+            paymentRepository.save(deductPayment);
+        }
+
+        // 3. Deposit Refund Request to settle deposit liability and track refund outflow
+        if (refundRequestRepository != null && depositHeld.compareTo(BigDecimal.ZERO) > 0) {
+            String refCode = "REF-SETTLE-" + contract.getContractCode() + "-" + System.currentTimeMillis();
+            User cust = contract.getCustomer() != null ? contract.getCustomer() : (booking != null ? booking.getCustomer() : currentUser);
+            String custName = cust != null && cust.getFullName() != null ? cust.getFullName() : "Khách hàng";
+
+            RefundRequest refundReq = RefundRequest.builder()
+                    .requestCode(refCode)
+                    .customer(cust)
+                    .facility(facility)
+                    .booking(booking)
+                    .contract(contract)
+                    .requestedAmount(depositHeld)
+                    .deductionAmount(penaltyDeductedFromDeposit)
+                    .finalRefundAmount(customerRefund)
+                    .bankName("Chuyển khoản / Quầy")
+                    .bankAccountNumber("N/A")
+                    .bankAccountName(custName)
+                    .reason("Quyết toán nợ cước và hoàn tiền cọc hợp đồng " + contract.getContractCode()
+                            + " (Cọc: " + depositHeld + " đ, Khấu trừ phạt: " + penaltyDeductedFromDeposit + " đ)")
+                    .status(RefundStatus.COMPLETED)
+                    .requestedBy(currentUser != null ? currentUser : cust)
+                    .reviewedBy(currentUser != null ? currentUser : cust)
+                    .reviewedAt(LocalDateTime.now())
+                    .processedAt(LocalDateTime.now())
+                    .processNotes("Hoàn tất quyết toán cấn trừ cọc và trả kho")
+                    .build();
+            refundRequestRepository.save(refundReq);
+        }
 
         // Clear temporary overdue access & mark contract terminated
         contract.setStatus(RentalContractStatus.TERMINATED);

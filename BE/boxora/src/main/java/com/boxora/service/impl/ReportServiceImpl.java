@@ -300,9 +300,22 @@ public class ReportServiceImpl implements ReportService {
                 }
             }
 
+            BigDecimal refundDeduction = allRefunds.stream()
+                    .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
+                            || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
+                            || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED))
+                    .filter(r -> !isRentalFeeRefund(r))
+                    .filter(r -> (r.getContract() != null && r.getContract().getId() != null && c.getId() != null && r.getContract().getId().equals(c.getId()))
+                            || (c.getBooking() != null && c.getBooking().getId() != null && r.getBooking() != null && r.getBooking().getId() != null && r.getBooking().getId().equals(c.getBooking().getId())))
+                    .map(r -> r.getDeductionAmount() != null ? r.getDeductionAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            deductedForContract = deductedForContract.max(refundDeduction).min(initDeposit);
+
             BigDecimal held = initDeposit.subtract(refundedForContract).subtract(deductedForContract).max(BigDecimal.ZERO);
-            if (c.getStatus() == RentalContractStatus.TERMINATED && (refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0)) {
-                held = BigDecimal.ZERO;
+            if (c.getStatus() == RentalContractStatus.TERMINATED) {
+                if (refundedForContract.add(deductedForContract).compareTo(BigDecimal.ZERO) > 0 || refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0) {
+                    held = BigDecimal.ZERO;
+                }
             } else if (c.getStatus() == RentalContractStatus.CANCELLED && (refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0)) {
                 held = BigDecimal.ZERO;
             }

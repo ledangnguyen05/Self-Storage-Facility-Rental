@@ -181,10 +181,7 @@ export const Navbar: React.FC = () => {
       {/* Mobile Drawer */}
       {isMobileMenuOpen && (
         <div className="sm:hidden border-t border-slate-200 bg-white px-4 py-5 shadow-xl animate-in slide-in-from-top-2 duration-150">
-          <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
-            <span className="text-xs font-semibold text-slate-500">{t('Giao diện & Ngôn ngữ')}</span>
-            <QuickThemeLanguageToggle />
-          </div>
+
           <nav className="flex flex-col gap-3 font-medium text-slate-700 mb-5">
             {user && (
               <>
@@ -199,17 +196,7 @@ export const Navbar: React.FC = () => {
                   <ShieldCheck size={16} />
                   {t('Tài khoản & Bảo mật')}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsSettingsModalOpen(true)
-                    setIsMobileMenuOpen(false)
-                  }}
-                  className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-left text-sm font-semibold text-slate-700"
-                >
-                  <span className="material-symbols-outlined text-[18px]">settings</span>
-                  {t('Cài đặt web & hệ thống')}
-                </button>
+
               </>
             )}
             <Link
