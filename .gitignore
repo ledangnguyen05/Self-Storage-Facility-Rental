@@ -1,10 +1,34 @@
+# ============================================================
+# BOXORA SYSTEM - SECURITY & WORKSPACE IGNORE SPECIFICATION
+# ============================================================
+
+# IDE & Editor files
 .vscode/
 .idea/
+*.iml
+*.iws
+*.ipr
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.impeccable/
+
+# Logs & Debugging
 *.log
+logs/
+**/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # ============================================================
-# Environment variables — NEVER commit .env files
-# .env.example files are allowed (template only, no secrets)
+# Environment variables & Secret Configurations
+# NEVER commit real .env files, credentials, or secrets
+# .env.example files are permitted as templates
 # ============================================================
 .env
 .env.*
@@ -12,34 +36,98 @@
 */.env
 */.env.*
 !*/.env.example
+*.local
+*.backup
+*.bak
 
-# Hidden / internal folders
+# Cryptographic Keys, Certificates & Tokens
+*.pem
+*.key
+*.pkcs12
+*.p12
+*.pfx
+*.jks
+*.crt
+*.der
+id_rsa
+id_ed25519
+*.credentials
+
+# Cloud & Service Account JSON Credentials
+credentials.json
+client_secret*.json
+service-account*.json
+google-services.json
+firebase*.json
+
+# Database Dumps & Local Database Files
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
+*.db
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Hidden / Internal Documentation Folders
 .github/
 BA-Blueprint-Agent/
 Development-Agent/
 bug/
 docs/
 
-# Markdown (except README)
+# Markdown (Protect internal agent guidelines, keep README.md)
 *.md
 !README.md
+!BE/boxora/README.md
+!FE/boxora-web/README.md
 
-# Docker
+# Docker Local Overrides
 docker-compose*.yml
 
-# Build artifacts
+# Build Artifacts & Dependencies
 uploads/
+**/uploads/
 node_modules/
 **/node_modules/
 dist/
 **/dist/
+dist-ssr/
 target/
 **/target/
+build/
+**/build/
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
 
-# Cloudflare Wrangler
+# Code Analysis & Coverage Reports
+.scannerwork/
+.sonar/
+coverage/
+.coverage
+
+# Cloudflare Wrangler & Serverless
 .wrangler/
 **/.wrangler/
 
-# Scratch / temp
+# Scratch & Temporary Scripts
 scratch/
 **/scratch/
+tmp/
+**/tmp/
+temp/
+**/temp/
+*.tmp

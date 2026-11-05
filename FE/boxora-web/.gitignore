@@ -1,3 +1,7 @@
+# ============================================================
+# BOXORA FRONTEND (React + Vite + TypeScript) - .gitignore
+# ============================================================
+
 # Logs
 logs
 *.log
@@ -7,6 +11,7 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies & Build Outputs
 node_modules
 dist
 dist-ssr
@@ -17,15 +22,22 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
-
 .impeccable/
 
 # Environment files
 .env
 .env.*
 !.env.example
+*.backup
+*.bak
+
+# Temporary / Scratch
+scratch/
+tmp/
+temp/

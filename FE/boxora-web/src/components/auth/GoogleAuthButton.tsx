@@ -6,7 +6,7 @@ declare global {
   }
 }
 
-export const GOOGLE_CLIENT_ID = '564968487479-aooibm2esqg9bic2iuu1a729ci4qfo3q.apps.googleusercontent.com'
+export const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '564968487479-aooibm2esqg9bic2iuu1a729ci4qfo3q.apps.googleusercontent.com').trim()
 
 interface GoogleAuthButtonProps {
   onSuccess: (idToken: string) => void

@@ -1,5 +1,10 @@
+# ============================================================
+# BOXORA BACKEND (Spring Boot) - .gitignore
+# ============================================================
+
 HELP.md
 target/
+**/target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
@@ -32,7 +37,34 @@ build/
 ### VS Code ###
 .vscode/
 
-# Environment variables
+# Environment & Secret files
 .env
 .env.*
 !.env.example
+*.local
+*.backup
+*.bak
+
+# Cryptographic Keys & Certificates
+*.pem
+*.key
+*.pkcs12
+*.p12
+*.pfx
+*.jks
+
+# Cloud Credentials
+credentials.json
+client_secret*.json
+service-account*.json
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# Local Uploads
+uploads/
+**/uploads/
+tmp/
+temp/
