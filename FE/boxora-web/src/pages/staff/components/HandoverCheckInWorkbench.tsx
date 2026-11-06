@@ -997,29 +997,39 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
         if (reqDeposit > 0) {
           try {
-            await handoverService.recordManualPayment({
+            const depPay = await handoverService.recordManualPayment({
               bookingId: selectedBookingId,
               paymentType: 'DEPOSIT',
               paymentMethod: 'BANK_TRANSFER',
               amount: reqDeposit,
               proofDocumentUrl: res.fileUrl,
-              referenceCode: `PROOF-DEP-${bookingDisplayCode}`,
+              referenceCode: `PROOF-DEP-${bookingDisplayCode}-${Date.now()}`,
               notes: 'Thanh toán tiền cọc có chứng từ kèm theo tại cơ sở'
             })
+            if (depPay?.id) {
+              await handoverService.confirmBankTransferPayment(depPay.id, 'Xác nhận thu tiền cọc tại quầy cơ sở')
+            }
           } catch (depErr: any) {
             console.warn('Deposit manual payment skipped or already processed:', depErr)
           }
         }
         if (reqRent > 0) {
-          await handoverService.recordManualPayment({
-            bookingId: selectedBookingId,
-            paymentType: 'RENTAL_FEE',
-            paymentMethod: 'BANK_TRANSFER',
-            amount: reqRent,
-            proofDocumentUrl: res.fileUrl,
-            referenceCode: `PROOF-RENT-${bookingDisplayCode}`,
-            notes: 'Thanh toán tiền thuê tháng đầu có chứng từ kèm theo tại cơ sở'
-          })
+          try {
+            const rentPay = await handoverService.recordManualPayment({
+              bookingId: selectedBookingId,
+              paymentType: 'RENTAL_FEE',
+              paymentMethod: 'BANK_TRANSFER',
+              amount: reqRent,
+              proofDocumentUrl: res.fileUrl,
+              referenceCode: `PROOF-RENT-${bookingDisplayCode}-${Date.now()}`,
+              notes: 'Thanh toán tiền thuê tháng đầu có chứng từ kèm theo tại cơ sở'
+            })
+            if (rentPay?.id) {
+              await handoverService.confirmBankTransferPayment(rentPay.id, 'Xác nhận thu tiền thuê tháng đầu tại quầy cơ sở')
+            }
+          } catch (rentErr: any) {
+            console.warn('Rent manual payment skipped or already processed:', rentErr)
+          }
         }
 
         await fetchPrerequisitesForBooking(selectedBookingId)
@@ -1212,6 +1222,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         bookingId: currentBooking.id,
         requestedUnitCode: currentSession?.assignedUnitCode || (unitDisplayCode !== 'N/A' ? unitDisplayCode : undefined),
         recordType: 'CHECK_IN',
+        idCardNumber: idCardInputNumber.trim() || currentPrerequisites?.idCardNumber || currentBooking.identityCardNumber || undefined,
+        identityVerified: true,
+        firstMonthRentConfirmed: true,
+        contractConfirmed: true,
         rfidCardNumber: currentSession.rfidCard.trim() || undefined,
         earlyCheckInConfirmed: isEarlyCheckInConfirmed || !isCheckInTimeMet,
         earlyCheckInReason: !isCheckInTimeMet ? 'Khách nhận kho sớm có xác nhận của nhân viên' : undefined,

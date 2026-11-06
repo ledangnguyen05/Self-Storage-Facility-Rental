@@ -156,12 +156,6 @@ public class HandoverServiceImpl implements HandoverService {
                 contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
                 contractVerificationStatus = "VERIFIED";
             }
-            // TH2.5: Đã có bản scan hợp đồng giấy tại cơ sở đã được nhân viên lưu vào hệ thống
-            else if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
-                contractSigned = true;
-                contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
-                contractVerificationStatus = "VERIFIED";
-            }
             // TH3: Chưa hoàn tất ký hợp đồng
             else {
                 contractSigned = false;
@@ -612,6 +606,8 @@ public class HandoverServiceImpl implements HandoverService {
         // =========================================================================
         List<String> missingPrerequisites = new ArrayList<>();
 
+        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+
         // Điều kiện 1: Đủ tiền cọc (Full deposit) từ lịch sử giao dịch thực tế
         BigDecimal requiredDeposit = getRequiredDeposit(booking, unit);
         BigDecimal computedDepositPaid = calculateTotalDepositPaid(booking);
@@ -621,36 +617,23 @@ public class HandoverServiceImpl implements HandoverService {
         final BigDecimal depositPaid = computedDepositPaid;
         boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
                 && depositPaid.compareTo(requiredDeposit) >= 0;
+
         if (!depositSatisfied) {
             missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền cọc (Đã đóng: %s / Yêu cầu: %s)",
                     depositPaid, requiredDeposit));
         }
 
         // Điều kiện 3: Hợp đồng thuê kho (Electronic or Paper at Facility)
-        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         boolean contractSigned = false;
         if (contractOpt.isPresent()) {
             RentalContract contract = contractOpt.get();
-            // Tự động kích hoạt xác minh hợp đồng giấy tại quầy nếu nhân viên đã tải lên scan hợp đồng hợp lệ
-            if (contract.getPaperContractUrl() != null && !contract.getPaperContractUrl().isBlank()) {
-                contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
-                if (contract.getPaperVerifiedAt() == null) {
-                    contract.setPaperVerifiedAt(LocalDateTime.now());
-                }
-                if (contract.getPaperVerifiedBy() == null) {
-                    contract.setPaperVerifiedBy(staff);
-                }
-                if (contract.getSignedAt() == null) {
-                    contract.setSignedAt(LocalDateTime.now());
-                }
-                contract = rentalContractRepository.save(contract);
-            }
             boolean isContractSignedOrActive = contract.getStatus() == RentalContractStatus.ACTIVE
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
-            if (isContractSignedOrActive && (contract.getSignedAt() != null || contract.getPaperVerifiedAt() != null)) {
+            if (isContractSignedOrActive && (contract.getSignedAt() != null || contract.getPaperVerifiedAt() != null || contract.getSignedDocumentUrl() != null)) {
                 contractSigned = true;
             }
         }
+
         if (!contractSigned) {
             missingPrerequisites.add("Hợp đồng thuê chưa được ký kết hoặc chưa được nhân viên xác minh hợp lệ");
         }
@@ -660,39 +643,6 @@ public class HandoverServiceImpl implements HandoverService {
         BigDecimal firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
         boolean firstMonthRentSatisfied = firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
                 && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
-
-        // Nếu bàn giao tại quầy có hợp đồng giấy đã lưu hoặc nhân viên đối soát chứng từ tại cơ sở
-        boolean hasPaperContract = contractOpt.isPresent()
-                && contractOpt.get().getPaperContractUrl() != null
-                && !contractOpt.get().getPaperContractUrl().isBlank();
-        boolean hasProofPayment = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
-                .anyMatch(p -> p.getProofDocumentUrl() != null && !p.getProofDocumentUrl().isBlank());
-        boolean isCounterHandover = hasPaperContract || hasProofPayment || "IN_PERSON".equalsIgnoreCase(booking.getSigningMethod());
-
-        if (!firstMonthRentSatisfied && isCounterHandover) {
-            BigDecimal remainingRent = requiredFirstMonthRent.subtract(firstMonthRentPaid).max(BigDecimal.ZERO);
-            if (remainingRent.compareTo(BigDecimal.ZERO) > 0) {
-                String proofUrl = contractOpt.map(RentalContract::getPaperContractUrl).orElse(null);
-                String txnId = "COUNTER-RENT-" + booking.getBookingCode() + "-" + System.currentTimeMillis();
-                Payment counterPayment = Payment.builder()
-                        .transactionId(txnId)
-                        .booking(booking)
-                        .contract(contractOpt.orElse(null))
-                        .amount(remainingRent)
-                        .paymentType(PaymentType.RENTAL_FEE)
-                        .paymentMethod("BANK_TRANSFER")
-                        .paymentTime(LocalDateTime.now())
-                        .status(PaymentStatus.PAID)
-                        .confirmedByStaff(staff)
-                        .confirmedAt(LocalDateTime.now())
-                        .proofDocumentUrl(proofUrl)
-                        .paymentNotes("Xác nhận thu tiền thuê tháng đầu tại quầy cơ sở theo hợp đồng & chứng từ bàn giao")
-                        .build();
-                paymentRepository.save(counterPayment);
-                firstMonthRentPaid = calculateTotalFirstMonthRentPaid(booking);
-                firstMonthRentSatisfied = firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
-            }
-        }
 
         if (!firstMonthRentSatisfied) {
             missingPrerequisites.add(String.format("Chưa thanh toán đủ tiền thuê tháng đầu (Đã đóng: %s / Yêu cầu: %s)",
@@ -705,16 +655,30 @@ public class HandoverServiceImpl implements HandoverService {
                 && booking.getIdentityVerifiedAt() != null
                 && booking.getIdentityVerifiedByStaff() != null
                 && booking.getIdentityCardNumber() != null
-                && booking.getIdentityCardNumber().matches("^[A-Za-z0-9]{7,15}$");
+                && booking.getIdentityCardNumber().matches("^[0-9]{9,12}$");
 
-        if (!idAlreadyVerified) {
+        boolean identityVerified = idAlreadyVerified;
+        if (!identityVerified && Boolean.TRUE.equals(request.getIdentityVerified())) {
+            String incomingId = request.getIdCardNumber() != null ? request.getIdCardNumber().trim() : booking.getIdentityCardNumber();
+            if (incomingId != null && incomingId.matches("^[0-9]{9,12}$")) {
+                booking.setIdentityCardNumber(incomingId);
+                booking.setIdentityVerifiedByStaff(staff);
+                booking.setIdentityVerifiedAt(LocalDateTime.now());
+                booking.setIdentityOriginalDocumentSeen(true);
+                bookingRepository.save(booking);
+                identityVerified = true;
+            }
+        }
+
+        if (!identityVerified) {
             missingPrerequisites.add("Nhân viên tại quầy chưa xác nhận hoàn tất đối soát giấy tờ tùy thân / CCCD gốc của khách hàng");
         }
 
         if (!missingPrerequisites.isEmpty()) {
             log.warn("[BR-RULE-005] Check-in failed for booking {}. Missing prerequisites: {}",
                     booking.getBookingCode(), missingPrerequisites);
-            throw new AppException(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET);
+            throw new AppException(ErrorCode.HANDOVER_PREREQUISITES_NOT_MET,
+                    "Không đủ 4 điều kiện bàn giao kho vật lý theo BR-RULE-005: " + String.join("; ", missingPrerequisites));
         }
 
         String requestedUnitCode = request.getRequestedUnitCode() != null
@@ -813,12 +777,13 @@ public class HandoverServiceImpl implements HandoverService {
         storageUnitRepository.save(unit);
 
         // Kích hoạt trạng thái hợp đồng thuê sang ACTIVE và đồng bộ ngày hiệu lực thực tế, tiền cọc đang giữ & liên kết Payment
+        final BigDecimal finalDepositPaid = depositPaid;
         contractOpt.ifPresent(contract -> {
             contract.setStartDate(checkInDate);
             contract.setEndDate(effectiveEndDate);
             contract.setStatus(RentalContractStatus.ACTIVE);
-            if (depositPaid.compareTo(BigDecimal.ZERO) > 0) {
-                contract.setDepositHeld(depositPaid);
+            if (finalDepositPaid.compareTo(BigDecimal.ZERO) > 0) {
+                contract.setDepositHeld(finalDepositPaid);
             }
             rentalContractRepository.save(contract);
 
@@ -864,7 +829,7 @@ public class HandoverServiceImpl implements HandoverService {
                 facilityId,
                 ActivityAction.HANDOVER_COMPLETE,
                 "HandoverRecord",
-                record.getId(),
+                record != null ? record.getId() : booking.getId(),
                 String.format("Bàn giao thành công ngăn kho %s cho khách hàng %s. Đã phát hành mã PIN và QR truy cập bảo mật.",
                         unit.getUnitCode(), booking.getCustomer() != null ? booking.getCustomer().getFullName() : "Khách"),
                 UnitStatus.RESERVED,
@@ -2004,10 +1969,10 @@ public class HandoverServiceImpl implements HandoverService {
             contract.setPaperContractUrl(cleanPaperUrl);
             if (!wasOnlineSigned) {
                 contract.setSigningMethod("PAPER");
-                contract.setStatus(RentalContractStatus.PENDING_ACTIVATION);
-                contract.setPaperVerifiedAt(LocalDateTime.now());
-                contract.setPaperVerifiedBy(staff);
-                contract.setSignedAt(LocalDateTime.now());
+                contract.setStatus(RentalContractStatus.PENDING_VERIFICATION);
+                contract.setPaperVerifiedAt(null);
+                contract.setPaperVerifiedBy(null);
+                contract.setSignedAt(null);
 
                 booking.setSigningMethod("IN_PERSON");
                 bookingRepository.save(booking);
@@ -2224,6 +2189,23 @@ public class HandoverServiceImpl implements HandoverService {
             }
 
             payment = paymentRepository.save(payment);
+
+            if (payment.getStatus() == PaymentStatus.PAID) {
+                if (request.getPaymentType() == PaymentType.DEPOSIT) {
+                    BigDecimal currentDeposit = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
+                    booking.setDepositPaid(currentDeposit.add(request.getAmount()));
+                    bookingRepository.save(booking);
+                }
+
+                BigDecimal totalDep = calculateTotalDepositPaid(booking, payment);
+                BigDecimal totalRent = calculateTotalFirstMonthRentPaid(booking, payment);
+                BigDecimal reqDep = getRequiredDeposit(booking, unit);
+                BigDecimal reqRent = getRequiredFirstMonthRent(booking, unit);
+                if (totalDep.compareTo(reqDep) >= 0 && totalRent.compareTo(reqRent) >= 0) {
+                    booking.setPaymentStatus("PAID");
+                    bookingRepository.save(booking);
+                }
+            }
 
             UUID facilityId = (unit != null && unit.getFacility() != null) ? unit.getFacility().getId() : null;
             String refOrVoucher = payment.getReferenceCode() != null ? payment.getReferenceCode() : payment.getReceiptVoucherCode();
