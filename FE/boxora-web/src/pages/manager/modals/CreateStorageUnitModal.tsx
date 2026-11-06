@@ -127,11 +127,22 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
       .then((types) => {
         const facTypes = effectiveFacilityId ? facilityUnitTypeService.getFacilityUnitTypes(effectiveFacilityId, types) : types
         const availableTypes = Array.isArray(facTypes)
-          ? facTypes.filter((ut) => ut.isActive !== false)
+          ? facTypes.filter(
+              (ut) =>
+                ut &&
+                ut.isActive !== false &&
+                (ut as any).isActive !== 0 &&
+                String(ut.isActive).toLowerCase() !== 'false'
+            )
           : []
         setUnitTypes(availableTypes)
         if (availableTypes.length > 0) {
-          setUnitTypeId(availableTypes[0].id)
+          setUnitTypeId((prev) => {
+            const exists = availableTypes.some((t) => t.id === prev)
+            return exists ? prev : availableTypes[0].id
+          })
+        } else {
+          setUnitTypeId('')
         }
       })
       .catch((error) => {
@@ -141,7 +152,7 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
         )
       })
       .finally(() => setIsLoadingTypes(false))
-  }, [isOpen, activeFloors, initialFloorId, initialFloorName])
+  }, [isOpen, activeFloors, initialFloorId, initialFloorName, effectiveFacilityId])
 
   // Sync selected zone code when floor changes
   useEffect(() => {
@@ -180,6 +191,14 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
 
     if (!unitTypeId) {
       setErrorMessage(t('Vui lòng chọn loại kho.', 'Select a storage type.'))
+      return
+    }
+
+    const chosenType = unitTypes.find((ut) => ut.id === unitTypeId)
+    if (!chosenType || chosenType.isActive === false || String(chosenType.isActive).toLowerCase() === 'false') {
+      setErrorMessage(
+        t('Loại kho đã chọn đang tạm ngưng hoặc không hợp lệ. Vui lòng chọn loại kho khác.', 'Selected storage type is inactive or invalid.')
+      )
       return
     }
 
@@ -319,24 +338,31 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 {t('Loại kho', 'Storage type')} <span className="text-rose-600">*</span>
               </label>
-              <select
-                required
-                value={unitTypeId}
-                onChange={(event) => setUnitTypeId(event.target.value)}
-                disabled={isLoadingTypes || unitTypes.length === 0}
-                className={fieldClassName}
-              >
-                <option value="">
-                  {isLoadingTypes
-                    ? t('Đang tải loại kho...', 'Loading storage types...')
-                    : t('Chọn loại kho', 'Select a storage type')}
-                </option>
-                {unitTypes.map((unitType) => (
-                  <option key={unitType.id} value={unitType.id}>
-                    {unitType.typeName} ({unitType.dimensions})
+              {unitTypes.length === 0 && !isLoadingTypes ? (
+                <div className="p-2.5 rounded-lg border border-amber-300 bg-amber-50 text-[11px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-amber-600 text-sm">warning</span>
+                  <span>{t('Không có loại kho nào đang hoạt động. Vui lòng kích hoạt loại kho trong bảng giá để tạo buồng kho.')}</span>
+                </div>
+              ) : (
+                <select
+                  required
+                  value={unitTypeId}
+                  onChange={(event) => setUnitTypeId(event.target.value)}
+                  disabled={isLoadingTypes || unitTypes.length === 0}
+                  className={fieldClassName}
+                >
+                  <option value="">
+                    {isLoadingTypes
+                      ? t('Đang tải loại kho...', 'Loading storage types...')
+                      : t('Chọn loại kho', 'Select a storage type')}
                   </option>
-                ))}
-              </select>
+                  {unitTypes.map((unitType) => (
+                    <option key={unitType.id} value={unitType.id}>
+                      {unitType.typeName} ({unitType.dimensions})
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {/* Simulation Image Preview for Selected Unit Type */}
               {selectedType && (

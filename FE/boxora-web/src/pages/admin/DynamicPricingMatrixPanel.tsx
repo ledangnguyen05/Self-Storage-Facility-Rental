@@ -430,25 +430,6 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
               </p>
             </div>
           </div>
-
-          {/* Facility Selector: Task 5.5 explicitly removes "Toàn cơ sở" / "all" */}
-          <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 shadow-2xs">
-              <span className="material-symbols-outlined text-slate-500 text-sm">store</span>
-              <span className="text-xs font-semibold text-slate-600">{t('Cơ sở:')}</span>
-              <select
-                value={selectedFacilityId}
-                onChange={(e) => setSelectedFacilityId(e.target.value)}
-                className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
-              >
-                {facilities.map((fac) => (
-                  <option key={fac.id} value={fac.id}>
-                    {fac.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
         </div>
 
         {/* Task 4: ONLY CARD 3 (Chiết khấu kỳ hạn) is kept. Cards 1, 2, 4 are removed. */}
@@ -1016,13 +997,12 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         </div>
       </div>
 
-      {/* Edit / Create Unit Type Modal strictly for the selected facility */}
+      {/* Edit / Create Unit Type Modal */}
       {isEditModalOpen && (
         <EditUnitTypeModal
           unitType={selectedUnitTypeToEdit}
           isOpen={isEditModalOpen}
           facilityId={selectedFacilityId}
-          facilityName={facilities.find((f) => f.id === selectedFacilityId)?.name}
           policy={currentPolicy}
           onClose={() => {
             setIsEditModalOpen(false)
@@ -1031,10 +1011,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
           onSuccess={(updated) => {
             showToast(
               updated && updated.isActive === false
-                ? `Đã tạm ngưng loại kho "${updated.typeName}" cho cơ sở này.`
+                ? `Đã tạm ngưng loại kho "${updated.typeName}".`
                 : selectedUnitTypeToEdit
-                ? `Đã lưu thông tin loại kho "${updated?.typeName || ''}" cho cơ sở này!`
-                : `Đã tạo mới loại kho "${updated?.typeName || ''}" cho cơ sở này!`
+                ? `Đã lưu thông tin loại kho "${updated?.typeName || ''}"!`
+                : `Đã tạo mới loại kho "${updated?.typeName || ''}"!`
             )
             void loadUnitTypes()
             if (selectedFacilityId) {

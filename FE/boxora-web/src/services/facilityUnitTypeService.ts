@@ -16,6 +16,7 @@ export interface FacilityUnitTypeOverride {
   lengthM?: number
   widthM?: number
   heightM?: number
+  imageUrl?: string
 }
 
 const STORAGE_PREFIX = 'boxora_facility_unittypes_'
@@ -118,6 +119,7 @@ export const facilityUnitTypeService = {
         basePricePerMonth: basePrice,
         acPricePerMonth: acPrice,
         isActive,
+        imageUrl: ov?.imageUrl !== undefined ? ov.imageUrl : gt.imageUrl,
       })
     }
 
@@ -138,6 +140,7 @@ export const facilityUnitTypeService = {
           depositAmount: Number(ov.basePricePerMonth || 0),
           acPricePerMonth: ov.acPricePerMonth != null && Number(ov.acPricePerMonth) > 0 ? Number(ov.acPricePerMonth) : undefined,
           isActive: ov.isActive ?? true,
+          imageUrl: ov.imageUrl,
         })
       }
     }
@@ -170,6 +173,7 @@ export const facilityUnitTypeService = {
       basePricePerMonth: unitType.basePricePerMonth,
       acPricePerMonth: unitType.acPricePerMonth != null && Number(unitType.acPricePerMonth) > 0 ? Number(unitType.acPricePerMonth) : null,
       isActive: unitType.isActive ?? true,
+      imageUrl: unitType.imageUrl !== undefined ? unitType.imageUrl : existing.imageUrl,
     }
 
     overrides[unitType.id] = updatedOverride
@@ -225,6 +229,7 @@ export const facilityUnitTypeService = {
       basePricePerMonth: Number(data.basePricePerMonth || 0),
       depositAmount: Number(data.basePricePerMonth || 0),
       acPricePerMonth: data.acPricePerMonth != null && Number(data.acPricePerMonth) > 0 ? Number(data.acPricePerMonth) : undefined,
+      imageUrl: data.imageUrl,
     }
 
     overrides[newId] = newOverride
@@ -243,6 +248,7 @@ export const facilityUnitTypeService = {
       depositAmount: Number(data.basePricePerMonth || 0),
       acPricePerMonth: data.acPricePerMonth != null && Number(data.acPricePerMonth) > 0 ? Number(data.acPricePerMonth) : undefined,
       isActive: data.isActive ?? true,
+      imageUrl: data.imageUrl,
     }
 
     return createdUnitType

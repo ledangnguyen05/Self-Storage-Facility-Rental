@@ -43,8 +43,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
 
   const [isSaving, setIsSaving] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [showStatusConfirm, setShowStatusConfirm] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (unitType) {
@@ -63,7 +61,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setShowRemoveImageConfirm(false)
       setPriceChangeReason('')
       setErrorMsg(null)
-      setShowStatusConfirm(false)
     } else {
       setTypeName('')
       setLengthM('')
@@ -80,7 +77,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setShowRemoveImageConfirm(false)
       setPriceChangeReason('')
       setErrorMsg(null)
-      setShowStatusConfirm(false)
     }
   }, [unitType, isOpen])
 
@@ -98,53 +94,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
         const calcVol = Math.round(calcArea * h * 100) / 100
         setVolumeM3(calcVol)
       }
-    }
-  }
-
-  const handleToggleStatus = (newStatus: boolean) => {
-    setPendingStatus(newStatus)
-    setShowStatusConfirm(true)
-  }
-
-  const confirmStatusChange = async () => {
-    if (pendingStatus === null) return
-    const newStatus = pendingStatus
-    setIsActive(newStatus)
-    setShowStatusConfirm(false)
-
-    if (unitType) {
-      setIsSaving(true)
-      try {
-        if (facilityId) {
-          facilityUnitTypeService.toggleFacilityUnitTypeStatus(facilityId, unitType.id, newStatus)
-          onSuccess({ ...unitType, isActive: newStatus })
-        } else {
-          const payload = {
-            typeName: typeName.trim() || unitType.typeName,
-            lengthM: lengthM !== '' ? Number(lengthM) : undefined,
-            widthM: widthM !== '' ? Number(widthM) : undefined,
-            heightM: heightM !== '' ? Number(heightM) : undefined,
-            volumeM3: volumeM3 !== '' ? Number(volumeM3) : undefined,
-            areaSqm: areaSqm !== '' ? Number(areaSqm) : undefined,
-            basePricePerMonth: basePrice !== '' ? Number(basePrice) : unitType.basePricePerMonth,
-            acPricePerMonth: acPrice !== '' && Number(acPrice) > 0 ? Number(acPrice) : 0,
-            isActive: newStatus,
-            priceChangeReason: newStatus
-              ? 'Kích hoạt lại loại kho'
-              : (priceChangeReason.trim() || 'Tạm ngưng hoạt động loại kho'),
-          }
-          const res = await storageUnitService.updateUnitType(unitType.id, payload)
-          onSuccess(res || { ...unitType, ...payload, isActive: newStatus })
-        }
-        onClose()
-      } catch (err: any) {
-        setErrorMsg(err.response?.data?.message || err.message || 'Không thể cập nhật trạng thái loại kho')
-      } finally {
-        setIsSaving(false)
-        setPendingStatus(null)
-      }
-    } else {
-      setPendingStatus(null)
     }
   }
 
@@ -213,6 +162,8 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       const numAcPrice = acPrice !== '' && Number(acPrice) > 0 ? Number(acPrice) : undefined
 
       if (unitType) {
+        const isBackendUnitType = !unitType.id.startsWith('fut_')
+        const trimmedImg = imageUrl.trim()
         const payload: UnitType = {
           ...unitType,
           typeName: typeName.trim(),
@@ -224,20 +175,55 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
           basePricePerMonth: Number(basePrice),
           acPricePerMonth: numAcPrice,
           isActive,
-          imageUrl: imageUrl.trim() || undefined,
+          imageUrl: trimmedImg || undefined,
           priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
         }
 
+        let updatedType: UnitType = payload
+
+        // Luôn đồng bộ và lưu thông tin cập nhật vào Database backend đối với loại kho hệ thống
+        if (isBackendUnitType) {
+          const dims = (lengthM && widthM && heightM)
+            ? `${lengthM}m x ${widthM}m x ${heightM}m`
+            : (calcArea ? `${calcArea}m²` : undefined)
+          const bePayload = {
+            typeName: typeName.trim() || unitType.typeName,
+            dimensions: dims,
+            lengthM: lengthM !== '' ? Number(lengthM) : undefined,
+            widthM: widthM !== '' ? Number(widthM) : undefined,
+            heightM: heightM !== '' ? Number(heightM) : undefined,
+            volumeM3: volumeM3 !== '' ? Number(volumeM3) : undefined,
+            areaSqm: calcArea,
+            basePricePerMonth: Number(basePrice),
+            acPricePerMonth: numAcPrice ?? 0,
+            depositAmount: Number(basePrice),
+            isActive,
+            imageUrl: trimmedImg, // chuỗi rỗng để xóa ảnh, hoặc link ảnh đã upload
+            priceChangeReason: priceChangeReason.trim() || (
+              isActive !== unitType.isActive
+                ? (isActive ? 'Kích hoạt lại loại kho' : 'Tạm ngưng hoạt động loại kho')
+                : 'Cập nhật cấu hình loại kho'
+            ),
+          }
+          const beRes = await storageUnitService.updateUnitType(unitType.id, bePayload)
+          if (beRes) {
+            updatedType = { ...updatedType, ...beRes, imageUrl: beRes.imageUrl || trimmedImg || undefined }
+          }
+        }
+
         if (facilityId) {
-          const res = await facilityUnitTypeService.saveFacilityUnitType(facilityId, payload, policy)
+          const res = await facilityUnitTypeService.saveFacilityUnitType(
+            facilityId,
+            {
+              ...updatedType,
+              ...payload,
+              imageUrl: trimmedImg || undefined,
+            },
+            policy
+          )
           onSuccess(res)
         } else {
-          const res = await storageUnitService.updateUnitType(unitType.id, {
-            ...payload,
-            acPricePerMonth: numAcPrice ?? 0,
-            priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
-          })
-          onSuccess(res || { ...unitType, ...payload, imageUrl: imageUrl.trim() || undefined })
+          onSuccess(updatedType)
         }
       } else {
         const dims = (lengthM && widthM && heightM)
@@ -259,6 +245,20 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
         }
 
         if (facilityId) {
+          try {
+            const createdBackend = await storageUnitService.createUnitType({
+              ...createPayload,
+              acPricePerMonth: numAcPrice ?? 0,
+            })
+            if (createdBackend?.id) {
+              const res = await facilityUnitTypeService.saveFacilityUnitType(facilityId, createdBackend, policy)
+              onSuccess(res)
+              onClose()
+              return
+            }
+          } catch (e) {
+            console.warn('Backend unit type create fallback:', e)
+          }
           const res = await facilityUnitTypeService.createFacilityUnitType(facilityId, createPayload, policy)
           onSuccess(res)
         } else {
@@ -339,12 +339,13 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => handleToggleStatus(!isActive)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  onClick={() => setIsActive((prev) => !prev)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                     isActive
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300'
-                      : 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950/50 dark:text-rose-300'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 hover:bg-emerald-200'
+                      : 'bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-950/50 dark:text-rose-300 hover:bg-rose-200'
                   }`}
+                  title={t('Nhấn để chuyển đổi trạng thái (chỉ áp dụng sau khi nhấn Lưu thay đổi)')}
                 >
                   <span className="material-symbols-outlined text-sm">
                     {isActive ? 'check_circle' : 'block'}
@@ -660,43 +661,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
             </button>
           </div>
         </form>
-
-        {/* Confirmation Modal for Active/Inactive toggle */}
-        {showStatusConfirm && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-2xs">
-            <div className="bg-white dark:bg-slate-900 rounded-xl p-5 shadow-2xl border border-slate-200 dark:border-slate-800 max-w-sm w-full space-y-3 animate-scale-in">
-              <div className="flex items-center gap-2.5 text-amber-600">
-                <span className="material-symbols-outlined text-2xl">warning</span>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                  {pendingStatus ? t('Kích hoạt loại kho') : t('Tạm ngưng loại kho')}
-                </h4>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                {pendingStatus
-                  ? t('Bạn có chắc muốn kích hoạt lại loại kho này? Khách hàng sẽ có thể đặt chỗ loại kho này ngay lập tức.')
-                  : t('Bạn có chắc muốn tạm ngưng loại kho này? Khách hàng sẽ bị chặn không thể đặt chỗ mới với loại kho này (các hợp đồng cũ vẫn duy trì bình thường).')}
-              </p>
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowStatusConfirm(false)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                >
-                  {t('Hủy bỏ')}
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmStatusChange}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold text-white shadow-xs ${
-                    pendingStatus ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
-                  }`}
-                >
-                  {t('Xác nhận')}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )
