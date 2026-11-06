@@ -313,7 +313,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
 
   const [previewImageModal, setPreviewImageModal] = useState<string | null>(null)
   const [showScheduleConfirmModal, setShowScheduleConfirmModal] = useState(false)
-  const [scheduleDatetimeInput, setScheduleDatetimeInput] = useState('')
+  const [scheduleDate, setScheduleDate] = useState('')
+  const [scheduleTime, setScheduleTime] = useState('')
+  const [scheduleDatetimeError, setScheduleDatetimeError] = useState('')
+  const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false)
   const [showRefundModal, setShowRefundModal] = useState(false)
   const [refundMethodSelect, setRefundMethodSelect] = useState<'BANK_TRANSFER' | 'VNPAY_REFUND' | 'CASH'>('BANK_TRANSFER')
   const [refundTxnInput, setRefundTxnInput] = useState('')
@@ -1626,16 +1629,23 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       return
     }
     if (!currentCase) return
-    const now = new Date()
-    const defaultTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')} ${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()}`
-    setScheduleDatetimeInput(currentCase.inspectionDate || defaultTime)
+    // Bắt buộc người dùng tự chọn ngày và giờ hẹn, không gợi ý hoặc điền sẵn giá trị
+    setScheduleDate('')
+    setScheduleTime('')
+    setScheduleDatetimeError('')
     setShowScheduleConfirmModal(true)
   }
 
   const confirmScheduleInspection = async (scheduledTime?: string) => {
     if (!currentCase) return
-    const inspectTime = scheduledTime || new Date().toLocaleString('vi-VN')
+    if (!scheduledTime || !scheduledTime.trim()) {
+      setScheduleDatetimeError('Vui lòng chọn đầy đủ ngày và giờ hẹn nghiệm thu hiện trường.')
+      toast.error('Vui lòng chọn ngày và giờ hẹn nghiệm thu hiện trường!')
+      return
+    }
+    const inspectTime = scheduledTime.trim()
 
+    setIsSubmittingSchedule(true)
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
         await handoverService.scheduleInspection(
@@ -1656,6 +1666,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       await fetchReturnCases()
     } catch (err: any) {
       toast.error(`Lỗi lên lịch: ${err.response?.data?.message || err.message}`)
+    } finally {
+      setIsSubmittingSchedule(false)
     }
   }
 
@@ -4704,15 +4716,78 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <span className="text-slate-500">Tiền cọc giữ chỗ:</span>
                 <strong className="font-mono text-amber-700 font-bold">{currentCase.depositAmount.toLocaleString('vi-VN')}đ</strong>
               </div>
-              <div className="pt-2 border-t border-slate-200 flex flex-col gap-1.5">
-                <label className="text-slate-700 font-bold">Thời gian hẹn nghiệm thu hiện trường:</label>
-                <input
-                  type="text"
-                  value={scheduleDatetimeInput}
-                  onChange={(e) => setScheduleDatetimeInput(e.target.value)}
-                  placeholder="Ví dụ: 10:00 28/10/2026"
-                  className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-amber-400"
-                />
+              <div className="pt-2 border-t border-slate-200 flex flex-col gap-2">
+                <label className="text-slate-700 font-bold flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-1">
+                    <span>Thời gian hẹn nghiệm thu hiện trường:</span>
+                    <span className="text-rose-500 font-bold">*</span>
+                  </span>
+                  <span className="text-[11px] font-normal text-rose-500 italic">
+                    (Bắt buộc chọn, không gợi ý sẵn)
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Ngày hẹn <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      min={new Date().toISOString().split('T')[0]}
+                      value={scheduleDate}
+                      onChange={(e) => {
+                        setScheduleDate(e.target.value)
+                        setScheduleDatetimeError('')
+                      }}
+                      className={`w-full p-2.5 bg-white border rounded-xl text-xs font-semibold text-slate-800 focus:outline-none transition cursor-pointer ${
+                        scheduleDatetimeError && !scheduleDate
+                          ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20'
+                          : 'border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                      Giờ hẹn <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="time"
+                      required
+                      value={scheduleTime}
+                      onChange={(e) => {
+                        setScheduleTime(e.target.value)
+                        setScheduleDatetimeError('')
+                      }}
+                      className={`w-full p-2.5 bg-white border rounded-xl text-xs font-semibold text-slate-800 focus:outline-none transition cursor-pointer ${
+                        scheduleDatetimeError && !scheduleTime
+                          ? 'border-rose-400 ring-2 ring-rose-100 bg-rose-50/20'
+                          : 'border-slate-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-100'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                {scheduleDatetimeError ? (
+                  <p className="text-[11px] text-rose-600 font-semibold flex items-center gap-1 mt-0.5">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    <span>{scheduleDatetimeError}</span>
+                  </p>
+                ) : (
+                  scheduleDate && scheduleTime && (
+                    <div className="text-[11px] text-amber-800 font-medium bg-amber-50/80 px-2.5 py-1.5 rounded-lg border border-amber-200 flex items-center gap-1.5">
+                      <CalendarCheck size={14} className="text-amber-600 shrink-0" />
+                      <span>
+                        Thời gian đã chọn: <strong>{scheduleTime} ngày {(() => {
+                          const [y, m, d] = scheduleDate.split('-')
+                          return `${d}/${m}/${y}`
+                        })()}</strong>
+                      </span>
+                    </div>
+                  )
+                )}
               </div>
             </div>
 
@@ -4726,18 +4801,38 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
+                disabled={isSubmittingSchedule}
                 onClick={() => setShowScheduleConfirmModal(false)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-bold text-xs cursor-pointer transition"
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-bold text-xs cursor-pointer transition disabled:opacity-50"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
-                onClick={() => confirmScheduleInspection(scheduleDatetimeInput)}
-                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                disabled={!scheduleDate || !scheduleTime || isSubmittingSchedule}
+                onClick={() => {
+                  if (!scheduleDate || !scheduleTime) {
+                    setScheduleDatetimeError('Vui lòng chọn đầy đủ ngày và giờ hẹn nghiệm thu hiện trường.')
+                    toast.error('Vui lòng chọn ngày và giờ hẹn nghiệm thu hiện trường!')
+                    return
+                  }
+                  const [y, m, d] = scheduleDate.split('-')
+                  const formattedVn = `${scheduleTime} ${d}/${m}/${y}`
+                  void confirmScheduleInspection(formattedVn)
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition"
               >
-                <CheckCircle2 size={15} />
-                <span>Xác Nhận &amp; Bắt Đầu Nghiệm Thu</span>
+                {isSubmittingSchedule ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={15} />
+                    <span>Xác Nhận &amp; Bắt Đầu Nghiệm Thu</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
