@@ -2867,7 +2867,8 @@ public class HandoverServiceImpl implements HandoverService {
         }
 
         String caseStatus = "RETURN_REQUESTED";
-        if (booking.getStatus() == BookingStatus.COMPLETED && (inspectionRecord == null || !"PENDING".equalsIgnoreCase(inspectionRecord.getRefundStatus()))) {
+        boolean isPhysicallyReturned = inspectionRecord != null && Boolean.TRUE.equals(inspectionRecord.getPhysicalHandoverConfirmed());
+        if (booking.getStatus() == BookingStatus.COMPLETED || isPhysicallyReturned) {
             caseStatus = "COMPLETED";
         } else if ("DISPUTED".equalsIgnoreCase(approvalStatus) || (inspectionRecord != null && "DISPUTED".equalsIgnoreCase(inspectionRecord.getCustomerDecision()))) {
             caseStatus = "DISPUTED";
@@ -3887,25 +3888,54 @@ public class HandoverServiceImpl implements HandoverService {
         record.setAccessRevokedAt(LocalDateTime.now());
         record = handoverRecordRepository.save(record);
 
-        // Chuyển trạng thái ngăn kho theo tình trạng kiểm tra (9.3)
+        // Luôn giải phóng ngăn kho về trạng thái AVAILABLE khi nhận lại kho vật lý (giải phóng buồng kho)
         if (unit != null) {
-            BigDecimal deductions = record.getDeductionAmount() != null ? record.getDeductionAmount() : BigDecimal.ZERO;
-            boolean hasDamageOrCleanIssue = deductions.compareTo(BigDecimal.ZERO) > 0
-                    || Boolean.FALSE.equals(record.getDoorConditionPassed())
-                    || Boolean.FALSE.equals(record.getCleanlinessPassed())
-                    || Boolean.FALSE.equals(record.getWallStructurePassed())
-                    || (Boolean.FALSE.equals(record.getSmartLockPassed()) && "CUSTOMER_FAULT".equalsIgnoreCase(record.getSmartLockIssueType()));
-
-            if (hasDamageOrCleanIssue) {
-                unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
-            } else {
-                unit.setStatus(UnitStatus.AVAILABLE);
-            }
+            unit.setStatus(UnitStatus.AVAILABLE);
+            unit.setMaintenanceReason(null);
+            unit.setMaintenanceBy(null);
+            unit.setMaintenanceAt(null);
             storageUnitRepository.save(unit);
         }
 
-        String logMsg = String.format("[%s] Nhân viên %s xác nhận nhận lại kho vật lý. Trạng thái ô kho chuyển sang: %s\n",
-                LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName(), unit != null ? unit.getStatus() : "N/A");
+        // Hoàn tất hồ sơ trả kho và thanh lý hợp đồng ngay khi nhận lại kho vật lý
+        booking.setStatus(BookingStatus.COMPLETED);
+        booking.setReturnTime(LocalDateTime.now());
+
+        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
+        contractOpt.ifPresent(c -> {
+            c.setStatus(RentalContractStatus.TERMINATED);
+            rentalContractRepository.save(c);
+        });
+
+        record.setApprovalStatus("COMPLETED");
+        record.setReviewStatus("COMPLETED");
+        record = handoverRecordRepository.save(record);
+
+        // Đóng toàn bộ phiếu hỗ trợ liên quan sau khi hoàn tất trả kho
+        if (supportTicketRepository != null) {
+            List<SupportTicket> linkedTickets = new ArrayList<>(supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(booking.getId()));
+            if (unit != null) {
+                List<SupportTicket> unitTickets = supportTicketRepository.findByStorageUnit_IdOrderByCreatedAtDesc(unit.getId());
+                for (SupportTicket ut : unitTickets) {
+                    if (linkedTickets.stream().noneMatch(lt -> lt.getId().equals(ut.getId()))) {
+                        linkedTickets.add(ut);
+                    }
+                }
+            }
+            for (SupportTicket t : linkedTickets) {
+                if (t.getStatus() != TicketStatus.CLOSED) {
+                    t.setStatus(TicketStatus.CLOSED);
+                    t.setClosedAt(LocalDateTime.now());
+                    if (t.getResolvedAt() == null) {
+                        t.setResolvedAt(LocalDateTime.now());
+                    }
+                    supportTicketRepository.save(t);
+                }
+            }
+        }
+
+        String logMsg = String.format("[%s] Nhân viên %s xác nhận nhận lại kho vật lý. Đã hoàn tất hồ sơ trả kho, thanh lý hợp đồng và giải phóng ô kho về trạng thái AVAILABLE.\n",
+                LocalDateTime.now().format(CHECKIN_DT_FMT), staff.getFullName());
         booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "") + logMsg);
         bookingRepository.save(booking);
 
@@ -3914,10 +3944,26 @@ public class HandoverServiceImpl implements HandoverService {
                 ActivityAction.STORAGE_UNIT_RELEASE,
                 "StorageUnit",
                 unit != null ? unit.getId() : null,
-                String.format("Xác nhận nhận lại kho vật lý %s, trạng thái: %s", unit != null ? unit.getUnitCode() : "N/A", unit != null ? unit.getStatus() : "N/A"),
+                String.format("Xác nhận nhận lại kho vật lý %s, hoàn tất trả kho và giải phóng về AVAILABLE", unit != null ? unit.getUnitCode() : "N/A"),
                 UnitStatus.OCCUPIED,
-                unit != null ? unit.getStatus() : UnitStatus.AVAILABLE
+                UnitStatus.AVAILABLE
         );
+
+        // Gửi email thông báo hoàn tất trả kho cho khách
+        if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+            try {
+                String subject = "[Boxora] Thông báo hoàn tất trả kho & thanh lý hợp đồng thuê kho " + (unit != null ? unit.getUnitCode() : "");
+                String body = String.format(
+                        "Kính gửi Quý khách %s,\n\nHệ thống Boxora xin trân trọng thông báo: Hồ sơ trả kho cho đơn đặt kho %s (ô kho %s) đã được hoàn tất thành công.\n"
+                        + "Hợp đồng thuê kho đã được thanh lý và buồng kho đã được giải phóng.\n"
+                        + "Cảm ơn Quý khách đã tin tưởng và sử dụng dịch vụ của Boxora!",
+                        booking.getCustomer().getFullName(), booking.getBookingCode(), unit != null ? unit.getUnitCode() : "N/A"
+                );
+                emailService.sendSimpleEmail(booking.getCustomer().getEmail(), subject, body);
+            } catch (Exception ex) {
+                log.warn("Could not send completion email to {}: {}", booking.getCustomer().getEmail(), ex.getMessage());
+            }
+        }
 
         return mapToResponse(record);
     }
@@ -3979,7 +4025,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         if (booking.getStatus() == BookingStatus.COMPLETED) {
-            throw new AppException(ErrorCode.RETURN_ALREADY_COMPLETED);
+            return calculateSettlement(bookingId, null);
         }
 
         StorageUnit unit = booking.getStorageUnit();
@@ -4049,17 +4095,10 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setQrAccessToken(null);
 
         if (unit != null) {
-            boolean hasDamageOrCleanIssue = deductions.compareTo(BigDecimal.ZERO) > 0
-                    || Boolean.FALSE.equals(record.getDoorConditionPassed())
-                    || Boolean.FALSE.equals(record.getCleanlinessPassed())
-                    || Boolean.FALSE.equals(record.getWallStructurePassed())
-                    || (Boolean.FALSE.equals(record.getSmartLockPassed()) && "CUSTOMER_FAULT".equalsIgnoreCase(record.getSmartLockIssueType()));
-
-            if (hasDamageOrCleanIssue) {
-                unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
-            } else {
-                unit.setStatus(UnitStatus.AVAILABLE);
-            }
+            unit.setStatus(UnitStatus.AVAILABLE);
+            unit.setMaintenanceReason(null);
+            unit.setMaintenanceBy(null);
+            unit.setMaintenanceAt(null);
             storageUnitRepository.save(unit);
         }
 

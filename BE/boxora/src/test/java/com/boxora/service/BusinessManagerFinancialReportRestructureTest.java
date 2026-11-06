@@ -751,7 +751,7 @@ class BusinessManagerFinancialReportRestructureTest {
                 new BigDecimal("24301250"),
                 3L
         };
-        when(paymentRepository.sumRevenueByMonth(fromDt, toDt, null)).thenReturn(List.of(monthRow));
+        when(paymentRepository.sumRevenueByMonth(fromDt, toDt, null)).thenReturn(Collections.singletonList(monthRow));
         when(paymentRepository.countPaidPaymentsByMethod(fromDt, toDt, null)).thenReturn(Collections.emptyList());
         when(rentalContractRepository.findAll()).thenReturn(Collections.emptyList());
         when(bookingRepository.findAll()).thenReturn(Collections.emptyList());

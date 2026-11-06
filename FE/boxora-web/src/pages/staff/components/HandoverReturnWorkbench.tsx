@@ -705,10 +705,10 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           return false
         if (
           statusTabFilter === 'REFUNDING' &&
-          !isSettlementStage
+          (!isSettlementStage || st === 'COMPLETED' || Boolean(c.unitReturnedPhysically))
         )
           return false
-        if (statusTabFilter === 'COMPLETED' && st !== 'COMPLETED') return false
+        if (statusTabFilter === 'COMPLETED' && st !== 'COMPLETED' && !c.unitReturnedPhysically) return false
       }
       if (searchFilter.trim()) {
         const q = searchFilter.trim().toLowerCase()
@@ -1588,7 +1588,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         c.refundStatus === 'PENDING_PAYOUT' ||
         Boolean(c.settlementConfirmed)
 
-      if (st === 'COMPLETED' || st === 'RESOLVED') {
+      if (st === 'COMPLETED' || st === 'RESOLVED' || Boolean(c.unitReturnedPhysically)) {
         completed++
       } else if (isSettlementStage) {
         refunding++
@@ -2055,8 +2055,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           notes: `Nhân viên ${userName} đã kiểm tra hiện trường và nhận lại buồng kho vật lý #${currentCase.unitCode}.`
         })
       }
-      toast.success(`Đã xác nhận nhận lại kho #${currentCase.unitCode} từ khách hàng!`)
+      toast.success(
+        `Đã nhận lại kho #${currentCase.unitCode}, vô hiệu PIN và hoàn tất giải phóng kho!`,
+        { title: 'Bàn giao thành công' }
+      )
+      if (onReturnCompleted) onReturnCompleted()
       await fetchReturnCases()
+      setStatusTabFilter('COMPLETED')
     } catch (err: any) {
       toast.error(`Lỗi nhận lại kho: ${err.response?.data?.message || err.message}`)
     } finally {
@@ -2115,6 +2120,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       )
       if (onReturnCompleted) onReturnCompleted()
       await fetchReturnCases()
+      setStatusTabFilter('COMPLETED')
     } catch (err: any) {
       toast.error(`Lỗi hoàn tất hồ sơ: ${err.response?.data?.message || err.message}`)
     } finally {

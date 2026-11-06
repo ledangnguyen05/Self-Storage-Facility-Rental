@@ -1199,14 +1199,30 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   // the customer always sees their handed-over locker in "Kho của tôi & Mã PIN" even before contract list refetches.
   // Terminated or completed bookings/contracts must NEVER be re-synthesized as active units.
   const effectiveActiveContracts = useMemo(() => {
-    const list = [...activeContracts]
+    const completedBookingIds = new Set(
+      customerBookings.filter(b => b.status === 'COMPLETED' || b.status === 'CANCELLED').map(b => b.id)
+    )
+    const completedUnitCodes = new Set(
+      customerBookings
+        .filter(b => (b.status === 'COMPLETED' || b.status === 'CANCELLED') && b.unitCode)
+        .map(b => b.unitCode!.toUpperCase().replace(/[^A-Z0-9]/g, ''))
+    )
+
+    const list = activeContracts.filter(c => {
+      if ((c.status as string) === 'TERMINATED' || (c.status as string) === 'COMPLETED') return false
+      if (c.bookingId && completedBookingIds.has(c.bookingId)) return false
+      const cleanU = (c.unitCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+      if (cleanU && completedUnitCodes.has(cleanU)) return false
+      return true
+    })
+
     const allKnownUnitCodes = new Set(contracts.map(c => (c.unitCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '')))
     const allKnownBookingIds = new Set(contracts.map(c => c.bookingId).filter(Boolean))
 
     customerBookings.forEach(b => {
       if (b.status === 'ACTIVE' && b.unitCode) {
         const cleanU = b.unitCode.toUpperCase().replace(/[^A-Z0-9]/g, '')
-        if (!allKnownUnitCodes.has(cleanU) && !allKnownBookingIds.has(b.id)) {
+        if (!allKnownUnitCodes.has(cleanU) && !allKnownBookingIds.has(b.id) && !completedUnitCodes.has(cleanU) && !completedBookingIds.has(b.id)) {
           list.push({
             id: `contract-${b.id}`,
             contractCode: (b as any).contractCode || `CTR-${b.bookingCode}`,
@@ -3436,11 +3452,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     const cleanCode = (targetContract.unitCode || '').toUpperCase().trim()
     const bId = targetContract.bookingId
 
+    // 0. Quét từ customerBookings
+    const mb = customerBookings.find(b => (bId && b.id === bId) || (cleanCode && b.unitCode && b.unitCode.toUpperCase().trim() === cleanCode))
+    if (mb && (mb.status === 'COMPLETED' || mb.status === 'CANCELLED')) {
+      return true
+    }
+
     // 1. Quét từ activeReturnOrders
     const foundInOrders = activeReturnOrders.find(ro => {
       const matchUnit = cleanCode && ro.unitCode && ro.unitCode.toUpperCase().trim() === cleanCode
       const matchBooking = bId && ro.bookingId && ro.bookingId === bId
-      return (matchUnit || matchBooking) && ro.status === 'COMPLETED'
+      return (matchUnit || matchBooking) && (ro.status === 'COMPLETED' || Boolean((ro as any).unitReturnedPhysically))
     })
     if (foundInOrders) return true
 
@@ -4251,7 +4273,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {effectiveActiveContracts.map((c) => {
+              {effectiveActiveContracts.filter(c => !isContractReturnCompleted(c)).map((c) => {
                 const targetId = c.bookingId || c.id
                 const pin = loadedPins[c.unitCode] || (c.id.replace(/\D/g, '').slice(0, 6) || '849204').padEnd(6, '9')
                 const isRevealed = revealedPins[c.unitCode]
