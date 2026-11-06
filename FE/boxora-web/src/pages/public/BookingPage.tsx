@@ -99,10 +99,10 @@ export const getFacilityImage = (fac?: Facility | null, index = 0): string => {
   if (code.includes('TB') || code.includes('TANBINH')) return facilityTanBinhImg
 
   const name = (fac.name || '').toLowerCase()
-  if (name.includes('district 1') || name.includes('quáº­n 1') || name.includes('d1')) return facilityD1Img
-  if (name.includes('district 7') || name.includes('quáº­n 7') || name.includes('d7')) return facilityD7Img
-  if (name.includes('thá»§ Ä‘á»©c') || name.includes('thu duc')) return facilityThuDucImg
-  if (name.includes('tÃ¢n bÃ¬nh') || name.includes('tan binh')) return facilityTanBinhImg
+  if (name.includes('district 1') || name.includes('quận 1') || name.includes('d1')) return facilityD1Img
+  if (name.includes('district 7') || name.includes('quận 7') || name.includes('d7')) return facilityD7Img
+  if (name.includes('thủ đức') || name.includes('thu duc')) return facilityThuDucImg
+  if (name.includes('tân bình') || name.includes('tan binh')) return facilityTanBinhImg
 
   const defaultList = [facilityD1Img, facilityD7Img, facilityThuDucImg, facilityTanBinhImg]
   return defaultList[index % defaultList.length]
@@ -128,206 +128,206 @@ export interface StorageSizeUnitDef {
 export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   {
     id: '1m3',
-    volumeText: '1.2 mÂ³',
+    volumeText: '1.2 m³',
     volumeNumber: 1.2,
     capacityText: '6 boxes',
     image: size1m3Img,
-    dimensions: '1.0m Ã— 1.0m Ã— 1.2m',
+    dimensions: '1.0m × 1.0m × 1.2m',
     areaM2: 1.0,
-    fitsDetailed: ['4â€“6 Vali lá»›n', '6 ThÃ¹ng carton tiÃªu chuáº©n (0.5Ã—0.4m)', 'Dá»¥ng cá»¥ thá»ƒ thao, laptop, balo', 'Giáº¥y tá» tÃ i liá»‡u vÄƒn phÃ²ng'],
+    fitsDetailed: ['4–6 Vali lớn', '6 Thùng carton tiêu chuẩn (0.5×0.4m)', 'Dụng cụ thể thao, laptop, balo', 'Giấy tờ tài liệu văn phòng'],
     nonAcRate: 350000,
     acRate: 420000,
   },
   {
     id: '2m3',
-    volumeText: '2 mÂ³',
+    volumeText: '2 m³',
     volumeNumber: 2,
     capacityText: '12 boxes',
     image: size2m3Img,
-    dimensions: '1.0m Ã— 1.0m Ã— Cao 2.0m',
+    dimensions: '1.0m × 1.0m × Cao 2.0m',
     areaM2: 1.0,
-    fitsDetailed: ['12 ThÃ¹ng carton tiÃªu chuáº©n', 'Ká»‡ Ä‘á»ƒ Ä‘á»“ mini, gháº¿ lÆ°á»i', '3â€“4 Vali cá»¡ lá»›n', 'Äá»“ gia dá»¥ng cÃ¡ nhÃ¢n, tÃ i liá»‡u'],
+    fitsDetailed: ['12 Thùng carton tiêu chuẩn', 'Kệ để đồ mini, ghế lười', '3–4 Vali cỡ lớn', 'Đồ gia dụng cá nhân, tài liệu'],
     nonAcRate: 550000,
     acRate: 660000,
   },
   {
     id: '3m3',
-    volumeText: '3 mÂ³',
+    volumeText: '3 m³',
     volumeNumber: 3,
     capacityText: '18 boxes',
     image: size3m3Img,
-    dimensions: '1.2m Ã— 1.0m Ã— Cao 2.5m',
+    dimensions: '1.2m × 1.0m × Cao 2.5m',
     areaM2: 1.2,
-    fitsDetailed: ['18 ThÃ¹ng carton tiÃªu chuáº©n', 'Tá»§ quáº§n Ã¡o mini thÃ¡o láº¯p', 'BÃ n lÃ m viá»‡c, gháº¿ vÄƒn phÃ²ng', 'Ná»‡m Ä‘Æ¡n vÃ  há»™p Ä‘á»“ chuyá»ƒn trá»'],
+    fitsDetailed: ['18 Thùng carton tiêu chuẩn', 'Tủ quần áo mini tháo lắp', 'Bàn làm việc, ghế văn phòng', 'Nệm đơn và hộp đồ chuyển trọ'],
     nonAcRate: 750000,
     acRate: 900000,
   },
   {
     id: '4m3',
-    volumeText: '4 mÂ³',
+    volumeText: '4 m³',
     volumeNumber: 4,
     capacityText: '24 boxes',
     image: size4m3Img,
-    dimensions: '1.6m Ã— 1.0m Ã— Cao 2.5m',
+    dimensions: '1.6m × 1.0m × Cao 2.5m',
     areaM2: 1.6,
-    fitsDetailed: ['24 ThÃ¹ng carton tÃ i sáº£n', 'Xe mÃ¡y tay ga, xe Ä‘áº¡p thá»ƒ thao', 'GiÆ°á»ng Ä‘Æ¡n, tá»§ Ä‘áº§u giÆ°á»ng', 'Thiáº¿t bá»‹ Ä‘iá»‡n tá»­, loa Ä‘Ã i'],
+    fitsDetailed: ['24 Thùng carton tài sản', 'Xe máy tay ga, xe đạp thể thao', 'Giường đơn, tủ đầu giường', 'Thiết bị điện tử, loa đài'],
     nonAcRate: 990000,
     acRate: 1180000,
   },
   {
     id: '5m3',
-    volumeText: '5 mÂ³',
+    volumeText: '5 m³',
     volumeNumber: 5,
     capacityText: '30 boxes',
     image: size5m3Img,
-    dimensions: '1.9m Ã— 1.0m Ã— Cao 2.6m',
+    dimensions: '1.9m × 1.0m × Cao 2.6m',
     areaM2: 1.9,
-    fitsDetailed: ['30 ThÃ¹ng carton cá»¡ vá»«a', 'Tá»§ láº¡nh mini, lÃ² vi sÃ³ng', 'Sofa bÄƒng 2 chá»—', 'ToÃ n bá»™ Ä‘á»“ Ä‘áº¡c phÃ²ng ngá»§ Ä‘Æ¡n'],
+    fitsDetailed: ['30 Thùng carton cỡ vừa', 'Tủ lạnh mini, lò vi sóng', 'Sofa băng 2 chỗ', 'Toàn bộ đồ đạc phòng ngủ đơn'],
     nonAcRate: 1250000,
     acRate: 1500000,
   },
   {
     id: '6m3',
-    volumeText: '6 mÂ³',
+    volumeText: '6 m³',
     volumeNumber: 6,
     capacityText: '36 boxes',
     image: size6m3Img,
-    dimensions: '2.3m Ã— 1.0m Ã— Cao 2.6m',
+    dimensions: '2.3m × 1.0m × Cao 2.6m',
     areaM2: 2.3,
-    fitsDetailed: ['36 ThÃ¹ng carton hÃ ng hÃ³a', 'Sofa vÄƒng, bÃ n trÃ , TV 65-inch', 'Tá»§ quáº§n Ã¡o 2 cÃ¡nh gá»—', 'MÃ¡y giáº·t, mÃ¡y sáº¥y quáº§n Ã¡o'],
+    fitsDetailed: ['36 Thùng carton hàng hóa', 'Sofa văng, bàn trà, TV 65-inch', 'Tủ quần áo 2 cánh gỗ', 'Máy giặt, máy sấy quần áo'],
     nonAcRate: 1500000,
     acRate: 1800000,
   },
   {
     id: '7m3',
-    volumeText: '7 mÂ³',
+    volumeText: '7 m³',
     volumeNumber: 7,
     capacityText: '42 boxes',
     image: size6m3Img,
-    dimensions: '2.5m Ã— 1.1m Ã— Cao 2.6m',
+    dimensions: '2.5m × 1.1m × Cao 2.6m',
     areaM2: 2.7,
-    fitsDetailed: ['42 ThÃ¹ng carton tÃ i sáº£n', 'Tá»§ quáº§n Ã¡o 3 cÃ¡nh', 'BÃ n lÃ m viá»‡c chá»¯ L + Gháº¿ cÃ´ng thÃ¡i há»c', 'GiÆ°á»ng ná»‡m Ä‘Ã´i thÃ¡o láº¯p'],
+    fitsDetailed: ['42 Thùng carton tài sản', 'Tủ quần áo 3 cánh', 'Bàn làm việc chữ L + Ghế công thái học', 'Giường nệm đôi tháo lắp'],
     nonAcRate: 1680000,
     acRate: 2010000,
   },
   {
     id: '8m3',
-    volumeText: '7.8 mÂ³',
+    volumeText: '7.8 m³',
     volumeNumber: 7.8,
     capacityText: '48 boxes',
     image: size8m3Img,
-    dimensions: '2.0m Ã— 1.5m Ã— 2.6m',
+    dimensions: '2.0m × 1.5m × 2.6m',
     areaM2: 3.0,
-    fitsDetailed: ['48 ThÃ¹ng hÃ ng carton kinh doanh', 'BÃ n gháº¿ Äƒn 4-6 ngÆ°á»i', 'GiÆ°á»ng Ä‘Ã´i Queen-size + Ná»‡m', 'Tá»§ láº¡nh 2 cÃ¡nh, mÃ¡y rá»­a bÃ¡t'],
+    fitsDetailed: ['48 Thùng hàng carton kinh doanh', 'Bàn ghế ăn 4-6 người', 'Giường đôi Queen-size + Nệm', 'Tủ lạnh 2 cánh, máy rửa bát'],
     nonAcRate: 1850000,
     acRate: 2220000,
   },
   {
     id: '9m3',
-    volumeText: '9 mÂ³',
+    volumeText: '9 m³',
     volumeNumber: 9,
     capacityText: '54 boxes (Studio)',
     image: size9m3Img,
-    dimensions: '2.8m Ã— 1.2m Ã— Cao 2.7m',
+    dimensions: '2.8m × 1.2m × Cao 2.7m',
     areaM2: 3.4,
-    fitsDetailed: ['ToÃ n bá»™ Ä‘á»“ Ä‘áº¡c cÄƒn há»™ studio', 'Sofa chá»¯ L, tá»§ láº¡nh side-by-side', 'MÃ¡y giáº·t, giÆ°á»ng ná»‡m, bÃ n Äƒn', '50+ ThÃ¹ng carton tÃ i sáº£n'],
+    fitsDetailed: ['Toàn bộ đồ đạc căn hộ studio', 'Sofa chữ L, tủ lạnh side-by-side', 'Máy giặt, giường nệm, bàn ăn', '50+ Thùng carton tài sản'],
     nonAcRate: 2100000,
     acRate: 2520000,
   },
   {
     id: '10m3',
-    volumeText: '10 mÂ³',
+    volumeText: '10 m³',
     volumeNumber: 10,
-    capacityText: '60 boxes (1 phÃ²ng ngá»§)',
+    capacityText: '60 boxes (1 phòng ngủ)',
     image: size9m3Img,
-    dimensions: '3.0m Ã— 1.3m Ã— Cao 2.7m',
+    dimensions: '3.0m × 1.3m × Cao 2.7m',
     areaM2: 3.8,
-    fitsDetailed: ['ToÃ n bá»™ ná»™i tháº¥t cÄƒn há»™ 1 phÃ²ng ngá»§', 'GiÆ°á»ng King-size + Ná»‡m cao su', 'Tá»§ lá»›n 4 cÃ¡nh, bÃ n trang Ä‘iá»ƒm', '60+ ThÃ¹ng Ä‘á»“ gia dá»¥ng vÃ  thiáº¿t bá»‹'],
+    fitsDetailed: ['Toàn bộ nội thất căn hộ 1 phòng ngủ', 'Giường King-size + Nệm cao su', 'Tủ lớn 4 cánh, bàn trang điểm', '60+ Thùng đồ gia dụng và thiết bị'],
     nonAcRate: 2300000,
     acRate: 2760000,
   },
   {
     id: '12m3',
-    volumeText: '12 mÂ³',
+    volumeText: '12 m³',
     volumeNumber: 12,
-    capacityText: '72 boxes (1â€“2 phÃ²ng ngá»§)',
+    capacityText: '72 boxes (1–2 phòng ngủ)',
     image: size8m3Img,
-    dimensions: '3.5m Ã— 1.3m Ã— Cao 2.7m',
+    dimensions: '3.5m × 1.3m × Cao 2.7m',
     areaM2: 4.5,
-    fitsDetailed: ['ToÃ n bá»™ ná»™i tháº¥t cÄƒn há»™ 2 phÃ²ng ngá»§', '2 Bá»™ giÆ°á»ng tá»§, bá»™ bÃ n Äƒn 6 gháº¿', 'Tá»§ láº¡nh lá»›n, mÃ¡y giáº·t, mÃ¡y sáº¥y', '70+ ThÃ¹ng carton Ä‘á»“ Ä‘áº¡c gia Ä‘Ã¬nh'],
+    fitsDetailed: ['Toàn bộ nội thất căn hộ 2 phòng ngủ', '2 Bộ giường tủ, bộ bàn ăn 6 ghế', 'Tủ lạnh lớn, máy giặt, máy sấy', '70+ Thùng carton đồ đạc gia đình'],
     nonAcRate: 2700000,
     acRate: 3240000,
   },
   {
     id: '14m3',
-    volumeText: '14 mÂ³',
+    volumeText: '14 m³',
     volumeNumber: 14,
-    capacityText: '85 boxes (CÄƒn há»™ 2PN lá»›n)',
+    capacityText: '85 boxes (Căn hộ 2PN lớn)',
     image: size9m3Img,
-    dimensions: '3.8m Ã— 1.4m Ã— Cao 2.7m',
+    dimensions: '3.8m × 1.4m × Cao 2.7m',
     areaM2: 5.2,
-    fitsDetailed: ['Äá»“ Ä‘áº¡c chung cÆ° 2 phÃ²ng ngá»§ cao cáº¥p', 'Sofa da cá»¡ Ä‘áº¡i, 2 tá»§ quáº§n Ã¡o ká»‹ch tráº§n', 'Thiáº¿t bá»‹ sá»± kiá»‡n, mÃ¡y pha cafe cÃ´ng nghiá»‡p', '85+ ThÃ¹ng hÃ ng hÃ³a lÆ°u kho'],
+    fitsDetailed: ['Đồ đạc chung cư 2 phòng ngủ cao cấp', 'Sofa da cỡ đại, 2 tủ quần áo kịch trần', 'Thiết bị sự kiện, máy pha cafe công nghiệp', '85+ Thùng hàng hóa lưu kho'],
     nonAcRate: 3100000,
     acRate: 3720000,
   },
   {
     id: '16m3',
-    volumeText: '16.8 mÂ³',
+    volumeText: '16.8 m³',
     volumeNumber: 16.8,
-    capacityText: '100 boxes (CÄƒn há»™ 3PN)',
+    capacityText: '100 boxes (Căn hộ 3PN)',
     image: size8m3Img,
-    dimensions: '3.0m Ã— 2.0m Ã— 2.8m',
+    dimensions: '3.0m × 2.0m × 2.8m',
     areaM2: 6.0,
-    fitsDetailed: ['Ná»™i tháº¥t chuyá»ƒn nhÃ  nguyÃªn cÄƒn há»™ 3PN', '3 Bá»™ giÆ°á»ng ná»‡m, bÃ n Äƒn 8 ngÆ°á»i', 'Ná»™i tháº¥t phÃ²ng khÃ¡ch, báº¿p Ä‘áº§y Ä‘á»§', '100+ ThÃ¹ng hÃ ng kinh doanh online'],
+    fitsDetailed: ['Nội thất chuyển nhà nguyên căn hộ 3PN', '3 Bộ giường nệm, bàn ăn 8 người', 'Nội thất phòng khách, bếp đầy đủ', '100+ Thùng hàng kinh doanh online'],
     nonAcRate: 3500000,
     acRate: 4200000,
   },
   {
     id: '18m3',
-    volumeText: '18 mÂ³',
+    volumeText: '18 m³',
     volumeNumber: 18,
-    capacityText: '115 boxes (Kho sá»‰ thÆ°Æ¡ng máº¡i)',
+    capacityText: '115 boxes (Kho sỉ thương mại)',
     image: size9m3Img,
-    dimensions: '4.5m Ã— 1.5m Ã— Cao 2.7m',
+    dimensions: '4.5m × 1.5m × Cao 2.7m',
     areaM2: 6.8,
-    fitsDetailed: ['Kho hÃ ng sá»‰ thÆ°Æ¡ng máº¡i Ä‘iá»‡n tá»­', '2-3 Pallet hÃ ng xuáº¥t nháº­p kháº©u', 'BÃ n gháº¿ vÄƒn phÃ²ng cho 10-15 nhÃ¢n sá»±', '115+ ThÃ¹ng carton Ä‘Ã³ng kiá»‡n tiÃªu chuáº©n'],
+    fitsDetailed: ['Kho hàng sỉ thương mại điện tử', '2-3 Pallet hàng xuất nhập khẩu', 'Bàn ghế văn phòng cho 10-15 nhân sự', '115+ Thùng carton đóng kiện tiêu chuẩn'],
     nonAcRate: 3900000,
     acRate: 4680000,
   },
   {
     id: '20m3',
-    volumeText: '20 mÂ³',
+    volumeText: '20 m³',
     volumeNumber: 20,
-    capacityText: '130 boxes (Kho doanh nghiá»‡p)',
+    capacityText: '130 boxes (Kho doanh nghiệp)',
     image: size8m3Img,
-    dimensions: '5.0m Ã— 1.5m Ã— Cao 2.7m',
+    dimensions: '5.0m × 1.5m × Cao 2.7m',
     areaM2: 7.5,
-    fitsDetailed: ['HÃ ng hÃ³a phÃ¢n phá»‘i quy mÃ´ doanh nghiá»‡p vá»«a', '3-4 Pallet hÃ ng cÃ´ng nghiá»‡p, mÃ¡y mÃ³c', 'TÃ i liá»‡u há»“ sÆ¡ doanh nghiá»‡p lÆ°u trá»¯ 10 nÄƒm', '130+ ThÃ¹ng carton táº£i trá»ng náº·ng'],
+    fitsDetailed: ['Hàng hóa phân phối quy mô doanh nghiệp vừa', '3-4 Pallet hàng công nghiệp, máy móc', 'Tài liệu hồ sơ doanh nghiệp lưu trữ 10 năm', '130+ Thùng carton tải trọng nặng'],
     nonAcRate: 4300000,
     acRate: 5160000,
   },
   {
     id: '70m3',
-    typeName: 'Ráº¥t lá»›n (vÄƒn phÃ²ng thÆ°Æ¡ng máº¡i)',
-    volumeText: '70 mÂ³',
+    typeName: 'Rất lớn (văn phòng thương mại)',
+    volumeText: '70 m³',
     volumeNumber: 70,
-    capacityText: '160 boxes (Kho logistics lá»›n)',
+    capacityText: '160 boxes (Kho logistics lớn)',
     image: size9m3Img,
-    dimensions: '5.0m Ã— 4.0m Ã— 3.5m',
+    dimensions: '5.0m × 4.0m × 3.5m',
     areaM2: 20.0,
-    fitsDetailed: ['Kho logistics, thÆ°Æ¡ng máº¡i lá»›n & vÄƒn phÃ²ng', 'ToÃ n bá»™ trang thiáº¿t bá»‹ vÄƒn phÃ²ng lá»›n', 'Pallet hÃ ng hÃ³a thÆ°Æ¡ng máº¡i quy mÃ´ lá»›n', '160+ ThÃ¹ng carton Ä‘Ã³ng kiá»‡n tiÃªu chuáº©n'],
+    fitsDetailed: ['Kho logistics, thương mại lớn & văn phòng', 'Toàn bộ trang thiết bị văn phòng lớn', 'Pallet hàng hóa thương mại quy mô lớn', '160+ Thùng carton đóng kiện tiêu chuẩn'],
     nonAcRate: 5000000,
     acRate: 6000000,
   },
   {
     id: '24m3',
-    volumeText: '24 mÂ³',
+    volumeText: '24 m³',
     volumeNumber: 24,
-    capacityText: '160 boxes (Kho logistics lá»›n)',
+    capacityText: '160 boxes (Kho logistics lớn)',
     image: size9m3Img,
-    dimensions: '6.0m Ã— 1.5m Ã— Cao 2.7m',
+    dimensions: '6.0m × 1.5m × Cao 2.7m',
     areaM2: 9.0,
-    fitsDetailed: ['Kho trung chuyá»ƒn bÃ¡n láº» & logistics', 'Ná»™i tháº¥t toÃ n bá»™ biá»‡t thá»± nhÃ  phá»‘', '5+ Pallet hÃ ng hÃ³a vÃ  thiáº¿t bá»‹ sÃ¢n kháº¥u', '160+ ThÃ¹ng carton cá»“ng ká»nh'],
+    fitsDetailed: ['Kho trung chuyển bán lẻ & logistics', 'Nội thất toàn bộ biệt thự nhà phố', '5+ Pallet hàng hóa và thiết bị sân khấu', '160+ Thùng carton cồng kềnh'],
     nonAcRate: 5000000,
     acRate: 6000000,
   },
@@ -351,18 +351,18 @@ export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): stri
     return size.dbUnitTypeId
   }
   if (size.id.includes('cold') || size.id === '14m3' || (size.areaM2 >= 4.5 && size.areaM2 <= 5.5)) {
-    return '10000000-0000-0000-0000-000000000005' // Cold Storage (kiá»ƒm soÃ¡t nhiá»‡t Ä‘á»™ 18-22Â°C) - 5mÂ²
+    return '10000000-0000-0000-0000-000000000005' // Cold Storage (kiểm soát nhiệt độ 18-22°C) - 5m²
   }
   if (size.id === '1m3' || size.id === '2m3' || size.areaM2 <= 1.5) {
-    return '10000000-0000-0000-0000-000000000001' // Mini (tá»§ cÃ¡ nhÃ¢n) - 1mÂ²
+    return '10000000-0000-0000-0000-000000000001' // Mini (tủ cá nhân) - 1m²
   }
   if (size.id === '8m3' || (size.areaM2 > 1.5 && size.areaM2 <= 3.5)) {
-    return '10000000-0000-0000-0000-000000000002' // Medium (Compact Studio) - 3mÂ²
+    return '10000000-0000-0000-0000-000000000002' // Medium (Compact Studio) - 3m²
   }
   if (size.id === '16m3' || (size.areaM2 > 5.5 && size.areaM2 <= 7.0)) {
-    return '10000000-0000-0000-0000-000000000003' // Standard (1-Bedroom) - 6mÂ²
+    return '10000000-0000-0000-0000-000000000003' // Standard (1-Bedroom) - 6m²
   }
-  return '10000000-0000-0000-0000-000000000004' // Extra Large (Commercial Suite) - 12mÂ²
+  return '10000000-0000-0000-0000-000000000004' // Extra Large (Commercial Suite) - 12m²
 }
 
 export const BookingPage: React.FC = () => {
@@ -383,11 +383,11 @@ export const BookingPage: React.FC = () => {
 
   const getRoleDisplayName = (role?: string) => {
     const r = (role || userRole || '').toUpperCase()
-    if (r.includes('ADMIN')) return 'Quáº£n trá»‹ viÃªn (Admin)'
-    if (r.includes('BUSINESS')) return 'Quáº£n lÃ½ kinh doanh (Business Manager)'
-    if (r.includes('FACILITY')) return 'Quáº£n lÃ½ cÆ¡ sá»Ÿ (Facility Manager)'
-    if (r.includes('STAFF')) return 'NhÃ¢n viÃªn cÆ¡ sá»Ÿ (Staff)'
-    return 'Quáº£n trá»‹ / NhÃ¢n viÃªn'
+    if (r.includes('ADMIN')) return 'Quản trị viên (Admin)'
+    if (r.includes('BUSINESS')) return 'Quản lý kinh doanh (Business Manager)'
+    if (r.includes('FACILITY')) return 'Quản lý cơ sở (Facility Manager)'
+    if (r.includes('STAFF')) return 'Nhân viên cơ sở (Staff)'
+    return 'Quản trị / Nhân viên'
   }
 
   const [customerAccess, setCustomerAccess] = useState(() => checkCustomerPortalAccess(user))
@@ -406,12 +406,12 @@ export const BookingPage: React.FC = () => {
   }, [user])
 
   // 1 -> 6 Step Flow:
-  // Step 1: Chá»n cÆ¡ sá»Ÿ
-  // Step 2: Chá»n kho / loáº¡i kho
-  // Step 3: Thá»i háº¡n thuÃª & BÃ¡o giÃ¡
-  // Step 4: Lá»‹ch háº¹n & Chi tiáº¿t
-  // Step 5: Há»£p Ä‘á»“ng & Thanh toÃ¡n
-  // Step 6: HoÃ n táº¥t giá»¯ chá»—
+  // Step 1: Chọn cơ sở
+  // Step 2: Chọn kho / loại kho
+  // Step 3: Thời hạn thuê & Báo giá
+  // Step 4: Lịch hẹn & Chi tiết
+  // Step 5: Hợp đồng & Thanh toán
+  // Step 6: Hoàn tất giữ chỗ
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1)
   const [paymentMethod, setPaymentMethod] = useState<'ONLINE' | 'PAY_LATER'>('ONLINE')
   const [isOnlinePaid, setIsOnlinePaid] = useState<boolean>(false)
@@ -578,7 +578,7 @@ export const BookingPage: React.FC = () => {
     if (user) {
       const pName = user.fullName || user.username || ''
       if (pName) {
-        setCustomerName((prev) => (prev && prev !== 'KhÃ¡ch hÃ ng' ? prev : pName))
+        setCustomerName((prev) => (prev && prev !== 'Khách hàng' ? prev : pName))
       }
       const pPhone = user.phone || (user as any).phoneNumber || ''
       if (pPhone) {
@@ -618,14 +618,14 @@ export const BookingPage: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState<boolean>(false)
   const [showPayLaterConfirmModal, setShowPayLaterConfirmModal] = useState<boolean>(false)
 
-  // Cancellation Policy confirmation state (XÃ¡c nháº­n Ä‘iá»u khoáº£n há»§y trÆ°á»›c khi má»Ÿ DocuSeal)
+  // Cancellation Policy confirmation state (Xác nhận điều khoản hủy trước khi mở DocuSeal)
   const [showPolicyConfirmModal, setShowPolicyConfirmModal] = useState<boolean>(false)
   const [policyDetail, setPolicyDetail] = useState<CancellationPolicyDetail | null>(null)
   const [isLoadingPolicy, setIsLoadingPolicy] = useState<boolean>(false)
   const [policyError, setPolicyError] = useState<string | null>(null)
   const [isConfirmingPolicy, setIsConfirmingPolicy] = useState<boolean>(false)
 
-  // DocuSeal e-Signing state (BÆ°á»›c 2: KÃ½ há»£p Ä‘á»“ng trá»±c tuyáº¿n trÆ°á»›c khi thanh toÃ¡n)
+  // DocuSeal e-Signing state (Bước 2: Ký hợp đồng trực tuyến trước khi thanh toán)
   const [showDocuSealModal, setShowDocuSealModal] = useState<boolean>(false)
   const [contractForSigning, setContractForSigning] = useState<RentalContract | null>(null)
   const [createdBookingForSigning, setCreatedBookingForSigning] = useState<any>(null)
@@ -725,7 +725,7 @@ export const BookingPage: React.FC = () => {
             } else if (activeList.length > 0) {
               // Priority: First facility that actually has AVAILABLE storage units > 0
               const facWithUnits = activeList.find((f) => {
-                return freshUnits.filter((u: any) => u.facilityId === f.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng')).length > 0
+                return freshUnits.filter((u: any) => u.facilityId === f.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')).length > 0
               })
               const chosen = facWithUnits || activeList[0]
               setSelectedFacility(chosen)
@@ -789,7 +789,7 @@ export const BookingPage: React.FC = () => {
         if (!defaultFac && activeList.length > 0) {
           // Choose first facility that actually has AVAILABLE storage units > 0
           defaultFac = activeList.find((f) => {
-            return freshUnits.filter((u: any) => u.facilityId === f.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng')).length > 0
+            return freshUnits.filter((u: any) => u.facilityId === f.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')).length > 0
           }) || activeList[0]
         }
 
@@ -878,7 +878,7 @@ export const BookingPage: React.FC = () => {
       .map((fac) => {
       const unitsInFac = storageUnits.filter((u) => u.facilityId === fac.id)
       const availableCount = unitsInFac.filter(
-        (u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng'
+        (u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống'
       ).length
 
       return {
@@ -892,7 +892,7 @@ export const BookingPage: React.FC = () => {
   const availableFacilityUnits = useMemo(() => {
     if (!selectedFacility) return []
 
-    // Äá»c cÃ¡c Ä‘Æ¡n Ä‘áº·t giá»¯ chá»— Ä‘ang chiáº¿m giá»¯ buá»“ng kho
+    // Đọc các đơn đặt giữ chỗ đang chiếm giữ buồng kho
     const localReservedUnitIds = new Set<string>()
     const localReservedUnitCodes = new Set<string>()
     try {
@@ -914,7 +914,7 @@ export const BookingPage: React.FC = () => {
     return storageUnits.filter(
       (u) =>
         u.facilityId === selectedFacility.id &&
-        (u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng') &&
+        (u.status === 'AVAILABLE' || (u.status as string) === 'Trống') &&
         !localReservedUnitIds.has(u.id) &&
         !localReservedUnitCodes.has(u.unitCode) &&
         (() => {
@@ -925,7 +925,7 @@ export const BookingPage: React.FC = () => {
     )
   }, [storageUnits, selectedFacility, dbUnitTypes])
 
-  // Láº¯ng nghe sá»± kiá»‡n toÃ n há»‡ thá»‘ng Ä‘á»ƒ tá»± Ä‘á»™ng Ä‘á»“ng bá»™ sá»‘ lÆ°á»£ng kho kháº£ dá»¥ng thá»i gian thá»±c
+  // Lắng nghe sự kiện toàn hệ thống để tự động đồng bộ số lượng kho khả dụng thời gian thực
   const refreshAvailableUnits = useCallback(async () => {
     try {
       const [unitRes, facRes, typeRes] = await Promise.allSettled([
@@ -993,11 +993,11 @@ export const BookingPage: React.FC = () => {
       // 1. Try to find matching unit type in facilityUnitTypes
       const dbType = facilityUnitTypes.find((ut) => ut.id === unit.unitTypeId)
       if (dbType && dbType.isActive === false) {
-        return // Bá» qua loáº¡i kho Ä‘ang táº¡m ngÆ°ng hoáº¡t Ä‘á»™ng táº¡i cÆ¡ sá»Ÿ nÃ y
+        return // Bỏ qua loại kho đang tạm ngưng hoạt động tại cơ sở này
       }
       const dbTypeByName = !dbType && unit.unitTypeName ? facilityUnitTypes.find((ut) => ut.typeName.toLowerCase() === unit.unitTypeName.toLowerCase()) : null
       if (dbTypeByName && dbTypeByName.isActive === false) {
-        return // Bá» qua loáº¡i kho Ä‘ang táº¡m ngÆ°ng hoáº¡t Ä‘á»™ng táº¡i cÆ¡ sá»Ÿ nÃ y
+        return // Bỏ qua loại kho đang tạm ngưng hoạt động tại cơ sở này
       }
 
       const targetType = dbType || dbTypeByName
@@ -1016,9 +1016,9 @@ export const BookingPage: React.FC = () => {
       if (targetType) {
         const vol = targetType.volumeM3 != null ? Number(targetType.volumeM3) : (matchedCatalog ? matchedCatalog.volumeNumber : Math.round((targetType.areaSqm || unit.areaSqMeters || 1) * 3))
         const area = targetType.areaSqm != null ? Number(targetType.areaSqm) : (matchedCatalog ? matchedCatalog.areaM2 : (unit.areaSqMeters || 1))
-        const dims = targetType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${targetType.lengthM || 2}m Ã— ${targetType.widthM || 1.5}m Ã— ${targetType.heightM || 2.6}m`)
+        const dims = targetType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${targetType.lengthM || 2}m × ${targetType.widthM || 1.5}m × ${targetType.heightM || 2.6}m`)
         const cap = matchedCatalog ? matchedCatalog.capacityText : `${Math.round(area * 8)} boxes`
-        const name = targetType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiÃªu chuáº©n')
+        const name = targetType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn')
         const hasAc = targetType.acPricePerMonth != null && Number(targetType.acPricePerMonth) > 0
         const nonAcRate = Number(targetType.basePricePerMonth || (matchedCatalog ? matchedCatalog.nonAcRate : 5000000))
         const acRate = hasAc ? Number(targetType.acPricePerMonth) : 0
@@ -1028,7 +1028,7 @@ export const BookingPage: React.FC = () => {
           id: targetType.id,
           dbUnitTypeId: targetType.id,
           typeName: name,
-          volumeText: `${vol} mÂ³`,
+          volumeText: `${vol} m³`,
           volumeNumber: vol,
           capacityText: cap,
           image: targetType?.imageUrl || dbType?.imageUrl || (vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image)),
@@ -1036,10 +1036,10 @@ export const BookingPage: React.FC = () => {
           dimensions: dims,
           areaM2: area,
           fitsDetailed: [
-            name || 'Kho tiÃªu chuáº©n',
-            `Diá»‡n tÃ­ch sÃ n: ${area} mÂ² Â· Thá»ƒ tÃ­ch: ${vol} mÂ³`,
-            `KÃ­ch thÆ°á»›c: ${dims}`,
-            'Báº£o quáº£n an ninh 24/7 vá»›i kiá»ƒm soÃ¡t Ä‘á»™ áº©m vÃ  camera thÃ´ng minh',
+            name || 'Kho tiêu chuẩn',
+            `Diện tích sàn: ${area} m² · Thể tích: ${vol} m³`,
+            `Kích thước: ${dims}`,
+            'Bảo quản an ninh 24/7 với kiểm soát độ ẩm và camera thông minh',
           ],
           nonAcRate,
           acRate,
@@ -1070,17 +1070,17 @@ export const BookingPage: React.FC = () => {
     const source = availableSizesInFacility.length > 0 ? availableSizesInFacility : []
     return source.filter((s) => {
       // 1. Volume filter:
-      // ALL: Táº¥t cáº£
-      // PERSONAL: CÃ¡ nhÃ¢n & Mini: <= 4 mÂ³
-      // FAMILY: Gia Ä‘Ã¬nh: > 4 vÃ  <= 10 mÂ³
-      // ENTERPRISE: Doanh nghiá»‡p: > 10 vÃ  <= 25 mÂ³
-      // LOGISTICS: Logistics: > 25 mÂ³
+      // ALL: Tất cả
+      // PERSONAL: Cá nhân & Mini: <= 4 m³
+      // FAMILY: Gia đình: > 4 và <= 10 m³
+      // ENTERPRISE: Doanh nghiệp: > 10 và <= 25 m³
+      // LOGISTICS: Logistics: > 25 m³
       if (sizeFilterCategory === 'PERSONAL' && s.volumeNumber > 4) return false
       if (sizeFilterCategory === 'FAMILY' && (s.volumeNumber <= 4 || s.volumeNumber > 10)) return false
       if (sizeFilterCategory === 'ENTERPRISE' && (s.volumeNumber <= 10 || s.volumeNumber > 25)) return false
       if (sizeFilterCategory === 'LOGISTICS' && s.volumeNumber <= 25) return false
 
-      // 2. Area filter (mÂ²)
+      // 2. Area filter (m²)
       if (areaFilter === 'LE_3' && s.areaM2 > 3) return false
       if (areaFilter === '3_TO_6' && (s.areaM2 <= 3 || s.areaM2 > 6)) return false
       if (areaFilter === 'GT_6' && s.areaM2 <= 6) return false
@@ -1092,7 +1092,7 @@ export const BookingPage: React.FC = () => {
 
       // 4. Preservation Condition filter
       const unitAcMode = acSelectionMap[s.id] || 'NON_AC'
-      const isClimateType = (s.typeName || '').toLowerCase().includes('láº¡nh') || (s.typeName || '').toLowerCase().includes('mÃ¡t')
+      const isClimateType = (s.typeName || '').toLowerCase().includes('lạnh') || (s.typeName || '').toLowerCase().includes('mát')
       if (preservationFilter === 'AC' && unitAcMode !== 'AC' && !isClimateType) return false
       if (preservationFilter === 'NON_AC' && (unitAcMode === 'AC' || isClimateType)) return false
 
@@ -1155,7 +1155,7 @@ export const BookingPage: React.FC = () => {
     : rentalMonths >= 1
 
   const rentalDurationText = useMemo(() => {
-    return isCustomDuration ? `${customDays} ngÃ y` : `${rentalMonths} thÃ¡ng`
+    return isCustomDuration ? `${customDays} ngày` : `${rentalMonths} tháng`
   }, [isCustomDuration, customDays, rentalMonths])
 
   const rentalEndDate = useMemo(() => {
@@ -1181,16 +1181,16 @@ export const BookingPage: React.FC = () => {
 
   const activeDurationOptions = useMemo(() => {
     return [
-      { m: 1, label: '1 thÃ¡ng', badge: 'TiÃªu chuáº©n', sortOrder: 1 },
-      { m: 3, label: '3 thÃ¡ng', badge: facilityDiscount3M > 0 ? `Tiáº¿t kiá»‡m ${facilityDiscount3M}%` : 'TiÃªu chuáº©n', sortOrder: 3 },
-      { m: 6, label: '6 thÃ¡ng', badge: facilityDiscount6M > 0 ? `Tiáº¿t kiá»‡m ${facilityDiscount6M}%` : 'TiÃªu chuáº©n', sortOrder: 6 },
-      { m: 12, label: '12 thÃ¡ng', badge: facilityDiscount12M > 0 ? `Tiáº¿t kiá»‡m ${facilityDiscount12M}%` : 'TiÃªu chuáº©n', sortOrder: 12 },
+      { m: 1, label: '1 tháng', badge: 'Tiêu chuẩn', sortOrder: 1 },
+      { m: 3, label: '3 tháng', badge: facilityDiscount3M > 0 ? `Tiết kiệm ${facilityDiscount3M}%` : 'Tiêu chuẩn', sortOrder: 3 },
+      { m: 6, label: '6 tháng', badge: facilityDiscount6M > 0 ? `Tiết kiệm ${facilityDiscount6M}%` : 'Tiêu chuẩn', sortOrder: 6 },
+      { m: 12, label: '12 tháng', badge: facilityDiscount12M > 0 ? `Tiết kiệm ${facilityDiscount12M}%` : 'Tiêu chuẩn', sortOrder: 12 },
       ...customDiscounts
         .filter((cd) => (cd.isActive === true || String(cd.isActive) === 'true') && Number(cd.percent) > 0 && ![1, 3, 6, 12].includes(Number(cd.months)))
         .map((cd) => ({
           m: Number(cd.months),
-          label: `${cd.months} thÃ¡ng`,
-          badge: `Tiáº¿t kiá»‡m ${cd.percent}%`,
+          label: `${cd.months} tháng`,
+          badge: `Tiết kiệm ${cd.percent}%`,
           sortOrder: Number(cd.months),
         })),
     ].sort((a, b) => a.sortOrder - b.sortOrder)
@@ -1283,7 +1283,7 @@ export const BookingPage: React.FC = () => {
     }
   }, [currentSelectedSize, isAcActive, isCustomDuration, rentalMonths, customDays, getDynamicPriceForSize, facilityDiscount3M, facilityDiscount6M, facilityDiscount12M, customDiscounts, facilityPolicy])
 
-  // Snapshot thÃ´ng tin khi kÃ½ há»£p Ä‘á»“ng DocuSeal Ä‘á»ƒ phÃ¡t hiá»‡n khi ngÆ°á»i dÃ¹ng quay láº¡i sá»­a thÃ´ng tin
+  // Snapshot thông tin khi ký hợp đồng DocuSeal để phát hiện khi người dùng quay lại sửa thông tin
   const captureSigningSnapshot = useCallback(() => ({
     facilityId: selectedFacility?.id || '',
     sizeId: currentSelectedSize.id,
@@ -1316,7 +1316,7 @@ export const BookingPage: React.FC = () => {
     idCardType,
   ])
 
-  // Kiá»ƒm tra xem form hiá»‡n táº¡i cÃ³ khá»›p hoÃ n toÃ n vá»›i thÃ´ng tin cá»§a há»£p Ä‘á»“ng Ä‘Ã£ kÃ½ trÆ°á»›c Ä‘Ã³ hay khÃ´ng
+  // Kiểm tra xem form hiện tại có khớp hoàn toàn với thông tin của hợp đồng đã ký trước đó hay không
   const isContractFormMatching = useMemo(() => {
     if (!signingFormSnapshot) return false
     return (
@@ -1353,8 +1353,8 @@ export const BookingPage: React.FC = () => {
     idCardType,
   ])
 
-  // Náº¿u ngÆ°á»i dÃ¹ng quay láº¡i thay Ä‘á»•i báº¥t ká»³ thÃ´ng tin nÃ o (cÆ¡ sá»Ÿ, loáº¡i kho, thÃ¡ng thuÃª, khÃ¡ch hÃ ng, ngÃ y check-in),
-  // tá»± Ä‘á»™ng há»§y há»£p Ä‘á»“ng cÅ© vÃ  reset tráº¡ng thÃ¡i kÃ½ Ä‘á»ƒ ngÆ°á»i dÃ¹ng kÃ½ há»£p Ä‘á»“ng má»›i
+  // Nếu người dùng quay lại thay đổi bất kỳ thông tin nào (cơ sở, loại kho, tháng thuê, khách hàng, ngày check-in),
+  // tự động hủy hợp đồng cũ và reset trạng thái ký để người dùng ký hợp đồng mới
   useEffect(() => {
     if (signingFormSnapshot && !isContractFormMatching) {
       setHasSignedContract(false)
@@ -1397,7 +1397,7 @@ export const BookingPage: React.FC = () => {
     storageUnitId?: string,
     unitCode?: string
   ) => {
-    const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ngÃ y ' + new Date().toLocaleDateString('vi-VN')
+    const timeStr = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' ngày ' + new Date().toLocaleDateString('vi-VN')
     const reservationData = {
       id: backendBookingId || 'res_' + Date.now(),
       bookingCode: code,
@@ -1412,7 +1412,7 @@ export const BookingPage: React.FC = () => {
       facilityAddress: selectedFacility?.address,
       sizeId: currentSelectedSize.id,
       sizeName: `Kho ${currentSelectedSize.volumeText}`,
-      unitTypeName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C MÃ¡y láº¡nh' : 'ThÆ°á»ng'})`,
+      unitTypeName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C Máy lạnh' : 'Thường'})`,
       dimensions: currentSelectedSize.dimensions,
       isAc: isAcActive,
       rentalDuration: rentalDurationText,
@@ -1439,8 +1439,8 @@ export const BookingPage: React.FC = () => {
       const newStaffNotif = {
         id: 'notif_' + Date.now(),
         type: 'NEW_BOOKING_RESERVATION',
-        title: `ÄÆ¡n giá»¯ chá»— má»›i: ${code}`,
-        message: `KhÃ¡ch hÃ ng ${customerName.trim()} vá»«a Ä‘áº·t giá»¯ chá»— Kho ${currentSelectedSize.volumeText} táº¡i ${selectedFacility?.name}. Nháº­n bÃ n giao: ${checkInDate} (${checkInTime}).`,
+        title: `Đơn giữ chỗ mới: ${code}`,
+        message: `Khách hàng ${customerName.trim()} vừa đặt giữ chỗ Kho ${currentSelectedSize.volumeText} tại ${selectedFacility?.name}. Nhận bàn giao: ${checkInDate} (${checkInTime}).`,
         createdAt: new Date().toISOString(),
         read: false,
         bookingCode: code,
@@ -1460,66 +1460,66 @@ export const BookingPage: React.FC = () => {
   const validateContactDetails = (): boolean => {
     const errors: Record<string, string> = {}
 
-    // 1. Há» vÃ  tÃªn: chá»‰ cáº§n cÃ³ chá»¯ cÃ¡i, khÃ´ng space rá»—ng hoáº·c kÃ½ tá»± Ä‘áº·c biá»‡t
+    // 1. Họ và tên: chỉ cần có chữ cái, không space rỗng hoặc ký tự đặc biệt
     const nameTrim = customerName.trim()
     if (!nameTrim) {
-      errors.customerName = 'Vui lÃ²ng nháº­p há» vÃ  tÃªn cá»§a báº¡n'
+      errors.customerName = 'Vui lòng nhập họ và tên của bạn'
     } else if (!/^[\p{L}\s]+$/u.test(nameTrim)) {
-      errors.customerName = 'Há» vÃ  tÃªn chá»‰ Ä‘Æ°á»£c chá»©a chá»¯ cÃ¡i, khÃ´ng chá»©a sá»‘ hoáº·c kÃ½ tá»± Ä‘áº·c biá»‡t'
+      errors.customerName = 'Họ và tên chỉ được chứa chữ cái, không chứa số hoặc ký tự đặc biệt'
     } else if (nameTrim.length > 100) {
-      errors.customerName = 'Há» vÃ  tÃªn khÃ´ng Ä‘Æ°á»£c vÆ°á»£t quÃ¡ 100 kÃ½ tá»±'
+      errors.customerName = 'Họ và tên không được vượt quá 100 ký tự'
     }
 
-    // 2. Sá»‘ Ä‘iá»‡n thoáº¡i di Ä‘á»™ng VN
+    // 2. Số điện thoại di động VN
     const cleanPhone = customerPhone.trim().replace(/[\s.-]/g, '')
     if (!cleanPhone) {
-      errors.customerPhone = 'Vui lÃ²ng nháº­p sá»‘ Ä‘iá»‡n thoáº¡i liÃªn há»‡'
+      errors.customerPhone = 'Vui lòng nhập số điện thoại liên hệ'
     } else if (!/^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-9]|9[0-9])[0-9]{7}$/.test(cleanPhone)) {
-      errors.customerPhone = 'Sá»‘ Ä‘iá»‡n thoáº¡i di Ä‘á»™ng Viá»‡t Nam khÃ´ng há»£p lá»‡ (10 sá»‘, báº¯t Ä‘áº§u báº±ng 03, 05, 07, 08, 09 hoáº·c +84)'
+      errors.customerPhone = 'Số điện thoại di động Việt Nam không hợp lệ (10 số, bắt đầu bằng 03, 05, 07, 08, 09 hoặc +84)'
     }
 
-    // 3. Sá»‘ CCCD / Há»™ chiáº¿u
+    // 3. Số CCCD / Hộ chiếu
     const cleanId = customerIdCard.trim().toUpperCase()
     if (!cleanId) {
-      errors.customerIdCard = idCardType === 'CCCD' ? 'Vui lÃ²ng nháº­p sá»‘ CCCD 12 chá»¯ sá»‘' : 'Vui lÃ²ng nháº­p sá»‘ Há»™ chiáº¿u'
+      errors.customerIdCard = idCardType === 'CCCD' ? 'Vui lòng nhập số CCCD 12 chữ số' : 'Vui lòng nhập số Hộ chiếu'
     } else if (idCardType === 'CCCD') {
       if (!/^\d{12}$/.test(cleanId)) {
-        errors.customerIdCard = 'Sá»‘ CCCD pháº£i bao gá»“m Ä‘Ãºng 12 chá»¯ sá»‘'
+        errors.customerIdCard = 'Số CCCD phải bao gồm đúng 12 chữ số'
       }
     } else {
       if (!/^[A-Z][0-9]{7,8}$/.test(cleanId)) {
-        errors.customerIdCard = 'Sá»‘ Há»™ chiáº¿u khÃ´ng há»£p lá»‡ (1 chá»¯ cÃ¡i in hoa theo sau lÃ  7-8 chá»¯ sá»‘)'
+        errors.customerIdCard = 'Số Hộ chiếu không hợp lệ (1 chữ cái in hoa theo sau là 7-8 chữ số)'
       }
     }
 
-    // 4. Email: Báº¯t buá»™c vÃ  Ä‘Ãºng Ä‘á»‹nh dáº¡ng RFC
+    // 4. Email: Bắt buộc và đúng định dạng RFC
     const emailTrim = customerEmail.trim()
     if (!emailTrim) {
-      errors.customerEmail = 'Vui lÃ²ng nháº­p Ä‘á»‹a chá»‰ email nháº­n thÃ´ng tin há»£p Ä‘á»“ng vÃ  phiáº¿u háº¹n'
+      errors.customerEmail = 'Vui lòng nhập địa chỉ email nhận thông tin hợp đồng và phiếu hẹn'
     } else if (!/^[A-Za-z0-9+_.-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})$/.test(emailTrim)) {
-      errors.customerEmail = 'Äá»‹a chá»‰ email khÃ´ng Ä‘Ãºng Ä‘á»‹nh dáº¡ng (vÃ­ dá»¥: name@domain.com)'
+      errors.customerEmail = 'Địa chỉ email không đúng định dạng (ví dụ: name@domain.com)'
     }
 
-    // 5. Ghi chÃº (tá»‘i Ä‘a 500 kÃ½ tá»±)
+    // 5. Ghi chú (tối đa 500 ký tự)
     if (specialNotes && specialNotes.length > 500) {
-      errors.specialNotes = 'Ghi chÃº tá»‘i Ä‘a 500 kÃ½ tá»±'
+      errors.specialNotes = 'Ghi chú tối đa 500 ký tự'
     }
 
-    // 6. Quy cháº¿ chÃ­nh sÃ¡ch
+    // 6. Quy chế chính sách
     if (!policyAccepted) {
-      errors.policyAccepted = 'QuÃ½ khÃ¡ch vui lÃ²ng Ä‘á»“ng Ã½ vá»›i chÃ­nh sÃ¡ch vÃ  quy cháº¿ giá»¯ chá»— kho cá»§a Boxora'
+      errors.policyAccepted = 'Quý khách vui lòng đồng ý với chính sách và quy chế giữ chỗ kho của Boxora'
     }
 
-    // 7. Khung giá» tiáº¿p Ä‘Ã³n khÃ´ng thuá»™c quÃ¡ khá»©
+    // 7. Khung giờ tiếp đón không thuộc quá khứ
     if (isPeriodInPast(checkInDate, selectedPeriodId)) {
-      errors.checkInTime = 'Khung giá» tiáº¿p Ä‘Ã³n báº¡n chá»n Ä‘Ã£ káº¿t thÃºc. Vui lÃ²ng chá»n khung giá» khÃ¡c hoáº·c ngÃ y tiáº¿p theo.'
+      errors.checkInTime = 'Khung giờ tiếp đón bạn chọn đã kết thúc. Vui lòng chọn khung giờ khác hoặc ngày tiếp theo.'
     }
 
     setFormErrors(errors)
 
     const errorKeys = Object.keys(errors)
     if (errorKeys.length > 0) {
-      // XÃ¡c Ä‘á»‹nh field lá»—i Ä‘áº§u tiÃªn theo thá»© tá»± xuáº¥t hiá»‡n trÃªn form
+      // Xác định field lỗi đầu tiên theo thứ tự xuất hiện trên form
       const fieldSequence = [
         { key: 'checkInTime', id: 'booking-checkin-time' },
         { key: 'customerName', id: 'booking-customer-name' },
@@ -1533,10 +1533,10 @@ export const BookingPage: React.FC = () => {
       const firstFault = fieldSequence.find((f) => errors[f.key])
       if (firstFault) {
         toast.warning(errors[firstFault.key], {
-          title: 'ThÃ´ng tin chÆ°a Ä‘áº§y Ä‘á»§',
+          title: 'Thông tin chưa đầy đủ',
         })
 
-        // Tá»± Ä‘á»™ng cuá»™n vÃ  focus tháº³ng vÃ o field thiáº¿u/lá»—i
+        // Tự động cuộn và focus thẳng vào field thiếu/lỗi
         setTimeout(() => {
           const el = document.getElementById(firstFault.id)
           if (el) {
@@ -1544,7 +1544,7 @@ export const BookingPage: React.FC = () => {
             if (typeof (el as HTMLElement).focus === 'function') {
               ;(el as HTMLElement).focus()
             }
-            // Náº¿u lÃ  khá»‘i cha (nhÆ° booking-checkin-time), focus pháº§n tá»­ tÆ°Æ¡ng tÃ¡c Ä‘áº§u tiÃªn bÃªn trong
+            // Nếu là khối cha (như booking-checkin-time), focus phần tử tương tác đầu tiên bên trong
             const interactive = el.querySelector<HTMLElement>('input, button, select, textarea')
             if (interactive && typeof interactive.focus === 'function') {
               interactive.focus()
@@ -1563,27 +1563,27 @@ export const BookingPage: React.FC = () => {
     const selectedMethod = overrideMethod || paymentMethod
 
     if (isStaffOrManager) {
-      toast.warning('Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i cÃ³ thá»ƒ thá»±c hiá»‡n Ä‘áº·t kho.', {
-        title: 'Giá»›i háº¡n quyá»n thao tÃ¡c',
+      toast.warning('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.', {
+        title: 'Giới hạn quyền thao tác',
       })
-      setSubmitError('Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i cÃ³ thá»ƒ thá»±c hiá»‡n Ä‘áº·t kho.')
+      setSubmitError('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.')
       setIsSubmitting(false)
       return
     }
 
     if (!customerName.trim() || !customerPhone.trim() || !customerIdCard.trim()) {
-      setSubmitError('Vui lÃ²ng kiá»ƒm tra vÃ  Ä‘iá»n Ä‘áº§y Ä‘á»§ Há» tÃªn, Sá»‘ Ä‘iá»‡n thoáº¡i vÃ  Sá»‘ CCCD.')
+      setSubmitError('Vui lòng kiểm tra và điền đầy đủ Họ tên, Số điện thoại và Số CCCD.')
       setCurrentStep(4)
       return
     }
 
     if (isPeriodInPast(checkInDate, selectedPeriodId)) {
-      setSubmitError('Khung giá» tiáº¿p Ä‘Ã³n báº¡n chá»n Ä‘Ã£ káº¿t thÃºc. Vui lÃ²ng chá»n khung giá» khÃ¡c hoáº·c ngÃ y tiáº¿p theo.')
+      setSubmitError('Khung giờ tiếp đón bạn chọn đã kết thúc. Vui lòng chọn khung giờ khác hoặc ngày tiếp theo.')
       setCurrentStep(4)
       return
     }
 
-    // LÆ°u láº¡i sá»‘ Ä‘á»‹nh danh Ä‘á»ƒ tiá»‡n tÃ¡i sá»­ dá»¥ng
+    // Lưu lại số định danh để tiện tái sử dụng
     if (customerIdCard.trim() && user) {
       saveUserSavedIdDoc(
         user,
@@ -1593,13 +1593,13 @@ export const BookingPage: React.FC = () => {
       )
     }
 
-    // Náº¿u trÆ°á»›c Ä‘Ã³ Ä‘Ã£ kÃ½ há»£p Ä‘á»“ng online thÃ nh cÃ´ng nhÆ°ng chÆ°a thanh toÃ¡n, tiáº¿p tá»¥c thanh toÃ¡n Ä‘Æ¡n hiá»‡n táº¡i
+    // Nếu trước đó đã ký hợp đồng online thành công nhưng chưa thanh toán, tiếp tục thanh toán đơn hiện tại
     if (selectedMethod === 'ONLINE' && isContractAlreadySigned && createdBookingForSigning?.id) {
       void handleContinuePayment()
       return
     }
 
-    // Náº¿u chá»n Thanh toÃ¡n online nhÆ°ng chÆ°a Ä‘Äƒng nháº­p tÃ i khoáº£n
+    // Nếu chọn Thanh toán online nhưng chưa đăng nhập tài khoản
     if (selectedMethod === 'ONLINE' && !isAuthenticated) {
       setShowAuthModal(true)
       return
@@ -1613,9 +1613,9 @@ export const BookingPage: React.FC = () => {
     const generatedCode = `BX-${nowStr}-${randomSuffix}`
 
     try {
-      // TÃ¬m buá»“ng kho phÃ¹ há»£p táº¡i cÆ¡ sá»Ÿ theo kÃ­ch thÆ°á»›c ngÆ°á»i dÃ¹ng Ä‘Ã£ chá»n
+      // Tìm buồng kho phù hợp tại cơ sở theo kích thước người dùng đã chọn
       let allUnits = storageUnits
-      const availableInCurrent = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng')
+      const availableInCurrent = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
       if (availableInCurrent.length === 0) {
         try {
           const freshRes = await storageUnitService.getUnits({ status: 'AVAILABLE' })
@@ -1626,8 +1626,8 @@ export const BookingPage: React.FC = () => {
         }
       }
       const facUnits = allUnits.filter((u) => u.facilityId === selectedFacility?.id)
-      const availableAll = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng')
-      const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng')
+      const availableAll = allUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
+      const available = facUnits.filter((u) => u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
 
       let matchedUnit = available.find((u) => Math.abs((u.areaSqMeters || 0) - currentSelectedSize.areaM2) < 0.8)
       if (!matchedUnit) {
@@ -1694,29 +1694,29 @@ export const BookingPage: React.FC = () => {
         const fieldErrors = apiErr?.response?.data?.errors
         const detailedFieldMsg =
           fieldErrors && typeof fieldErrors === 'object' && Object.keys(fieldErrors).length > 0
-            ? `Chi tiáº¿t trÆ°á»ng khÃ´ng há»£p lá»‡: ${Object.entries(fieldErrors)
+            ? `Chi tiết trường không hợp lệ: ${Object.entries(fieldErrors)
                 .map(([k, v]) => `${k} (${String(v)})`)
                 .join(' | ')}`
             : ''
         const msg = detailedFieldMsg
-          ? `${apiErr?.response?.data?.message || 'Dá»¯ liá»‡u yÃªu cáº§u khÃ´ng há»£p lá»‡.'} â€” ${detailedFieldMsg}`
+          ? `${apiErr?.response?.data?.message || 'Dữ liệu yêu cầu không hợp lệ.'} — ${detailedFieldMsg}`
           : apiErr?.response?.data?.message || apiErr?.message
         if (selectedMethod === 'ONLINE') {
-          throw new Error(msg || 'KhÃ´ng thá»ƒ táº¡o phiÃªn giá»¯ chá»— trÃªn há»‡ thá»‘ng Ä‘á»ƒ káº¿t ná»‘i cá»•ng thanh toÃ¡n. QuÃ½ khÃ¡ch vui lÃ²ng thá»­ láº¡i hoáº·c chá»n Thanh toÃ¡n sau khi nháº­n kho.')
+          throw new Error(msg || 'Không thể tạo phiên giữ chỗ trên hệ thống để kết nối cổng thanh toán. Quý khách vui lòng thử lại hoặc chọn Thanh toán sau khi nhận kho.')
         }
       }
 
       setBookingCode(effectiveBookingCode)
 
-      // Xá»­ lÃ½ theo phÆ°Æ¡ng thá»©c thanh toÃ¡n Ä‘Ã£ chá»n
+      // Xử lý theo phương thức thanh toán đã chọn
       if (selectedMethod === 'ONLINE') {
         if (!backendBookingId) {
-          throw new Error('ChÆ°a thá»ƒ khá»Ÿi táº¡o thÃ´ng tin giao dá»‹ch trá»±c tuyáº¿n. QuÃ½ khÃ¡ch vui lÃ²ng thá»­ láº¡i hoáº·c chá»n hÃ¬nh thá»©c Thanh toÃ¡n sau khi nháº­n kho.')
+          throw new Error('Chưa thể khởi tạo thông tin giao dịch trực tuyến. Quý khách vui lòng thử lại hoặc chọn hình thức Thanh toán sau khi nhận kho.')
         }
 
         setCreatedBookingForSigning(createdBooking)
 
-        // Kiá»ƒm tra xem khÃ¡ch hÃ ng Ä‘Ã£ xÃ¡c nháº­n Ä‘iá»u khoáº£n há»§y phiÃªn báº£n má»›i nháº¥t cho booking nÃ y chÆ°a
+        // Kiểm tra xem khách hàng đã xác nhận điều khoản hủy phiên bản mới nhất cho booking này chưa
         let statusRes: any = null
         try {
           statusRes = await cancellationPolicyService.getPolicyConfirmationStatus(backendBookingId)
@@ -1725,7 +1725,7 @@ export const BookingPage: React.FC = () => {
         }
 
         if (statusRes?.policyConfirmed && statusRes?.isLatestPolicy) {
-          // ÄÃ£ xÃ¡c nháº­n phiÃªn báº£n má»›i nháº¥t -> Chuyá»ƒn tháº³ng sang kÃ½ há»£p Ä‘á»“ng DocuSeal
+          // Đã xác nhận phiên bản mới nhất -> Chuyển thẳng sang ký hợp đồng DocuSeal
           let contract = null
           try {
             contract = await contractService.getContractByBookingId(backendBookingId)
@@ -1734,7 +1734,7 @@ export const BookingPage: React.FC = () => {
           }
 
           if (!contract) {
-            throw new Error('KhÃ´ng thá»ƒ khá»Ÿi táº¡o tÃ i liá»‡u há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ DocuSeal. Vui lÃ²ng thá»­ láº¡i.')
+            throw new Error('Không thể khởi tạo tài liệu hợp đồng điện tử DocuSeal. Vui lòng thử lại.')
           }
 
           setContractForSigning(contract)
@@ -1743,7 +1743,7 @@ export const BookingPage: React.FC = () => {
           return
         }
 
-        // ChÆ°a xÃ¡c nháº­n hoáº·c chÃ­nh sÃ¡ch Ä‘Ã£ cáº­p nháº­t phiÃªn báº£n má»›i -> Táº£i thÃ´ng tin vÃ  má»Ÿ modal Äiá»u khoáº£n há»§y há»£p Ä‘á»“ng & hoÃ n tiá»n
+        // Chưa xác nhận hoặc chính sách đã cập nhật phiên bản mới -> Tải thông tin và mở modal Điều khoản hủy hợp đồng & hoàn tiền
         setIsLoadingPolicy(true)
         setPolicyError(null)
         try {
@@ -1752,14 +1752,14 @@ export const BookingPage: React.FC = () => {
             const pol = await cancellationPolicyService.getCancellationPolicyByFacility(facilityIdToUse)
             setPolicyDetail(pol)
             if (!pol?.isConfigured) {
-              setPolicyError('CÆ¡ sá»Ÿ chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh Ä‘áº§y Ä‘á»§ chÃ­nh sÃ¡ch há»§y há»£p Ä‘á»“ng & hoÃ n tiá»n. Vui lÃ²ng liÃªn há»‡ quáº£n trá»‹ viÃªn.')
+              setPolicyError('Cơ sở chưa được cấu hình đầy đủ chính sách hủy hợp đồng & hoàn tiền. Vui lòng liên hệ quản trị viên.')
             }
           } else {
-            setPolicyError('KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin cÆ¡ sá»Ÿ kho Ä‘á»ƒ tra cá»©u chÃ­nh sÃ¡ch há»§y há»£p Ä‘á»“ng.')
+            setPolicyError('Không tìm thấy thông tin cơ sở kho để tra cứu chính sách hủy hợp đồng.')
           }
         } catch (pErr: any) {
           console.warn('Load cancellation policy error:', pErr)
-          setPolicyError(pErr?.response?.data?.message || 'KhÃ´ng thá»ƒ táº£i thÃ´ng tin chÃ­nh sÃ¡ch há»§y há»£p Ä‘á»“ng cá»§a cÆ¡ sá»Ÿ.')
+          setPolicyError(pErr?.response?.data?.message || 'Không thể tải thông tin chính sách hủy hợp đồng của cơ sở.')
         } finally {
           setIsLoadingPolicy(false)
         }
@@ -1768,7 +1768,7 @@ export const BookingPage: React.FC = () => {
         setIsSubmitting(false)
         return
       } else {
-        // Thanh toÃ¡n sau khi nháº­n kho: LÆ°u Ä‘Æ¡n PENDING_CONTACT (chá»n kho khi check-in táº¡i quáº§y)
+        // Thanh toán sau khi nhận kho: Lưu đơn PENDING_CONTACT (chọn kho khi check-in tại quầy)
         setIsOnlinePaid(false)
         sendReservationToStaff(
           effectiveBookingCode,
@@ -1788,26 +1788,26 @@ export const BookingPage: React.FC = () => {
         err?.response?.data?.message ||
         err?.response?.data?.error ||
         err?.message ||
-        'CÃ³ lá»—i xáº£y ra khi xÃ¡c nháº­n Ä‘áº·t chá»—. Vui lÃ²ng thá»­ láº¡i hoáº·c liÃªn há»‡ Hotline 1900-BOXORA.'
+        'Có lỗi xảy ra khi xác nhận đặt chỗ. Vui lòng thử lại hoặc liên hệ Hotline 1900-BOXORA.'
       setSubmitError(errorMsg)
     } finally {
       setIsSubmitting(false)
     }
   }
 
-  // Xá»­ lÃ½ khi khÃ¡ch hÃ ng Ä‘á»c vÃ  báº¥m "XÃ¡c nháº­n & Tiáº¿p tá»¥c" trÃªn Modal Äiá»u khoáº£n há»§y & HoÃ n tiá»n
+  // Xử lý khi khách hàng đọc và bấm "Xác nhận & Tiếp tục" trên Modal Điều khoản hủy & Hoàn tiền
   const handleConfirmCancellationPolicy = async () => {
     if (!createdBookingForSigning?.id) {
-      toast.error('KhÃ´ng tÃ¬m tháº¥y mÃ£ Ä‘Æ¡n Ä‘áº·t kho Ä‘á»ƒ xÃ¡c nháº­n Ä‘iá»u khoáº£n.')
+      toast.error('Không tìm thấy mã đơn đặt kho để xác nhận điều khoản.')
       return
     }
     const facilityIdToUse = selectedFacility?.id || createdBookingForSigning?.facilityId || (createdBookingForSigning?.facility as any)?.id
     if (!facilityIdToUse) {
-      toast.error('KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin cÆ¡ sá»Ÿ cá»§a Ä‘Æ¡n Ä‘áº·t kho.')
+      toast.error('Không tìm thấy thông tin cơ sở của đơn đặt kho.')
       return
     }
     if (!policyDetail?.policyVersion || !policyDetail?.isConfigured) {
-      toast.error('ChÃ­nh sÃ¡ch há»§y cá»§a cÆ¡ sá»Ÿ chÆ°a Ä‘Æ°á»£c cáº¥u hÃ¬nh Ä‘áº§y Ä‘á»§.')
+      toast.error('Chính sách hủy của cơ sở chưa được cấu hình đầy đủ.')
       return
     }
 
@@ -1820,10 +1820,10 @@ export const BookingPage: React.FC = () => {
         agreed: true,
       })
 
-      // ÄÃ³ng modal Ä‘iá»u khoáº£n
+      // Đóng modal điều khoản
       setShowPolicyConfirmModal(false)
 
-      // Sau khi backend lÆ°u xÃ¡c nháº­n thÃ nh cÃ´ng, tiáº¿n hÃ nh láº¥y há»£p Ä‘á»“ng vÃ  má»Ÿ modal DocuSeal
+      // Sau khi backend lưu xác nhận thành công, tiến hành lấy hợp đồng và mở modal DocuSeal
       let contract = null
       try {
         contract = await contractService.getContractByBookingId(createdBookingForSigning.id)
@@ -1832,20 +1832,20 @@ export const BookingPage: React.FC = () => {
       }
 
       if (!contract) {
-        throw new Error('KhÃ´ng thá»ƒ khá»Ÿi táº¡o tÃ i liá»‡u há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ DocuSeal. Vui lÃ²ng thá»­ láº¡i.')
+        throw new Error('Không thể khởi tạo tài liệu hợp đồng điện tử DocuSeal. Vui lòng thử lại.')
       }
 
       setContractForSigning(contract)
       setShowDocuSealModal(true)
     } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'XÃ¡c nháº­n Ä‘iá»u khoáº£n tháº¥t báº¡i. Vui lÃ²ng thá»­ láº¡i.'
-      toast.error(msg, { title: 'Lá»—i xÃ¡c nháº­n Ä‘iá»u khoáº£n' })
+      const msg = err?.response?.data?.message || err?.message || 'Xác nhận điều khoản thất bại. Vui lòng thử lại.'
+      toast.error(msg, { title: 'Lỗi xác nhận điều khoản' })
     } finally {
       setIsConfirmingPolicy(false)
     }
   }
 
-  // BÆ°á»›c 3: Sau khi khÃ¡ch kÃ½ há»£p Ä‘á»“ng trá»±c tuyáº¿n DocuSeal thÃ nh cÃ´ng -> Táº¡o VNPay vÃ  chuyá»ƒn hÆ°á»›ng sang Sandbox
+  // Bước 3: Sau khi khách ký hợp đồng trực tuyến DocuSeal thành công -> Tạo VNPay và chuyển hướng sang Sandbox
   const handleDocuSealSignedSuccess = async (_signedContract: RentalContract) => {
     setShowDocuSealModal(false)
     setHasSignedContract(true)
@@ -1860,7 +1860,7 @@ export const BookingPage: React.FC = () => {
 
     try {
       if (!createdBookingForSigning) {
-        throw new Error('KhÃ´ng tÃ¬m tháº¥y thÃ´ng tin Ä‘Æ¡n Ä‘áº·t chá»— Ä‘Ã£ kÃ½.')
+        throw new Error('Không tìm thấy thông tin đơn đặt chỗ đã ký.')
       }
 
       const paymentAmount = (createdBookingForSigning?.totalRentalFee != null && createdBookingForSigning?.depositAmount != null)
@@ -1881,22 +1881,22 @@ export const BookingPage: React.FC = () => {
         sendReservationToStaff(createdBookingForSigning.bookingCode, 'ONLINE', false, createdBookingForSigning.id)
         window.location.assign(payRes.paymentUrl)
       } else {
-        throw new Error('Cá»•ng thanh toÃ¡n khÃ´ng pháº£n há»“i Ä‘Æ°á»ng dáº«n giao dá»‹ch. Vui lÃ²ng thá»­ láº¡i trong giÃ¢y lÃ¡t.')
+        throw new Error('Cổng thanh toán không phản hồi đường dẫn giao dịch. Vui lòng thử lại trong giây lát.')
       }
     } catch (err: any) {
       console.error('VNPay redirect after sign error:', err)
-      setSubmitError(err?.message || 'Há»£p Ä‘á»“ng Ä‘Ã£ kÃ½ thÃ nh cÃ´ng, nhÆ°ng khÃ´ng thá»ƒ káº¿t ná»‘i tá»›i cá»•ng thanh toÃ¡n VNPay Sandbox. Vui lÃ²ng thá»­ láº¡i.')
+      setSubmitError(err?.message || 'Hợp đồng đã ký thành công, nhưng không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
       setIsSubmitting(false)
     }
   }
 
-  // Tiáº¿p tá»¥c thá»±c hiá»‡n thanh toÃ¡n cho Ä‘Æ¡n vÃ  há»£p Ä‘á»“ng Ä‘Ã£ kÃ½ trÆ°á»›c Ä‘Ã³
+  // Tiếp tục thực hiện thanh toán cho đơn và hợp đồng đã ký trước đó
   const handleContinuePayment = async () => {
     if (isStaffOrManager) {
-      toast.warning('Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i cÃ³ thá»ƒ thá»±c hiá»‡n Ä‘áº·t kho.', {
-        title: 'Giá»›i háº¡n quyá»n thao tÃ¡c',
+      toast.warning('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.', {
+        title: 'Giới hạn quyền thao tác',
       })
-      setSubmitError('Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i cÃ³ thá»ƒ thá»±c hiá»‡n Ä‘áº·t kho.')
+      setSubmitError('Chỉ tài khoản khách hàng mới có thể thực hiện đặt kho.')
       setIsSubmitting(false)
       return
     }
@@ -1929,11 +1929,11 @@ export const BookingPage: React.FC = () => {
         sendReservationToStaff(targetBooking.bookingCode || bookingCode, 'ONLINE', false, targetBooking.id)
         window.location.assign(payRes.paymentUrl)
       } else {
-        throw new Error('Cá»•ng thanh toÃ¡n khÃ´ng pháº£n há»“i Ä‘Æ°á»ng dáº«n giao dá»‹ch. Vui lÃ²ng thá»­ láº¡i trong giÃ¢y lÃ¡t.')
+        throw new Error('Cổng thanh toán không phản hồi đường dẫn giao dịch. Vui lòng thử lại trong giây lát.')
       }
     } catch (err: any) {
       console.error('Continue VNPay payment error:', err)
-      setSubmitError(err?.message || 'KhÃ´ng thá»ƒ káº¿t ná»‘i tá»›i cá»•ng thanh toÃ¡n VNPay Sandbox. Vui lÃ²ng thá»­ láº¡i.')
+      setSubmitError(err?.message || 'Không thể kết nối tới cổng thanh toán VNPay Sandbox. Vui lòng thử lại.')
       setIsSubmitting(false)
     }
   }
@@ -1954,7 +1954,7 @@ export const BookingPage: React.FC = () => {
       }
       const unitsInFac = activeFac
         ? storageUnits.filter(
-            (u) => u.facilityId === activeFac.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trá»‘ng')
+            (u) => u.facilityId === activeFac.id && (u.status === 'AVAILABLE' || (u.status as string) === 'Trống')
           )
         : []
       if (!activeFac || unitsInFac.length === 0 || (activeFac as any).availableCount === 0) {
@@ -1971,8 +1971,8 @@ export const BookingPage: React.FC = () => {
         return
       }
       if (currentSelectedSize && getAvailableCountForSize(currentSelectedSize) === 0) {
-        toast.warning('KÃ­ch thÆ°á»›c buá»“ng kho Ä‘Ã£ chá»n hiá»‡n khÃ´ng cÃ²n buá»“ng kháº£ dá»¥ng táº¡i cÆ¡ sá»Ÿ nÃ y. Vui lÃ²ng chá»n kÃ­ch thÆ°á»›c khÃ¡c hoáº·c Ä‘á»•i chi nhÃ¡nh.', {
-          title: 'Kho Ä‘Ã£ háº¿t chá»—',
+        toast.warning('Kích thước buồng kho đã chọn hiện không còn buồng khả dụng tại cơ sở này. Vui lòng chọn kích thước khác hoặc đổi chi nhánh.', {
+          title: 'Kho đã hết chỗ',
         })
         return
       }
@@ -1985,8 +1985,8 @@ export const BookingPage: React.FC = () => {
     }
     if (currentStep === 3) {
       if (!isDurationValid) {
-        toast.warning('Thá»i gian thuÃª ngáº¯n háº¡n tá»‘i thiá»ƒu lÃ  7 ngÃ y. Vui lÃ²ng kiá»ƒm tra láº¡i.', {
-          title: 'Thá»i gian thuÃª khÃ´ng há»£p lá»‡',
+        toast.warning('Thời gian thuê ngắn hạn tối thiểu là 7 ngày. Vui lòng kiểm tra lại.', {
+          title: 'Thời gian thuê không hợp lệ',
         })
         return
       }
@@ -2027,7 +2027,7 @@ export const BookingPage: React.FC = () => {
       // Auto pre-fill info from user profile when authenticated
       if (user) {
         const pName = user.fullName || user.username || ''
-        if (pName && (!customerName.trim() || customerName === 'KhÃ¡ch hÃ ng')) {
+        if (pName && (!customerName.trim() || customerName === 'Khách hàng')) {
           setCustomerName(pName)
         }
         const pPhone = user.phone || (user as any).phoneNumber || ''
@@ -2077,8 +2077,8 @@ export const BookingPage: React.FC = () => {
     }
     if (currentStep === 5) {
       if (isStaffOrManager) {
-        toast.warning('Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i thá»±c hiá»‡n Ä‘áº·t Ä‘Æ°á»£c kho.', {
-          title: 'Giá»›i háº¡n quyá»n thao tÃ¡c',
+        toast.warning('Chỉ tài khoản khách hàng mới thực hiện đặt được kho.', {
+          title: 'Giới hạn quyền thao tác',
         })
         return
       }
@@ -2138,11 +2138,11 @@ export const BookingPage: React.FC = () => {
             <BrandLogo size="md" />
 
             <div className="hidden lg:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 pl-6 border-l border-slate-200 dark:border-slate-800">
-              <span className="font-semibold text-slate-900 dark:text-white">Quy trÃ¬nh Ä‘áº·t kho</span>
-              <span>â€¢</span>
-              <span>Minh báº¡ch chi phÃ­</span>
-              <span>â€¢</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Tá»± Ä‘á»™ng 24/7</span>
+              <span className="font-semibold text-slate-900 dark:text-white">Quy trình đặt kho</span>
+              <span>•</span>
+              <span>Minh bạch chi phí</span>
+              <span>•</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Tự động 24/7</span>
             </div>
           </div>
 
@@ -2166,7 +2166,7 @@ export const BookingPage: React.FC = () => {
                       >
                         <span className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[18px] text-emerald-400">dashboard</span>
-                          <span>{isCustomer ? t('VÃ o trang Quáº£n LÃ½ Kho ') : t('VÃ o Trang Äiá»u HÃ nh Portal')}</span>
+                          <span>{isCustomer ? t('Vào trang Quản Lý Kho ') : t('Vào Trang Điều Hành Portal')}</span>
                         </span>
                         <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                       </button>
@@ -2178,7 +2178,7 @@ export const BookingPage: React.FC = () => {
                       >
                         <span className="flex items-center gap-2">
                           <span className="material-symbols-outlined text-[18px] text-blue-600 dark:text-blue-400">calendar_month</span>
-                          <span>{t('ÄÆ¡n Äáº·t Giá»¯ Chá»— Cá»§a TÃ´i')}</span>
+                          <span>{t('Đơn Đặt Giữ Chỗ Của Tôi')}</span>
                         </span>
                         <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                       </button>
@@ -2192,13 +2192,13 @@ export const BookingPage: React.FC = () => {
                   to="/login"
                   className="px-3 py-2 text-[13px] font-medium text-slate-700 dark:text-slate-300 transition-colors hover:text-slate-950 dark:hover:text-white"
                 >
-                  {t('ÄÄƒng Nháº­p')}
+                  {t('Đăng Nhập')}
                 </Link>
                 <Link
                   to="/booking"
                   className="inline-flex items-center gap-1.5 rounded-full bg-blue-700 hover:bg-blue-800 px-4 py-2.5 text-[13px] font-semibold text-white transition-colors shadow-xs"
                 >
-                  <span>{t('ThuÃª Kho Ngay')}</span>
+                  <span>{t('Thuê Kho Ngay')}</span>
                   <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
                 </Link>
               </>
@@ -2226,12 +2226,12 @@ export const BookingPage: React.FC = () => {
 
               {/* 6 Step Nodes */}
               {[
-                { step: 1, title: 'Chá»n cÆ¡ sá»Ÿ', subtitle: selectedFacility?.name || 'Chá»n chi nhÃ¡nh' },
-                { step: 2, title: 'Chá»n kho', subtitle: currentSelectedSize ? `Kho ${currentSelectedSize.volumeText}` : 'Chá»n quy cÃ¡ch' },
-                { step: 3, title: 'Thá»i háº¡n & BÃ¡o giÃ¡', subtitle: `${rentalDurationText} â€¢ ${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} â‚«` },
-                { step: 4, title: 'Lá»‹ch háº¹n & Chi tiáº¿t', subtitle: `${formatDateDDMMYYYY(checkInDate)} â€¢ ${customerName || 'Chi tiáº¿t'}` },
-                { step: 5, title: 'Há»£p Ä‘á»“ng & Thanh toÃ¡n', subtitle: paymentMethod === 'ONLINE' ? 'KÃ½ HÄ & Trá»±c tuyáº¿n' : 'Táº¡i cÆ¡ sá»Ÿ' },
-                { step: 6, title: 'HoÃ n táº¥t', subtitle: 'HoÃ n táº¥t giá»¯ chá»—' },
+                { step: 1, title: 'Chọn cơ sở', subtitle: selectedFacility?.name || 'Chọn chi nhánh' },
+                { step: 2, title: 'Chọn kho', subtitle: currentSelectedSize ? `Kho ${currentSelectedSize.volumeText}` : 'Chọn quy cách' },
+                { step: 3, title: 'Thời hạn & Báo giá', subtitle: `${rentalDurationText} • ${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫` },
+                { step: 4, title: 'Lịch hẹn & Chi tiết', subtitle: `${formatDateDDMMYYYY(checkInDate)} • ${customerName || 'Chi tiết'}` },
+                { step: 5, title: 'Hợp đồng & Thanh toán', subtitle: paymentMethod === 'ONLINE' ? 'Ký HĐ & Trực tuyến' : 'Tại cơ sở' },
+                { step: 6, title: 'Hoàn tất', subtitle: 'Hoàn tất giữ chỗ' },
               ].map((item) => {
                 const isPassed = currentStep > item.step
                 const isCurrent = currentStep === item.step
@@ -2289,7 +2289,7 @@ export const BookingPage: React.FC = () => {
                             : 'text-slate-400/80 dark:text-slate-600'
                         }`}
                       >
-                        {isPassed ? item.subtitle : isCurrent ? 'Äang thá»±c hiá»‡n' : 'ChÆ°a tá»›i'}
+                        {isPassed ? item.subtitle : isCurrent ? 'Đang thực hiện' : 'Chưa tới'}
                       </span>
                     </div>
                   </button>
@@ -2306,12 +2306,12 @@ export const BookingPage: React.FC = () => {
                   {currentStep}
                 </span>
                 <span className="font-bold text-xs text-slate-900 dark:text-white">
-                  {currentStep === 1 && 'BÆ°á»›c 1: Chá»n cÆ¡ sá»Ÿ'}
-                  {currentStep === 2 && `BÆ°á»›c 2: Chá»n kho (${currentSelectedSize?.volumeText || ''})`}
-                  {currentStep === 3 && 'BÆ°á»›c 3: Thá»i háº¡n thuÃª & BÃ¡o giÃ¡'}
-                  {currentStep === 4 && 'BÆ°á»›c 4: Lá»‹ch háº¹n & Chi tiáº¿t'}
-                  {currentStep === 5 && 'BÆ°á»›c 5: Há»£p Ä‘á»“ng & Thanh toÃ¡n'}
-                  {currentStep === 6 && 'BÆ°á»›c 6: HoÃ n táº¥t giá»¯ chá»—'}
+                  {currentStep === 1 && 'Bước 1: Chọn cơ sở'}
+                  {currentStep === 2 && `Bước 2: Chọn kho (${currentSelectedSize?.volumeText || ''})`}
+                  {currentStep === 3 && 'Bước 3: Thời hạn thuê & Báo giá'}
+                  {currentStep === 4 && 'Bước 4: Lịch hẹn & Chi tiết'}
+                  {currentStep === 5 && 'Bước 5: Hợp đồng & Thanh toán'}
+                  {currentStep === 6 && 'Bước 6: Hoàn tất giữ chỗ'}
                 </span>
               </div>
               <span className="text-slate-400 font-mono text-[11px]">{currentStep}/6</span>
@@ -2331,7 +2331,7 @@ export const BookingPage: React.FC = () => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4 pb-36 sm:pb-44">
         
         {/* ============================================================== */}
-        {/* BÆ¯á»šC 1: CHá»ŒN CÆ  Sá»ž KHO                                          */}
+        {/* BƯỚC 1: CHỌN CƠ SỞ KHO                                          */}
         {/* ============================================================== */}
         {currentStep === 1 && (
           <div id="facility-selection-section" className="space-y-4 animate-in fade-in duration-300">
@@ -2339,25 +2339,25 @@ export const BookingPage: React.FC = () => {
               <div className="space-y-0.5">
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
                   <Building2 size={12} />
-                  <span>BÆ°á»›c 1 / 6 â€¢ Chá»n cÆ¡ sá»Ÿ</span>
+                  <span>Bước 1 / 6 • Chọn cơ sở</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Chá»n cÆ¡ sá»Ÿ kho lÆ°u trá»¯
+                  Chọn cơ sở kho lưu trữ
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Táº¥t cáº£ chi nhÃ¡nh Boxora Ä‘á»u váº­n hÃ nh tá»± Ä‘á»™ng 24/7 vá»›i khÃ³a thÃ´ng minh IoT Ä‘á»™c láº­p.
+                  Tất cả chi nhánh Boxora đều vận hành tự động 24/7 với khóa thông minh IoT độc lập.
                 </p>
               </div>
 
               <div className="flex items-center gap-2.5 shrink-0">
                 <div className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-2 shadow-2xs">
                   <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span><strong>{sortedFacilities.length}</strong> cÆ¡ sá»Ÿ Ä‘ang hoáº¡t Ä‘á»™ng</span>
+                  <span><strong>{sortedFacilities.length}</strong> cơ sở đang hoạt động</span>
                 </div>
                 {selectedFacility && (
                   <div className="hidden sm:flex px-3 py-1.5 rounded-xl bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-800 text-xs font-semibold text-blue-700 dark:text-blue-300 items-center gap-1.5">
                     <CheckCircle2 size={13} className="text-blue-600 dark:text-blue-400" />
-                    <span>Äang chá»n: {selectedFacility.name}</span>
+                    <span>Đang chọn: {selectedFacility.name}</span>
                   </div>
                 )}
               </div>
@@ -2366,11 +2366,11 @@ export const BookingPage: React.FC = () => {
             {loadingData ? (
               <div className="p-12 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm space-y-2">
                 <div className="w-7 h-7 border-3 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto" />
-                <p className="font-medium text-xs">Äang táº£i danh sÃ¡ch cÆ¡ sá»Ÿ kho Boxora...</p>
+                <p className="font-medium text-xs">Đang tải danh sách cơ sở kho Boxora...</p>
               </div>
             ) : sortedFacilities.length === 0 ? (
               <div className="p-10 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm">
-                KhÃ´ng tÃ¬m tháº¥y cÆ¡ sá»Ÿ nÃ o phÃ¹ há»£p. Vui lÃ²ng táº£i láº¡i trang.
+                Không tìm thấy cơ sở nào phù hợp. Vui lòng tải lại trang.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -2411,7 +2411,7 @@ export const BookingPage: React.FC = () => {
                               fac.availableCount > 0 ? 'bg-emerald-600/95' : 'bg-slate-600/95'
                             }`}>
                               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                              {fac.availableCount > 0 ? `CÃ²n ${fac.availableCount} kho trá»‘ng` : 'Háº¿t kho trá»‘ng'}
+                              {fac.availableCount > 0 ? `Còn ${fac.availableCount} kho trống` : 'Hết kho trống'}
                             </span>
                           </div>
                           <h3 className="font-extrabold text-white text-base leading-tight drop-shadow-sm">
@@ -2424,7 +2424,7 @@ export const BookingPage: React.FC = () => {
                         <div className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-400">
                           <MapPin size={14} className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
                           <span className="line-clamp-2 leading-relaxed font-medium">
-                            {fac.address || 'Äá»‹a chá»‰ Ä‘ang cáº­p nháº­t'}
+                            {fac.address || 'Địa chỉ đang cập nhật'}
                           </span>
                         </div>
 
@@ -2437,11 +2437,11 @@ export const BookingPage: React.FC = () => {
                           {isSelected ? (
                             <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 text-[11px]">
                               <Check size={13} strokeWidth={3} />
-                              Äang chá»n
+                              Đang chọn
                             </span>
                           ) : (
                             <span className="text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 text-[11px] font-medium flex items-center gap-1">
-                              Chá»n cÆ¡ sá»Ÿ
+                              Chọn cơ sở
                               <ChevronRight size={13} />
                             </span>
                           )}
@@ -2456,7 +2456,7 @@ export const BookingPage: React.FC = () => {
         )}
 
         {/* ============================================================== */}
-        {/* BÆ¯á»šC 2: CHá»ŒN KHO / LOáº I KHO (Task 1: Real availability strictly) */}
+        {/* BƯỚC 2: CHỌN KHO / LOẠI KHO (Task 1: Real availability strictly) */}
         {/* ============================================================== */}
         {currentStep === 2 && (
           <div className="space-y-3.5 animate-in fade-in duration-300">
@@ -2470,7 +2470,7 @@ export const BookingPage: React.FC = () => {
                   Chọn kho hoặc loại kho lưu trữ
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Lựa chọn thể tích phù hợp và tùy chỉnh chế độ điều hòa nhiệt ẩm (A/C) hoặc thông gió tự nhiên (Non-A/C).
+                  Lựa chọn thể tích phù hợp và tùy chỉnh chế độ điều hòa nhiệt ẩm  hoặc thông gió tự nhiên.
                 </p>
               </div>
 
@@ -2480,7 +2480,7 @@ export const BookingPage: React.FC = () => {
                     <Building2 size={14} />
                   </div>
                   <div>
-                    <span className="text-slate-400 dark:text-slate-500 block text-[10px]">CÆ¡ sá»Ÿ lÆ°u trá»¯</span>
+                    <span className="text-slate-400 dark:text-slate-500 block text-[10px]">Cơ sở lưu trữ</span>
                     <strong className="text-slate-900 dark:text-white font-bold text-xs">{selectedFacility?.name}</strong>
                   </div>
                 </div>
@@ -2489,7 +2489,7 @@ export const BookingPage: React.FC = () => {
                   onClick={() => setCurrentStep(1)}
                   className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-blue-600 dark:text-blue-400 text-xs font-semibold cursor-pointer"
                 >
-                  Äá»•i cÆ¡ sá»Ÿ
+                  Đổi cơ sở
                 </button>
               </div>
             </div>
@@ -2502,9 +2502,9 @@ export const BookingPage: React.FC = () => {
                     <AlertCircle size={26} />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-base sm:text-lg">CÆ¡ sá»Ÿ nÃ y hiá»‡n chÆ°a cÃ³ kho kháº£ dá»¥ng</h3>
+                    <h3 className="font-extrabold text-base sm:text-lg">Cơ sở này hiện chưa có kho khả dụng</h3>
                     <p className="text-xs sm:text-sm text-amber-700 dark:text-amber-300/90 mt-1 leading-relaxed">
-                      CÆ¡ sá»Ÿ {selectedFacility?.name} hiá»‡n chÆ°a cÃ³ buá»“ng kho nÃ o á»Ÿ tráº¡ng thÃ¡i kháº£ dá»¥ng. Vui lÃ²ng chá»n cÆ¡ sá»Ÿ khÃ¡c Ä‘á»ƒ tiáº¿p tá»¥c Ä‘áº·t kho.
+                      Cơ sở {selectedFacility?.name} hiện chưa có buồng kho nào ở trạng thái khả dụng. Vui lòng chọn cơ sở khác để tiếp tục đặt kho.
                     </p>
                   </div>
                 </div>
@@ -2513,7 +2513,7 @@ export const BookingPage: React.FC = () => {
                   onClick={() => setIsNoUnitsModalOpen(true)}
                   className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs sm:text-sm shrink-0 transition-all shadow-xs cursor-pointer"
                 >
-                  Chá»n cÆ¡ sá»Ÿ khÃ¡c
+                  Chọn cơ sở khác
                 </button>
               </div>
             ) : (
@@ -2582,7 +2582,7 @@ export const BookingPage: React.FC = () => {
 
                     <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
                       <span>Đang chọn:</span>
-                      <strong className="text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">
+                      <strong className="text-blue-600 dark:text-blue-400 font-bold">
                         Kho {currentSelectedSize.volumeText} ({isAcActive ? 'A/C Máy lạnh' : 'Non-A/C'})
                       </strong>
                     </div>
@@ -2622,7 +2622,7 @@ export const BookingPage: React.FC = () => {
                                 {sizeUnit.volumeText}
                               </span>
                               <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
-                                {sizeUnit.areaM2} mÂ²
+                                {sizeUnit.areaM2} m²
                               </span>
                             </div>
                             <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">
@@ -2641,7 +2641,7 @@ export const BookingPage: React.FC = () => {
                                 setInspectingSizeUnit(sizeUnit)
                               }}
                               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-                              title="Xem chi tiáº¿t quy cÃ¡ch & áº£nh thá»±c táº¿"
+                              title="Xem chi tiết quy cách & ảnh thực tế"
                             >
                               <Maximize2 size={13} />
                             </button>
@@ -2669,7 +2669,7 @@ export const BookingPage: React.FC = () => {
                             <div className="w-full h-full relative overflow-hidden">
                               <img
                                 src={(sizeUnit as any).imageUrl || realPhotoInfo.photoUrl}
-                                alt={`áº¢nh thá»±c táº¿ kho ${sizeUnit.volumeText}`}
+                                alt={`Ảnh thực tế kho ${sizeUnit.volumeText}`}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                                 onError={(e) => {
                                   const target = e.currentTarget
@@ -2680,7 +2680,7 @@ export const BookingPage: React.FC = () => {
                               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent px-3 py-1.5 flex items-center justify-between text-[10px] text-white">
                                 <span className="font-semibold truncate">{sizeUnit.dimensions.replace('Cao ', '')}</span>
                                 <span className="px-1.5 py-0.5 rounded bg-blue-600/90 font-bold shrink-0">
-                                  {unitAcMode === 'AC' ? 'Kho A/C' : 'TiÃªu chuáº©n'}
+                                  {unitAcMode === 'AC' ? 'Kho A/C' : 'Tiêu chuẩn'}
                                 </span>
                               </div>
                             </div>
@@ -2690,19 +2690,19 @@ export const BookingPage: React.FC = () => {
                         {/* Bottom Controls */}
                         <div className="p-3.5 pt-2 space-y-2">
                           <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-slate-500 dark:text-slate-400 font-medium">Kháº£ dá»¥ng:</span>
+                            <span className="text-slate-500 dark:text-slate-400 font-medium">Khả dụng:</span>
                             {availCount > 0 ? (
                               <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold">
-                                CÃ²n {availCount} buá»“ng kho
+                                Còn {availCount} buồng kho
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold">
-                                Háº¿t chá»—
+                                Hết chỗ
                               </span>
                             )}
                           </div>
 
-                          {/* Segmented A/C Toggle: áº¨n nÃºt MÃ¡y láº¡nh A/C náº¿u kho khÃ´ng há»— trá»£ A/C */}
+                          {/* Segmented A/C Toggle: Ẩn nút Máy lạnh A/C nếu kho không hỗ trợ A/C */}
                           {unitHasAc ? (
                             <div className="p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center text-xs font-semibold">
                               <button
@@ -2715,7 +2715,7 @@ export const BookingPage: React.FC = () => {
                                 }`}
                               >
                                 <Wind size={11} />
-                                <span>TiÃªu chuáº©n</span>
+                                <span>Tiêu chuẩn</span>
                               </button>
                               <button
                                 type="button"
@@ -2727,27 +2727,27 @@ export const BookingPage: React.FC = () => {
                                 }`}
                               >
                                 <ThermometerSnowflake size={11} />
-                                <span>MÃ¡y láº¡nh A/C</span>
+                                <span>Máy lạnh A/C</span>
                               </button>
                             </div>
                           ) : (
                             <div className="p-1 rounded-lg bg-slate-100/70 dark:bg-slate-800/70 flex items-center text-xs font-semibold">
                               <div className="flex-1 py-1 rounded-md text-center bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 shadow-2xs font-bold flex items-center justify-center gap-1 text-[11px]">
                                 <Wind size={11} className="text-slate-500" />
-                                <span>TiÃªu chuáº©n (ThÃ´ng giÃ³)</span>
+                                <span>Tiêu chuẩn (Thông gió)</span>
                               </div>
                             </div>
                           )}
 
                           <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-baseline justify-between">
                             <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                              ÄÆ¡n giÃ¡ thuÃª
+                              Đơn giá thuê
                             </span>
                             <div className="text-right">
                               <span className="font-extrabold text-sm sm:text-base text-blue-600 dark:text-blue-400">
-                                {displayPrice.toLocaleString('vi-VN')} â‚«
+                                {displayPrice.toLocaleString('vi-VN')} ₫
                               </span>
-                              <span className="text-[11px] text-slate-400 font-medium"> /thÃ¡ng</span>
+                              <span className="text-[11px] text-slate-400 font-medium"> /tháng</span>
                             </div>
                           </div>
                         </div>
@@ -2761,7 +2761,7 @@ export const BookingPage: React.FC = () => {
         )}
 
         {/* ============================================================== */}
-        {/* BÆ¯á»šC 3: THá»œI Háº N THUÃŠ & BÃO GIÃ (Task 2 Standardized)           */}
+        {/* BƯỚC 3: THỜI HẠN THUÊ & BÁO GIÁ (Task 2 Standardized)           */}
         {/* ============================================================== */}
         {currentStep === 3 && (
           <div className="space-y-3.5 animate-in fade-in duration-300">
@@ -2769,19 +2769,19 @@ export const BookingPage: React.FC = () => {
               <div className="space-y-0.5">
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
                   <Clock size={12} />
-                  <span>BÆ°á»›c 3 / 6 â€¢ Thá»i háº¡n thuÃª &amp; BÃ¡o giÃ¡</span>
+                  <span>Bước 3 / 6 • Thời hạn thuê &amp; Báo giá</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Thá»i háº¡n thuÃª &amp; Báº£ng kÃª bÃ¡o giÃ¡
+                  Thời hạn thuê &amp; Bảng kê báo giá
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {t('Lá»±a chá»n ká»³ háº¡n thuÃª linh hoáº¡t Ä‘á»ƒ nháº­n Æ°u Ä‘Ã£i lÃªn Ä‘áº¿n {pct}% vÃ  xem báº£ng phÃ¢n rÃ£ chi phÃ­ minh báº¡ch.', { pct: `${maxActiveDiscountPercent}%` }) || `Lá»±a chá»n ká»³ háº¡n thuÃª linh hoáº¡t Ä‘á»ƒ nháº­n Æ°u Ä‘Ã£i lÃªn Ä‘áº¿n ${maxActiveDiscountPercent}% vÃ  xem báº£ng phÃ¢n rÃ£ chi phÃ­ minh báº¡ch.`}
+                  {t('Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến {pct}% và xem bảng phân rã chi phí minh bạch.', { pct: `${maxActiveDiscountPercent}%` }) || `Lựa chọn kỳ hạn thuê linh hoạt để nhận ưu đãi lên đến ${maxActiveDiscountPercent}% và xem bảng phân rã chi phí minh bạch.`}
                 </p>
               </div>
 
               <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300">
                 <ShieldCheck size={14} />
-                <span>Minh báº¡ch 100% â€¢ KhÃ´ng phÃ­ áº©n</span>
+                <span>Minh bạch 100% • Không phí ẩn</span>
               </div>
             </div>
 
@@ -2799,10 +2799,10 @@ export const BookingPage: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                          1. Chá»n thá»i háº¡n thuÃª kho &amp; Æ¯u Ä‘Ã£i ká»³ háº¡n
+                          1. Chọn thời hạn thuê kho &amp; Ưu đãi kỳ hạn
                         </h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                          {t('Cam káº¿t tá»« 3 thÃ¡ng trá»Ÿ lÃªn Ä‘Æ°á»£c giáº£m trá»±c tiáº¿p tá»« {min}% Ä‘áº¿n {max}% vÃ o Ä‘Æ¡n giÃ¡ hÃ ng thÃ¡ng', { min: `${facilityDiscount3M}%`, max: `${maxActiveDiscountPercent}%` }) || `Cam káº¿t tá»« 3 thÃ¡ng trá»Ÿ lÃªn Ä‘Æ°á»£c giáº£m trá»±c tiáº¿p tá»« ${facilityDiscount3M}% Ä‘áº¿n ${maxActiveDiscountPercent}% vÃ o Ä‘Æ¡n giÃ¡ hÃ ng thÃ¡ng`}
+                          {t('Cam kết từ 3 tháng trở lên được giảm trực tiếp từ {min}% đến {max}% vào đơn giá hàng tháng', { min: `${facilityDiscount3M}%`, max: `${maxActiveDiscountPercent}%` }) || `Cam kết từ 3 tháng trở lên được giảm trực tiếp từ ${facilityDiscount3M}% đến ${maxActiveDiscountPercent}% vào đơn giá hàng tháng`}
                         </p>
                       </div>
                     </div>
@@ -2848,7 +2848,7 @@ export const BookingPage: React.FC = () => {
                       onClick={() => setDurationMode(durationMode === 'CUSTOM_DAYS' ? 'MONTHS' : 'CUSTOM_DAYS')}
                       className="text-xs text-blue-600 dark:text-blue-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      <span>{durationMode === 'CUSTOM_DAYS' ? 'Thu gá»n tÃ¹y chá»‰nh sá»‘ ngÃ y' : 'Cáº§n thuÃª theo sá»‘ ngÃ y ngáº¯n háº¡n? (Tá»‘i thiá»ƒu 7 ngÃ y)'}</span>
+                      <span>{durationMode === 'CUSTOM_DAYS' ? 'Thu gọn tùy chỉnh số ngày' : 'Cần thuê theo số ngày ngắn hạn? (Tối thiểu 7 ngày)'}</span>
                       <ChevronRight size={13} className={durationMode === 'CUSTOM_DAYS' ? 'rotate-90 transition-transform' : ''} />
                     </button>
                   </div>
@@ -2857,7 +2857,7 @@ export const BookingPage: React.FC = () => {
                     <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-3">
                       <div className="flex items-center justify-between gap-4">
                         <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          Nháº­p sá»‘ ngÃ y muá»‘n thuÃª (tá»‘i thiá»ƒu 7 ngÃ y):
+                          Nhập số ngày muốn thuê (tối thiểu 7 ngày):
                         </label>
                         <input
                           type="number"
@@ -2868,7 +2868,7 @@ export const BookingPage: React.FC = () => {
                         />
                       </div>
                       {customDays < 7 && (
-                        <p className="text-xs text-red-600 font-medium">Thá»i gian thuÃª tá»‘i thiá»ƒu lÃ  7 ngÃ y.</p>
+                        <p className="text-xs text-red-600 font-medium">Thời gian thuê tối thiểu là 7 ngày.</p>
                       )}
                     </div>
                   )}
@@ -2877,25 +2877,25 @@ export const BookingPage: React.FC = () => {
                 {/* 2. TRANSPARENCY COMMITMENTS */}
                 <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-2xs space-y-4">
                   <h3 className="font-bold text-sm text-slate-900 dark:text-white uppercase tracking-wider">
-                    Cam káº¿t minh báº¡ch tÃ i chÃ­nh Boxora
+                    Cam kết minh bạch tài chính Boxora
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                     <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-1">
-                      <strong className="text-slate-900 dark:text-white font-bold block">HoÃ n cá»c 100%</strong>
+                      <strong className="text-slate-900 dark:text-white font-bold block">Hoàn cọc 100%</strong>
                       <span className="text-slate-500 dark:text-slate-400 leading-relaxed block">
-                        Tiá»n cá»c báº£o Ä‘áº£m Ä‘Æ°á»£c hoÃ n tráº£ nguyÃªn váº¹n ngay khi thanh lÃ½ há»£p Ä‘á»“ng há»£p lá»‡.
+                        Tiền cọc bảo đảm được hoàn trả nguyên vẹn ngay khi thanh lý hợp đồng hợp lệ.
                       </span>
                     </div>
                     <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-1">
-                      <strong className="text-slate-900 dark:text-white font-bold block">Bao trá»n Ä‘iá»‡n &amp; A/C</strong>
+                      <strong className="text-slate-900 dark:text-white font-bold block">Bao trọn điện &amp; A/C</strong>
                       <span className="text-slate-500 dark:text-slate-400 leading-relaxed block">
-                        ÄÃ£ bao gá»“m chi phÃ­ Ä‘iá»‡n chiáº¿u sÃ¡ng, Ä‘iá»u hÃ²a kiá»ƒm soÃ¡t áº©m vÃ  vá»‡ sinh cÃ´ng nghiá»‡p.
+                        Đã bao gồm chi phí điện chiếu sáng, điều hòa kiểm soát ẩm và vệ sinh công nghiệp.
                       </span>
                     </div>
                     <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-1">
-                      <strong className="text-slate-900 dark:text-white font-bold block">ÄÃ£ gá»“m VAT</strong>
+                      <strong className="text-slate-900 dark:text-white font-bold block">Đã gồm VAT</strong>
                       <span className="text-slate-500 dark:text-slate-400 leading-relaxed block">
-                        Xuáº¥t hÃ³a Ä‘Æ¡n Ä‘iá»‡n tá»­ VAT tá»± Ä‘á»™ng, khÃ´ng phÃ¡t sinh báº¥t ká»³ khoáº£n phá»¥ phÃ­ áº©n nÃ o.
+                        Xuất hóa đơn điện tử VAT tự động, không phát sinh bất kỳ khoản phụ phí ẩn nào.
                       </span>
                     </div>
                   </div>
@@ -2912,26 +2912,26 @@ export const BookingPage: React.FC = () => {
                         <FileCheck2 size={17} />
                       </div>
                       <h3 className="font-bold text-base text-slate-900 dark:text-white">
-                        Báº£ng bÃ¡o giÃ¡ chi tiáº¿t
+                        Bảng báo giá chi tiết
                       </h3>
                     </div>
                     <span className="px-2.5 py-1 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-semibold">
-                      VNÄ (ÄÃ£ gá»“m VAT)
+                      VNĐ (Đã gồm VAT)
                     </span>
                   </div>
 
                   <div className="p-3.5 sm:p-4 space-y-2.5 text-xs">
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                      <span>ÄÆ¡n giÃ¡ buá»“ng kho niÃªm yáº¿t:</span>
+                      <span>Đơn giá buồng kho niêm yết:</span>
                       <strong className="text-slate-900 dark:text-white font-semibold">
                         {isCustomDuration
-                          ? `${quoteCalculation.dailyRate.toLocaleString('vi-VN')} â‚«/ngÃ y`
-                          : `${quoteCalculation.baseMonthly.toLocaleString('vi-VN')} â‚«/thÃ¡ng`}
+                          ? `${quoteCalculation.dailyRate.toLocaleString('vi-VN')} ₫/ngày`
+                          : `${quoteCalculation.baseMonthly.toLocaleString('vi-VN')} ₫/tháng`}
                       </strong>
                     </div>
 
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                      <span>Ká»³ háº¡n Ä‘Äƒng kÃ½ thuÃª:</span>
+                      <span>Kỳ hạn đăng ký thuê:</span>
                       <strong className="text-slate-900 dark:text-white font-semibold">
                         {rentalDurationText}
                       </strong>
@@ -2939,44 +2939,44 @@ export const BookingPage: React.FC = () => {
 
                     {!isCustomDuration && quoteCalculation.discountPercent > 0 && (
                       <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
-                        <span>ÄÆ¡n giÃ¡ sau Æ°u Ä‘Ã£i (-{quoteCalculation.discountPercent}%):</span>
-                        <span>{quoteCalculation.monthlyAfterDiscount.toLocaleString('vi-VN')} â‚«/thÃ¡ng</span>
+                        <span>Đơn giá sau ưu đãi (-{quoteCalculation.discountPercent}%):</span>
+                        <span>{quoteCalculation.monthlyAfterDiscount.toLocaleString('vi-VN')} ₫/tháng</span>
                       </div>
                     )}
 
                     {quoteCalculation.discountAmount > 0 && (
                       <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
-                        <span>Tá»•ng sá»‘ tiá»n tiáº¿t kiá»‡m Ä‘Æ°á»£c:</span>
-                        <span>âˆ’{quoteCalculation.discountAmount.toLocaleString('vi-VN')} â‚«</span>
+                        <span>Tổng số tiền tiết kiệm được:</span>
+                        <span>−{quoteCalculation.discountAmount.toLocaleString('vi-VN')} ₫</span>
                       </div>
                     )}
 
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex justify-between text-slate-800 dark:text-slate-200 font-semibold">
-                      <span>Tá»•ng tiá»n thuÃª ({rentalDurationText}):</span>
-                      <span>{quoteCalculation.totalRent.toLocaleString('vi-VN')} â‚«</span>
+                      <span>Tổng tiền thuê ({rentalDurationText}):</span>
+                      <span>{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</span>
                     </div>
 
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <div>
-                        <span className="block">Tiá»n Ä‘áº·t cá»c báº£o Ä‘áº£m:</span>
-                        <span className="text-[10px] text-slate-400 block">HoÃ n tráº£ 100% khi thanh lÃ½ há»£p Ä‘á»“ng</span>
+                        <span className="block">Tiền đặt cọc bảo đảm:</span>
+                        <span className="text-[10px] text-slate-400 block">Hoàn trả 100% khi thanh lý hợp đồng</span>
                       </div>
                       <strong className="text-slate-900 dark:text-white font-semibold">
-                        {quoteCalculation.depositAmount.toLocaleString('vi-VN')} â‚«
+                        {quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫
                       </strong>
                     </div>
 
                     <div className="p-3 rounded-lg bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-900/60 space-y-0.5">
                       <div className="flex items-baseline justify-between">
                         <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
-                          Tá»•ng chi phÃ­ dá»± kiáº¿n
+                          Tổng chi phí dự kiến
                         </span>
                         <span className="font-extrabold text-lg text-blue-600 dark:text-blue-400">
-                          {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} â‚«
+                          {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
                         </span>
                       </div>
                       <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Bao gá»“m tiá»n thuÃª {rentalDurationText} vÃ  tiá»n cá»c hoÃ n láº¡i 1 thÃ¡ng.
+                        Bao gồm tiền thuê {rentalDurationText} và tiền cọc hoàn lại 1 tháng.
                       </p>
                     </div>
 
@@ -2989,7 +2989,7 @@ export const BookingPage: React.FC = () => {
         )}
 
         {/* ============================================================== */}
-        {/* BÆ¯á»šC 4: Lá»ŠCH Háº¸N & CHI TIáº¾T (Task 2 & 3 Standardized)           */}
+        {/* BƯỚC 4: LỊCH HẸN & CHI TIẾT (Task 2 & 3 Standardized)           */}
         {/* ============================================================== */}
         {currentStep === 4 && (
           <div className="space-y-3.5 animate-in fade-in duration-300">
@@ -2997,20 +2997,20 @@ export const BookingPage: React.FC = () => {
               <div className="space-y-0.5">
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
                   <Calendar size={12} />
-                  <span>BÆ°á»›c 4 / 6 â€¢ Lá»‹ch háº¹n &amp; Chi tiáº¿t</span>
+                  <span>Bước 4 / 6 • Lịch hẹn &amp; Chi tiết</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Lá»‹ch háº¹n Ä‘Ã³n tiáº¿p &amp; Chi tiáº¿t Ä‘áº·t kho
+                  Lịch hẹn đón tiếp &amp; Chi tiết đặt kho
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl">
-                  Chá»n khung giá» bÃ n giao buá»“ng kho 24/7 vÃ  Ä‘iá»n thÃ´ng tin ngÆ°á»i Ä‘áº¡i diá»‡n nháº­n kho Ä‘á»ƒ chuáº©n bá»‹ há»“ sÆ¡ há»£p Ä‘á»“ng.
+                  Chọn khung giờ bàn giao buồng kho 24/7 và điền thông tin người đại diện nhận kho để chuẩn bị hồ sơ hợp đồng.
                 </p>
               </div>
 
               {isAuthenticated && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/70 border border-emerald-200/70 dark:border-emerald-800/70 text-emerald-700 dark:text-emerald-300 text-xs font-semibold w-fit shrink-0">
                   <ShieldCheck size={14} />
-                  <span>ÄÃ£ Ä‘á»“ng bá»™ thÃ´ng tin tÃ i khoáº£n</span>
+                  <span>Đã đồng bộ thông tin tài khoản</span>
                 </span>
               )}
             </div>
@@ -3029,23 +3029,23 @@ export const BookingPage: React.FC = () => {
                       </div>
                       <div>
                         <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
-                          1. Lá»‹ch háº¹n Ä‘Ã³n tiáº¿p &amp; Nháº­n bÃ n giao kho
+                          1. Lịch hẹn đón tiếp &amp; Nhận bàn giao kho
                         </h3>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                          Chá»n ngÃ y vÃ  buá»•i thuáº­n tiá»‡n Ä‘á»ƒ nhÃ¢n viÃªn chuáº©n bá»‹ buá»“ng kho &amp; há»— trá»£ bÃ n giao
+                          Chọn ngày và buổi thuận tiện để nhân viên chuẩn bị buồng kho &amp; hỗ trợ bàn giao
                         </p>
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-[10px] font-semibold w-fit">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Há»— trá»£ nháº­n kho 24/7
+                      Hỗ trợ nhận kho 24/7
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        NgÃ y nháº­n bÃ n giao kho (NgÃ y báº¯t Ä‘áº§u thuÃª)
+                        Ngày nhận bàn giao kho (Ngày bắt đầu thuê)
                       </label>
                       <input
                         type="date"
@@ -3057,10 +3057,10 @@ export const BookingPage: React.FC = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Thá»i háº¡n há»£p Ä‘á»“ng dá»± kiáº¿n
+                        Thời hạn hợp đồng dự kiến
                       </label>
                       <div className="px-3 py-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 text-xs sm:text-sm flex items-center justify-between">
-                        <span className="text-slate-500 dark:text-slate-400 text-xs">Tá»« {formatDateDDMMYYYY(startDate)} Ä‘áº¿n:</span>
+                        <span className="text-slate-500 dark:text-slate-400 text-xs">Từ {formatDateDDMMYYYY(startDate)} đến:</span>
                         <strong className="text-slate-900 dark:text-white font-bold text-xs sm:text-sm">
                           {formatDateDDMMYYYY(rentalEndDate)}
                         </strong>
@@ -3072,7 +3072,7 @@ export const BookingPage: React.FC = () => {
                   <div id="booking-checkin-time" className="space-y-1.5 scroll-mt-28">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">
-                        Khung giá» háº¹n Ä‘áº¿n cÆ¡ sá»Ÿ
+                        Khung giờ hẹn đến cơ sở
                       </label>
                       <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
                         {selectedPeriod.name} ({selectedPeriod.rangeText})
@@ -3090,7 +3090,7 @@ export const BookingPage: React.FC = () => {
                             onClick={() => {
                               if (!isPast) setSelectedPeriodId(group.id)
                             }}
-                            title={isPast ? 'Khung giá» nÃ y Ä‘Ã£ káº¿t thÃºc Ä‘á»‘i vá»›i ngÃ y Ä‘Ã£ chá»n' : undefined}
+                            title={isPast ? 'Khung giờ này đã kết thúc đối với ngày đã chọn' : undefined}
                             className={`p-2 sm:p-2.5 rounded-lg text-left border transition-all flex flex-col justify-between gap-1 ${
                               isPast
                                 ? 'opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-800/30 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-800 select-none'
@@ -3105,7 +3105,7 @@ export const BookingPage: React.FC = () => {
                               </span>
                               {isPast ? (
                                 <span className="text-[9px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-1 py-0.5 rounded border border-amber-200 dark:border-amber-800/60">
-                                  ÄÃ£ qua
+                                  Đã qua
                                 </span>
                               ) : isSelected ? (
                                 <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-white flex items-center justify-center">
@@ -3116,7 +3116,7 @@ export const BookingPage: React.FC = () => {
                               )}
                             </div>
                             <span className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-                              {group.rangeText.replace('Khoáº£ng tá»« ', 'Tá»« ')}
+                              {group.rangeText.replace('Khoảng từ ', 'Từ ')}
                             </span>
                           </button>
                         )
@@ -3130,7 +3130,7 @@ export const BookingPage: React.FC = () => {
                     {!hasAvailablePeriods(checkInDate) && (
                       <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200 dark:border-amber-800">
                         <AlertCircle size={13} className="shrink-0" />
-                        Táº¥t cáº£ cÃ¡c ca tiáº¿p Ä‘Ã³n trong ngÃ y Ä‘Ã£ chá»n Ä‘Ã£ káº¿t thÃºc. QuÃ½ khÃ¡ch vui lÃ²ng chá»n ngÃ y nháº­n kho tá»« ngÃ y mai.
+                        Tất cả các ca tiếp đón trong ngày đã chọn đã kết thúc. Quý khách vui lòng chọn ngày nhận kho từ ngày mai.
                       </p>
                     )}
                   </div>
@@ -3144,10 +3144,10 @@ export const BookingPage: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
-                        2. ThÃ´ng tin ngÆ°á»i Ä‘áº·t &amp; Nháº­n bÃ n giao
+                        2. Thông tin người đặt &amp; Nhận bàn giao
                       </h3>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        DÃ¹ng Ä‘á»ƒ láº­p há»£p Ä‘á»“ng thuÃª kho Ä‘iá»‡n tá»­, cáº¥p mÃ£ PIN khÃ³a thÃ´ng minh IoT vÃ  Ä‘á»‘i chiáº¿u khi nháº­n kho
+                        Dùng để lập hợp đồng thuê kho điện tử, cấp mã PIN khóa thông minh IoT và đối chiếu khi nhận kho
                       </p>
                     </div>
                   </div>
@@ -3157,9 +3157,9 @@ export const BookingPage: React.FC = () => {
                     <div className="p-2.5 px-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
                       <AlertCircle size={15} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                       <div className="space-y-0.5">
-                        <p className="font-bold">Bá»• sung thÃ´ng tin ngÆ°á»i nháº­n bÃ n giao</p>
+                        <p className="font-bold">Bổ sung thông tin người nhận bàn giao</p>
                         <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 leading-relaxed">
-                          TÃ i khoáº£n cá»§a báº¡n chÆ°a cÃ³ sá»‘ Ä‘iá»‡n thoáº¡i trong há»“ sÆ¡. Vui lÃ²ng nháº­p sá»‘ Ä‘iá»‡n thoáº¡i vÃ  sá»‘ CCCD/Há»™ chiáº¿u bÃªn dÆ°á»›i Ä‘á»ƒ Boxora láº­p há»£p Ä‘á»“ng vÃ  cáº¥p mÃ£ PIN má»Ÿ kho.
+                          Tài khoản của bạn chưa có số điện thoại trong hồ sơ. Vui lòng nhập số điện thoại và số CCCD/Hộ chiếu bên dưới để Boxora lập hợp đồng và cấp mã PIN mở kho.
                         </p>
                       </div>
                     </div>
@@ -3169,7 +3169,7 @@ export const BookingPage: React.FC = () => {
                   {user && (user.fullName || user.username) && (user.phone || (user as any).phoneNumber) && user.email && (
                     <div className="p-2 px-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
                       <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <span>ThÃ´ng tin Ä‘Ã£ Ä‘Æ°á»£c Ä‘á»“ng bá»™ tá»± Ä‘á»™ng tá»« tÃ i khoáº£n <strong>{user.fullName || user.username}</strong></span>
+                      <span>Thông tin đã được đồng bộ tự động từ tài khoản <strong>{user.fullName || user.username}</strong></span>
                     </div>
                   )}
 
@@ -3177,7 +3177,7 @@ export const BookingPage: React.FC = () => {
                     {/* Full Name */}
                     <div>
                       <label htmlFor="booking-customer-name" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Há» vÃ  tÃªn ngÆ°á»i thuÃª <span className="text-red-500">*</span>
+                        Họ và tên người thuê <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -3191,7 +3191,7 @@ export const BookingPage: React.FC = () => {
                               setFormErrors((prev) => ({ ...prev, customerName: '' }))
                             }
                           }}
-                          placeholder="Nguyá»…n VÄƒn A"
+                          placeholder="Nguyễn Văn A"
                           className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerName ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}
@@ -3208,7 +3208,7 @@ export const BookingPage: React.FC = () => {
                     {/* Phone */}
                     <div>
                       <label htmlFor="booking-customer-phone" className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Sá»‘ Ä‘iá»‡n thoáº¡i liÃªn há»‡ <span className="text-red-500">*</span>
+                        Số điện thoại liên hệ <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
@@ -3240,7 +3240,7 @@ export const BookingPage: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label htmlFor="booking-customer-id-card" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          Loáº¡i giáº¥y tá» &amp; Sá»‘ Ä‘á»‹nh danh <span className="text-red-500">*</span>
+                          Loại giấy tờ &amp; Số định danh <span className="text-red-500">*</span>
                         </label>
                         <div className="inline-flex rounded-md bg-slate-100 dark:bg-slate-800 p-0.5 text-[10px] font-bold">
                           <button
@@ -3271,7 +3271,7 @@ export const BookingPage: React.FC = () => {
                               idCardType === 'PASSPORT' ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500'
                             }`}
                           >
-                            Há»™ chiáº¿u
+                            Hộ chiếu
                           </button>
                         </div>
                       </div>
@@ -3298,7 +3298,7 @@ export const BookingPage: React.FC = () => {
                               setFormErrors((prev) => ({ ...prev, customerIdCard: '' }))
                             }
                           }}
-                          placeholder={idCardType === 'CCCD' ? '12 chá»¯ sá»‘ CCCD (VD: 079123456789)' : 'VD: B1234567 (1 chá»¯ cÃ¡i + 7-8 sá»‘)'}
+                          placeholder={idCardType === 'CCCD' ? '12 chữ số CCCD (VD: 079123456789)' : 'VD: B1234567 (1 chữ cái + 7-8 số)'}
                           className={`w-full pl-8 pr-3 py-1.5 rounded-lg border bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium focus:ring-2 focus:bg-white dark:focus:bg-slate-900 focus:outline-none ${
                             formErrors.customerIdCard ? 'border-red-500 focus:ring-red-500' : 'border-slate-300 dark:border-slate-700 focus:ring-blue-500'
                           }`}
@@ -3316,7 +3316,7 @@ export const BookingPage: React.FC = () => {
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label htmlFor="booking-customer-email" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                          Äá»‹a chá»‰ Email nháº­n phiáº¿u &amp; HÄ <span className="text-red-500">*</span>
+                          Địa chỉ Email nhận phiếu &amp; HĐ <span className="text-red-500">*</span>
                         </label>
                       </div>
                       <div className="relative">
@@ -3350,10 +3350,10 @@ export const BookingPage: React.FC = () => {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label htmlFor="booking-special-notes" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Ghi chÃº vá» tÃ i sáº£n lÆ°u trá»¯ hoáº·c yÃªu cáº§u há»— trá»£ (tÃ¹y chá»n)
+                        Ghi chú về tài sản lưu trữ hoặc yêu cầu hỗ trợ (tùy chọn)
                       </label>
                       <span className={`text-[10px] ${specialNotes.length > 500 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-                        {specialNotes.length}/500 kÃ½ tá»±
+                        {specialNotes.length}/500 ký tự
                       </span>
                     </div>
                     <input
@@ -3365,7 +3365,7 @@ export const BookingPage: React.FC = () => {
                         setSpecialNotes(e.target.value)
                         if (formErrors.specialNotes) setFormErrors((prev) => ({ ...prev, specialNotes: '' }))
                       }}
-                      placeholder="VD: Cáº§n há»— trá»£ xe Ä‘áº©y hÃ ng, chuyá»ƒn Ä‘á»“ cÄƒn há»™, hÃ ng dá»… vá»¡..."
+                      placeholder="VD: Cần hỗ trợ xe đẩy hàng, chuyển đồ căn hộ, hàng dễ vỡ..."
                       className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
                     />
                     {formErrors.specialNotes && (
@@ -3388,9 +3388,9 @@ export const BookingPage: React.FC = () => {
                       className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
                     />
                     <span className="leading-relaxed">
-                      TÃ´i xÃ¡c nháº­n thÃ´ng tin trÃªn lÃ  chÃ­nh xÃ¡c vÃ  Ä‘á»“ng Ã½ vá»›i{' '}
+                      Tôi xác nhận thông tin trên là chính xác và đồng ý với{' '}
                       <Link to="/policies" target="_blank" className="text-blue-600 dark:text-blue-400 underline font-semibold">
-                        Quy cháº¿ giá»¯ chá»— &amp; Báº£o máº­t kho tá»± quáº£n Boxora
+                        Quy chế giữ chỗ &amp; Bảo mật kho tự quản Boxora
                       </Link>
                       .
                     </span>
@@ -3423,10 +3423,10 @@ export const BookingPage: React.FC = () => {
                       </div>
                       <div>
                         <span className="text-[10px] text-blue-600 font-bold uppercase tracking-wider block">
-                          TÃ³m táº¯t buá»“ng kho
+                          Tóm tắt buồng kho
                         </span>
                         <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                          Kho {currentSelectedSize.volumeText} ({isAcActive ? 'MÃ¡y láº¡nh A/C' : 'TiÃªu chuáº©n'})
+                          Kho {currentSelectedSize.volumeText} ({isAcActive ? 'Máy lạnh A/C' : 'Tiêu chuẩn'})
                         </h4>
                         <span className="text-xs text-slate-500 font-medium block">
                           {currentSelectedSize.dimensions}
@@ -3440,7 +3440,7 @@ export const BookingPage: React.FC = () => {
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <span className="flex items-center gap-1.5">
                         <Building2 size={13} className="text-blue-600 dark:text-blue-400" />
-                        CÆ¡ sá»Ÿ:
+                        Cơ sở:
                       </span>
                       <strong className="text-slate-900 dark:text-white font-semibold text-right max-w-[170px] truncate">
                         {selectedFacility?.name}
@@ -3450,7 +3450,7 @@ export const BookingPage: React.FC = () => {
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <span className="flex items-center gap-1.5">
                         <Clock size={13} className="text-blue-600 dark:text-blue-400" />
-                        Thá»i háº¡n thuÃª:
+                        Thời hạn thuê:
                       </span>
                       <strong className="text-slate-900 dark:text-white font-semibold">
                         {rentalDurationText}
@@ -3460,27 +3460,27 @@ export const BookingPage: React.FC = () => {
                     <div className="flex justify-between items-start text-slate-600 dark:text-slate-400">
                       <span className="flex items-center gap-1.5">
                         <Calendar size={13} className="text-blue-600 dark:text-blue-400" />
-                        Lá»‹ch háº¹n nháº­n kho:
+                        Lịch hẹn nhận kho:
                       </span>
                       <strong className="text-blue-600 dark:text-blue-400 font-semibold text-right">
-                        {formatDateDDMMYYYY(checkInDate)} â€¢ {selectedPeriod.name}
+                        {formatDateDDMMYYYY(checkInDate)} • {selectedPeriod.name}
                       </strong>
                     </div>
 
                     {/* Price Breakdown */}
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
                       <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                        <span>Tiá»n thuÃª kho ({rentalDurationText}):</span>
-                        <strong className="text-slate-900 dark:text-white">{quoteCalculation.totalRent.toLocaleString('vi-VN')} â‚«</strong>
+                        <span>Tiền thuê kho ({rentalDurationText}):</span>
+                        <strong className="text-slate-900 dark:text-white">{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</strong>
                       </div>
                       <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                        <span>Cá»c báº£o Ä‘áº£m (hoÃ n láº¡i):</span>
-                        <strong className="text-slate-900 dark:text-white">{quoteCalculation.depositAmount.toLocaleString('vi-VN')} â‚«</strong>
+                        <span>Cọc bảo đảm (hoàn lại):</span>
+                        <strong className="text-slate-900 dark:text-white">{quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫</strong>
                       </div>
                       <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex justify-between items-baseline">
-                        <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">Tá»•ng cá»™ng:</span>
+                        <span className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">Tổng cộng:</span>
                         <strong className="text-base sm:text-lg font-extrabold text-blue-600 dark:text-blue-400">
-                          {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} â‚«
+                          {quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫
                         </strong>
                       </div>
                     </div>
@@ -3493,7 +3493,7 @@ export const BookingPage: React.FC = () => {
         )}
 
         {/* ============================================================== */}
-        {/* BÆ¯á»šC 5: Há»¢P Äá»’NG & THANH TOÃN                                  */}
+        {/* BƯỚC 5: HỢP ĐỒNG & THANH TOÁN                                  */}
         {/* ============================================================== */}
         {currentStep === 5 && (
           <div className="space-y-3.5 animate-in fade-in duration-300">
@@ -3501,13 +3501,13 @@ export const BookingPage: React.FC = () => {
               <div className="space-y-0.5">
                 <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/80 border border-blue-200/60 dark:border-blue-800/60 text-blue-700 dark:text-blue-300 text-[11px] font-semibold">
                   <FileCheck2 size={12} />
-                  <span>BÆ°á»›c 5 / 6 â€¢ Há»£p Ä‘á»“ng &amp; Thanh toÃ¡n</span>
+                  <span>Bước 5 / 6 • Hợp đồng &amp; Thanh toán</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                  Há»£p Ä‘á»“ng &amp; Thanh toÃ¡n
+                  Hợp đồng &amp; Thanh toán
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Vui lÃ²ng lá»±a chá»n hÃ¬nh thá»©c kÃ½ káº¿t há»£p Ä‘á»“ng vÃ  phÆ°Æ¡ng thá»©c thanh toÃ¡n phÃ¹ há»£p vá»›i quÃ½ khÃ¡ch.
+                  Vui lòng lựa chọn hình thức ký kết hợp đồng và phương thức thanh toán phù hợp với quý khách.
                 </p>
               </div>
             </div>
@@ -3517,10 +3517,10 @@ export const BookingPage: React.FC = () => {
                 <AlertCircle size={20} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-bold text-amber-950 dark:text-amber-100">
-                    Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i thá»±c hiá»‡n Ä‘áº·t Ä‘Æ°á»£c kho
+                    Chỉ tài khoản khách hàng mới thực hiện đặt được kho
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                    Báº¡n Ä‘ang Ä‘Äƒng nháº­p báº±ng tÃ i khoáº£n <strong>{getRoleDisplayName(userRole)}</strong> ({user?.fullName || user?.username || user?.email}). CÃ¡c vai trÃ² quáº£n trá»‹ vÃ  nhÃ¢n viÃªn chá»‰ cÃ³ thá»ƒ xem bÃ¡o giÃ¡ vÃ  quy trÃ¬nh á»Ÿ BÆ°á»›c 5. Äá»ƒ thá»±c hiá»‡n kÃ½ káº¿t há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ vÃ  thanh toÃ¡n giá»¯ chá»—, vui lÃ²ng Ä‘Äƒng nháº­p báº±ng tÃ i khoáº£n KhÃ¡ch hÃ ng (Customer).
+                    Bạn đang đăng nhập bằng tài khoản <strong>{getRoleDisplayName(userRole)}</strong> ({user?.fullName || user?.username || user?.email}). Các vai trò quản trị và nhân viên chỉ có thể xem báo giá và quy trình ở Bước 5. Để thực hiện ký kết hợp đồng điện tử và thanh toán giữ chỗ, vui lòng đăng nhập bằng tài khoản Khách hàng (Customer).
                   </p>
                 </div>
               </div>
@@ -3538,10 +3538,10 @@ export const BookingPage: React.FC = () => {
                 <AlertCircle size={20} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-bold text-amber-950 dark:text-amber-100">
-                    ThÃ´ng tin Ä‘áº·t kho cá»§a quÃ½ khÃ¡ch Ä‘Ã£ thay Ä‘á»•i so vá»›i há»£p Ä‘á»“ng Ä‘Ã£ kÃ½ trÆ°á»›c Ä‘Ã³. Vui lÃ²ng xem láº¡i vÃ  kÃ½ há»£p Ä‘á»“ng má»›i trÆ°á»›c khi thanh toÃ¡n.
+                    Thông tin đặt kho của quý khách đã thay đổi so với hợp đồng đã ký trước đó. Vui lòng xem lại và ký hợp đồng mới trước khi thanh toán.
                   </p>
                   <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
-                    Há»£p Ä‘á»“ng cÅ© cá»§a Ä‘Æ¡n <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> Ä‘Ã£ Ä‘Æ°á»£c chuyá»ƒn sang tráº¡ng thÃ¡i háº¿t hiá»‡u lá»±c (SUPERSEDED). QuÃ½ khÃ¡ch vui lÃ²ng nháº¥n nÃºt <strong>"Xem vÃ  kÃ½ láº¡i há»£p Ä‘á»“ng"</strong> bÃªn dÆ°á»›i Ä‘á»ƒ kiá»ƒm tra vÃ  kÃ½ láº¡i há»£p Ä‘á»“ng má»›i theo thÃ´ng tin vá»«a cáº­p nháº­t.
+                    Hợp đồng cũ của đơn <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã được chuyển sang trạng thái hết hiệu lực (SUPERSEDED). Quý khách vui lòng nhấn nút <strong>"Xem và ký lại hợp đồng"</strong> bên dưới để kiểm tra và ký lại hợp đồng mới theo thông tin vừa cập nhật.
                   </p>
                 </div>
               </div>
@@ -3552,10 +3552,10 @@ export const BookingPage: React.FC = () => {
                 <CheckCircle2 size={20} className="text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-bold text-emerald-950 dark:text-emerald-100">
-                    Há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ Ä‘Ã£ Ä‘Æ°á»£c kÃ½ káº¿t thÃ nh cÃ´ng!
+                    Hợp đồng điện tử đã được ký kết thành công!
                   </p>
                   <p className="text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed">
-                    ÄÆ¡n Ä‘áº·t chá»— <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> Ä‘Ã£ hoÃ n táº¥t kÃ½ káº¿t há»£p Ä‘á»“ng. QuÃ½ khÃ¡ch vui lÃ²ng nháº¥n nÃºt <strong>"Tiáº¿p tá»¥c thá»±c hiá»‡n thanh toÃ¡n"</strong> bÃªn dÆ°á»›i Ä‘á»ƒ hoÃ n táº¥t giao dá»‹ch qua cá»•ng thanh toÃ¡n VNPay.
+                    Đơn đặt chỗ <strong>#{createdBookingForSigning?.bookingCode || bookingCode}</strong> đã hoàn tất ký kết hợp đồng. Quý khách vui lòng nhấn nút <strong>"Tiếp tục thực hiện thanh toán"</strong> bên dưới để hoàn tất giao dịch qua cổng thanh toán VNPay.
                   </p>
                 </div>
               </div>
@@ -3566,7 +3566,7 @@ export const BookingPage: React.FC = () => {
               {/* LEFT COLUMN: 2 CONTRACT & PAYMENT OPTIONS */}
               <div className="lg:col-span-7 space-y-3">
                 
-                {/* Option 1: KÃ½ há»£p Ä‘á»“ng vÃ  thanh toÃ¡n trá»±c tuyáº¿n */}
+                {/* Option 1: Ký hợp đồng và thanh toán trực tuyến */}
                 <div
                   onClick={() => setPaymentMethod('ONLINE')}
                   className={`p-3.5 sm:p-4 rounded-xl border-2 transition-all cursor-pointer ${
@@ -3590,21 +3590,21 @@ export const BookingPage: React.FC = () => {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                            1. KÃ½ há»£p Ä‘á»“ng vÃ  thanh toÃ¡n trá»±c tuyáº¿n
+                            1. Ký hợp đồng và thanh toán trực tuyến
                           </h3>
                           <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold uppercase tracking-wider">
-                            KhuyÃªn dÃ¹ng â€¢ KÃ­ch hoáº¡t ngay
+                            Khuyên dùng • Kích hoạt ngay
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          KÃ½ há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ DocuSeal trá»±c tiáº¿p trÃªn há»‡ thá»‘ng vÃ  thanh toÃ¡n toÃ n bá»™ chi phÃ­ (bao gá»“m tiá»n thuÃª kho vÃ  tiá»n cá»c báº£o Ä‘áº£m) qua cá»•ng VNPay (VNPAY-QR, Tháº» ATM/Visa/Mastercard). Buá»“ng kho vÃ  mÃ£ PIN khÃ³a thÃ´ng minh sáº½ Ä‘Æ°á»£c cáº¥p ngay sau khi hoÃ n táº¥t.
+                          Ký hợp đồng điện tử DocuSeal trực tiếp trên hệ thống và thanh toán toàn bộ chi phí (bao gồm tiền thuê kho và tiền cọc bảo đảm) qua cổng VNPay (VNPAY-QR, Thẻ ATM/Visa/Mastercard). Buồng kho và mã PIN khóa thông minh sẽ được cấp ngay sau khi hoàn tất.
                         </p>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Option 2: KÃ½ há»£p Ä‘á»“ng vÃ  thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ vÃ o ngÃ y tá»›i nháº­n kho */}
+                {/* Option 2: Ký hợp đồng và thanh toán tại cơ sở vào ngày tới nhận kho */}
                 <div
                   onClick={() => setPaymentMethod('PAY_LATER')}
                   className={`p-3.5 sm:p-4 rounded-xl border-2 transition-all cursor-pointer ${
@@ -3628,14 +3628,14 @@ export const BookingPage: React.FC = () => {
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">
-                            2. KÃ½ há»£p Ä‘á»“ng vÃ  thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ vÃ o ngÃ y tá»›i nháº­n kho
+                            2. Ký hợp đồng và thanh toán tại cơ sở vào ngày tới nhận kho
                           </h3>
                           <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
-                            0 â‚« hÃ´m nay
+                            0 ₫ hôm nay
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          Äáº·t giá»¯ chá»— trÆ°á»›c Ä‘á»ƒ Boxora chuáº©n bá»‹ buá»“ng kho. QuÃ½ khÃ¡ch sáº½ kÃ½ káº¿t há»£p Ä‘á»“ng vÃ  thanh toÃ¡n trá»±c tuyáº¿n qua quÃ©t mÃ£ VietQR / cá»•ng VNPay trá»±c tiáº¿p khi Ä‘áº¿n nháº­n kho (Boxora Ã¡p dá»¥ng 100% thanh toÃ¡n sá»‘ khÃ´ng dÃ¹ng tiá»n máº·t).
+                          Đặt giữ chỗ trước để Boxora chuẩn bị buồng kho. Quý khách sẽ ký kết hợp đồng và thanh toán trực tuyến qua quét mã VietQR / cổng VNPay trực tiếp khi đến nhận kho (Boxora áp dụng 100% thanh toán số không dùng tiền mặt).
                         </p>
                       </div>
                     </div>
@@ -3648,42 +3648,42 @@ export const BookingPage: React.FC = () => {
               <div className="lg:col-span-5 lg:sticky lg:top-20 space-y-3">
                 <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-sm p-4 space-y-3">
                   <h3 className="font-bold text-sm sm:text-base text-slate-900 dark:text-white">
-                    XÃ¡c nháº­n Há»£p Ä‘á»“ng &amp; Thanh toÃ¡n
+                    Xác nhận Hợp đồng &amp; Thanh toán
                   </h3>
 
                   <div className="space-y-2 text-xs">
                     <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                      <span>HÃ¬nh thá»©c Ä‘Ã£ chá»n:</span>
+                      <span>Hình thức đã chọn:</span>
                       <strong className="text-blue-600 dark:text-blue-400 font-semibold text-right max-w-[200px]">
-                        {paymentMethod === 'ONLINE' ? '1. KÃ½ HÄ & Thanh toÃ¡n trá»±c tuyáº¿n' : '2. KÃ½ HÄ & Thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ'}
+                        {paymentMethod === 'ONLINE' ? '1. Ký HĐ & Thanh toán trực tuyến' : '2. Ký HĐ & Thanh toán tại cơ sở'}
                       </strong>
                     </div>
 
                     <div className="flex justify-between text-slate-600 dark:text-slate-400 items-baseline">
-                      <span>Sá»‘ tiá»n thanh toÃ¡n hÃ´m nay:</span>
+                      <span>Số tiền thanh toán hôm nay:</span>
                       <strong className="text-slate-900 dark:text-white font-extrabold text-base sm:text-lg">
-                        {paymentMethod === 'ONLINE' ? `${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} â‚«` : '0 â‚«'}
+                        {paymentMethod === 'ONLINE' ? `${quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫` : '0 ₫'}
                       </strong>
                     </div>
 
                     {paymentMethod === 'ONLINE' ? (
                       <div className="space-y-1 pt-1.5 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 leading-relaxed">
                         <div className="flex justify-between">
-                          <span>Tiá»n thuÃª kho ({rentalDurationText}):</span>
-                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">{quoteCalculation.totalRent.toLocaleString('vi-VN')} â‚«</strong>
+                          <span>Tiền thuê kho ({rentalDurationText}):</span>
+                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</strong>
                         </div>
                         <div className="flex justify-between">
-                          <span>Tiá»n cá»c báº£o Ä‘áº£m (hoÃ n láº¡i):</span>
-                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">{quoteCalculation.depositAmount.toLocaleString('vi-VN')} â‚«</strong>
+                          <span>Tiền cọc bảo đảm (hoàn lại):</span>
+                          <strong className="text-slate-700 dark:text-slate-300 font-semibold">{quoteCalculation.depositAmount.toLocaleString('vi-VN')} ₫</strong>
                         </div>
                         <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium pt-1">
-                          âœ“ Thanh toÃ¡n toÃ n bá»™ hÃ´m nay qua VNPay. Khi Ä‘áº¿n nháº­n kho quÃ½ khÃ¡ch khÃ´ng cáº§n thanh toÃ¡n thÃªm.
+                          ✓ Thanh toán toàn bộ hôm nay qua VNPay. Khi đến nhận kho quý khách không cần thanh toán thêm.
                         </p>
                       </div>
                     ) : (
                       <>
                         <p className="text-[11px] text-slate-500 leading-relaxed">
-                          QuÃ½ khÃ¡ch khÃ´ng cáº§n thanh toÃ¡n trÆ°á»›c. Giá»¯ chá»— sáº½ Ä‘Æ°á»£c lÆ°u trÃªn há»‡ thá»‘ng, quÃ½ khÃ¡ch kÃ½ há»£p Ä‘á»“ng vÃ  thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ vÃ o ngÃ y {formatDateDDMMYYYY(checkInDate)}.
+                          Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {formatDateDDMMYYYY(checkInDate)}.
                         </p>
                         {!isStaffOrManager && (
                           <div className="pt-2">
@@ -3694,7 +3694,7 @@ export const BookingPage: React.FC = () => {
                               className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
                             >
                               <CalendarCheck size={16} />
-                              <span>XÃ¡c nháº­n (KÃ½ HÄ &amp; Thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ)</span>
+                              <span>Xác nhận (Ký HĐ &amp; Thanh toán tại cơ sở)</span>
                             </button>
                           </div>
                         )}
@@ -3705,7 +3705,7 @@ export const BookingPage: React.FC = () => {
                       <div className="pt-2.5 border-t border-amber-200 dark:border-amber-800/70">
                         <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-200 font-medium flex items-start gap-1.5">
                           <AlertCircle size={14} className="shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
-                          <span>Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i thá»±c hiá»‡n Ä‘áº·t Ä‘Æ°á»£c kho (TÃ i khoáº£n hiá»‡n táº¡i: <strong>{getRoleDisplayName(userRole)}</strong>).</span>
+                          <span>Chỉ tài khoản khách hàng mới thực hiện đặt được kho (Tài khoản hiện tại: <strong>{getRoleDisplayName(userRole)}</strong>).</span>
                         </div>
                       </div>
                     )}
@@ -3718,7 +3718,7 @@ export const BookingPage: React.FC = () => {
         )}
 
         {/* ============================================================== */}
-        {/* BÆ¯á»šC 6: HOÃ€N Táº¤T GIá»® CHá»– (Task 2 Standardized)                  */}
+        {/* BƯỚC 6: HOÀN TẤT GIỮ CHỖ (Task 2 Standardized)                  */}
         {/* ============================================================== */}
         {currentStep === 6 && (
           <div className="space-y-3 animate-in zoom-in-95 duration-300 max-w-xl mx-auto py-1">
@@ -3749,21 +3749,21 @@ export const BookingPage: React.FC = () => {
                     {paymentMethod === 'ONLINE' && isOnlinePaid ? (
                       <>
                         <CheckCircle2 size={13} />
-                        <span>ÄÃ£ kÃ½ há»£p Ä‘á»“ng &amp; thanh toÃ¡n trá»±c tuyáº¿n thÃ nh cÃ´ng</span>
+                        <span>Đã ký hợp đồng &amp; thanh toán trực tuyến thành công</span>
                       </>
                     ) : (
                       <>
                         <Clock size={13} />
-                        <span>Äáº·t giá»¯ chá»— thÃ nh cÃ´ng â€¢ KÃ½ HÄ &amp; thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ</span>
+                        <span>Đặt giữ chỗ thành công • Ký HĐ &amp; thanh toán tại cơ sở</span>
                       </>
                     )}
                   </span>
 
                   <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-                    Cáº£m Æ¡n quÃ½ khÃ¡ch {customerName || ''}!
+                    Cảm ơn quý khách {customerName || ''}!
                   </h2>
                   <p className="text-xs text-slate-600 dark:text-slate-300 max-w-md mx-auto leading-relaxed">
-                    Há»‡ thá»‘ng Boxora Ä‘Ã£ ghi nháº­n yÃªu cáº§u giá»¯ chá»— buá»“ng kho. NhÃ¢n viÃªn cÆ¡ sá»Ÿ sáº½ liÃªn há»‡ vÃ  chuáº©n bá»‹ Ä‘Ã³n tiáº¿p quÃ½ khÃ¡ch Ä‘Ãºng khung giá» Ä‘Ã£ háº¹n.
+                    Hệ thống Boxora đã ghi nhận yêu cầu giữ chỗ buồng kho. Nhân viên cơ sở sẽ liên hệ và chuẩn bị đón tiếp quý khách đúng khung giờ đã hẹn.
                   </p>
                 </div>
 
@@ -3771,7 +3771,7 @@ export const BookingPage: React.FC = () => {
                 <div className="p-3 sm:p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-800 max-w-sm mx-auto flex items-center justify-between gap-3">
                   <div className="text-left">
                     <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider block">
-                      MÃ£ phiáº¿u giá»¯ chá»—
+                      Mã phiếu giữ chỗ
                     </span>
                     <strong className="text-base sm:text-lg font-mono font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">
                       {bookingCode}
@@ -3783,7 +3783,7 @@ export const BookingPage: React.FC = () => {
                     className="p-2 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-200 hover:text-blue-600 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
                   >
                     <Copy size={13} />
-                    <span>{copiedCode ? 'ÄÃ£ chÃ©p' : 'Sao chÃ©p'}</span>
+                    <span>{copiedCode ? 'Đã chép' : 'Sao chép'}</span>
                   </button>
                 </div>
               </div>
@@ -3792,13 +3792,13 @@ export const BookingPage: React.FC = () => {
               <div className="p-4 sm:p-5 space-y-3 bg-slate-50/50 dark:bg-slate-900/50 text-xs">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">CÆ¡ sá»Ÿ bÃ n giao</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Cơ sở bàn giao</span>
                     <strong className="text-slate-900 dark:text-white block font-bold text-xs sm:text-sm">{selectedFacility?.name}</strong>
                     <span className="text-slate-500 block text-[11px] truncate">{selectedFacility?.address}</span>
                   </div>
 
                   <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 space-y-1">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Lá»‹ch háº¹n Ä‘Ã³n tiáº¿p</span>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Lịch hẹn đón tiếp</span>
                     <strong className="text-blue-600 dark:text-blue-400 block font-bold text-xs sm:text-sm">{formatDateDDMMYYYY(checkInDate)}</strong>
                     <span className="text-slate-500 block text-[11px]">{checkInTime}</span>
                   </div>
@@ -3811,7 +3811,7 @@ export const BookingPage: React.FC = () => {
                       onClick={() => navigate(`/portal/customer?tab=bookings&bookingCode=${encodeURIComponent(bookingCode)}`)}
                       className="flex-1 py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
                     >
-                      Xem Ä‘Æ¡n Ä‘áº·t cá»§a tÃ´i
+                      Xem đơn đặt của tôi
                     </button>
                   ) : (
                     <button
@@ -3819,7 +3819,7 @@ export const BookingPage: React.FC = () => {
                       onClick={() => navigate(`/login?redirect=${encodeURIComponent(`/portal/customer?tab=bookings&bookingCode=${bookingCode}`)}`)}
                       className="flex-1 py-2.5 px-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 text-center transition-all cursor-pointer"
                     >
-                      ÄÄƒng nháº­p Ä‘á»ƒ theo dÃµi há»£p Ä‘á»“ng
+                      Đăng nhập để theo dõi hợp đồng
                     </button>
                   )}
                   <button
@@ -3827,7 +3827,7 @@ export const BookingPage: React.FC = () => {
                     onClick={() => navigate('/')}
                     className="flex-1 py-2.5 px-3.5 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs sm:text-sm text-center transition-colors cursor-pointer"
                   >
-                    Vá» trang chá»§ Boxora
+                    Về trang chủ Boxora
                   </button>
                 </div>
               </div>
@@ -3852,10 +3852,10 @@ export const BookingPage: React.FC = () => {
                 >
                   <ArrowLeft size={15} />
                   <span>
-                    {currentStep === 2 && 'Quay láº¡i chá»n cÆ¡ sá»Ÿ'}
-                    {currentStep === 3 && 'Quay láº¡i chá»n kho'}
-                    {currentStep === 4 && 'Quay láº¡i bÃ¡o giÃ¡'}
-                    {currentStep === 5 && 'Quay láº¡i thÃ´ng tin'}
+                    {currentStep === 2 && 'Quay lại chọn cơ sở'}
+                    {currentStep === 3 && 'Quay lại chọn kho'}
+                    {currentStep === 4 && 'Quay lại báo giá'}
+                    {currentStep === 5 && 'Quay lại thông tin'}
                   </span>
                 </button>
               ) : (
@@ -3864,7 +3864,7 @@ export const BookingPage: React.FC = () => {
                   className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 font-semibold text-xs sm:text-sm flex items-center gap-1.5 transition-colors"
                 >
                   <Home size={15} />
-                  <span>Vá» trang chá»§</span>
+                  <span>Về trang chủ</span>
                 </Link>
               )}
 
@@ -3873,29 +3873,29 @@ export const BookingPage: React.FC = () => {
                 {currentStep === 1 && (
                   <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                     <MapPin size={14} className="text-blue-600" />
-                    <span>CÆ¡ sá»Ÿ: <strong className="text-slate-900 dark:text-white">{selectedFacility ? selectedFacility.name : 'ChÆ°a chá»n'}</strong></span>
+                    <span>Cơ sở: <strong className="text-slate-900 dark:text-white">{selectedFacility ? selectedFacility.name : 'Chưa chọn'}</strong></span>
                   </span>
                 )}
                 {currentStep === 2 && (
                   <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                     <Box size={14} className="text-blue-600" />
                     <span>
-                      Äang chá»n: <strong className="text-blue-600 dark:text-blue-400 font-bold">Kho {currentSelectedSize.volumeText}</strong> ({isAcActive ? 'MÃ¡y láº¡nh A/C' : 'TiÃªu chuáº©n'}) â€¢ <strong className="text-slate-900 dark:text-white">{quoteCalculation.baseMonthly.toLocaleString('vi-VN')} â‚«/thÃ¡ng</strong>
+                      Đang chọn: <strong className="text-blue-600 dark:text-blue-400 font-bold">Kho {currentSelectedSize.volumeText}</strong> ({isAcActive ? 'Máy lạnh A/C' : 'Tiêu chuẩn'}) • <strong className="text-slate-900 dark:text-white">{quoteCalculation.baseMonthly.toLocaleString('vi-VN')} ₫/tháng</strong>
                     </span>
                   </span>
                 )}
                 {currentStep === 3 && (
                   <div className="flex items-center gap-2.5 text-xs">
                     <span className="text-slate-500 dark:text-slate-400">
-                      Thá»i háº¡n: <strong className="text-slate-900 dark:text-white">{rentalDurationText}</strong>
+                      Thời hạn: <strong className="text-slate-900 dark:text-white">{rentalDurationText}</strong>
                     </span>
-                    <span className="text-slate-300 dark:text-slate-700">â€¢</span>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
                     <span className="text-slate-500 dark:text-slate-400">
-                      Tiá»n thuÃª: <strong className="text-slate-800 dark:text-slate-200">{quoteCalculation.totalRent.toLocaleString('vi-VN')} â‚«</strong>
+                      Tiền thuê: <strong className="text-slate-800 dark:text-slate-200">{quoteCalculation.totalRent.toLocaleString('vi-VN')} ₫</strong>
                     </span>
-                    <span className="text-slate-300 dark:text-slate-700">â€¢</span>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
                     <span className="text-slate-900 dark:text-white font-semibold">
-                      Tá»•ng cá»™ng: <strong className="text-blue-600 dark:text-blue-400 font-extrabold">{quoteCalculation.totalEstimate.toLocaleString('vi-VN')} â‚«</strong>
+                      Tổng cộng: <strong className="text-blue-600 dark:text-blue-400 font-extrabold">{quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫</strong>
                     </span>
                   </div>
                 )}
@@ -3903,7 +3903,7 @@ export const BookingPage: React.FC = () => {
                   <span className="text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                     <Calendar size={14} className="text-blue-600" />
                     <span>
-                      Nháº­n kho: <strong className="text-blue-600 dark:text-blue-400">{formatDateDDMMYYYY(checkInDate)} ({selectedPeriod.name})</strong> â€¢ NgÆ°á»i Ä‘áº·t: <strong className="text-slate-900 dark:text-white">{customerName || 'ChÆ°a Ä‘iá»n'}</strong>
+                      Nhận kho: <strong className="text-blue-600 dark:text-blue-400">{formatDateDDMMYYYY(checkInDate)} ({selectedPeriod.name})</strong> • Người đặt: <strong className="text-slate-900 dark:text-white">{customerName || 'Chưa điền'}</strong>
                     </span>
                   </span>
                 )}
@@ -3918,7 +3918,7 @@ export const BookingPage: React.FC = () => {
                   onClick={handleNextStep}
                   className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
-                  <span>Tiáº¿p tá»¥c: Chá»n kho / loáº¡i kho</span>
+                  <span>Tiếp tục: Chọn kho / loại kho</span>
                   <ArrowRight size={16} />
                 </button>
               )}
@@ -3934,7 +3934,7 @@ export const BookingPage: React.FC = () => {
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                   }`}
                 >
-                  <span>Tiáº¿p tá»¥c: Thá»i háº¡n thuÃª &amp; BÃ¡o giÃ¡</span>
+                  <span>Tiếp tục: Thời hạn thuê &amp; Báo giá</span>
                   <ArrowRight size={16} />
                 </button>
               )}
@@ -3950,7 +3950,7 @@ export const BookingPage: React.FC = () => {
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                   }`}
                 >
-                  <span>Tiáº¿p tá»¥c: Lá»‹ch háº¹n &amp; Chi tiáº¿t</span>
+                  <span>Tiếp tục: Lịch hẹn &amp; Chi tiết</span>
                   <ArrowRight size={16} />
                 </button>
               )}
@@ -3961,7 +3961,7 @@ export const BookingPage: React.FC = () => {
                   onClick={handleNextStep}
                   className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
                 >
-                  <span>Tiáº¿p tá»¥c: Há»£p Ä‘á»“ng &amp; Thanh toÃ¡n</span>
+                  <span>Tiếp tục: Hợp đồng &amp; Thanh toán</span>
                   <ArrowRight size={16} />
                 </button>
               )}
@@ -3970,7 +3970,7 @@ export const BookingPage: React.FC = () => {
                 isStaffOrManager ? (
                   <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-xs sm:text-sm font-semibold shadow-xs">
                     <AlertCircle size={16} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                    <span>Chá»‰ tÃ i khoáº£n khÃ¡ch hÃ ng má»›i thá»±c hiá»‡n Ä‘áº·t Ä‘Æ°á»£c kho</span>
+                    <span>Chỉ tài khoản khách hàng mới thực hiện đặt được kho</span>
                   </div>
                 ) : (
                   <button
@@ -3990,17 +3990,17 @@ export const BookingPage: React.FC = () => {
                     {isSubmitting ? (
                       <span className="flex items-center gap-2">
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        <span>Äang xá»­ lÃ½...</span>
+                        <span>Đang xử lý...</span>
                       </span>
                     ) : (
                       <span>
                         {paymentMethod === 'ONLINE'
                           ? (isContractAlreadySigned
-                              ? 'Tiáº¿p tá»¥c thá»±c hiá»‡n thanh toÃ¡n'
+                              ? 'Tiếp tục thực hiện thanh toán'
                               : (contractInvalidatedByChange
-                                  ? 'Xem vÃ  kÃ½ láº¡i há»£p Ä‘á»“ng'
-                                  : 'Tiáº¿n hÃ nh KÃ½ HÄ & Thanh toÃ¡n trá»±c tuyáº¿n'))
-                          : 'XÃ¡c nháº­n (KÃ½ HÄ & Thanh toÃ¡n táº¡i cÆ¡ sá»Ÿ)'}
+                                  ? 'Xem và ký lại hợp đồng'
+                                  : 'Tiến hành Ký HĐ & Thanh toán trực tuyến'))
+                          : 'Xác nhận (Ký HĐ & Thanh toán tại cơ sở)'}
                       </span>
                     )}
                   </button>
@@ -4038,10 +4038,10 @@ export const BookingPage: React.FC = () => {
               </span>
               <div>
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">
-                  Chi tiáº¿t quy cÃ¡ch kho {inspectingSizeUnit.volumeText}
+                  Chi tiết quy cách kho {inspectingSizeUnit.volumeText}
                 </h3>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  {inspectingSizeUnit.dimensions} â€¢ {inspectingSizeUnit.areaM2} mÂ²
+                  {inspectingSizeUnit.dimensions} • {inspectingSizeUnit.areaM2} m²
                 </span>
               </div>
             </div>
@@ -4049,7 +4049,7 @@ export const BookingPage: React.FC = () => {
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Minh há»a khÃ´ng gian:
+                  Minh họa không gian:
                 </span>
                 <div className="inline-flex p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                   <button
@@ -4061,7 +4061,7 @@ export const BookingPage: React.FC = () => {
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    MÃ´ hÃ¬nh 3D
+                    Mô hình 3D
                   </button>
                   <button
                     type="button"
@@ -4072,7 +4072,7 @@ export const BookingPage: React.FC = () => {
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    áº¢nh kho thá»±c táº¿
+                    Ảnh kho thực tế
                   </button>
                 </div>
               </div>
@@ -4098,7 +4098,7 @@ export const BookingPage: React.FC = () => {
                           (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
                         ).photoUrl
                       }
-                      alt={`áº¢nh thá»±c táº¿ kho ${inspectingSizeUnit.volumeText}`}
+                      alt={`Ảnh thực tế kho ${inspectingSizeUnit.volumeText}`}
                       className="w-full h-full object-cover"
                       onError={(e) => {
                         const target = e.currentTarget
@@ -4124,23 +4124,23 @@ export const BookingPage: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-3 text-xs font-mono">
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-slate-400 block text-[10px]">KÃCH THÆ¯á»šC:</span>
+                <span className="text-slate-400 block text-[10px]">KÍCH THƯỚC:</span>
                 <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.dimensions}</strong>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
-                <span className="text-slate-400 block text-[10px]">DIá»†N TÃCH Máº¶T SÃ€N:</span>
-                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.areaM2} mÂ²</strong>
+                <span className="text-slate-400 block text-[10px]">DIỆN TÍCH MẶT SÀN:</span>
+                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.areaM2} m²</strong>
               </div>
             </div>
 
             <div className="space-y-2">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                TÃ i sáº£n phÃ¹ há»£p lÆ°u trá»¯:
+                Tài sản phù hợp lưu trữ:
               </span>
               <ul className="grid grid-cols-1 gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                 {inspectingSizeUnit.fitsDetailed.map((item, idx) => (
                   <li key={idx} className="flex items-center gap-2">
-                    <span className="text-blue-600 text-sm">âœ“</span>
+                    <span className="text-blue-600 text-sm">✓</span>
                     <span>{item}</span>
                   </li>
                 ))}
@@ -4156,7 +4156,7 @@ export const BookingPage: React.FC = () => {
                 }}
                 className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/25 cursor-pointer"
               >
-                Chá»n kÃ­ch thÆ°á»›c nÃ y
+                Chọn kích thước này
               </button>
             </div>
           </div>
@@ -4184,7 +4184,7 @@ export const BookingPage: React.FC = () => {
         userRole={user?.role?.name || 'CUSTOMER'}
       />
 
-      {/* Modal cáº£nh bÃ¡o cÆ¡ sá»Ÿ chÆ°a cÃ³ kho kháº£ dá»¥ng */}
+      {/* Modal cảnh báo cơ sở chưa có kho khả dụng */}
       <FacilityNoUnitsModal
         isOpen={isNoUnitsModalOpen}
         onClose={() => setIsNoUnitsModalOpen(false)}
@@ -4206,13 +4206,13 @@ export const BookingPage: React.FC = () => {
         }}
       />
 
-      {/* Modal KÃ½ Há»£p Äá»“ng Äiá»‡n Tá»­ DocuSeal (Theo kÃ­ch thÆ°á»›c Size_ID) */}
+      {/* Modal Ký Hợp Đồng Điện Tử DocuSeal (Theo kích thước Size_ID) */}
       {showDocuSealModal && contractForSigning && (
         <DocuSealSimulationModal
           contract={contractForSigning}
           booking={createdBookingForSigning}
           financialSummary={{
-            sizeName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'MÃ¡y láº¡nh A/C' : 'TiÃªu chuáº©n'})`,
+            sizeName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'Máy lạnh A/C' : 'Tiêu chuẩn'})`,
             rentalMonths: isCustomDuration ? Math.max(1, Math.round(customDays / 30)) : rentalMonths,
             monthlyFee: quoteCalculation.monthlyAfterDiscount,
             totalRent: quoteCalculation.totalRent,
@@ -4233,7 +4233,7 @@ export const BookingPage: React.FC = () => {
         />
       )}
 
-      {/* Modal nháº¯c Ä‘Äƒng nháº­p khi tá»« BÆ°á»›c 3 sang BÆ°á»›c 4 */}
+      {/* Modal nhắc đăng nhập khi từ Bước 3 sang Bước 4 */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-2xl text-left animate-in zoom-in-95 duration-200 space-y-5">
@@ -4243,25 +4243,25 @@ export const BookingPage: React.FC = () => {
 
             <div className="space-y-2">
               <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white">
-                ÄÄƒng nháº­p Ä‘á»ƒ tiáº¿p tá»¥c Ä‘áº·t kho
+                Đăng nhập để tiếp tục đặt kho
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                QuÃ½ khÃ¡ch vui lÃ²ng Ä‘Äƒng nháº­p hoáº·c Ä‘Äƒng kÃ½ tÃ i khoáº£n Boxora Ä‘á»ƒ tiáº¿p tá»¥c sang BÆ°á»›c 4 (Lá»‹ch háº¹n &amp; ThÃ´ng tin ngÆ°á»i Ä‘áº·t). ThÃ´ng tin cÃ¡ nhÃ¢n cá»§a báº¡n sáº½ Ä‘Æ°á»£c tá»± Ä‘á»™ng Ä‘á»“ng bá»™ tá»« tÃ i khoáº£n há»“ sÆ¡!
+                Quý khách vui lòng đăng nhập hoặc đăng ký tài khoản Boxora để tiếp tục sang Bước 4 (Lịch hẹn &amp; Thông tin người đặt). Thông tin cá nhân của bạn sẽ được tự động đồng bộ từ tài khoản hồ sơ!
               </p>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 space-y-1">
               <div className="flex justify-between">
-                <span>Kho lÆ°u trá»¯:</span>
-                <strong className="text-slate-900 dark:text-white">{currentSelectedSize.volumeText} â€¢ {selectedFacility?.name}</strong>
+                <span>Kho lưu trữ:</span>
+                <strong className="text-slate-900 dark:text-white">{currentSelectedSize.volumeText} • {selectedFacility?.name}</strong>
               </div>
               <div className="flex justify-between">
-                <span>Thá»i háº¡n thuÃª:</span>
-                <strong className="text-slate-900 dark:text-white">{isCustomDuration ? `${customDays} ngÃ y` : `${rentalMonths} thÃ¡ng`}</strong>
+                <span>Thời hạn thuê:</span>
+                <strong className="text-slate-900 dark:text-white">{isCustomDuration ? `${customDays} ngày` : `${rentalMonths} tháng`}</strong>
               </div>
               <div className="flex justify-between">
-                <span>Sá»‘ tiá»n táº¡m tÃ­nh:</span>
-                <strong className="text-blue-600 dark:text-cyan-400 font-bold">{quoteCalculation.totalEstimate.toLocaleString('vi-VN')} â‚«</strong>
+                <span>Số tiền tạm tính:</span>
+                <strong className="text-blue-600 dark:text-cyan-400 font-bold">{quoteCalculation.totalEstimate.toLocaleString('vi-VN')} ₫</strong>
               </div>
             </div>
 
@@ -4301,7 +4301,7 @@ export const BookingPage: React.FC = () => {
                 className="w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-lg shadow-blue-600/25 flex items-center justify-center gap-2 cursor-pointer transition-all"
               >
                 <LogIn size={16} />
-                <span>ÄÄƒng nháº­p tÃ i khoáº£n</span>
+                <span>Đăng nhập tài khoản</span>
               </button>
 
               <button
@@ -4338,7 +4338,7 @@ export const BookingPage: React.FC = () => {
                 }}
                 className="w-full py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs transition-colors cursor-pointer text-center"
               >
-                ÄÄƒng kÃ½ tÃ i khoáº£n má»›i
+                Đăng ký tài khoản mới
               </button>
 
               <button
@@ -4346,7 +4346,7 @@ export const BookingPage: React.FC = () => {
                 onClick={() => setShowAuthModal(false)}
                 className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors py-1 text-center"
               >
-                ÄÃ³ng láº¡i &amp; Chá»‰nh sá»­a thÃ´ng tin
+                Đóng lại &amp; Chỉnh sửa thông tin
               </button>
             </div>
           </div>
@@ -4359,9 +4359,9 @@ export const BookingPage: React.FC = () => {
           <div className="w-full max-w-xl rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-7 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div>
-                <span className="text-xs font-bold text-blue-600 uppercase tracking-wider block">Chi tiáº¿t buá»“ng kho</span>
+                <span className="text-xs font-bold text-blue-600 uppercase tracking-wider block">Chi tiết buồng kho</span>
                 <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
-                  Kho {inspectingSizeUnit.volumeText} ({inspectingSizeUnit.areaM2} mÂ²)
+                  Kho {inspectingSizeUnit.volumeText} ({inspectingSizeUnit.areaM2} m²)
                 </h3>
               </div>
               <button
@@ -4385,15 +4385,15 @@ export const BookingPage: React.FC = () => {
 
             <div className="space-y-3 text-xs sm:text-sm">
               <div className="flex justify-between">
-                <span className="text-slate-500">KÃ­ch thÆ°á»›c (DÃ—RÃ—C):</span>
+                <span className="text-slate-500">Kích thước (D×R×C):</span>
                 <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.dimensions}</strong>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Diá»‡n tÃ­ch sÃ n:</span>
-                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.areaM2} mÂ²</strong>
+                <span className="text-slate-500">Diện tích sàn:</span>
+                <strong className="text-slate-900 dark:text-white">{inspectingSizeUnit.areaM2} m²</strong>
               </div>
               <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Váº­t dá»¥ng phÃ¹ há»£p:</span>
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Vật dụng phù hợp:</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {inspectingSizeUnit.fitsDetailed.map((item, idx) => (
                     <div key={idx} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
@@ -4413,7 +4413,7 @@ export const BookingPage: React.FC = () => {
               }}
               className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm shadow-md transition-all cursor-pointer"
             >
-              Chá»n kÃ­ch thÆ°á»›c nÃ y
+              Chọn kích thước này
             </button>
           </div>
         </div>
@@ -4436,7 +4436,7 @@ export const BookingPage: React.FC = () => {
         }}
       />
 
-      {/* Cancellation Policy Confirm Modal (TrÆ°á»›c khi hiá»ƒn thá»‹ DocuSeal E-Contract) */}
+      {/* Cancellation Policy Confirm Modal (Trước khi hiển thị DocuSeal E-Contract) */}
       <CancellationPolicyConfirmModal
         isOpen={showPolicyConfirmModal}
         onClose={() => setShowPolicyConfirmModal(false)}
@@ -4446,15 +4446,15 @@ export const BookingPage: React.FC = () => {
         isLoadingPolicy={isLoadingPolicy}
         policyError={policyError}
         bookingInfo={{
-          facilityName: selectedFacility?.name || 'CÆ¡ sá»Ÿ Boxora',
-          unitName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C MÃ¡y láº¡nh' : 'TiÃªu chuáº©n'})`,
+          facilityName: selectedFacility?.name || 'Cơ sở Boxora',
+          unitName: `Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C Máy lạnh' : 'Tiêu chuẩn'})`,
           rentalDuration: rentalDurationText,
           startDate: startDate,
           endDate: rentalEndDate,
           totalRent: quoteCalculation.totalRent,
           depositAmount: quoteCalculation.depositAmount,
           totalPayment: quoteCalculation.totalEstimate,
-          paymentMethodName: 'VNPay Sandbox (Thanh toÃ¡n trá»±c tuyáº¿n)',
+          paymentMethodName: 'VNPay Sandbox (Thanh toán trực tuyến)',
         }}
       />
 
@@ -4469,7 +4469,7 @@ export const BookingPage: React.FC = () => {
         }}
         facilityName={selectedFacility?.name}
         facilityAddress={selectedFacility?.address}
-        unitName={`Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C MÃ¡y láº¡nh' : 'ThÆ°á»ng'})`}
+        unitName={`Kho ${currentSelectedSize.volumeText} (${isAcActive ? 'A/C Máy lạnh' : 'Thường'})`}
         rentalDuration={rentalDurationText}
         checkInDate={checkInDate}
         checkInTime={checkInTime}
