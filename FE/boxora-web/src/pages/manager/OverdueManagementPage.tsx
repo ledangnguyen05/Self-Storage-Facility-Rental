@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useOutletContext, useNavigate } from 'react-router-dom'
 import { overdueService, OverdueSummary, OverdueContractItem, OverdueSettlementPayload } from '../../services/overdueService'
 import { facilityService } from '../../services/facilityService'
+import { supportTicketService } from '../../services/supportTicketService'
 import { useAuth } from '../../context/AuthContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { Facility } from '../../types'
@@ -70,6 +71,7 @@ export const OverdueManagementPage: React.FC = () => {
   const [settlementAmount, setSettlementAmount] = useState<number>(0)
   const [settlementRefCode, setSettlementRefCode] = useState<string>('')
   const [settlementProofUrl, setSettlementProofUrl] = useState<string>('')
+  const [isUploadingSettlementProof, setIsUploadingSettlementProof] = useState<boolean>(false)
   const [settlementNotes, setSettlementNotes] = useState<string>('')
   const [settlementFormErrors, setSettlementFormErrors] = useState<Record<string, string>>({})
 
@@ -251,9 +253,10 @@ export const OverdueManagementPage: React.FC = () => {
     setIsSettling(true)
     try {
       const cleanVoucher = `PT-${contractToSettle.contractCode.replace(/[^A-Za-z0-9]/g, '')}-${Date.now().toString().slice(-4)}`
-      const payload: OverdueSettlementPayload | undefined = remainingDebt > 0 ? {
-        paymentMethod: 'CASH',
+      const payload: OverdueSettlementPayload | undefined = (remainingDebt > 0 || settlementProofUrl.trim()) ? {
+        paymentMethod: settlementProofUrl.trim() ? 'BANK_TRANSFER' : 'CASH',
         receiptVoucherCode: cleanVoucher,
+        proofDocumentUrl: settlementProofUrl.trim() || undefined,
         amount: Number(remainingDebt),
         notes: `Khách hàng thanh toán phần nợ cước còn thiếu tại quầy (${formatVND(remainingDebt)})`
       } : undefined
@@ -1212,6 +1215,57 @@ export const OverdueManagementPage: React.FC = () => {
                       <span className="font-mono font-bold text-blue-800 text-base">
                         0 ₫
                       </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Đính kèm chứng từ biên lai chuyển khoản / thu tiền trên Cloudflare R2 */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+                <div className="font-bold text-slate-700 flex items-center justify-between">
+                  <span>Ảnh biên lai / chứng từ thanh toán (Cloudflare R2 - tùy chọn):</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold text-xs cursor-pointer transition">
+                    <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                    <span>{isUploadingSettlementProof ? 'Đang tải lên R2...' : (settlementProofUrl ? 'Đổi ảnh biên lai' : 'Tải ảnh chứng từ lên R2')}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isUploadingSettlementProof}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        setIsUploadingSettlementProof(true)
+                        try {
+                          const url = await supportTicketService.uploadAttachment(file)
+                          if (url) {
+                            setSettlementProofUrl(url)
+                            toast.success('Đã tải ảnh biên lai tất toán lên Cloudflare R2 thành công!')
+                          }
+                        } catch (err: any) {
+                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chứng từ lên R2.')
+                        } finally {
+                          setIsUploadingSettlementProof(false)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                  </label>
+                  {settlementProofUrl && (
+                    <div className="flex items-center gap-2 p-1 bg-white border border-slate-200 rounded-lg">
+                      <img src={settlementProofUrl} alt="Chứng từ" className="w-8 h-8 object-cover rounded border border-slate-200" />
+                      <a href={settlementProofUrl} target="_blank" rel="noreferrer" className="text-[11px] font-mono text-blue-600 hover:underline truncate max-w-[180px]">
+                        {settlementProofUrl}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setSettlementProofUrl('')}
+                        className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
+                      >
+                        ✕
+                      </button>
                     </div>
                   )}
                 </div>

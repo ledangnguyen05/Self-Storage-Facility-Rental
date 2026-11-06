@@ -119,6 +119,7 @@ export interface OverdueContractDetail extends OverdueContractItem {
     approvedAt?: string
     rejectionReason?: string
     inventorySummary?: string
+    photoEvidenceUrl?: string
     notes?: string
     items: Array<{
       id: string

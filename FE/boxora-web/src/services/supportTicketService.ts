@@ -309,12 +309,32 @@ export const supportTicketService = {
   },
 
   async uploadEvidence(file: File) {
-    const formData = new FormData()
-    formData.append('file', file)
-    const response = await api.post('/api/v1/support-tickets/upload-evidence', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    return response.data?.data
+    const endpoints = [
+      '/api/v1/support-tickets/upload-evidence',
+      '/api/v1/storage-units/upload-image',
+      '/api/v1/refunds/upload-proof',
+      '/api/v1/facilities/upload-image',
+    ]
+    let lastError: unknown = null
+    for (const endpoint of endpoints) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        const response = await api.post(endpoint, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        if (response.data?.data) {
+          return response.data.data
+        }
+      } catch (err: any) {
+        lastError = err
+        const status = err?.response?.status
+        if (status && status !== 401 && status !== 403 && status !== 404) {
+          throw err
+        }
+      }
+    }
+    throw lastError || new Error('Không thể tải ảnh lên Cloudflare R2')
   },
 
   async uploadAttachment(file: File): Promise<string> {

@@ -48,6 +48,8 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
   const [unitTypeId, setUnitTypeId] = useState('')
   const [selectedFloorName, setSelectedFloorName] = useState('')
   const [selectedZoneCode, setSelectedZoneCode] = useState('')
+  const [customImageUrl, setCustomImageUrl] = useState('')
+  const [isUploadingUnitImage, setIsUploadingUnitImage] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
   // Resolve assigned facility: FM only manages assigned facility
@@ -103,6 +105,7 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
     if (!isOpen) return
 
     setUnitCode('')
+    setCustomImageUrl('')
     setErrorMessage('')
     setIsLoadingTypes(true)
 
@@ -221,6 +224,7 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
         zoneName: currentZoneObj?.name || undefined,
         facilityId: effectiveFacilityId,
         unitTypeId,
+        imageUrl: customImageUrl.trim() || selectedType?.imageUrl || undefined,
         // Custom monthly price input removed per Task 6.2; price is resolved by backend from catalog/policy
       })
       onCreated(createdUnit)
@@ -367,9 +371,9 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
               {/* Simulation Image Preview for Selected Unit Type */}
               {selectedType && (
                 <div className="mt-2 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center gap-3">
-                  {selectedType.imageUrl ? (
+                  {(customImageUrl || selectedType.imageUrl) ? (
                     <img
-                      src={selectedType.imageUrl}
+                      src={customImageUrl || selectedType.imageUrl}
                       alt={selectedType.typeName}
                       className="w-16 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-2xs"
                       onError={(e) => {
@@ -393,12 +397,49 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                       <span>•</span>
                       <span>~{selectedType.capacityBoxes || Math.round((selectedType.areaSqm || 1) * 8)} thùng</span>
                     </div>
-                    {selectedType.imageUrl && (
-                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1 mt-0.5">
-                        <span className="material-symbols-outlined text-[12px]">check_circle</span>
-                        <span>Đã gắn ảnh mô phỏng quy chuẩn (tự động kế thừa)</span>
-                      </div>
-                    )}
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold cursor-pointer transition">
+                        <span className="material-symbols-outlined text-[12px]">upload_file</span>
+                        <span>{isUploadingUnitImage ? 'Đang tải R2...' : (customImageUrl ? 'Đổi ảnh kho (R2)' : 'Tải ảnh riêng lên R2')}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
+                          className="hidden"
+                          disabled={isUploadingUnitImage}
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            setIsUploadingUnitImage(true)
+                            setErrorMessage('')
+                            try {
+                              const res = await storageUnitService.uploadUnitImage(file)
+                              if (res?.fileUrl) {
+                                setCustomImageUrl(res.fileUrl)
+                              }
+                            } catch (err) {
+                              setErrorMessage(getErrorMessage(err, 'Không thể tải ảnh ngăn kho lên R2.'))
+                            } finally {
+                              setIsUploadingUnitImage(false)
+                              e.target.value = ''
+                            }
+                          }}
+                        />
+                      </label>
+                      {customImageUrl ? (
+                        <button
+                          type="button"
+                          onClick={() => setCustomImageUrl('')}
+                          className="text-[10px] text-rose-600 hover:underline font-medium cursor-pointer"
+                        >
+                          Dùng ảnh loại kho
+                        </button>
+                      ) : selectedType.imageUrl ? (
+                        <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                          <span className="material-symbols-outlined text-[12px]">check_circle</span>
+                          <span>Kế thừa ảnh quy chuẩn</span>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               )}

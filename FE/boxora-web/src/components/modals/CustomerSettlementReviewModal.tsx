@@ -1076,6 +1076,48 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-rose-400 leading-relaxed"
                   />
                 </div>
+
+                <div className="space-y-2">
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Ảnh / Đường dẫn minh chứng đính kèm (tùy chọn):
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <label className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs cursor-pointer transition shrink-0">
+                      <Camera size={14} />
+                      <span>{isUploadingDisputeEvidence ? 'Đang tải lên R2...' : 'Tải ảnh minh chứng lên R2'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={isUploadingDisputeEvidence}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setIsUploadingDisputeEvidence(true)
+                          try {
+                            const url = await supportTicketService.uploadAttachment(file)
+                            if (url) {
+                              setDisputeEvidenceUrls(url)
+                              toast.success('Đã tải ảnh minh chứng lên Cloudflare R2 thành công!')
+                            }
+                          } catch (err: any) {
+                            toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh minh chứng.')
+                          } finally {
+                            setIsUploadingDisputeEvidence(false)
+                            e.target.value = ''
+                          }
+                        }}
+                      />
+                    </label>
+                    <input
+                      type="url"
+                      value={disputeEvidenceUrls}
+                      onChange={(e) => setDisputeEvidenceUrls(e.target.value)}
+                      placeholder="Hoặc dán link ảnh bằng chứng (tự động điền sau khi tải ảnh)"
+                      className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-rose-400"
+                    />
+                  </div>
+                </div>
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <button
                     type="button"

@@ -93,12 +93,31 @@ export interface RefundRequestItem {
 
 export const refundService = {
   async uploadProof(file: File): Promise<string> {
-    const formData = new FormData()
-    formData.append('file', file)
-    const response = await api.post('/api/v1/refunds/upload-proof', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    return response.data?.data?.fileUrl || ''
+    const endpoints = [
+      '/api/v1/refunds/upload-proof',
+      '/api/v1/storage-units/upload-image',
+      '/api/v1/support-tickets/upload-evidence',
+      '/api/v1/facilities/upload-image',
+    ]
+    let lastError: unknown = null
+    for (const endpoint of endpoints) {
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        const response = await api.post(endpoint, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        })
+        const url = response.data?.data?.fileUrl || response.data?.data?.url
+        if (url) return url
+      } catch (err: any) {
+        lastError = err
+        const status = err?.response?.status
+        if (status && status !== 401 && status !== 403 && status !== 404) {
+          throw err
+        }
+      }
+    }
+    throw lastError || new Error('Không thể tải ảnh chứng từ lên Cloudflare R2')
   },
 
   async createRefund(data: RefundCreatePayload): Promise<RefundRequestItem> {

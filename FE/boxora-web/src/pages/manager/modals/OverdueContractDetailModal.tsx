@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { overdueService, OverdueContractDetail, SealingWorkflowPayload } from '../../../services/overdueService'
+import { supportTicketService } from '../../../services/supportTicketService'
 import { userService } from '../../../services/userService'
 import { useAuth } from '../../../context/AuthContext'
 import { User } from '../../../types'
@@ -104,6 +105,8 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
   const [witnessUsers, setWitnessUsers] = useState<User[]>([])
   const [selectedWitnessId, setSelectedWitnessId] = useState('')
   const [sealingNotes, setSealingNotes] = useState('')
+  const [sealingPhotoUrl, setSealingPhotoUrl] = useState('')
+  const [isUploadingSealingPhoto, setIsUploadingSealingPhoto] = useState(false)
   const [inventoryItems, setInventoryItems] = useState<Array<{ itemName: string; quantity: number; conditionStatus: string; estimatedValue: number; notes?: string }>>([
     { itemName: '', quantity: 1, conditionStatus: 'Tốt', estimatedValue: 0, notes: '' }
   ])
@@ -182,6 +185,9 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
     }
     if (detail?.sealingDossier?.notes) {
       setSealingNotes(detail.sealingDossier.notes)
+    }
+    if (detail?.sealingDossier?.photoEvidenceUrl) {
+      setSealingPhotoUrl(detail.sealingDossier.photoEvidenceUrl)
     }
   }, [detail])
 
@@ -467,11 +473,13 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
         if (action === 'INVENTORY') {
           payload.witnessId = currentUser?.id || selectedWitnessId
           payload.notes = sealingNotes
+          payload.photoEvidenceUrl = sealingPhotoUrl.trim() || undefined
           payload.inventoryItems = validItems
         } else {
           payload.sealTagNumber = sealTagNumber
           payload.witnessId = currentUser?.id || selectedWitnessId
           payload.notes = sealingNotes
+          payload.photoEvidenceUrl = sealingPhotoUrl.trim() || undefined
           payload.inventoryItems = validItems
         }
       }
@@ -1296,6 +1304,25 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                             <span className="text-slate-400 italic">Không có ghi chú hiện trường</span>
                           )}
                         </p>
+                        {detail.sealingDossier.photoEvidenceUrl && (
+                          <div className="pl-5 pt-2 flex items-center gap-3">
+                            <a
+                              href={detail.sealingDossier.photoEvidenceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 p-1.5 bg-white border border-amber-200 rounded-lg hover:border-purple-400 transition"
+                            >
+                              <img
+                                src={detail.sealingDossier.photoEvidenceUrl}
+                                alt="Ảnh bằng chứng niêm phong"
+                                className="w-14 h-12 object-cover rounded border border-slate-200"
+                              />
+                              <span className="text-[11px] font-bold text-purple-700 underline pr-1">
+                                Xem ảnh niêm phong (Cloudflare R2)
+                              </span>
+                            </a>
+                          </div>
+                        )}
                       </div>
 
                       {/* Itemized Asset Inventory Table */}
@@ -2138,6 +2165,54 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                   rows={2}
                   className="w-full p-2 border border-slate-300 rounded-lg text-xs"
                 />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Ảnh chụp hiện trường kiểm kê / niêm phong (Cloudflare R2):</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs cursor-pointer transition">
+                    <span className="material-symbols-outlined text-[16px]">add_photo_alternate</span>
+                    <span>{isUploadingSealingPhoto ? 'Đang tải lên R2...' : (sealingPhotoUrl ? 'Đổi ảnh hiện trường' : 'Tải ảnh lên R2')}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isUploadingSealingPhoto}
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        setIsUploadingSealingPhoto(true)
+                        try {
+                          const url = await supportTicketService.uploadAttachment(file)
+                          if (url) {
+                            setSealingPhotoUrl(url)
+                            toast.success('Đã tải ảnh hiện trường kiểm kê lên Cloudflare R2!')
+                          }
+                        } catch (err: any) {
+                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh hiện trường lên R2.')
+                        } finally {
+                          setIsUploadingSealingPhoto(false)
+                          e.target.value = ''
+                        }
+                      }}
+                    />
+                  </label>
+                  {sealingPhotoUrl && (
+                    <div className="flex items-center gap-2 p-1 bg-slate-50 border border-slate-200 rounded-lg">
+                      <img src={sealingPhotoUrl} alt="Ảnh hiện trường" className="w-9 h-9 object-cover rounded border border-slate-200" />
+                      <a href={sealingPhotoUrl} target="_blank" rel="noreferrer" className="text-[11px] font-mono text-indigo-600 hover:underline truncate max-w-[180px]">
+                        {sealingPhotoUrl}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setSealingPhotoUrl('')}
+                        className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

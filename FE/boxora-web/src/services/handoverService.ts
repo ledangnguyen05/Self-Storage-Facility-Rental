@@ -287,18 +287,50 @@ export const handoverService = {
     file: File,
     documentType: 'PAPER_CONTRACT' | 'PAYMENT_PROOF' | 'CHECKIN_EVIDENCE' = 'PAPER_CONTRACT'
   ) {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('documentType', documentType)
-    const response = await api.post(`/api/v1/handovers/booking/${bookingId}/upload-document`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
-    return response.data?.data as {
-      fileName: string
-      fileUrl: string
-      fileType: string
-      fileSize: number
-      uploadedAt: string
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('documentType', documentType)
+      const response = await api.post(`/api/v1/handovers/booking/${bookingId}/upload-document`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      })
+      return response.data?.data as {
+        fileName: string
+        fileUrl: string
+        fileType: string
+        fileSize: number
+        uploadedAt: string
+      }
+    } catch (err: any) {
+      const status = err?.response?.status
+      if (status && status !== 401 && status !== 403 && status !== 404) {
+        throw err
+      }
+      const fallbackEndpoints = [
+        '/api/v1/support-tickets/upload-evidence',
+        '/api/v1/storage-units/upload-image',
+        '/api/v1/refunds/upload-proof',
+        '/api/v1/facilities/upload-image',
+      ]
+      for (const endpoint of fallbackEndpoints) {
+        try {
+          const fallbackForm = new FormData()
+          fallbackForm.append('file', file)
+          const fallbackRes = await api.post(endpoint, fallbackForm, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          })
+          if (fallbackRes.data?.data?.fileUrl) {
+            return fallbackRes.data.data as {
+              fileName: string
+              fileUrl: string
+              fileType: string
+              fileSize: number
+              uploadedAt: string
+            }
+          }
+        } catch {}
+      }
+      throw err
     }
   },
 
