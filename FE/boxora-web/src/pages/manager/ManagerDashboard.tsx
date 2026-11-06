@@ -387,6 +387,20 @@ export const ManagerDashboard: React.FC = () => {
     const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
     void fetchUpcomingHandovers(targetId)
     void fetchUnits(targetId, true)
+    void handoverService.getReturnCases({ facilityId: targetId }).then(data => {
+      if (Array.isArray(data)) {
+        let p = 0, i = 0, r = 0, comp = 0
+        data.forEach((c: any) => {
+          const st = String(c.status || '').toUpperCase()
+          if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) p++
+          else if (['INSPECTION_IN_PROGRESS', 'INSPECTION_SCHEDULED', 'INSPECTION_ISSUE', 'INSPECTION_PASSED', 'INSPECTING'].includes(st)) i++
+          else if (['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUNDING', 'DISPUTED'].includes(st) || c.approvalStatus === 'PENDING_APPROVAL' || c.approvalStatus === 'DISPUTED') r++
+          else if (st === 'COMPLETED' || st === 'RESOLVED') comp++
+          else p++
+        })
+        setReturnMetrics({ pending: p, inspecting: i, refunding: r, completed: comp, total: data.length })
+      }
+    }).catch(() => {})
   }, { intervalMs: 5000 })
 
   useEffect(() => {
@@ -1802,13 +1816,15 @@ export const ManagerDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">assignment_return</span>
           <span>{tr('3. Trả Kho', '3. Unit Return & Checkout')}</span>
-          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-            activeTab === 'returns'
-              ? 'bg-white text-amber-800'
-              : 'bg-amber-100 text-amber-800'
-          }`}>
-            {returnActiveTotal} {tr('hợp đồng', 'contracts')}
-          </span>
+          {returnActiveTotal > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              activeTab === 'returns'
+                ? 'bg-white text-amber-800'
+                : 'bg-amber-100 text-amber-800'
+            }`}>
+              {returnActiveTotal} {tr('hợp đồng', 'contracts')}
+            </span>
+          )}
         </button>
         )}
 

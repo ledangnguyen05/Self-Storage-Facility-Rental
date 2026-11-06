@@ -392,8 +392,54 @@ export const StaffDashboard: React.FC = () => {
   const [shiftPayments, setShiftPayments] = useState<PaymentItem[]>([])
   const [isShiftPaymentsLoading, setIsShiftPaymentsLoading] = useState(false)
 
+  // Trạng thái đếm số yêu cầu trả kho chờ xử lý đồng bộ trực tiếp từ Database & HandoverReturnWorkbench
+  const [returnBadgeCount, setReturnBadgeCount] = useState<number>(0)
+  const [returnMetrics, setReturnMetrics] = useState<{
+    pending: number
+    inspecting: number
+    refunding: number
+    completed: number
+    total: number
+  } | null>(null)
+
+  const loadReturnMetrics = useCallback(async (facilityId?: string) => {
+    try {
+      const targetId = (!facilityId || facilityId === 'ALL') ? undefined : facilityId
+      const data = await handoverService.getReturnCases({ facilityId: targetId })
+      if (Array.isArray(data)) {
+        let p = 0, i = 0, r = 0, comp = 0
+        data.forEach((c: any) => {
+          const st = String(c.status || '').toUpperCase()
+          if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) p++
+          else if (['INSPECTION_IN_PROGRESS', 'INSPECTION_SCHEDULED', 'INSPECTION_ISSUE', 'INSPECTION_PASSED', 'INSPECTING'].includes(st)) i++
+          else if (['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUNDING', 'DISPUTED'].includes(st) || c.approvalStatus === 'PENDING_APPROVAL' || c.approvalStatus === 'DISPUTED') r++
+          else if (st === 'COMPLETED' || st === 'RESOLVED') comp++
+          else p++
+        })
+        setReturnMetrics({ pending: p, inspecting: i, refunding: r, completed: comp, total: data.length })
+        setReturnBadgeCount(p)
+      }
+    } catch (e) {
+      console.warn('Error loading return cases from DB:', e)
+    }
+  }, [])
+
+  const effectiveReturnPendingCount = useMemo(() => {
+    if (returnMetrics) {
+      return returnMetrics.pending
+    }
+    return returnBadgeCount
+  }, [returnMetrics, returnBadgeCount])
+
+  const effectiveReturnTotal = useMemo(() => {
+    if (returnMetrics) {
+      return returnMetrics.pending + returnMetrics.inspecting + returnMetrics.refunding
+    }
+    return effectiveReturnPendingCount
+  }, [returnMetrics, effectiveReturnPendingCount])
+
   useEffect(() => {
-    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
+    const targetFacility = currentTargetFacility || ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
     fetchArrivals(targetFacility)
     fetchOccupancy(targetFacility)
     loadFacilities()
@@ -401,11 +447,13 @@ export const StaffDashboard: React.FC = () => {
     loadActiveRentals(targetFacility)
     loadRadarUnits(targetFacility)
     loadShiftPayments(targetFacility)
-  }, [selectedFacility])
+    void loadReturnMetrics(targetFacility)
+  }, [selectedFacility, currentTargetFacility, loadReturnMetrics])
 
   // Re-fetch relevant data when the staff tab changes so each workbench shows fresh data
   useEffect(() => {
-    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
+    const targetFacility = currentTargetFacility || ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
+    void loadReturnMetrics(targetFacility)
     if (staffActiveTab === 'pending_orders') {
       fetchArrivals(targetFacility)
     } else if (staffActiveTab === 'reception') {
@@ -415,17 +463,31 @@ export const StaffDashboard: React.FC = () => {
     } else if (staffActiveTab === 'renewals') {
       loadActiveRentals(targetFacility)
     }
-  }, [staffActiveTab])
+  }, [staffActiveTab, selectedFacility, currentTargetFacility, loadReturnMetrics])
 
   useRealtimeSync(() => {
-    const targetFacility = (!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility
+    const targetFacility = currentTargetFacility || ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
     void fetchArrivals(targetFacility)
     void fetchOccupancy(targetFacility)
     void loadTicketQueue()
     void loadActiveRentals(targetFacility)
     void loadRadarUnits(targetFacility)
     void loadShiftPayments(targetFacility, true)
+    void loadReturnMetrics(targetFacility)
   }, { intervalMs: 5000 })
+
+  useEffect(() => {
+    const handleReturnUpdated = () => {
+      const targetFacility = currentTargetFacility || ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
+      void loadReturnMetrics(targetFacility)
+    }
+    window.addEventListener('boxora_return_cases_updated', handleReturnUpdated)
+    window.addEventListener('boxora_return_completed', handleReturnUpdated)
+    return () => {
+      window.removeEventListener('boxora_return_cases_updated', handleReturnUpdated)
+      window.removeEventListener('boxora_return_completed', handleReturnUpdated)
+    }
+  }, [selectedFacility, currentTargetFacility, loadReturnMetrics])
 
   // Tự động kiểm tra và quét gửi email thông báo cho đơn quá hạn 24h chưa tiếp nhận
   useEffect(() => {
@@ -1453,84 +1515,8 @@ export const StaffDashboard: React.FC = () => {
       }
     })
 
-    // 4. Các hợp đồng đang thuê sắp đến hạn trả kho
-    activeRentals.forEach((r) => {
-      const existing = list.find((item) => item.bookingId === r.id || item.unitCode === r.unitCode)
-      if (!existing) {
-        list.push({
-          id: `ACT-RET-${r.id}`,
-          bookingId: r.id,
-          unitCode: r.unitCode || 'A-101',
-          customerName: r.customerName || 'Khách thuê',
-          customerPhone: r.customerPhone || 'N/A',
-          facilityName: r.facilityName || 'Cơ sở đã chọn',
-          requestDate: r.endDate || new Date().toISOString().split('T')[0],
-          reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-          status: 'PENDING',
-          contractCode: (r as any).contractCode,
-          depositPaid: r.depositPaid,
-          depositAmount: r.depositAmount,
-          endDate: r.endDate,
-        })
-      }
-    })
-
     return list
-  }, [tickets, activeRentals])
-
-  // Trạng thái đếm số yêu cầu trả kho chờ xử lý đồng bộ với HandoverReturnWorkbench
-  const [returnBadgeCount, setReturnBadgeCount] = useState<number>(() => {
-    try {
-      const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const pending = parsed.filter((c: any) => {
-            const st = String(c.status || '').toUpperCase()
-            return st === 'RETURN_REQUESTED' || st === 'INSPECTION_SCHEDULED' || st === 'PENDING' || !st
-          })
-          if (pending.length > 0) return pending.length
-          return parsed.length
-        }
-      }
-    } catch {}
-    return 0
-  })
-
-  const [returnMetrics, setReturnMetrics] = useState<{
-    pending: number
-    inspecting: number
-    refunding: number
-    completed: number
-    total: number
-  } | null>(null)
-
-  const effectiveReturnPendingCount = useMemo(() => {
-    if (returnBadgeCount > 0) return returnBadgeCount
-    try {
-      const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
-      if (raw) {
-        const parsed = JSON.parse(raw)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const pending = parsed.filter((c: any) => {
-            const st = String(c.status || '').toUpperCase()
-            return st === 'RETURN_REQUESTED' || st === 'INSPECTION_SCHEDULED' || st === 'PENDING' || !st
-          })
-          if (pending.length > 0) return pending.length
-          return parsed.length
-        }
-      }
-    } catch {}
-    const pendingList = customerReturnRequests.filter(c => c.status === 'PENDING' || !c.status)
-    return pendingList.length > 0 ? pendingList.length : customerReturnRequests.length
-  }, [returnBadgeCount, customerReturnRequests])
-
-  const effectiveReturnTotal = useMemo(() => {
-    if (returnMetrics) {
-      return returnMetrics.pending + returnMetrics.inspecting + returnMetrics.refunding
-    }
-    return effectiveReturnPendingCount
-  }, [returnMetrics, effectiveReturnPendingCount])
+  }, [tickets])
 
   // Khi chuyển sang tab 3 "Trả Kho", tự động cuộn mượt tới hiển thị KPI "1. Yêu Cầu Chờ Xử Lý"
   useEffect(() => {
@@ -1762,7 +1748,7 @@ export const StaffDashboard: React.FC = () => {
         >
           <span className="material-symbols-outlined text-[18px]">assignment_return</span>
           <span>3. Trả Kho</span>
-          {effectiveReturnPendingCount > 0 && (
+          {effectiveReturnTotal > 0 && (
             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
               staffActiveTab === 'returns'
                 ? 'bg-white text-amber-900'
@@ -1828,11 +1814,13 @@ export const StaffDashboard: React.FC = () => {
             onReturnCompleted={() => {
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
+              void loadReturnMetrics(currentTargetFacility)
             }}
             onRefresh={() => {
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
               loadTicketQueue()
+              void loadReturnMetrics(currentTargetFacility)
             }}
           />
         </section>
