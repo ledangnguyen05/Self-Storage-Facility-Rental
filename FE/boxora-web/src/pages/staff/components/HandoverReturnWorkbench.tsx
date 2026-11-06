@@ -765,9 +765,13 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     )
   }, [currentCase])
 
-  // Chỉ Facility Manager (hoặc Admin) mới có thẩm quyền mở lại xử lý biên bản nghiệm thu khi phát hiện lỗi
+  // Chỉ Facility Manager (hoặc Admin) mới có thẩm quyền mở lại xử lý biên bản nghiệm thu khi phát hiện lỗi.
+  // Khi khách hàng đã xác nhận ĐỒNG Ý quyết toán (AGREED / CUSTOMER_AGREED), biên bản được khóa cố định để giải ngân và không hiển thị nút Xử lý lại nghiệm thu.
   const canReopenInspection = useMemo(() => {
     if (!currentCase) return false
+    if (currentCase.customerDecision === 'AGREED' || currentCase.approvalStatus === 'CUSTOMER_AGREED') {
+      return false
+    }
     const hasRolePermission = isFacilityManager || isAdmin
     const isNotFullyFinished = currentCase.status !== 'COMPLETED' && currentCase.refundStatus !== 'REFUNDED' && currentCase.refundStatus !== 'COMPLETED'
     return hasRolePermission && isInspectionLocked && isNotFullyFinished
@@ -2680,7 +2684,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           )}
                         </div>
 
-                        {!canReopenInspection && !isFacilityManager && (
+                        {!canReopenInspection && !isFacilityManager && currentCase.customerDecision !== 'AGREED' && currentCase.approvalStatus !== 'CUSTOMER_AGREED' && (
                           <div className="text-[11px] text-slate-400 italic pt-1.5 border-t border-slate-800 flex items-center gap-1.5">
                             <ShieldCheck size={14} className="text-slate-400 shrink-0" />
                             <span>Nếu phát hiện thông tin hoặc chi phí bị sai sót, vui lòng báo <strong>Quản lý cơ sở (Facility Manager)</strong> để sử dụng chức năng <strong>Xử lý lại nghiệm thu</strong>.</span>

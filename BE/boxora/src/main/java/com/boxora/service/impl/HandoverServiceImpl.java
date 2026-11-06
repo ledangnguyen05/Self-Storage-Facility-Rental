@@ -5255,6 +5255,10 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.RETURN_ALREADY_REFUNDED, "Khoản tiền đã được giải ngân hoàn tất cho khách hàng. Không thể xử lý lại.");
         }
 
+        if ("AGREED".equalsIgnoreCase(record.getCustomerDecision()) || "CUSTOMER_AGREED".equalsIgnoreCase(record.getApprovalStatus())) {
+            throw new AppException(ErrorCode.RETURN_SETTLEMENT_ALREADY_AGREED);
+        }
+
         // Reset customer decision & confirmation
         record.setCustomerDecision("NONE");
         record.setCustomerDecisionAt(null);

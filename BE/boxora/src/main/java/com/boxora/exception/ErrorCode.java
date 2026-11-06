@@ -278,7 +278,8 @@ public enum ErrorCode {
     RETURN_INVALID_STATUS_TRANSITION(2309, "Chuyển trạng thái hồ sơ trả kho không hợp lệ theo quy trình", HttpStatus.BAD_REQUEST),
     RETURN_ACCESS_REVOCATION_FAILED(2310, "Thu hồi quyền truy cập SmartLock chưa hoàn tất", HttpStatus.BAD_REQUEST),
     RETURN_ALREADY_REFUNDED(2311, "Tiền cọc cho hồ sơ này đã được hoàn tất trước đó", HttpStatus.BAD_REQUEST),
-    RETURN_ADDITIONAL_PAYMENT_ALREADY_PAID(2312, "Khoản thanh toán bổ sung đã được ghi nhận trước đó", HttpStatus.BAD_REQUEST);
+    RETURN_ADDITIONAL_PAYMENT_ALREADY_PAID(2312, "Khoản thanh toán bổ sung đã được ghi nhận trước đó", HttpStatus.BAD_REQUEST),
+    RETURN_SETTLEMENT_ALREADY_AGREED(2313, "Khách hàng đã đồng ý quyết toán. Hồ sơ nghiệm thu đã khóa cố định để giải ngân và không thể xử lý lại.", HttpStatus.BAD_REQUEST);
 
     private final int code;
     private final String message;
