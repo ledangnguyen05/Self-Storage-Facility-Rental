@@ -22,4 +22,6 @@ public class RefundBreakdownResponse {
     private long rejectedRefundCount;
     private BigDecimal totalRequestedAmount;
     private long totalRefundRequests;
+    private BigDecimal returnCompensationAmount;
+    private long returnCompensationCount;
 }

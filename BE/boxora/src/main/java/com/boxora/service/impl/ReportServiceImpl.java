@@ -250,6 +250,9 @@ public class ReportServiceImpl implements ReportService {
         BigDecimal pendingRefundAmount = pendingReviewAmount.add(processingTransferAmount);
         long pendingReconciliationCount = pendingReviewCount + processingTransferCount;
 
+        BigDecimal returnCompAmount = safe(systemSummary.getReturnCompensationRevenue());
+        long returnCompCount = returnCompAmount.compareTo(BigDecimal.ZERO) > 0 ? 1L : 0L;
+
         RefundBreakdownResponse refundBreakdown = RefundBreakdownResponse.builder()
                 .completedRefundAmount(completedRefundAmount)
                 .completedRefundCount(completedRefundCount)
@@ -261,6 +264,8 @@ public class ReportServiceImpl implements ReportService {
                 .rejectedRefundCount(rejectedRefundCount)
                 .totalRequestedAmount(totalRequestedAmount)
                 .totalRefundRequests(scopedRefunds.size())
+                .returnCompensationAmount(returnCompAmount)
+                .returnCompensationCount(returnCompCount)
                 .build();
 
         // 4. Calculate Active Deposits Held
@@ -522,7 +527,8 @@ public class ReportServiceImpl implements ReportService {
                 BigDecimal mGrossRev = safe(m.getRentalFeeRevenue())
                         .add(mBookingRentalPortion)
                         .add(safe(m.getRenewalFeeRevenue()))
-                        .add(safe(m.getExtraChargeRevenue()));
+                        .add(safe(m.getExtraChargeRevenue()))
+                        .add(safe(m.getReturnCompensationRevenue()));
                 m.setNetRevenue(mGrossRev.subtract(rentalRefAmt).max(BigDecimal.ZERO));
                 m.setNetCashFlow(safe(m.getTotalRevenue()).subtract(refAmt));
             }
@@ -540,6 +546,7 @@ public class ReportServiceImpl implements ReportService {
                         .renewalFeeRevenue(BigDecimal.ZERO)
                         .extraChargeRevenue(BigDecimal.ZERO)
                         .bookingPaymentRevenue(BigDecimal.ZERO)
+                        .returnCompensationRevenue(BigDecimal.ZERO)
                         .refundAmount(refAmt)
                         .rentalRefundAmount(rentalRefAmt)
                         .netCashFlow(BigDecimal.ZERO.subtract(refAmt))
@@ -609,6 +616,11 @@ public class ReportServiceImpl implements ReportService {
                 ? null
                 : String.format(Locale.ROOT, "%04d-%02d", year.intValue(), month.intValue());
 
+        boolean hasReturnComp = row.length > 9;
+        BigDecimal returnComp = hasReturnComp ? toBigDecimal(row[7]) : BigDecimal.ZERO;
+        BigDecimal totalRev = hasReturnComp ? toBigDecimal(row[8]) : toBigDecimal(row[7]);
+        long paymentCount = hasReturnComp ? ((Number) row[9]).longValue() : ((Number) row[8]).longValue();
+
         return RevenueMonthSummaryResponse.builder()
                 .month(monthKey)
                 .rentalFeeRevenue(toBigDecimal(row[2]))
@@ -616,8 +628,9 @@ public class ReportServiceImpl implements ReportService {
                 .renewalFeeRevenue(toBigDecimal(row[4]))
                 .extraChargeRevenue(toBigDecimal(row[5]))
                 .bookingPaymentRevenue(toBigDecimal(row[6]))
-                .totalRevenue(toBigDecimal(row[7]))
-                .paymentCount(((Number) row[8]).longValue())
+                .returnCompensationRevenue(returnComp)
+                .totalRevenue(totalRev)
+                .paymentCount(paymentCount)
                 .build();
     }
 

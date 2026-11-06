@@ -194,6 +194,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID>, JpaSpec
                               THEN (p.amount - COALESCE(b.depositPaid, b.depositAmount, 0))
                               ELSE 0 END)
                     ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN p.paymentType = com.boxora.enums.PaymentType.RETURN_COMPENSATION THEN p.amount ELSE 0 END), 0),
                 COALESCE(SUM(p.amount), 0), COUNT(p)
             FROM Payment p
             LEFT JOIN p.booking b

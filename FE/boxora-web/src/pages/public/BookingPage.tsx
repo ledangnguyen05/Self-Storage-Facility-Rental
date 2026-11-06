@@ -2554,11 +2554,11 @@ export const BookingPage: React.FC = () => {
                           setSizeVisualMode('3D')
                           setUserForced3DMode(true)
                         }}
-                        className={px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                           sizeVisualMode === '3D'
                             ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }}
+                        }`}
                       >
                         <Box size={12} />
                         <span>Mô hình 3D</span>
@@ -2569,11 +2569,11 @@ export const BookingPage: React.FC = () => {
                           setSizeVisualMode('PHOTO')
                           setUserForced3DMode(false)
                         }}
-                        className={px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                           sizeVisualMode === 'PHOTO'
                             ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
                             : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }}
+                        }`}
                       >
                         <Building2 size={12} />
                         <span>Ảnh thực tế</span>
@@ -2586,7 +2586,6 @@ export const BookingPage: React.FC = () => {
                         Kho {currentSelectedSize.volumeText} ({isAcActive ? 'A/C Máy lạnh' : 'Non-A/C'})
                       </strong>
                     </div>
-                  </div>
                   </div>
                 </div>
 

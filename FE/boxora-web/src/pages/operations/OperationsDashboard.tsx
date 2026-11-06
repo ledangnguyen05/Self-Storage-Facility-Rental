@@ -346,10 +346,12 @@ export const OperationsDashboard: React.FC = () => {
   const rentalRevenue = summary?.rentalRevenue ?? 0
   const totalOverdueDebt = summary?.totalOverdueDebt ?? debtData?.totalDebtAmount ?? 0
   const depositsHeld = summary?.depositsHeld ?? 0
+  const returnCompensation = summary?.returnCompensationRevenue ?? 0
   const refundedAmount = summary?.refundedAmount ?? 0
   const pendingRefundAmount = summary?.pendingRefundAmount ?? 0
   const pendingReconCount = summary?.pendingReconciliationCount ?? 0
   const paymentCount = summary?.paymentCount ?? 0
+  const totalReturnSettlement = returnCompensation + refundedAmount
 
   // Chart 1: Monthly Recognized Net Revenue & Full Inflow/Outflow Series
   const monthlyRevenueData = useMemo(() => {
@@ -359,13 +361,14 @@ export const OperationsDashboard: React.FC = () => {
       const extra = item.extraChargeRevenue || 0
       const deposit = item.depositRevenue || 0
       const booking = item.bookingPaymentRevenue || 0
+      const returnComp = item.returnCompensationRevenue || 0
       const refund = item.refundAmount || 0
       const rentalRefund = item.rentalRefundAmount || 0
 
-      const totalIn = item.totalRevenue || (rental + renewal + extra + deposit + booking)
+      const totalIn = item.totalRevenue || (rental + renewal + extra + deposit + booking + returnComp)
       const totalOut = refund
       const netCashFlow = item.netCashFlow != null ? item.netCashFlow : (totalIn - totalOut)
-      const netRevenue = item.netRevenue != null ? item.netRevenue : Math.max(0, rental + renewal + extra - rentalRefund)
+      const netRevenue = item.netRevenue != null ? item.netRevenue : Math.max(0, rental + renewal + extra + returnComp - rentalRefund)
 
       const y = item.month ? item.month.slice(0, 4) : ''
       const m = item.month ? item.month.slice(5, 7) : ''
@@ -382,6 +385,7 @@ export const OperationsDashboard: React.FC = () => {
         extra,
         deposit,
         booking,
+        returnComp,
         totalIn,
         // Nguồn ra
         refund,
@@ -613,6 +617,10 @@ export const OperationsDashboard: React.FC = () => {
           { val: summary?.depositsHeld || 0, type: 'Number', style: 'Number' }
         ],
         [
+          { val: 'Tiền bồi thường trả kho đã thu' },
+          { val: summary?.returnCompensationRevenue || 0, type: 'Number', style: 'Number' }
+        ],
+        [
           { val: 'Tiền hoàn trả khách đã giải ngân' },
           { val: summary?.refundedAmount || 0, type: 'Number', style: 'Number' }
         ],
@@ -700,6 +708,7 @@ export const OperationsDashboard: React.FC = () => {
           lines.push(`Doanh thu tiền thuê,${summary.rentalRevenue || 0}`)
           lines.push(`Công nợ phải thu,${summary.totalOverdueDebt || 0}`)
           lines.push(`Tiền cọc đang giữ,${summary.depositsHeld || 0}`)
+          lines.push(`Tiền bồi thường trả kho đã thu,${summary.returnCompensationRevenue || 0}`)
           lines.push(`Tiền hoàn thành công,${summary.refundedAmount || 0}`)
           lines.push(`Tiền hoàn chờ xử lý,${summary.pendingRefundAmount || 0}`)
         }
@@ -1159,26 +1168,32 @@ export const OperationsDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* KPI 6: Hoàn tiền và giao dịch chờ xử lý */}
+          {/* KPI 6: Hoàn tiền, Bồi thường và Quyết toán trả kho */}
           <div className="relative rounded-2xl bg-white p-5 shadow-sm hover:shadow-md border border-slate-200 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('6. Hoàn tiền & Chờ XL', '6. Refunds & Pending')}</span>
-              <div className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100" title={tr('Số tiền đã hoàn thành công vs tiền hoàn đang chờ xử lý & giao dịch chờ đối soát.', 'Separation of completed refunds from pending review & unreconciled items.')}>
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{tr('6. Hoàn tiền & Bồi thường trả kho', '6. Refunds & Return Settlement')}</span>
+              <div className="h-8 w-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center border border-purple-100" title={tr('Ghi nhận dòng tiền quyết toán trả kho: Thu bồi thường thiệt hại/vượt cọc, hoàn tiền cọc đã giải ngân và giao dịch chờ xử lý.', 'Checkout settlement cash flows: Collected damage compensation, processed deposit refunds, and pending requests.')}>
                 <span className="material-symbols-outlined text-[20px]">assignment_return</span>
               </div>
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-purple-700 tracking-tight whitespace-nowrap">
-                {formatVnd(refundedAmount)}
+                {formatVnd(totalReturnSettlement)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                {tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')}
+                {returnCompensation > 0 ? (
+                  <span className="text-purple-700 font-semibold">
+                    {tr(`Bồi thường trả kho đã thu: +${formatVnd(returnCompensation)}`, `Collected return compensation: +${formatVnd(returnCompensation)}`)}
+                  </span>
+                ) : (
+                  tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')
+                )}
               </p>
             </div>
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-purple-800 font-semibold">
-              <span>{tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
+              <span>{returnCompensation > 0 ? tr('Đã hoàn cọc / Chờ duyệt:', 'Refunded / Pending:') : tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
               <span className="font-mono bg-purple-50 px-1.5 py-0.5 rounded text-purple-800 border border-purple-200">
-                {formatVnd(pendingRefundAmount)}
+                {returnCompensation > 0 ? `${formatVnd(refundedAmount)} • ${formatVnd(pendingRefundAmount)}` : formatVnd(pendingRefundAmount)}
               </span>
             </div>
           </div>
@@ -1280,7 +1295,7 @@ export const OperationsDashboard: React.FC = () => {
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-amber-500 shrink-0"></span>{tr('3. Tiền thuê kho', '3. Rental')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-rose-600 shrink-0"></span>{tr('4. Công nợ', '4. Debt')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('5. Tiền cọc đang giữ', '5. Deposits')}</span>
-                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('6. Hoàn tiền', '6. Refunds')}</span>
+                <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('6. Hoàn tiền & Bồi thường', '6. Refunds & Comp.')}</span>
                 <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
                 <span className="flex items-center gap-1 shrink-0">
                   <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0"></span>
@@ -1350,9 +1365,9 @@ export const OperationsDashboard: React.FC = () => {
                       },
                       {
                         id: 'refund',
-                        label: tr('6. Hoàn tiền & Chờ XL', '6. Refunds & Pending'),
-                        shortLabel: tr('Hoàn tiền', 'Refund'),
-                        amount: m.refund > 0 ? m.refund : refundedAmount,
+                        label: tr('6. Hoàn tiền & Bồi thường trả kho', '6. Refunds & Return Compensation'),
+                        shortLabel: ((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) > 0 ? tr('Bồi thường', 'Comp.') : tr('Hoàn tiền', 'Refund'),
+                        amount: ((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) + (m.refund > 0 ? m.refund : refundedAmount),
                         icon: 'assignment_return',
                         color: '#7e22ce',
                         bgClass: 'bg-purple-600',
@@ -1546,15 +1561,21 @@ export const OperationsDashboard: React.FC = () => {
                             </div>
                           </div>
 
-                          {/* 6. Hoàn tiền & Chờ XL */}
+                          {/* 6. Hoàn tiền & Bồi thường trả kho */}
                           <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-200/90 shadow-2xs flex flex-col justify-between">
                             <div>
                               <div className="flex items-center justify-between gap-1 mb-1">
-                                <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">{tr('6. Hoàn tiền & Chờ XL', '6. Refunds & Pending')}</span>
+                                <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider">{tr('6. Hoàn tiền & Bồi thường trả kho', '6. Refunds & Return Compensation')}</span>
                                 <span className="material-symbols-outlined text-[16px] text-purple-600">assignment_return</span>
                               </div>
-                              <span className="font-mono font-bold text-purple-700 text-sm block">{formatVnd(m.refund > 0 ? m.refund : refundedAmount)}</span>
-                              <span className="text-[10px] text-purple-600/80 block mt-0.5 leading-tight">{tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')}</span>
+                              <span className="font-mono font-bold text-purple-700 text-sm block">
+                                {formatVnd(((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) + (m.refund > 0 ? m.refund : refundedAmount))}
+                              </span>
+                              <span className="text-[10px] text-purple-600/80 block mt-0.5 leading-tight">
+                                {((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) > 0
+                                  ? tr(`Bồi thường thu: +${formatVnd((m as any).returnComp || returnCompensation)} • Hoàn cọc: ${formatVnd(m.refund || refundedAmount)}`, `Compensation: +${formatVnd((m as any).returnComp || returnCompensation)} • Refund: ${formatVnd(m.refund || refundedAmount)}`)
+                                  : tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')}
+                              </span>
                             </div>
                             <div className="mt-2 pt-1.5 border-t border-purple-200/60 flex items-center justify-between text-[10px] text-purple-800 font-semibold">
                               <span>{tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
@@ -1583,6 +1604,12 @@ export const OperationsDashboard: React.FC = () => {
                 <span>{tr('Kỳ báo cáo:', 'Report Period:')} <strong className="text-slate-900">{periodLabel}</strong></span>
                 <span>•</span>
                 <span>{tr('Tổng thực thu (Vào):', 'Total Inflow:')} <strong className="text-blue-700 font-mono">+{formatVnd(totalCashIn)}</strong></span>
+                {returnCompensation > 0 && (
+                  <>
+                    <span>•</span>
+                    <span>{tr('Bồi thường trả kho:', 'Return Compensation:')} <strong className="text-rose-600 font-mono">+{formatVnd(returnCompensation)}</strong></span>
+                  </>
+                )}
                 <span>•</span>
                 <span>{tr('Tổng hoàn trả (Ra):', 'Total Outflow:')} <strong className="text-purple-700 font-mono">-{formatVnd(refundedAmount)}</strong></span>
               </div>

@@ -700,4 +700,75 @@ class BusinessManagerFinancialReportRestructureTest {
         RevenueReportResponse reportAfterHandover = reportService.getRevenueReport(from, to, null);
         assertThat(reportAfterHandover.getSystemSummary().getDepositsHeld()).isEqualByComparingTo("7000000");
     }
+
+    @Test
+    @DisplayName("TC13: Giao dịch bồi thường trả kho 2.250.000đ được ghi nhận vào NetRevenue, MonthlyRevenue và RefundBreakdown")
+    void tc13_returnCompensationIncludedInNetRevenueAndMonthlyAndRefundBreakdown() {
+        LocalDate from = LocalDate.of(2026, 11, 1);
+        LocalDate to = LocalDate.of(2026, 11, 30);
+        LocalDateTime fromDt = from.atStartOfDay();
+        LocalDateTime toDt = to.atTime(LocalTime.MAX);
+
+        when(paymentRepository.sumSystemRevenue(fromDt, toDt, null)).thenReturn(
+                new SystemRevenueSummaryResponse(
+                        new BigDecimal("24301250"), // totalRevenue
+                        new BigDecimal("5750000"),  // depositRevenue
+                        new BigDecimal("16301250"), // rentalFeeRevenue
+                        BigDecimal.ZERO,           // renewalFeeRevenue
+                        BigDecimal.ZERO,           // extraChargeRevenue
+                        BigDecimal.ZERO,           // bookingPaymentRevenue
+                        new BigDecimal("2250000"), // returnCompensationRevenue
+                        new BigDecimal("24301250"), // totalCashIn
+                        3L                         // paymentCount
+                )
+        );
+        when(facilityRepository.findAll()).thenReturn(List.of(facilityA));
+        when(paymentRepository.sumRevenueByFacility(fromDt, toDt, null)).thenReturn(List.of(
+                new FacilityRevenueResponse(
+                        facilityA.getId(),
+                        facilityA.getName(),
+                        new BigDecimal("24301250"),
+                        new BigDecimal("5750000"),
+                        new BigDecimal("16301250"),
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        new BigDecimal("2250000"),
+                        new BigDecimal("24301250"),
+                        3L
+                )
+        ));
+
+        // sumRevenueByMonth: year=2026, month=11, rental=16301250, dep=5750000, ren=0, ext=0, book=0, retComp=2250000, total=24301250, count=3
+        Object[] monthRow = new Object[]{
+                2026, 11,
+                new BigDecimal("16301250"),
+                new BigDecimal("5750000"),
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                BigDecimal.ZERO,
+                new BigDecimal("2250000"),
+                new BigDecimal("24301250"),
+                3L
+        };
+        when(paymentRepository.sumRevenueByMonth(fromDt, toDt, null)).thenReturn(List.of(monthRow));
+        when(paymentRepository.countPaidPaymentsByMethod(fromDt, toDt, null)).thenReturn(Collections.emptyList());
+        when(rentalContractRepository.findAll()).thenReturn(Collections.emptyList());
+        when(bookingRepository.findAll()).thenReturn(Collections.emptyList());
+        when(refundRequestRepository.findAll()).thenReturn(Collections.emptyList());
+
+        RevenueReportResponse report = reportService.getRevenueReport(from, to, null);
+
+        // SystemSummary: NetRevenue = 16.301.250 + 2.250.000 = 18.551.250
+        assertThat(report.getSystemSummary().getNetRevenue()).isEqualByComparingTo("18551250");
+        assertThat(report.getSystemSummary().getReturnCompensationRevenue()).isEqualByComparingTo("2250000");
+
+        // MonthlyRevenue: NetRevenue of 2026-11 = 18.551.250
+        assertThat(report.getMonthlyRevenue()).hasSize(1);
+        assertThat(report.getMonthlyRevenue().get(0).getReturnCompensationRevenue()).isEqualByComparingTo("2250000");
+        assertThat(report.getMonthlyRevenue().get(0).getNetRevenue()).isEqualByComparingTo("18551250");
+
+        // RefundBreakdown: returnCompensationAmount = 2.250.000
+        assertThat(report.getRefundBreakdown().getReturnCompensationAmount()).isEqualByComparingTo("2250000");
+    }
 }

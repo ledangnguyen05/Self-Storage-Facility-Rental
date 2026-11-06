@@ -175,6 +175,7 @@ export interface UnitType {
   capacityBoxes?: number
   imageUrl?: string
   isActive?: boolean
+  priceChangeReason?: string
 }
 
 export interface UnitTypePriceAdjustmentRequest {
@@ -797,6 +798,8 @@ export interface RefundBreakdown {
   rejectedRefundCount: number
   totalRequestedAmount: number
   totalRefundRequests: number
+  returnCompensationAmount?: number
+  returnCompensationCount?: number
 }
 
 export interface RevenueReport {
