@@ -88,19 +88,21 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
     })
   }
 
+  const zones = floor.zones || []
+
   const handleDeleteZone = (zoneId: string) => {
     onUpdateFloor({
       ...floor,
-      zones: floor.zones.filter((z) => z.id !== zoneId),
+      zones: zones.filter((z) => z.id !== zoneId),
     })
     setDeleteConfirmId(null)
   }
 
   const handleMove = (index: number, direction: 'UP' | 'DOWN') => {
     const targetIdx = direction === 'UP' ? index - 1 : index + 1
-    if (targetIdx < 0 || targetIdx >= floor.zones.length) return
+    if (targetIdx < 0 || targetIdx >= zones.length) return
 
-    const newZones = [...floor.zones]
+    const newZones = [...zones]
     const temp = newZones[index]
     newZones[index] = newZones[targetIdx]
     newZones[targetIdx] = temp
@@ -150,7 +152,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
 
     if (editingZoneId) {
       // Edit existing zone
-      const updatedZones = floor.zones.map((z) => {
+      const updatedZones = zones.map((z) => {
         if (z.id === editingZoneId) {
           return {
             ...z,
@@ -181,11 +183,11 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
         area: areaNum,
         description: description.trim(),
         status,
-        displayOrder: floor.zones.length + 1,
+        displayOrder: zones.length + 1,
       }
       onUpdateFloor({
         ...floor,
-        zones: [...floor.zones, newZone],
+        zones: [...zones, newZone],
       })
     }
 
@@ -202,7 +204,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
               grid_view
             </span>
             <h5 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-              Phân khu bố trí kho lưu trữ ({floor.zones.length})
+              Phân khu bố trí kho lưu trữ ({zones.length})
             </h5>
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
@@ -221,7 +223,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
       </div>
 
       {/* List of Zones */}
-      {floor.zones.length === 0 ? (
+      {zones.length === 0 ? (
         <div className="p-6 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 text-slate-500 space-y-1.5">
           <Layers className="w-8 h-8 mx-auto text-slate-400/80" />
           <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -233,7 +235,7 @@ export const FloorZoneManager: React.FC<FloorZoneManagerProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {floor.zones.map((zone, idx) => {
+          {zones.map((zone, idx) => {
             const typeOpt = ZONE_TYPE_OPTIONS.find((t) => t.type === zone.zoneType) || ZONE_TYPE_OPTIONS[1]
             return (
               <div

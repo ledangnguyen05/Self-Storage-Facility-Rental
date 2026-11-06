@@ -372,6 +372,11 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                       src={selectedType.imageUrl}
                       alt={selectedType.typeName}
                       className="w-16 h-14 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-2xs"
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        target.onerror = null
+                        target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=200&q=80'
+                      }}
                     />
                   ) : (
                     <div className="w-16 h-14 rounded-lg bg-slate-200 dark:bg-slate-700/60 flex flex-col items-center justify-center text-slate-400 text-center shrink-0">

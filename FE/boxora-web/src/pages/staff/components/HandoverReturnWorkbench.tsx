@@ -3400,9 +3400,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           Đối Soát Tiền Cọc, Khấu Trừ &amp; Khoản Hoàn Trả Khách Hàng
                         </h3>
                       </div>
-                      <span className="text-xs font-mono text-slate-500">
-                        Tiền hoàn = max(0, Tiền cọc - Khấu trừ - Công nợ)
-                      </span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

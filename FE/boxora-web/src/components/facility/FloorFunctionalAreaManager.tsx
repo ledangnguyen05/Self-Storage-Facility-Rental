@@ -92,10 +92,12 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
     setIsModalOpen(true)
   }
 
+  const functionalAreas = floor.functionalAreas || []
+
   const handleDuplicate = (fa: FacilityFunctionalArea) => {
     let newCode = `${fa.code}_COPY`
     let counter = 1
-    const allExistingCodes = allFloors.flatMap((f) => f.functionalAreas.map((x) => x.code.toLowerCase()))
+    const allExistingCodes = allFloors.flatMap((f) => (f.functionalAreas || []).map((x) => x.code.toLowerCase()))
     while (allExistingCodes.includes(newCode.toLowerCase())) {
       newCode = `${fa.code}_COPY${counter++}`
     }
@@ -105,28 +107,28 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
       id: generateId(),
       name: `${fa.name} (Bản sao)`,
       code: newCode,
-      displayOrder: floor.functionalAreas.length + 1,
+      displayOrder: functionalAreas.length + 1,
     }
 
     onUpdateFloor({
       ...floor,
-      functionalAreas: [...floor.functionalAreas, duplicated],
+      functionalAreas: [...functionalAreas, duplicated],
     })
   }
 
   const handleDelete = (areaId: string) => {
     onUpdateFloor({
       ...floor,
-      functionalAreas: floor.functionalAreas.filter((a) => a.id !== areaId),
+      functionalAreas: functionalAreas.filter((a) => a.id !== areaId),
     })
     setDeleteConfirmId(null)
   }
 
   const handleMove = (index: number, direction: 'UP' | 'DOWN') => {
     const targetIdx = direction === 'UP' ? index - 1 : index + 1
-    if (targetIdx < 0 || targetIdx >= floor.functionalAreas.length) return
+    if (targetIdx < 0 || targetIdx >= functionalAreas.length) return
 
-    const newAreas = [...floor.functionalAreas]
+    const newAreas = [...functionalAreas]
     const temp = newAreas[index]
     newAreas[index] = newAreas[targetIdx]
     newAreas[targetIdx] = temp
@@ -175,7 +177,7 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
 
     // Check code uniqueness across all floors in facility
     const isCodeDuplicate = allFloors.some((f) =>
-      f.functionalAreas.some(
+      (f.functionalAreas || []).some(
         (a) => a.code.toLowerCase() === cleanCode.toLowerCase() && a.id !== editingAreaId
       )
     )
@@ -193,7 +195,7 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
     if (mapLocationNote.trim()) attributes.mapLocationNote = mapLocationNote.trim()
 
     if (editingAreaId) {
-      const updated = floor.functionalAreas.map((a) => {
+      const updated = functionalAreas.map((a) => {
         if (a.id === editingAreaId) {
           return {
             ...a,
@@ -224,12 +226,12 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
         area: areaNum,
         description: description.trim(),
         status,
-        displayOrder: floor.functionalAreas.length + 1,
+        displayOrder: functionalAreas.length + 1,
         attributes,
       }
       onUpdateFloor({
         ...floor,
-        functionalAreas: [...floor.functionalAreas, newArea],
+        functionalAreas: [...functionalAreas, newArea],
       })
     }
 
@@ -270,7 +272,7 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
       </div>
 
       {/* List of Functional Areas */}
-      {floor.functionalAreas.length === 0 ? (
+      {functionalAreas.length === 0 ? (
         <div className="p-6 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 text-slate-500 space-y-1.5">
           <Compass className="w-8 h-8 mx-auto text-slate-400/80" />
           <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -282,7 +284,7 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {floor.functionalAreas.map((fa, idx) => {
+          {functionalAreas.map((fa, idx) => {
             const typeOpt =
               FUNCTIONAL_AREA_TYPE_OPTIONS.find((t) => t.type === fa.areaType) ||
               FUNCTIONAL_AREA_TYPE_OPTIONS[0]
