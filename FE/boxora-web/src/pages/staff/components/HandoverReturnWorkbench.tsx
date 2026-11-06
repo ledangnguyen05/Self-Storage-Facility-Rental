@@ -167,7 +167,8 @@ const normalizeStatus = (
   inspectionStatus?: string,
   approvalStatus?: string,
   refundStatus?: string,
-  customerDecision?: string
+  customerDecision?: string,
+  settlementConfirmed?: boolean
 ): ReturnStepStatus => {
   const insp = String(inspectionStatus || '').toUpperCase()
   const app = String(approvalStatus || '').toUpperCase()
@@ -182,7 +183,16 @@ const normalizeStatus = (
   if (ref === 'PENDING_PAYOUT') return 'REFUND_APPROVED'
   if (app === 'APPROVED' || app === 'REFUND_APPROVED' || st === 'REFUND_APPROVED') return 'REFUND_APPROVED'
   if (dec === 'AGREED' || app === 'CUSTOMER_AGREED') return 'REFUND_APPROVED'
-  if (app === 'PENDING' || app === 'PENDING_APPROVAL' || app === 'REFUND_PENDING_APPROVAL' || st === 'REFUND_PENDING_APPROVAL' || st === 'PENDING_APPROVAL') return 'REFUND_PENDING_APPROVAL'
+  if (
+    app === 'PENDING' ||
+    app === 'PENDING_APPROVAL' ||
+    app === 'PENDING_CUSTOMER_REVIEW' ||
+    app === 'REFUND_PENDING_APPROVAL' ||
+    st === 'REFUND_PENDING_APPROVAL' ||
+    st === 'PENDING_APPROVAL' ||
+    dec === 'PENDING' ||
+    Boolean(settlementConfirmed)
+  ) return 'REFUND_PENDING_APPROVAL'
   if (insp === 'ISSUE' || insp === 'INSPECTION_ISSUE' || st === 'INSPECTION_ISSUE') return 'INSPECTION_ISSUE'
   if (insp === 'PASSED' || insp === 'COMPLETED' || insp === 'INSPECTION_PASSED' || st === 'INSPECTION_PASSED' || st === 'INSPECTED') return 'INSPECTION_PASSED'
   if (insp === 'IN_PROGRESS' || insp === 'INSPECTING' || insp === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTION_IN_PROGRESS' || st === 'INSPECTING') return 'INSPECTION_IN_PROGRESS'
@@ -469,7 +479,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
           approvedDeductions: item.approvedDeductions || 0,
           netRefundAmount: item.netRefundAmount || 0,
           additionalAmountDue: item.additionalAmountDue || 0,
-          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus, item.customerDecision),
+          status: normalizeStatus(item.status, item.inspectionStatus, item.approvalStatus, item.refundStatus, item.customerDecision, item.settlementConfirmed),
           inspectionStatus: item.inspectionStatus,
           approvalStatus: item.approvalStatus,
           additionalPaymentStatus: item.additionalPaymentStatus,
@@ -1920,6 +1930,47 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
         await handoverService.confirmSettlement(currentCase.bookingId, { notes: settlementNotesInput })
       }
+      updateCurrentCase({
+        settlementConfirmed: true,
+        settlementConfirmedByName: userName,
+        settlementConfirmedAt: new Date().toISOString(),
+        approvalStatus: 'PENDING_CUSTOMER_REVIEW',
+        customerDecision: 'PENDING',
+        status: 'REFUND_PENDING_APPROVAL',
+        inspectionStatus: 'COMPLETED'
+      })
+
+      // Đồng bộ vào localStorage để giao diện Khách hàng cập nhật ngay lập tức sang Bước 4 (Quyết toán hoàn cọc)
+      try {
+        const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+        if (raw) {
+          const list = JSON.parse(raw)
+          if (Array.isArray(list)) {
+            const next = list.map((it: any) => {
+              if (
+                (it.unitCode && currentCase.unitCode && it.unitCode.toUpperCase() === currentCase.unitCode.toUpperCase()) ||
+                (it.bookingId && currentCase.bookingId && it.bookingId === currentCase.bookingId)
+              ) {
+                return {
+                  ...it,
+                  settlementConfirmed: true,
+                  settlementVersion: (it.settlementVersion || 0) + 1,
+                  status: 'REFUND_PENDING_APPROVAL',
+                  approvalStatus: 'PENDING_CUSTOMER_REVIEW',
+                  customerDecision: 'PENDING',
+                  inspectionStatus: 'COMPLETED'
+                }
+              }
+              return it
+            })
+            localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(next))
+          }
+        }
+        window.dispatchEvent(new CustomEvent('boxora_settlement_confirmed', {
+          detail: { bookingId: currentCase.bookingId, unitCode: currentCase.unitCode }
+        }))
+      } catch (e) {}
+
       toast.success('Đã chốt quyết toán và gửi thông báo xác nhận cho khách hàng!')
       setShowConfirmSettlementModal(false)
       setSettlementNotesInput('')
@@ -4720,10 +4771,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                 <label className="text-slate-700 font-bold flex items-center justify-between text-xs">
                   <span className="flex items-center gap-1">
                     <span>Thời gian hẹn nghiệm thu hiện trường:</span>
-                    <span className="text-rose-500 font-bold">*</span>
-                  </span>
-                  <span className="text-[11px] font-normal text-rose-500 italic">
-                    (Bắt buộc chọn, không gợi ý sẵn)
                   </span>
                 </label>
 

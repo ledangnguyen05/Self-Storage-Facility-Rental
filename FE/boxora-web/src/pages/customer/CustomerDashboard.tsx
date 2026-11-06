@@ -1150,6 +1150,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     fetchFacilities()
     fetchMyRenewals()
     void fetchCustomerNotifications()
+
+    const handleSettlementSync = () => {
+      void fetchCustomerNotifications(true)
+      void fetchCustomerBookings(true)
+      void fetchCustomerTickets(true)
+    }
+    window.addEventListener('boxora_settlement_confirmed', handleSettlementSync)
+    window.addEventListener('storage', handleSettlementSync)
+    return () => {
+      window.removeEventListener('boxora_settlement_confirmed', handleSettlementSync)
+      window.removeEventListener('storage', handleSettlementSync)
+    }
   }, [user?.id, fetchCustomerNotifications])
 
   useRealtimeSync(() => {
@@ -3380,6 +3392,42 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       const targetBookingId = t.bookingId || (detectedUnit ? customerBookings.find(b => b.unitCode === detectedUnit)?.id : undefined)
       const targetContract = detectedUnit ? contracts.find(c => c.unitCode === detectedUnit) : undefined
 
+      const hasSettlementSignal =
+        t.title?.toLowerCase().includes('quyết toán') ||
+        t.description?.toLowerCase().includes('quyết toán') ||
+        t.title?.toLowerCase().includes('tính phí') ||
+        t.description?.toLowerCase().includes('tính phí') ||
+        Boolean(
+          customerNotifications.some(n =>
+            ((targetBookingId && n.referenceId === targetBookingId) || (detectedUnit && n.title?.includes(detectedUnit))) &&
+            (n.title?.toLowerCase().includes('quyết toán') || n.title?.toLowerCase().includes('tính phí') || n.content?.toLowerCase().includes('quyết toán') || n.content?.toLowerCase().includes('tính phí'))
+          )
+        ) ||
+        Boolean(
+          returnActivityLogs.some(l =>
+            (detectedUnit && l.unitCode && l.unitCode.toUpperCase() === detectedUnit.toUpperCase()) &&
+            (l.actionType === 'RETURN_SETTLEMENT' || l.title?.toLowerCase().includes('quyết toán') || l.description?.toLowerCase().includes('quyết toán'))
+          )
+        ) ||
+        (() => {
+          try {
+            const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+            if (raw) {
+              const v4List = JSON.parse(raw)
+              if (Array.isArray(v4List)) {
+                const match = v4List.find((it: any) =>
+                  (detectedUnit && it.unitCode && it.unitCode.toUpperCase() === detectedUnit.toUpperCase()) ||
+                  (targetBookingId && it.bookingId === targetBookingId)
+                )
+                if (match && (match.settlementConfirmed || match.settlementVersion || match.status === 'REFUND_PENDING_APPROVAL' || match.status === 'REFUND_APPROVED' || match.status === 'REFUND_PROCESSING' || match.status === 'REFUNDED')) {
+                  return true
+                }
+              }
+            }
+          } catch {}
+          return false
+        })()
+
       list.push({
         id: t.id,
         ticketCode: t.ticketCode || t.ticketNumber || `#${t.id.slice(0, 8)}`,
@@ -3391,7 +3439,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         rawStatus: t.status,
         createdAt: t.createdAt,
         bookingId: targetBookingId,
-        isSettlement: t.title?.toLowerCase().includes('quyết toán') || t.description?.toLowerCase().includes('quyết toán') || false,
+        isSettlement: Boolean(hasSettlementSignal),
         refundStatus: t.refundStatus,
         refundAmount: t.refundAmount,
         bankInfo: t.bankName ? {
@@ -3431,7 +3479,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0
       return timeB - timeA
     })
-  }, [customerTickets, customerBookings, contracts, returnActivityLogs])
+  }, [customerTickets, customerBookings, contracts, returnActivityLogs, customerNotifications])
 
   const [returnUnitFilter, setReturnUnitFilter] = useState('ALL')
   const [expandedReturnOrderIds, setExpandedReturnOrderIds] = useState<Record<string, boolean>>({})
@@ -7329,6 +7377,55 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       }
                       return false
                     })
+
+                    // Kiểm tra xem đơn trả kho đã hoàn tất Bước 3 (Nghiệm thu 7 tiêu chí) và chuyển sang Bước 4 (Quyết toán hoàn cọc)
+                    const isSettlementPhase = Boolean(
+                      o.isSettlement ||
+                      o.status === 'COMPLETED' ||
+                      (o as any).settlementConfirmed ||
+                      orderRelatedLogs.some(log =>
+                        log.actionType === 'RETURN_SETTLEMENT' ||
+                        log.title?.toLowerCase().includes('quyết toán') ||
+                        log.title?.toLowerCase().includes('tính phí') ||
+                        log.title?.toLowerCase().includes('khấu trừ') ||
+                        log.description?.toLowerCase().includes('quyết toán') ||
+                        log.description?.toLowerCase().includes('tính phí') ||
+                        log.description?.toLowerCase().includes('khấu trừ') ||
+                        log.description?.toLowerCase().includes('phiên bản v') ||
+                        log.description?.toLowerCase().includes('chốt quyết toán')
+                      ) ||
+                      customerNotifications.some(n =>
+                        (n.referenceId === o.bookingId || n.referenceId === o.id || (o.unitCode && n.title?.includes(o.unitCode))) &&
+                        (n.title?.toLowerCase().includes('quyết toán') ||
+                          n.title?.toLowerCase().includes('tính phí') ||
+                          n.content?.toLowerCase().includes('quyết toán') ||
+                          n.content?.toLowerCase().includes('tính phí'))
+                      ) ||
+                      (() => {
+                        try {
+                          const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+                          if (raw) {
+                            const list = JSON.parse(raw)
+                            if (Array.isArray(list)) {
+                              const matched = list.find((it: any) =>
+                                (it.unitCode && o.unitCode && it.unitCode.toUpperCase() === o.unitCode.toUpperCase()) ||
+                                (it.bookingId && o.bookingId && it.bookingId === o.bookingId)
+                              )
+                              if (matched && (matched.settlementConfirmed || matched.settlementVersion || matched.status === 'REFUND_PENDING_APPROVAL' || matched.status === 'REFUND_APPROVED' || matched.status === 'REFUND_PROCESSING' || matched.status === 'REFUNDED')) {
+                                return true
+                              }
+                            }
+                          }
+                        } catch {}
+                        const b = customerBookings.find(bk =>
+                          (bk.id === o.bookingId || (bk.unitCode && o.unitCode && bk.unitCode.toUpperCase() === o.unitCode.toUpperCase()))
+                        )
+                        if (b && (b.status === 'INSPECTED' || (b as any).stepTransitionHistory?.includes('quyết toán') || (b as any).stepTransitionHistory?.includes('tính phí') || (b as any).settlementConfirmed)) {
+                          return true
+                        }
+                        return false
+                      })()
+                    )
                     return (
                       <div
                         key={o.id}
@@ -7453,25 +7550,25 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                             </div>
 
                             {/* Bước 3 */}
-                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs ${
-                              o.status === 'COMPLETED'
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs transition-all ${
+                              o.status === 'COMPLETED' || isSettlementPhase
                                 ? 'bg-emerald-50 border-emerald-200'
                                 : o.status === 'IN_PROGRESS'
                                 ? 'bg-amber-50 border-amber-200'
                                 : 'bg-slate-50 border-slate-200 text-slate-400'
                             }`}>
                               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                o.status === 'COMPLETED'
+                                o.status === 'COMPLETED' || isSettlementPhase
                                   ? 'bg-emerald-600 text-white'
                                   : o.status === 'IN_PROGRESS'
                                   ? 'bg-amber-500 text-white'
                                   : 'bg-slate-200 text-slate-500'
                               }`}>
-                                {o.status === 'COMPLETED' ? '✓' : '3'}
+                                {o.status === 'COMPLETED' || isSettlementPhase ? '✓' : '3'}
                               </div>
                               <div className="min-w-0">
                                 <div className={`text-[11px] font-bold ${
-                                  o.status === 'COMPLETED'
+                                  o.status === 'COMPLETED' || isSettlementPhase
                                     ? 'text-emerald-900'
                                     : o.status === 'IN_PROGRESS'
                                     ? 'text-amber-900'
@@ -7479,31 +7576,49 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 }`}>
                                   3. Nghiệm thu 7 tiêu chí
                                 </div>
-                                <div className="text-[10px] truncate text-slate-500">
-                                  {o.status === 'COMPLETED' ? 'Đã nghiệm thu' : o.status === 'IN_PROGRESS' ? 'Đang thực hiện' : 'Chờ kiểm tra'}
+                                <div className={`text-[10px] truncate ${
+                                  o.status === 'COMPLETED' || isSettlementPhase ? 'text-emerald-700 font-semibold' : o.status === 'IN_PROGRESS' ? 'text-amber-700' : 'text-slate-500'
+                                }`}>
+                                  {o.status === 'COMPLETED' || isSettlementPhase ? 'Đã nghiệm thu' : o.status === 'IN_PROGRESS' ? 'Đang thực hiện' : 'Chờ kiểm tra'}
                                 </div>
                               </div>
                             </div>
 
                             {/* Bước 4 */}
-                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs ${
+                            <div className={`p-2.5 rounded-xl border flex items-center gap-2 shadow-2xs transition-all ${
                               o.status === 'COMPLETED'
                                 ? 'bg-emerald-50 border-emerald-200'
+                                : isSettlementPhase
+                                ? 'bg-amber-50 border-amber-300 ring-2 ring-amber-400/30'
                                 : 'bg-slate-50 border-slate-200 text-slate-400'
                             }`}>
                               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                                o.status === 'COMPLETED' ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-500'
+                                o.status === 'COMPLETED'
+                                  ? 'bg-emerald-600 text-white'
+                                  : isSettlementPhase
+                                  ? 'bg-amber-500 text-white'
+                                  : 'bg-slate-200 text-slate-500'
                               }`}>
                                 {o.status === 'COMPLETED' ? '✓' : '4'}
                               </div>
                               <div className="min-w-0">
                                 <div className={`text-[11px] font-bold ${
-                                  o.status === 'COMPLETED' ? 'text-emerald-900' : 'text-slate-600'
+                                  o.status === 'COMPLETED'
+                                    ? 'text-emerald-900'
+                                    : isSettlementPhase
+                                    ? 'text-amber-900'
+                                    : 'text-slate-600'
                                 }`}>
                                   4. Quyết toán hoàn cọc
                                 </div>
-                                <div className="text-[10px] truncate text-slate-500">
-                                  {o.status === 'COMPLETED' ? 'Đã hoàn tiền' : 'Chờ hoàn tất'}
+                                <div className={`text-[10px] truncate ${
+                                  o.status === 'COMPLETED'
+                                    ? 'text-emerald-700 font-semibold'
+                                    : isSettlementPhase
+                                    ? 'text-amber-700 font-bold'
+                                    : 'text-slate-500'
+                                }`}>
+                                  {o.status === 'COMPLETED' ? 'Đã hoàn tiền' : isSettlementPhase ? 'Chờ hoàn tất' : 'Chờ hoàn tất'}
                                 </div>
                               </div>
                             </div>
