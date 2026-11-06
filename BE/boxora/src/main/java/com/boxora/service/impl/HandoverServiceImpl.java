@@ -157,16 +157,16 @@ public class HandoverServiceImpl implements HandoverService {
                     || contract.getStatus() == RentalContractStatus.PENDING_ACTIVATION;
 
             // Kiểm tra xem hợp đồng đã hoàn tất ký hay chưa:
-            // TH1: Đã ký điện tử trực tuyến (có signedAt và trạng thái ACTIVE hoặc PENDING_ACTIVATION)
-            if (isContractSignedOrActive && contract.getSignedAt() != null) {
-                contractSigned = true;
-                contractStatus = "ĐÃ_KÝ_ĐIỆN_TỬ";
-                contractVerificationStatus = "VERIFIED";
-            }
-            // TH2: Đã ký giấy tại quầy và đã được nhân viên kiểm tra xác minh (có paperVerifiedAt)
-            else if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
+            // TH1: Đã ký giấy tại quầy và đã được nhân viên kiểm tra xác minh (có paperVerifiedAt)
+            if (isContractSignedOrActive && contract.getPaperVerifiedAt() != null) {
                 contractSigned = true;
                 contractStatus = "ĐÃ_KÝ_VÀ_XÁC_MINH";
+                contractVerificationStatus = "VERIFIED";
+            }
+            // TH2: Đã ký điện tử trực tuyến (có signedAt và trạng thái ACTIVE hoặc PENDING_ACTIVATION)
+            else if (isContractSignedOrActive && contract.getSignedAt() != null) {
+                contractSigned = true;
+                contractStatus = "ĐÃ_KÝ_ĐIỆN_TỬ";
                 contractVerificationStatus = "VERIFIED";
             }
             // TH3: Chưa hoàn tất ký hợp đồng

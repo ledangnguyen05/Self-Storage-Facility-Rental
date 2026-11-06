@@ -63,8 +63,11 @@ export interface BookingWorkbenchSession {
   completedAt?: string
   paymentProofUrl?: string
   paymentProofName?: string
+  paymentProofCleared?: boolean
   paperContractUrl?: string
   paperContractName?: string
+  paperContractCleared?: boolean
+  isCounterContractPaymentMode?: boolean
 }
 
 export interface HandoverSuccessModalData {
@@ -549,34 +552,136 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
   const isUnitAssigned = Boolean(currentSession?.assignedUnitCode || persistedUnitCode)
 
   // 3. Chứng từ thanh toán & Hợp đồng thuê từ CSDL & session
-  const effectivePaymentProofUrl =
-    currentSession.paymentProofUrl ||
-    currentPrerequisites?.paymentHistory?.find((p) => Boolean(p.proofDocumentUrl))?.proofDocumentUrl
+  const persistedPaymentProofUrl = useMemo(() => {
+    return currentPrerequisites?.paymentHistory?.find((p) => Boolean(p.proofDocumentUrl))?.proofDocumentUrl
+  }, [currentPrerequisites?.paymentHistory])
 
-  const effectivePaymentProofName =
-    currentSession.paymentProofName ||
-    (effectivePaymentProofUrl ? effectivePaymentProofUrl.split('/').pop() : undefined)
+  const persistedPaperContractUrl = currentPrerequisites?.paperContractUrl
 
-  const effectivePaperContractUrl =
-    currentSession.paperContractUrl ||
-    currentPrerequisites?.paperContractUrl
+  const effectivePaymentProofUrl = currentSession.paymentProofCleared
+    ? undefined
+    : (currentSession.paymentProofUrl || persistedPaymentProofUrl)
 
-  const effectivePaperContractName =
-    currentSession.paperContractName ||
-    (effectivePaperContractUrl ? effectivePaperContractUrl.split('/').pop() : undefined)
+  const effectivePaymentProofName = currentSession.paymentProofCleared
+    ? undefined
+    : (currentSession.paymentProofName ||
+        (effectivePaymentProofUrl ? effectivePaymentProofUrl.split('/').pop() : undefined))
 
-  const isContractDone = Boolean(isContractMet || effectivePaperContractUrl)
-  const isPaymentDone = Boolean((isDepositMet && isRentMet) || effectivePaymentProofUrl)
+  const effectivePaperContractUrl = currentSession.paperContractCleared
+    ? undefined
+    : (currentSession.paperContractUrl || persistedPaperContractUrl)
+
+  const effectivePaperContractName = currentSession.paperContractCleared
+    ? undefined
+    : (currentSession.paperContractName ||
+        (effectivePaperContractUrl ? effectivePaperContractUrl.split('/').pop() : undefined))
+
+  // Xác định đơn thuộc luồng tiếp nhận ký hợp đồng & thanh toán tại cơ sở (giữ nguyên giao diện upload 2 ảnh ở Bước 3)
+  const isCounterContractOrPaymentBooking = useMemo(() => {
+    if (currentSession.isCounterContractPaymentMode) return true
+    if (
+      currentSession.paymentProofUrl ||
+      currentSession.paperContractUrl ||
+      currentSession.paymentProofCleared ||
+      currentSession.paperContractCleared
+    ) {
+      return true
+    }
+    if (persistedPaymentProofUrl || persistedPaperContractUrl) return true
+    if (
+      currentPrerequisites?.paymentHistory?.some(
+        (p) =>
+          Boolean(p.proofDocumentUrl) ||
+          String(p.referenceCode || '').startsWith('PROOF-') ||
+          Boolean(p.collectedByName) ||
+          p.paymentMethod === 'CASH' ||
+          p.paymentMethod === 'BANK_TRANSFER'
+      )
+    ) {
+      return true
+    }
+    const contractStatus = String(currentPrerequisites?.contractStatus || '').toUpperCase()
+    if (
+      contractStatus === 'ĐÃ_KÝ_VÀ_XÁC_MINH' ||
+      contractStatus === 'CHỜ_XÁC_MINH_HỢP_ĐỒNG_GIẤY' ||
+      contractStatus === 'CHỜ_TẢI_HỢP_ĐỒNG_GIẤY'
+    ) {
+      return true
+    }
+    const contractMethod = String(currentPrerequisites?.contractSigningMethod || '').toUpperCase()
+    if (contractMethod === 'PAPER' || contractMethod === 'IN_PERSON' || contractMethod === 'COUNTER') {
+      return true
+    }
+    const bookingSignMethod = String((currentBooking as any)?.signingMethod || '').toUpperCase()
+    if (bookingSignMethod === 'PAPER' || bookingSignMethod === 'IN_PERSON' || bookingSignMethod === 'COUNTER') {
+      return true
+    }
+    return false
+  }, [
+    currentSession.isCounterContractPaymentMode,
+    currentSession.paymentProofUrl,
+    currentSession.paperContractUrl,
+    currentSession.paymentProofCleared,
+    currentSession.paperContractCleared,
+    persistedPaymentProofUrl,
+    persistedPaperContractUrl,
+    currentPrerequisites?.paymentHistory,
+    currentPrerequisites?.contractStatus,
+    currentPrerequisites?.contractSigningMethod,
+    currentBooking
+  ])
+
+  const isPurelyOnlineCompleted = Boolean(
+    isContractMet && isDepositMet && isRentMet && !isCounterContractOrPaymentBooking
+  )
+
+  const isContractDone = currentSession.paperContractCleared
+    ? false
+    : Boolean(isContractMet || effectivePaperContractUrl)
+  const isPaymentDone = currentSession.paymentProofCleared
+    ? false
+    : Boolean((isDepositMet && isRentMet) || effectivePaymentProofUrl)
   const isContractAndPaymentSatisfied = Boolean(isContractDone && isPaymentDone)
 
-  // 4. Tính toán chính xác các khoản tiền cần thu tại cơ sở (tránh hiển thị 0đ khi chưa đối soát xong)
+  // Khoản tiền đã thu tại cơ sở qua upload chứng từ (giữ nguyên số tiền hiển thị sau khi upload ảnh thanh toán)
+  const counterPaidDepositAmount = useMemo(() => {
+    const history = currentPrerequisites?.paymentHistory || []
+    return history
+      .filter(
+        (p) =>
+          p.status !== 'FAILED' &&
+          p.status !== 'REFUNDED' &&
+          p.paymentType === 'DEPOSIT' &&
+          (Boolean(p.proofDocumentUrl) ||
+            String(p.referenceCode || '').startsWith('PROOF-') ||
+            Boolean(p.collectedByName))
+      )
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  }, [currentPrerequisites?.paymentHistory])
+
+  const counterPaidRentAmount = useMemo(() => {
+    const history = currentPrerequisites?.paymentHistory || []
+    return history
+      .filter(
+        (p) =>
+          p.status !== 'FAILED' &&
+          p.status !== 'REFUNDED' &&
+          p.paymentType === 'RENTAL_FEE' &&
+          (Boolean(p.proofDocumentUrl) ||
+            String(p.referenceCode || '').startsWith('PROOF-') ||
+            Boolean(p.collectedByName))
+      )
+      .reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  }, [currentPrerequisites?.paymentHistory])
+
+  // 4. Tính toán chính xác các khoản tiền cần thu tại cơ sở (tránh hiển thị 0đ hoặc đổi giao diện sau khi upload ảnh)
   const displayDepositDue = useMemo(() => {
-    if (isDepositMet) return 0
     if (currentPrerequisites?.depositRemaining != null) {
       const rem = Number(currentPrerequisites.depositRemaining)
       if (rem > 0) return rem
-      if (currentPrerequisites.depositSatisfied) return 0
     }
+    if (counterPaidDepositAmount > 0) return counterPaidDepositAmount
+    if (isDepositMet) return 0
     if (currentPrerequisites?.requiredDeposit != null && Number(currentPrerequisites.requiredDeposit) > 0) {
       return Number(currentPrerequisites.requiredDeposit)
     }
@@ -588,15 +693,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return Number(unitDeposit)
     }
     return 0
-  }, [isDepositMet, currentPrerequisites, currentBooking])
+  }, [isDepositMet, currentPrerequisites, currentBooking, counterPaidDepositAmount])
 
   const displayFirstMonthRentDue = useMemo(() => {
-    if (isRentMet) return 0
     if (currentPrerequisites?.firstMonthRentRemaining != null) {
       const rem = Number(currentPrerequisites.firstMonthRentRemaining)
       if (rem > 0) return rem
-      if (currentPrerequisites.firstMonthRentSatisfied) return 0
     }
+    if (counterPaidRentAmount > 0) {
+      const months = currentBooking?.rentalMonths || 1
+      return Math.round(counterPaidRentAmount / months)
+    }
+    if (isRentMet) return 0
     if (currentPrerequisites?.requiredFirstMonthRent != null && Number(currentPrerequisites.requiredFirstMonthRent) > 0) {
       return Number(currentPrerequisites.requiredFirstMonthRent)
     }
@@ -609,15 +717,18 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return Number(unitPrice)
     }
     return 0
-  }, [isRentMet, currentPrerequisites, currentBooking])
+  }, [isRentMet, currentPrerequisites, currentBooking, counterPaidRentAmount])
 
-  // Tổng tiền thuê cho toàn bộ thời hạn hợp đồng (ví dụ 3 tháng: 647.500đ)
+  // Tổng tiền thuê cho toàn bộ thời hạn hợp đồng (ví dụ 3 tháng: 9.600.000đ)
   const displayTotalRentalDue = useMemo(() => {
-    if (isRentMet && !currentBooking?.totalRentalFee) return 0
     if (currentPrerequisites?.totalRentRemaining != null) {
       const rem = Number(currentPrerequisites.totalRentRemaining)
       if (rem > 0) return rem
-      if (isRentMet) return 0
+    }
+    if (counterPaidRentAmount > 0) return counterPaidRentAmount
+    if (isRentMet && !currentBooking?.totalRentalFee) return 0
+    if (currentPrerequisites?.totalRentRemaining != null && isRentMet) {
+      return 0
     }
     const bookingTotalRentalFee = Number(currentBooking?.totalRentalFee || 0)
     if (bookingTotalRentalFee > 0) {
@@ -644,15 +755,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       return Math.round(Number(unitPrice) * months)
     }
     return displayFirstMonthRentDue
-  }, [isRentMet, currentPrerequisites, currentBooking, displayDepositDue, displayFirstMonthRentDue])
+  }, [isRentMet, currentPrerequisites, currentBooking, displayDepositDue, displayFirstMonthRentDue, counterPaidRentAmount])
 
   // Tổng tiền phải trả tại cơ sở = Tiền cọc cần thu + Tổng tiền thuê
   const displayTotalPayable = useMemo(() => {
+    const sum = displayDepositDue + displayTotalRentalDue
+    if (sum > 0) return sum
     if (currentPrerequisites?.totalPayableAmount != null && Number(currentPrerequisites.totalPayableAmount) > 0) {
       return Number(currentPrerequisites.totalPayableAmount)
     }
-    const sum = displayDepositDue + displayTotalRentalDue
-    if (sum > 0) return sum
     if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
       return Number(currentBooking.initialPaymentAmount)
     }
@@ -688,13 +799,20 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     if (isPersistedIdVerified && !currentSession.identityVerified) {
       updates.identityVerified = true
     }
-    if (effectivePaperContractUrl && !currentSession.paperContractUrl) {
+    if (effectivePaperContractUrl && !currentSession.paperContractUrl && !currentSession.paperContractCleared) {
       updates.paperContractUrl = effectivePaperContractUrl
       updates.paperContractName = effectivePaperContractName
     }
-    if (effectivePaymentProofUrl && !currentSession.paymentProofUrl) {
+    if (effectivePaymentProofUrl && !currentSession.paymentProofUrl && !currentSession.paymentProofCleared) {
       updates.paymentProofUrl = effectivePaymentProofUrl
       updates.paymentProofName = effectivePaymentProofName
+    }
+    if (
+      currentPrerequisites &&
+      (!isContractMet || !isDepositMet || !isRentMet || isCounterContractOrPaymentBooking) &&
+      !currentSession.isCounterContractPaymentMode
+    ) {
+      updates.isCounterContractPaymentMode = true
     }
 
     // Tự động mở tab tương ứng với tiến trình thực tế từ CSDL chỉ 1 lần đầu khi nạp đơn (không ghi đè khi nhân viên chủ động chuyển tab)
@@ -733,10 +851,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     isContractMet,
     isDepositMet,
     isRentMet,
+    isCounterContractOrPaymentBooking,
+    currentPrerequisites,
     currentSession.assignedUnitCode,
     currentSession.identityVerified,
     currentSession.paperContractUrl,
+    currentSession.paperContractCleared,
     currentSession.paymentProofUrl,
+    currentSession.paymentProofCleared,
+    currentSession.isCounterContractPaymentMode,
     sessions,
     updateCurrentSession
   ])
@@ -1030,21 +1153,26 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       if (res?.fileUrl) {
         updateCurrentSession({
           paymentProofUrl: res.fileUrl,
-          paymentProofName: file.name
+          paymentProofName: file.name,
+          paymentProofCleared: false,
+          isCounterContractPaymentMode: true
         })
 
-        const reqDeposit = isDepositMet ? 0 : (
-          (currentPrerequisites?.depositRemaining && Number(currentPrerequisites.depositRemaining) > 0)
+        const reqDeposit = isDepositMet
+          ? 0
+          : (currentPrerequisites?.depositRemaining && Number(currentPrerequisites.depositRemaining) > 0)
             ? Number(currentPrerequisites.depositRemaining)
             : displayDepositDue
-        )
-        const reqRent = displayTotalRentalDue > 0
-          ? displayTotalRentalDue
-          : (isRentMet ? 0 : (
-              (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
+
+        const reqRent = isRentMet
+          ? 0
+          : (currentPrerequisites?.totalRentRemaining && Number(currentPrerequisites.totalRentRemaining) > 0)
+            ? Number(currentPrerequisites.totalRentRemaining)
+            : displayTotalRentalDue > 0
+              ? displayTotalRentalDue
+              : (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
                 ? Number(currentPrerequisites.firstMonthRentRemaining)
                 : displayFirstMonthRentDue
-            ))
 
         if (reqDeposit > 0) {
           try {
@@ -1106,7 +1234,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       if (res?.fileUrl) {
         updateCurrentSession({
           paperContractUrl: res.fileUrl,
-          paperContractName: file.name
+          paperContractName: file.name,
+          paperContractCleared: false,
+          isCounterContractPaymentMode: true
         })
 
         await handoverService.createOrUploadPaperContract({
@@ -1718,15 +1848,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Trạng Thái Thanh Toán</span>
                   <span className="font-bold text-xs text-slate-800">
-                    {isDepositMet && isRentMet ? 'ĐÃ THANH TOÁN TRỰC TUYẾN (PAID)' : 'CHỜ THANH TOÁN TẠI CƠ SỞ (PENDING_PAYMENT)'}
+                    {isPaymentDone
+                      ? isCounterContractOrPaymentBooking
+                        ? 'ĐÃ THU & LƯU CHỨNG TỪ TẠI CƠ SỞ (PAID)'
+                        : 'ĐÃ THANH TOÁN TRỰC TUYẾN (PAID)'
+                      : 'CHỜ THANH TOÁN TẠI CƠ SỞ (PENDING_PAYMENT)'}
                   </span>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                  isDepositMet && isRentMet
+                  isPaymentDone
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                     : 'bg-amber-100 text-amber-800 border border-amber-200'
                 }`}>
-                  {isDepositMet && isRentMet ? '✓ Đã Thanh Toán' : '⏳ Chưa Thu Đủ'}
+                  {isPaymentDone ? '✓ Đã Thanh Toán' : '⏳ Chưa Thu Đủ'}
                 </span>
               </div>
 
@@ -1734,15 +1868,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div>
                   <span className="text-[10px] uppercase font-bold text-slate-400 block">Trạng Thái Hợp Đồng</span>
                   <span className="font-bold text-xs text-slate-800">
-                    {isContractMet ? 'ĐÃ KÝ ĐIỆN TỬ TRỰC TUYẾN' : 'CHƯA KÝ / KÝ TẠI CƠ SỞ'}
+                    {isContractDone
+                      ? isCounterContractOrPaymentBooking
+                        ? 'ĐÃ KÝ & LƯU HỢP ĐỒNG GIẤY TẠI CƠ SỞ'
+                        : 'ĐÃ KÝ ĐIỆN TỬ TRỰC TUYẾN'
+                      : 'CHƯA KÝ / KÝ TẠI CƠ SỞ'}
                   </span>
                 </div>
                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                  isContractMet
+                  isContractDone
                     ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                     : 'bg-amber-100 text-amber-800 border border-amber-200'
                 }`}>
-                  {isContractMet ? '✓ Đã Ký' : '⏳ Chờ Ký'}
+                  {isContractDone ? '✓ Đã Ký' : '⏳ Chờ Ký'}
                 </span>
               </div>
             </div>
@@ -2210,8 +2348,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             </div>
           </div>
 
-          {/* TRƯỜNG HỢP 1: ĐÃ KÝ & THANH TOÁN TRỰC TUYẾN ĐỦ */}
-          {isContractMet && isDepositMet && isRentMet ? (
+          {/* TRƯỜNG HỢP 1: ĐÃ KÝ & THANH TOÁN TRỰC TUYẾN ĐỦ (KHÔNG PHẢI ĐƠN UPLOAD TẠI CƠ SỞ) */}
+          {isPurelyOnlineCompleted ? (
             <div className="p-6 rounded-2xl bg-white border border-emerald-300 shadow-xs space-y-4">
               <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
                 <CheckCircle2 size={20} className="text-emerald-600" />
@@ -2421,7 +2559,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </button>
                       <button
                         type="button"
-                        onClick={() => updateCurrentSession({ paymentProofUrl: undefined, paymentProofName: undefined })}
+                        onClick={() =>
+                          updateCurrentSession({
+                            paymentProofUrl: undefined,
+                            paymentProofName: undefined,
+                            paymentProofCleared: true,
+                            isCounterContractPaymentMode: true
+                          })
+                        }
                         className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs cursor-pointer border border-rose-200"
                       >
                         Xóa
@@ -2564,7 +2709,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                       </button>
                       <button
                         type="button"
-                        onClick={() => updateCurrentSession({ paperContractUrl: undefined, paperContractName: undefined })}
+                        onClick={() =>
+                          updateCurrentSession({
+                            paperContractUrl: undefined,
+                            paperContractName: undefined,
+                            paperContractCleared: true,
+                            isCounterContractPaymentMode: true
+                          })
+                        }
                         className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs cursor-pointer border border-rose-200"
                       >
                         Xóa
