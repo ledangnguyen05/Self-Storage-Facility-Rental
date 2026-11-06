@@ -231,8 +231,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không được chỉnh sửa lịch của chính mình");
             }
         } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
-            if (assignment.getStaff().getRole() == null || !"FACILITY_MANAGER".equalsIgnoreCase(assignment.getStaff().getRole().getName())) {
-                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được cập nhật lịch của Quản lý cơ sở (FACILITY_MANAGER)");
+            if (assignment.getStaff().getRole() == null || (!"FACILITY_MANAGER".equalsIgnoreCase(assignment.getStaff().getRole().getName()) && !"STAFF".equalsIgnoreCase(assignment.getStaff().getRole().getName()))) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được cập nhật lịch của Quản lý cơ sở hoặc Nhân viên");
             }
         } else {
             throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền cập nhật phân công ca trực");
@@ -506,8 +506,8 @@ public class StaffAssignmentServiceImpl implements StaffAssignmentService {
                 throw new AppException(ErrorCode.FORBIDDEN, "Quản lý cơ sở không được hủy lịch của chính mình");
             }
         } else if ("BUSINESS_MANAGER".equalsIgnoreCase(callerRole)) {
-            if (assignment.getStaff().getRole() == null || !"FACILITY_MANAGER".equalsIgnoreCase(assignment.getStaff().getRole().getName())) {
-                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được hủy phân công của Quản lý cơ sở (FACILITY_MANAGER)");
+            if (assignment.getStaff().getRole() == null || (!"FACILITY_MANAGER".equalsIgnoreCase(assignment.getStaff().getRole().getName()) && !"STAFF".equalsIgnoreCase(assignment.getStaff().getRole().getName()))) {
+                throw new AppException(ErrorCode.FORBIDDEN, "Business Manager chỉ được hủy phân công của Quản lý cơ sở hoặc Nhân viên");
             }
         } else {
             throw new AppException(ErrorCode.FORBIDDEN, "Tài khoản không có quyền hủy phân công ca trực");

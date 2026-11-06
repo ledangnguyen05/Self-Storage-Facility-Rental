@@ -37,7 +37,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('USER_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('USER_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF') or hasAuthority('STAFF_ASSIGNMENT_VIEW')")
     public ResponseEntity<ApiResponse<UserResponse>> getById(
             @PathVariable UUID id
     ) {
@@ -46,7 +46,7 @@ public class UserController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('USER_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('USER_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF') or hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasAuthority('STAFF_ASSIGNMENT_VIEW')")
     public ResponseEntity<ApiResponse<PageResponse<UserResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,

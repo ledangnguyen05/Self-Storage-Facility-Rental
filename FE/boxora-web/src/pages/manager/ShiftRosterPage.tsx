@@ -654,21 +654,11 @@ export const ShiftRosterPage: React.FC = () => {
               <span className="material-symbols-outlined text-[28px]">schedule</span>
             </div>
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-                  {isBusinessManager
-                    ? t('Giám Sát Ca Toàn Chuỗi & Phân Bổ Quản Lý', 'Chain Workforce Monitoring & Manager Scheduling')
-                    : t('Xử Lý Trực Ca & Điều Phối Nhân Sự', 'Shift Operations & Staff Dispatch')}
-                </h1>
-                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 font-mono">
-                  {dateRangeLabel}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">
                 {isBusinessManager
-                  ? t('Theo dõi ca làm toàn hệ thống ở chế độ chỉ đọc; điều phối và phân công ca cho Quản lý cơ sở', 'System-wide view in read-only mode; schedule and allocate shifts for facility managers')
-                  : t('Điều phối ca trực quầy tiếp đón, kiểm tra buồng kho, chấm công vào/ra ca, đổi ca và biên bản bàn giao', 'Coordinate reception desk shifts, unit inspections, attendance tracking, shift swaps, and handovers')}
-              </p>
+                  ? t('Giám Sát Ca Toàn Chuỗi & Phân Bổ Quản Lý', 'Chain Workforce Monitoring & Manager Scheduling')
+                  : t('Xử Lý Trực Ca & Điều Phối Nhân Sự', 'Shift Operations & Staff Dispatch')}
+              </h1>
             </div>
           </div>
 

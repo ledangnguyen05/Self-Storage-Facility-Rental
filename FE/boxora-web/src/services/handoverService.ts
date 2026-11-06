@@ -463,7 +463,7 @@ export const handoverService = {
     return response.data?.data as ReturnSettlementDetail
   },
 
-  async confirmPhysicalReturn(bookingId: string, data?: { notes?: string }): Promise<HandoverRecord> {
+  async confirmPhysicalReturn(bookingId: string, data?: { notes?: string; assetsClearedPassed?: boolean }): Promise<HandoverRecord> {
     const response = await api.post(`/api/v1/handovers/returns/${bookingId}/confirm-physical-return`, { bookingId, ...(data || {}) })
     return response.data?.data as HandoverRecord
   },

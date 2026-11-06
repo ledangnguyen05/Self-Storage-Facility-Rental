@@ -34,7 +34,7 @@ public class StaffAssignmentController {
     private final StaffAssignmentService staffAssignmentService;
 
     @PostMapping
-    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Tạo mới phân công ca trực cho nhân viên")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> createAssignment(
             @Valid @RequestBody StaffAssignmentCreateRequest request
@@ -45,7 +45,7 @@ public class StaffAssignmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Cập nhật phân công ca trực (ca, khu vực, vai trò, ghi chú)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> updateAssignment(
             @PathVariable UUID id,
@@ -56,7 +56,7 @@ public class StaffAssignmentController {
     }
 
     @PatchMapping("/{id}/status")
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'STAFF', 'BUSINESS_MANAGER', 'ADMIN')")
     @Operation(summary = "Cập nhật trạng thái ca trực (Điểm danh check-in, hoàn thành ca, báo vắng)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> updateStatus(
             @PathVariable UUID id,
@@ -89,7 +89,7 @@ public class StaffAssignmentController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_DELETE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xóa hoặc hủy phân công ca trực")
     public ResponseEntity<ApiResponse<Void>> deleteAssignment(@PathVariable UUID id) {
         staffAssignmentService.deleteAssignment(id);
@@ -97,7 +97,7 @@ public class StaffAssignmentController {
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Xem chi tiết một lượt phân công ca trực")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> getById(@PathVariable UUID id) {
         StaffAssignmentResponse response = staffAssignmentService.getById(id);
@@ -105,7 +105,7 @@ public class StaffAssignmentController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Tra cứu danh sách phân công ca trực với bộ lọc và phân trang")
     public ResponseEntity<ApiResponse<PageResponse<StaffAssignmentResponse>>> getAllAssignments(
             @RequestParam(required = false) UUID facilityId,
@@ -127,7 +127,7 @@ public class StaffAssignmentController {
     }
 
     @GetMapping("/daily-board")
-    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_VIEW') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
     @Operation(summary = "Bảng điều khiển ca trực trong ngày (Daily Task Board - SP2-06)")
     public ResponseEntity<ApiResponse<List<StaffAssignmentResponse>>> getDailyBoard(
             @RequestParam(required = false) UUID facilityId,

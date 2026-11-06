@@ -271,6 +271,7 @@ export interface Booking {
   endDate: string
   rentalMonths: number
   totalRentalFee: number
+  totalPrice?: number
   depositPaid: number
   depositAmount?: number
   initialPaymentAmount?: number
