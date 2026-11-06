@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 
 type Listener = (isLoading: boolean) => void
 
-let isGateLoading = false
+let isGateLoading = true
 let activeForegroundRequests = 0
-let minLoadingUntil = 0
-let maxLoadingUntil = 0
+let minLoadingUntil = Date.now() + 400
+let maxLoadingUntil = Date.now() + 2500
 let checkTimer: ReturnType<typeof setTimeout> | null = null
 let silentWindowUntil = 0
 let activeSilentSyncCount = 0
@@ -84,15 +84,14 @@ export function isSilentSyncActive(): boolean {
 }
 
 /**
- * Trigger a subtle loading transition on explicit route change.
- * Never blocks or unmounts existing DOM content during background syncs.
+ * Trigger the foreground loading indicator immediately (e.g. on F5, route change, or tab switch).
+ * Never triggers during background silent syncs.
  */
-export function triggerTabDataLoading(minDurationMs = 150) {
+export function triggerTabDataLoading(minDurationMs = 340) {
   if (isSilentSyncActive()) return
   const now = Date.now()
-  const cappedMin = Math.min(minDurationMs, 180)
-  minLoadingUntil = Math.max(minLoadingUntil, now + cappedMin)
-  maxLoadingUntil = now + 350
+  minLoadingUntil = Math.max(minLoadingUntil, now + minDurationMs)
+  maxLoadingUntil = now + 2200
   if (!isGateLoading) {
     isGateLoading = true
     notifyListeners()
@@ -131,6 +130,7 @@ export function useTabDataLoading() {
 
   useEffect(() => {
     setIsLoading(getIsTabDataLoading())
+    evaluateLoadingState()
     return subscribeTabDataLoading(setIsLoading)
   }, [])
 
@@ -139,5 +139,8 @@ export function useTabDataLoading() {
     triggerTabDataLoading,
   }
 }
+
+// Kick off initial F5 loading gate evaluation on module load
+evaluateLoadingState()
 
 

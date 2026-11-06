@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { DashboardLayout } from './components/layout/DashboardLayout'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
-import { triggerTabDataLoading } from './utils/tabLoadingTracker'
+import { triggerTabDataLoading, useTabDataLoading } from './utils/tabLoadingTracker'
 import { BoxoraMinimalLoader } from './components/common/TabDataLoadingGate'
 
 // Public Pages (Authentication & Landing)
@@ -80,17 +80,29 @@ function RootRedirect() {
 
 function MainContent() {
   const location = useLocation()
-  const prevPathRef = useRef<string>(location.pathname)
+  const { isTabLoading } = useTabDataLoading()
+  const prevPathRef = useRef<string>(`${location.pathname}${location.search}`)
+  const isPortalRoute = location.pathname.startsWith('/portal')
 
   useEffect(() => {
-    if (prevPathRef.current !== location.pathname) {
-      prevPathRef.current = location.pathname
-      triggerTabDataLoading(150)
+    triggerTabDataLoading(400)
+  }, [])
+
+  useEffect(() => {
+    const key = `${location.pathname}${location.search}`
+    if (prevPathRef.current !== key) {
+      prevPathRef.current = key
+      triggerTabDataLoading(340)
     }
-  }, [location.pathname])
+  }, [location.pathname, location.search])
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)] font-sans antialiased text-[var(--on-surface)]">
+      {!isPortalRoute && isTabLoading && (
+        <div className="fixed inset-0 z-[100] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xs flex items-center justify-center">
+          <BoxoraMinimalLoader />
+        </div>
+      )}
       <main className="flex-1">
         <Routes>
           {/* Public Landing Page & Authentication */}
