@@ -2164,7 +2164,7 @@ export const BookingPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <QuickThemeLanguageToggle />
+            <QuickThemeLanguageToggle showLanguage={false} />
 
             {isAuthenticated ? (
               <UserAvatarDropdown

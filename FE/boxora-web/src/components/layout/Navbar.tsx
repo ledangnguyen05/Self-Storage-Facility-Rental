@@ -91,7 +91,7 @@ export const Navbar: React.FC = () => {
 
         {/* Desktop CTA / User State */}
         <div className="hidden sm:flex items-center gap-3">
-          <QuickThemeLanguageToggle />
+          <QuickThemeLanguageToggle showLanguage={false} />
           {user ? (
             <div className="flex items-center gap-2.5">
               {canAccessPortal ? (

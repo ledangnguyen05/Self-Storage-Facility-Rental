@@ -194,7 +194,7 @@ export const OnlineBookingContractPage = () => {
               <LayoutDashboard className="h-3.5 w-3.5" />
               <span>Đơn đặt chỗ của tôi</span>
             </Link>
-            <QuickThemeLanguageToggle />
+            <QuickThemeLanguageToggle showLanguage={false} />
           </div>
         </header>
 

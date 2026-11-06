@@ -93,7 +93,7 @@ export const ResetPasswordPage: React.FC = () => {
           </span>
         </Link>
         <div className="flex items-center gap-3">
-          <QuickThemeLanguageToggle />
+          <QuickThemeLanguageToggle showLanguage={false} />
           <Link
             to="/login"
             className="flex items-center gap-1.5 text-xs font-bold text-slate-300 hover:text-white transition-colors"

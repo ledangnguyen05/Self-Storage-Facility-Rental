@@ -2402,7 +2402,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
             <a href="/#faq" className="transition-colors hover:text-slate-950 dark:hover:text-white">Hỗ trợ</a>
           </nav>
           <div className="flex items-center gap-3">
-            <QuickThemeLanguageToggle />
+            <QuickThemeLanguageToggle showLanguage={false} />
             {isAuthenticated ? (
               <UserAvatarDropdown
                 user={user}

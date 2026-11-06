@@ -235,7 +235,7 @@ export const DashboardLayout: React.FC = () => {
 
           {/* Right Tools: Notifications, User Profile */}
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            <QuickThemeLanguageToggle />
+            <QuickThemeLanguageToggle showLanguage={false} />
             <NotificationCenter userId={user?.id} />
 
             <div className="h-8 w-[1px] bg-slate-200 hidden sm:block"></div>

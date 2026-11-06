@@ -119,7 +119,7 @@ export const HomePage: React.FC = () => {
 
             {/* Action CTAs */}
             <div className="flex items-center gap-3">
-              <QuickThemeLanguageToggle />
+              <QuickThemeLanguageToggle showLanguage={false} />
 
               {isAuthenticated ? (
                 <UserAvatarDropdown

@@ -328,7 +328,7 @@ export const PaymentResultPage = () => {
   return (
     <main className="min-h-screen bg-slate-100 px-4 py-8">
       <div className="mx-auto mb-5 flex max-w-2xl items-center justify-end">
-        <QuickThemeLanguageToggle />
+        <QuickThemeLanguageToggle showLanguage={false} />
       </div>
       <section className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-xl sm:p-8">
         {loading ? (

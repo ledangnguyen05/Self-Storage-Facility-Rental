@@ -10,7 +10,7 @@ interface QuickThemeLanguageToggleProps {
 
 export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> = ({
   className = '',
-  showLanguage = true,
+  showLanguage = false,
   showTheme = true,
 }) => {
   const { t, language, setLanguage } = useLanguage()
@@ -100,4 +100,3 @@ export const QuickThemeLanguageToggle: React.FC<QuickThemeLanguageToggleProps> =
 }
 
 export default QuickThemeLanguageToggle
-
