@@ -507,8 +507,6 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
                                 ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-400/40 cursor-pointer'
                                 : isAssignedToCurrent
                                 ? 'bg-emerald-50 border-emerald-400 text-slate-800 cursor-pointer'
-                                : isReserved
-                                ? 'bg-amber-50/50 hover:bg-amber-50 border-amber-300 text-slate-800 cursor-pointer'
                                 : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 cursor-pointer'
                             }`}
                           >
@@ -527,14 +525,6 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
                               ) : isHeldByOther ? (
                                 <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold shrink-0 bg-slate-200 text-slate-600">
                                   Đơn khác
-                                </span>
-                              ) : isReserved ? (
-                                <span
-                                  className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
-                                    isSelected ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-800'
-                                  }`}
-                                >
-                                  Chờ bàn giao
                                 </span>
                               ) : isMatchingType ? (
                                 <span
@@ -560,7 +550,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
                             <div className="text-[10px] mt-0.5 opacity-75">
                               {unit.floorLevel
                                 ? (unit.floorLevel.toLowerCase().startsWith('tầng') ? unit.floorLevel : `Tầng ${unit.floorLevel}`)
-                                : 'Tầng 1'} • {isAssignedToCurrent ? 'Đã gán / Chờ bàn giao' : isHeldByOther ? 'Giữ cho đơn khác' : isReserved ? 'Chờ bàn giao' : 'Trống'}
+                                : 'Tầng 1'} • {isAssignedToCurrent ? 'Đã gán' : isHeldByOther ? 'Giữ cho đơn khác' : 'Trống'}
                             </div>
                           </button>
                         )

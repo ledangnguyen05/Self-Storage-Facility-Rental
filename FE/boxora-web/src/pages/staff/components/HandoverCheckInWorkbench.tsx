@@ -1984,8 +1984,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             ? 'bg-emerald-50/80 border-emerald-500 shadow-md ring-2 ring-emerald-400/40 text-slate-900 cursor-pointer'
                             : isSelected
                             ? 'bg-blue-50/90 border-blue-600 shadow-sm ring-2 ring-blue-400/40 text-slate-900 cursor-pointer'
-                            : isPendingHandoverAssignable
-                            ? 'bg-amber-50/40 hover:bg-amber-50/80 border-amber-300 text-slate-800 cursor-pointer'
                             : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 cursor-pointer'
                         }`}
                       >
@@ -2001,10 +1999,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             ) : isHeldByOtherBooking ? (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700">
                                 Giữ Đơn Khác
-                              </span>
-                            ) : isPendingHandoverAssignable ? (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                                Chờ Bàn Giao
                               </span>
                             ) : isMatchBooked ? (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
@@ -2028,15 +2022,11 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             </span>
                             {isThisUnitAssigned ? (
                               <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                                Đã gán / Chờ bàn giao
+                                Đã gán
                               </span>
                             ) : isHeldByOtherBooking ? (
                               <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                                 Đang giữ đơn khác
-                              </span>
-                            ) : isPendingHandoverAssignable ? (
-                              <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                Chờ bàn giao
                               </span>
                             ) : (
                               <span className="text-[10px] uppercase font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
