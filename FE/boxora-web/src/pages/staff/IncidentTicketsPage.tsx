@@ -472,6 +472,10 @@ export const IncidentTicketsPage: React.FC = () => {
 
   // Open Assign Modal (FM only)
   const handleOpenAssignModal = async (ticket: SupportTicketRecord) => {
+    if (ticket.status === 'CLOSED' || ticket.status === 'CANCELLED') {
+      toast.warning('Ticket đã được đóng, không thể phân công nhân viên xử lý.')
+      return
+    }
     setAssigningTicket(ticket)
     setSelectedStaffId(ticket.assignedStaffId || '')
     setAssignNotes('')
@@ -1115,7 +1119,7 @@ export const IncidentTicketsPage: React.FC = () => {
                           )}
 
                           {/* FM Action: Assign Staff */}
-                          {isFacilityManager && (
+                          {isFacilityManager && !isClosed && t.status !== 'CANCELLED' && (
                             <button
                               type="button"
                               onClick={() => handleOpenAssignModal(t)}
