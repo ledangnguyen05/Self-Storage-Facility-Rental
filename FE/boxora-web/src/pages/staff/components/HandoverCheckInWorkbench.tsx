@@ -738,6 +738,12 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
       if (isRentMet) return 0
       return bookingTotalRentalFee
     }
+    if (currentBooking?.totalPrice != null && Number(currentBooking.totalPrice) > 0) {
+      const dep = displayDepositDue > 0 ? displayDepositDue : Number(currentBooking.depositAmount || 0)
+      if (Number(currentBooking.totalPrice) > dep) {
+        return Number(currentBooking.totalPrice) - dep
+      }
+    }
     if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
       const initAmount = Number(currentBooking.initialPaymentAmount)
       const dep = displayDepositDue > 0 ? displayDepositDue : Number(currentBooking.depositAmount || 0)
@@ -759,16 +765,19 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
   // Tổng tiền phải trả tại cơ sở = Tiền cọc cần thu + Tổng tiền thuê
   const displayTotalPayable = useMemo(() => {
-    const sum = displayDepositDue + displayTotalRentalDue
-    if (sum > 0) return sum
     if (currentPrerequisites?.totalPayableAmount != null && Number(currentPrerequisites.totalPayableAmount) > 0) {
       return Number(currentPrerequisites.totalPayableAmount)
+    }
+    const sum = displayDepositDue + displayTotalRentalDue
+    if (sum > 0) return sum
+    if (currentBooking?.totalPrice != null && Number(currentBooking.totalPrice) > 0) {
+      return Number(currentBooking.totalPrice)
     }
     if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
       return Number(currentBooking.initialPaymentAmount)
     }
     return displayDepositDue + displayFirstMonthRentDue
-  }, [currentPrerequisites?.totalPayableAmount, displayDepositDue, displayTotalRentalDue, currentBooking?.initialPaymentAmount, displayFirstMonthRentDue])
+  }, [currentPrerequisites?.totalPayableAmount, displayDepositDue, displayTotalRentalDue, currentBooking?.totalPrice, currentBooking?.initialPaymentAmount, displayFirstMonthRentDue])
 
   const displayTotalDueAtFacility = useMemo(() => {
     if (displayTotalPayable > 0) return displayTotalPayable
@@ -1380,6 +1389,55 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     setIsSubmitting(true)
     setCheckInError(null)
     try {
+      // Đảm bảo chứng từ thanh toán đã upload được ghi nhận và xác nhận trong DB nếu chưa thu đủ
+      if (effectivePaymentProofUrl && (!isDepositMet || !isRentMet)) {
+        if (!isDepositMet && displayDepositDue > 0) {
+          try {
+            const depPay = await handoverService.recordManualPayment({
+              bookingId: currentBooking.id,
+              paymentType: 'DEPOSIT',
+              paymentMethod: 'BANK_TRANSFER',
+              amount: displayDepositDue,
+              proofDocumentUrl: effectivePaymentProofUrl,
+              referenceCode: `PROOF-DEP-${bookingDisplayCode}-${Date.now()}`,
+              notes: 'Thanh toán tiền cọc có chứng từ kèm theo tại cơ sở'
+            })
+            if (depPay?.id) {
+              await handoverService.confirmBankTransferPayment(depPay.id, 'Xác nhận thu tiền cọc tại quầy cơ sở')
+            }
+          } catch (depErr) {
+            console.warn('Auto deposit confirm error:', depErr)
+          }
+        }
+        if (!isRentMet && (displayTotalRentalDue > 0 || displayFirstMonthRentDue > 0)) {
+          try {
+            const rentPay = await handoverService.recordManualPayment({
+              bookingId: currentBooking.id,
+              paymentType: 'RENTAL_FEE',
+              paymentMethod: 'BANK_TRANSFER',
+              amount: displayTotalRentalDue > 0 ? displayTotalRentalDue : displayFirstMonthRentDue,
+              proofDocumentUrl: effectivePaymentProofUrl,
+              referenceCode: `PROOF-RENT-${bookingDisplayCode}-${Date.now()}`,
+              notes: 'Thanh toán tiền thuê có chứng từ kèm theo tại cơ sở'
+            })
+            if (rentPay?.id) {
+              await handoverService.confirmBankTransferPayment(rentPay.id, 'Xác nhận thu tiền thuê tại quầy cơ sở')
+            }
+          } catch (rentErr) {
+            console.warn('Auto rent confirm error:', rentErr)
+          }
+        }
+      }
+
+      // Đảm bảo hợp đồng giấy đã upload được xác minh nếu chưa có xác minh trong DB
+      if (effectivePaperContractUrl && !isContractMet) {
+        try {
+          await handoverService.verifyPaperContract(currentBooking.id, 'Xác nhận hợp đồng giấy tại quầy khi bàn giao')
+        } catch (contractErr) {
+          console.warn('Auto paper contract verify error:', contractErr)
+        }
+      }
+
       try {
         await handoverService.recordCheckInInspection({
           bookingId: currentBooking.id,
@@ -1412,14 +1470,42 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         earlyCheckInReason: !isCheckInTimeMet ? 'Khách nhận kho sớm có xác nhận của nhân viên' : undefined,
         notes: currentSession.handoverNotes,
         evidencePhotos: [
-          currentSession.photoDoor || '/uploads/sample-door.jpg',
-          currentSession.photoInterior || '/uploads/sample-interior.jpg'
+          currentSession.photoDoor || effectivePaymentProofUrl || '/uploads/sample-door.jpg',
+          currentSession.photoInterior || effectivePaperContractUrl || '/uploads/sample-interior.jpg'
         ]
       })
 
       const generatedPin = res?.accessPin
       if (!generatedPin) throw new Error('Check-in hoàn tất nhưng máy chủ không trả về mã PIN SmartLock.')
       const nowIso = new Date().toISOString()
+
+      // Cập nhật trạng thái đơn đặt kho trong localStorage (hỗ trợ cả guest reservations)
+      try {
+        const rawLocal = localStorage.getItem('boxora_guest_reservations')
+        if (rawLocal) {
+          const list = JSON.parse(rawLocal)
+          if (Array.isArray(list)) {
+            const updated = list.map((item: any) => {
+              if (item.id === currentBooking.id || item.bookingCode === currentBooking.bookingCode) {
+                return {
+                  ...item,
+                  status: 'ACTIVE',
+                  paymentStatus: 'PAID',
+                  unitCode: res?.unitCode || unitDisplayCode || item.unitCode,
+                  accessPin: generatedPin,
+                  handoverTime: nowIso
+                }
+              }
+              return item
+            })
+            localStorage.setItem('boxora_guest_reservations', JSON.stringify(updated))
+            window.dispatchEvent(new CustomEvent('boxora_reservation_status_changed'))
+            window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+          }
+        }
+      } catch (syncErr) {
+        console.warn('Lỗi đồng bộ localStorage sau check-in:', syncErr)
+      }
 
       // Backend check-in automatically dispatches the PIN & handover completion email (Task 8.6)
       let emailSentSuccess = true

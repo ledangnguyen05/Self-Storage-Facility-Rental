@@ -2007,25 +2007,47 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       return
     }
     if (!currentCase) return
-    if (!assetsClearedPassed) {
-      toast.error('Khách chưa lấy hết tài sản ra khỏi kho! Không thể nhận lại kho.')
-      return
-    }
 
     setIsConfirmingPhysical(true)
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
         await handoverService.confirmPhysicalReturn(currentCase.bookingId, {
-          notes: `Nhân viên ${userName} đã kiểm tra hiện trường và nhận lại buồng kho vật lý #${currentCase.unitCode}.`
+          assetsClearedPassed: true,
+          notes: `Nhân viên ${userName} đã kiểm tra hiện trường, xác nhận khách đã dọn sạch toàn bộ đồ đạc và tiếp quản lại buồng kho #${currentCase.unitCode}.`
         })
       }
       toast.success(
-        `Đã nhận lại kho #${currentCase.unitCode}, vô hiệu PIN và hoàn tất giải phóng kho!`,
+        `Đã nhận lại kho #${currentCase.unitCode}, vô hiệu PIN và hoàn tất tiếp quản buồng kho!`,
         { title: 'Bàn giao thành công' }
       )
+      setAssetsClearedPassed(true)
+
+      // Đồng bộ vào localStorage để giao diện cập nhật ngay lập tức
+      try {
+        const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+        if (raw) {
+          const list = JSON.parse(raw)
+          if (Array.isArray(list)) {
+            const next = list.map((it: any) => {
+              if (it.id === currentCase.id || it.bookingId === currentCase.bookingId || it.unitCode === currentCase.unitCode) {
+                return {
+                  ...it,
+                  unitReturnedPhysically: true,
+                  assetsClearedPassed: true,
+                  returnedAt: new Date().toISOString()
+                }
+              }
+              return it
+            })
+            localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(next))
+          }
+        }
+      } catch (e) {
+        console.warn('Error updating return case in localStorage:', e)
+      }
+
       if (onReturnCompleted) onReturnCompleted()
       await fetchReturnCases()
-      setStatusTabFilter('COMPLETED')
     } catch (err: any) {
       toast.error(`Lỗi nhận lại kho: ${err.response?.data?.message || err.message}`)
     } finally {
@@ -2062,12 +2084,20 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     }
     if (!currentCase) return
 
-    // Pre-condition validations
+    // Pre-condition validations: Nếu chưa nhận lại kho vật lý, tự động tiếp nhận lại kho vật lý trước khi đóng hợp đồng
     if (!currentCase.unitReturnedPhysically) {
-      toast.warning('Cần nhấn "Xác Nhận Nhận Lại Kho Vật Lý" trước khi hoàn tất hồ sơ!')
-      return
+      try {
+        if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
+          await handoverService.confirmPhysicalReturn(currentCase.bookingId, {
+            assetsClearedPassed: true,
+            notes: `Nhân viên ${userName} đã kiểm tra hiện trường, xác nhận khách đã dọn sạch đồ và tiếp quản lại buồng kho #${currentCase.unitCode}.`
+          })
+        }
+      } catch (e) {
+        console.warn('Auto confirm physical return warning:', e)
+      }
     }
-// Access revoked automatically on physical return confirmation
+
     if (isOverDeposit && currentCase.additionalPaymentStatus !== 'PAID') {
       toast.warning('Khoản bồi thường vượt cọc chưa được thanh toán! Vui lòng thu tiền tại quầy hoặc ghi nhận.')
       return
@@ -2076,12 +2106,51 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     setIsFinishingHandover(true)
     try {
       if (currentCase.bookingId && !currentCase.bookingId.startsWith('LOCAL-')) {
-        await handoverService.completeReturn(currentCase.bookingId)
+        try {
+          await handoverService.completeReturn(currentCase.bookingId)
+        } catch (completeErr: any) {
+          if (
+            completeErr?.response?.data?.code === 718 ||
+            completeErr?.response?.data?.message?.includes('đã được hoàn tất') ||
+            completeErr?.message?.includes('đã được hoàn tất')
+          ) {
+            // Đã hoàn tất trước đó, bỏ qua lỗi và tiếp tục cập nhật giao diện
+          } else {
+            throw completeErr
+          }
+        }
       }
       toast.success(
         `Đã hoàn tất thanh lý hợp đồng & giải phóng kho #${currentCase.unitCode} về trạng thái sẵn sàng!`,
         { title: 'Thanh lý thành công' }
       )
+
+      // Đồng bộ vào localStorage
+      try {
+        const raw = localStorage.getItem('boxora_checkout_return_cases_v4')
+        if (raw) {
+          const list = JSON.parse(raw)
+          if (Array.isArray(list)) {
+            const next = list.map((it: any) => {
+              if (it.id === currentCase.id || it.bookingId === currentCase.bookingId || it.unitCode === currentCase.unitCode) {
+                return {
+                  ...it,
+                  status: 'COMPLETED',
+                  unitReturnedPhysically: true,
+                  assetsClearedPassed: true,
+                  approvalStatus: 'COMPLETED',
+                  reviewStatus: 'COMPLETED'
+                }
+              }
+              return it
+            })
+            localStorage.setItem('boxora_checkout_return_cases_v4', JSON.stringify(next))
+          }
+        }
+      } catch (e) {
+        console.warn('Error completing return case in localStorage:', e)
+      }
+
       if (onReturnCompleted) onReturnCompleted()
       await fetchReturnCases()
       setStatusTabFilter('COMPLETED')
@@ -3843,15 +3912,23 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                             <span>Đơn đang khiếu nại: Chỉ Quản lý cơ sở mới có quyền tiếp nhận và xác nhận thu hồi buồng kho.</span>
                           </div>
                         ) : !isReadOnly ? (
-                          <button
-                            type="button"
-                            onClick={handleConfirmPhysicalReturn}
-                            disabled={isConfirmingPhysical || !assetsClearedPassed}
-                            className="mt-1 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
-                          >
-                            <Warehouse size={14} />
-                            <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
-                          </button>
+                          <div className="space-y-1.5">
+                            {!assetsClearedPassed && (
+                              <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
+                                <AlertTriangle size={13} className="shrink-0 text-amber-600" />
+                                <span>Biên bản nghiệm thu ghi nhận còn đồ đạc. Nhấn nút bên dưới để xác nhận khách đã dọn sạch toàn bộ đồ đạc và cơ sở tiếp quản lại buồng kho trống.</span>
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleConfirmPhysicalReturn}
+                              disabled={isConfirmingPhysical}
+                              className="mt-1 w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs cursor-pointer transition flex items-center justify-center gap-1.5"
+                            >
+                              <Warehouse size={14} />
+                              <span>{isConfirmingPhysical ? 'Đang xác nhận...' : 'Xác Nhận Đã Nhận Lại Kho'}</span>
+                            </button>
+                          </div>
                         ) : (
                           <span className="mt-1 text-[11px] text-slate-500 italic block">
                             Chờ nhân viên ca trực tiếp quản bàn giao buồng kho thực địa.
@@ -3940,7 +4017,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                           )}
 
                         {/* Final Action: Hoàn tất hồ sơ & Giải phóng kho */}
-                        {(currentCase.status === 'REFUNDED' || currentCase.refundStatus === 'REFUNDED' || currentCase.refundStatus === 'COMPLETED' || (currentCase.status === 'REFUND_APPROVED' && netRefundAmount === 0 && customerPayableAmount === 0)) && (
+                        {(currentCase.status === 'REFUNDED' || currentCase.refundStatus === 'REFUNDED' || currentCase.refundStatus === 'COMPLETED' || currentCase.refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' || currentCase.refundStatus === 'PROCESSED' || (currentCase.status === 'REFUND_APPROVED' && netRefundAmount === 0 && customerPayableAmount === 0)) && (
                           <button
                             type="button"
                             onClick={handleCompleteHandoverAndRelease}

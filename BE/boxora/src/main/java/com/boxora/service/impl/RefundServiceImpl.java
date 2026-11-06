@@ -429,11 +429,16 @@ public class RefundServiceImpl implements RefundService {
                     refund.getBankAccountNumber(), refund.getBankName(), refund.getTransactionReference());
             linkedBooking.setStepTransitionHistory((linkedBooking.getStepTransitionHistory() != null ? linkedBooking.getStepTransitionHistory() : "") + logMsg);
             linkedBooking.setPaymentStatus("REFUNDED");
-            linkedBooking.setStatus(BookingStatus.CANCELLED);
-            linkedBooking.setHoldExpiresAt(null);
-            linkedBooking.setPaymentExpiresAt(null);
-            linkedBooking.setAccessPin(null);
-            linkedBooking.setQrAccessToken("REVOKED_REFUNDED");
+
+            boolean isReturnSettlement = (refund.getReason() != null && refund.getReason().toLowerCase().contains("quyết toán trả kho"))
+                    || (refund.getRequestCode() != null && refund.getRequestCode().contains("-V"));
+            if (!isReturnSettlement) {
+                linkedBooking.setStatus(BookingStatus.CANCELLED);
+                linkedBooking.setHoldExpiresAt(null);
+                linkedBooking.setPaymentExpiresAt(null);
+                linkedBooking.setAccessPin(null);
+                linkedBooking.setQrAccessToken("REVOKED_REFUNDED");
+            }
             bookingRepository.save(linkedBooking);
 
             // Đồng bộ trạng thái vào HandoverRecord nếu là quy trình quyết toán trả kho
@@ -756,6 +761,12 @@ public class RefundServiceImpl implements RefundService {
 
     private void releaseUnitAndContractIfAny(RefundRequest refund, Booking linkedBooking) {
         if (refund == null) return;
+
+        boolean isReturnSettlement = (refund.getReason() != null && refund.getReason().toLowerCase().contains("quyết toán trả kho"))
+                || (refund.getRequestCode() != null && refund.getRequestCode().contains("-V"));
+        if (isReturnSettlement) {
+            return;
+        }
 
         // 1. Tìm StorageUnit vật lý từ Booking hoặc Hợp đồng
         StorageUnit unitToRelease = null;

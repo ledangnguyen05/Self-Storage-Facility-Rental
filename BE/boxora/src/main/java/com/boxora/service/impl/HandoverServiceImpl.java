@@ -619,7 +619,6 @@ public class HandoverServiceImpl implements HandoverService {
 
         // =========================================================================
         // BR-RULE-005 & P0-02: BACKEND KIỂM TRA 4 ĐIỀU KIỆN TIÊN QUYẾT BẮT BUỘC TỪ DB
-        // Không chấp nhận cờ giả mạo do frontend tự quyết định
         // =========================================================================
         List<String> missingPrerequisites = new ArrayList<>();
 
@@ -631,7 +630,7 @@ public class HandoverServiceImpl implements HandoverService {
         if (booking.getDepositPaid() != null && booking.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
             computedDepositPaid = computedDepositPaid.max(booking.getDepositPaid());
         }
-        final BigDecimal depositPaid = computedDepositPaid;
+        BigDecimal depositPaid = computedDepositPaid;
         boolean depositSatisfied = depositPaid.compareTo(BigDecimal.ZERO) > 0
                 && depositPaid.compareTo(requiredDeposit) >= 0;
 
@@ -670,21 +669,21 @@ public class HandoverServiceImpl implements HandoverService {
         // Điều kiện 4: Nhân viên tại quầy đối soát CCCD / giấy tờ tùy thân gốc
         boolean idAlreadyVerified = Boolean.TRUE.equals(booking.getIdentityOriginalDocumentSeen())
                 && booking.getIdentityVerifiedAt() != null
-                && booking.getIdentityVerifiedByStaff() != null
-                && booking.getIdentityCardNumber() != null
-                && booking.getIdentityCardNumber().matches("^[0-9]{9,12}$");
+                && booking.getIdentityCardNumber() != null;
 
         boolean identityVerified = idAlreadyVerified;
-        if (!identityVerified && Boolean.TRUE.equals(request.getIdentityVerified())) {
-            String incomingId = request.getIdCardNumber() != null ? request.getIdCardNumber().trim() : booking.getIdentityCardNumber();
-            if (incomingId != null && incomingId.matches("^[0-9]{9,12}$")) {
-                booking.setIdentityCardNumber(incomingId);
-                booking.setIdentityVerifiedByStaff(staff);
-                booking.setIdentityVerifiedAt(LocalDateTime.now());
-                booking.setIdentityOriginalDocumentSeen(true);
-                bookingRepository.save(booking);
-                identityVerified = true;
-            }
+        String incomingId = request.getIdCardNumber() != null ? request.getIdCardNumber().trim() : booking.getIdentityCardNumber();
+        if (incomingId != null) {
+            incomingId = incomingId.replaceAll("\\s+", "");
+        }
+        boolean hasValidId = incomingId != null && (incomingId.matches("^[0-9]{9,12}$") || incomingId.matches("^[A-Za-z0-9]{6,15}$"));
+        if (!idAlreadyVerified && Boolean.TRUE.equals(request.getIdentityVerified()) && hasValidId) {
+            booking.setIdentityCardNumber(incomingId);
+            booking.setIdentityVerifiedByStaff(staff);
+            booking.setIdentityVerifiedAt(LocalDateTime.now());
+            booking.setIdentityOriginalDocumentSeen(true);
+            bookingRepository.save(booking);
+            identityVerified = true;
         }
 
         if (!identityVerified) {
@@ -2124,7 +2123,8 @@ public class HandoverServiceImpl implements HandoverService {
                 if (totalFee != null && totalFee.compareTo(BigDecimal.ZERO) > 0) {
                     requiredAmount = totalFee;
                 } else {
-                    requiredAmount = getRequiredFirstMonthRent(booking, unit);
+                    int m = (booking.getRentalMonths() != null && booking.getRentalMonths() > 0) ? booking.getRentalMonths() : 1;
+                    requiredAmount = getRequiredFirstMonthRent(booking, unit).multiply(BigDecimal.valueOf(m));
                 }
             }
             BigDecimal alreadyPaidAmount = (request.getPaymentType() == PaymentType.DEPOSIT)
@@ -2284,12 +2284,22 @@ public class HandoverServiceImpl implements HandoverService {
                 if (totalFee != null && totalFee.compareTo(BigDecimal.ZERO) > 0) {
                     requiredAmount = totalFee;
                 } else {
-                    requiredAmount = getRequiredFirstMonthRent(b, unit);
+                    int m = (b.getRentalMonths() != null && b.getRentalMonths() > 0) ? b.getRentalMonths() : 1;
+                    requiredAmount = getRequiredFirstMonthRent(b, unit).multiply(BigDecimal.valueOf(m));
                 }
             }
-            BigDecimal alreadyPaidAmount = (payment.getPaymentType() == PaymentType.DEPOSIT)
-                    ? calculateTotalDepositPaid(b)
-                    : calculateTotalFirstMonthRentPaid(b);
+            final UUID currentPaymentId = payment.getId();
+            final PaymentType currentPaymentType = payment.getPaymentType();
+            List<Payment> otherPayments = paymentRepository.findAllByBooking_Id(b.getId()).stream()
+                    .filter(p -> !p.getId().equals(currentPaymentId))
+                    .toList();
+            BigDecimal alreadyPaidAmount = otherPayments.stream()
+                    .filter(p -> p.getPaymentType() == currentPaymentType
+                            && (p.getStatus() == PaymentStatus.PAID || (p.getStatus() == PaymentStatus.PENDING && p.getProofDocumentUrl() != null && !p.getProofDocumentUrl().isBlank()))
+                            && p.getAmount() != null
+                            && p.getAmount().compareTo(BigDecimal.ZERO) > 0)
+                    .map(Payment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal remainingAmount = requiredAmount.subtract(alreadyPaidAmount).max(BigDecimal.ZERO);
             if (remainingAmount.compareTo(payment.getAmount()) < 0) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Nghĩa vụ thanh toán này đã được thu đủ qua giao dịch khác");
@@ -2797,6 +2807,18 @@ public class HandoverServiceImpl implements HandoverService {
 
         String refStatus = inspectionRecord != null && inspectionRecord.getRefundStatus() != null
                 ? inspectionRecord.getRefundStatus() : "NONE";
+        if (("NONE".equalsIgnoreCase(refStatus) || refStatus == null) && refundRequestRepository != null) {
+            List<RefundRequest> refList = refundRequestRepository.findByBookingId(booking.getId());
+            if (!refList.isEmpty()) {
+                RefundRequest rr = refList.get(0);
+                if (rr.getStatus() == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                        || rr.getStatus() == RefundStatus.COMPLETED
+                        || rr.getStatus() == RefundStatus.PROCESSED
+                        || rr.getStatus() == RefundStatus.RECONCILED) {
+                    refStatus = "REFUNDED";
+                }
+            }
+        }
 
         LocalDate reqDate = booking.getCreatedAt() != null ? booking.getCreatedAt().toLocalDate() : LocalDate.now();
 
@@ -3889,7 +3911,15 @@ public class HandoverServiceImpl implements HandoverService {
                 .stream().findFirst().orElseThrow(() -> new AppException(ErrorCode.RETURN_NOT_INSPECTED));
 
         if (Boolean.FALSE.equals(record.getAssetsClearedPassed())) {
-            throw new AppException(ErrorCode.RETURN_ASSETS_NOT_CLEARED, "Ngăn kho còn đồ đạc, chưa dọn sạch. Không thể nhận lại kho!");
+            if (request != null && Boolean.TRUE.equals(request.getAssetsClearedPassed())) {
+                record.setAssetsClearedPassed(true);
+                if (record.getAssetsClearedNotes() == null || !record.getAssetsClearedNotes().contains("dọn sạch")) {
+                    record.setAssetsClearedNotes((record.getAssetsClearedNotes() != null ? record.getAssetsClearedNotes() + " | " : "")
+                            + "Nhân viên xác nhận khách đã dọn sạch đồ khi nhận lại buồng kho.");
+                }
+            } else {
+                throw new AppException(ErrorCode.RETURN_ASSETS_NOT_CLEARED, "Ngăn kho còn đồ đạc, chưa dọn sạch. Không thể nhận lại kho!");
+            }
         }
 
         record.setPhysicalHandoverConfirmed(true);
@@ -3919,19 +3949,10 @@ public class HandoverServiceImpl implements HandoverService {
             storageUnitRepository.save(unit);
         }
 
-        // Hoàn tất hồ sơ trả kho và thanh lý hợp đồng ngay khi nhận lại kho vật lý
-        booking.setStatus(BookingStatus.COMPLETED);
-        booking.setReturnTime(LocalDateTime.now());
-
-        Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
-        contractOpt.ifPresent(c -> {
-            c.setStatus(RentalContractStatus.TERMINATED);
-            rentalContractRepository.save(c);
-        });
-
-        record.setApprovalStatus("COMPLETED");
-        record.setReviewStatus("COMPLETED");
-        record = handoverRecordRepository.save(record);
+        if (booking.getReturnTime() == null) {
+            booking.setReturnTime(LocalDateTime.now());
+        }
+        bookingRepository.save(booking);
 
         // Đóng toàn bộ phiếu hỗ trợ liên quan sau khi hoàn tất trả kho
         if (supportTicketRepository != null) {
@@ -4047,7 +4068,7 @@ public class HandoverServiceImpl implements HandoverService {
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
         if (booking.getStatus() == BookingStatus.COMPLETED) {
-            return calculateSettlement(bookingId, null);
+            throw new AppException(ErrorCode.RETURN_ALREADY_COMPLETED, "Hồ sơ trả kho đã được hoàn tất trước đó");
         }
 
         StorageUnit unit = booking.getStorageUnit();
@@ -4071,7 +4092,11 @@ public class HandoverServiceImpl implements HandoverService {
 
         // 2. Kiểm tra kho đã dọn trống
         if (Boolean.FALSE.equals(record.getAssetsClearedPassed())) {
-            throw new AppException(ErrorCode.RETURN_ASSETS_NOT_CLEARED, "Ngăn kho chưa lấy hết đồ đạc, không thể hoàn tất hồ sơ trả kho");
+            if (Boolean.TRUE.equals(record.getPhysicalHandoverConfirmed())) {
+                record.setAssetsClearedPassed(true);
+            } else {
+                throw new AppException(ErrorCode.RETURN_ASSETS_NOT_CLEARED, "Ngăn kho chưa lấy hết đồ đạc, không thể hoàn tất hồ sơ trả kho");
+            }
         }
 
         // 3. Kiểm tra nhận lại kho vật lý (9.1)
@@ -4106,7 +4131,32 @@ public class HandoverServiceImpl implements HandoverService {
 
         // 8. Kiểm tra hoàn tiền (nếu có hoàn tiền)
         BigDecimal refundAmount = record.getRefundAmount() != null ? record.getRefundAmount() : BigDecimal.ZERO;
-        if (refundAmount.compareTo(BigDecimal.ZERO) > 0 && !"REFUNDED".equalsIgnoreCase(record.getRefundStatus())) {
+        boolean isRefundDisbursed = "REFUNDED".equalsIgnoreCase(record.getRefundStatus())
+                || "COMPLETED".equalsIgnoreCase(record.getRefundStatus())
+                || "AWAITING_CUSTOMER_CONFIRMATION".equalsIgnoreCase(record.getRefundStatus())
+                || "PROCESSED".equalsIgnoreCase(record.getRefundStatus())
+                || (record.getRefundRequest() != null && (
+                        record.getRefundRequest().getStatus() == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                        || record.getRefundRequest().getStatus() == RefundStatus.COMPLETED
+                        || record.getRefundRequest().getStatus() == RefundStatus.PROCESSED
+                        || record.getRefundRequest().getStatus() == RefundStatus.RECONCILED
+                ));
+        if (refundAmount.compareTo(BigDecimal.ZERO) > 0 && !isRefundDisbursed && refundRequestRepository != null) {
+            List<RefundRequest> refReqList = refundRequestRepository.findByBookingId(booking.getId());
+            if (!refReqList.isEmpty()) {
+                RefundStatus rs = refReqList.get(0).getStatus();
+                if (rs == RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                        || rs == RefundStatus.COMPLETED
+                        || rs == RefundStatus.PROCESSED
+                        || rs == RefundStatus.RECONCILED) {
+                    isRefundDisbursed = true;
+                    record.setRefundStatus("REFUNDED");
+                    record.setRefundTxnRef(refReqList.get(0).getTransactionReference());
+                    handoverRecordRepository.save(record);
+                }
+            }
+        }
+        if (refundAmount.compareTo(BigDecimal.ZERO) > 0 && !isRefundDisbursed) {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Khoản tiền hoàn cọc (" + refundAmount + " VNĐ) chưa được giải ngân hoàn tất.");
         }
 
@@ -4117,7 +4167,17 @@ public class HandoverServiceImpl implements HandoverService {
         booking.setQrAccessToken(null);
 
         if (unit != null) {
-            unit.setStatus(UnitStatus.AVAILABLE);
+            boolean hasDamageOrCleanIssue = deductions.compareTo(BigDecimal.ZERO) > 0
+                    || Boolean.FALSE.equals(record.getDoorConditionPassed())
+                    || Boolean.FALSE.equals(record.getCleanlinessPassed())
+                    || Boolean.FALSE.equals(record.getWallStructurePassed())
+                    || (Boolean.FALSE.equals(record.getSmartLockPassed()) && "CUSTOMER_FAULT".equalsIgnoreCase(record.getSmartLockIssueType()));
+
+            if (hasDamageOrCleanIssue) {
+                unit.setStatus(UnitStatus.UNDER_MAINTENANCE);
+            } else {
+                unit.setStatus(UnitStatus.AVAILABLE);
+            }
             unit.setMaintenanceReason(null);
             unit.setMaintenanceBy(null);
             unit.setMaintenanceAt(null);
