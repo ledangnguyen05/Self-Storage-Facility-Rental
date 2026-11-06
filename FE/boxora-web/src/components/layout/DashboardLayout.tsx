@@ -736,19 +736,6 @@ export const DashboardLayout: React.FC = () => {
                   <span className="material-symbols-outlined text-[18px]">receipt_long</span>
                   <span>{t('NHẬT KÝ KIỂM TOÁN', 'AUDIT LOGS')}</span>
                 </Link>
-
-                {/* 4. Báo cáo sự cố hệ thống */}
-                <Link
-                  to="/portal/tickets"
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
-                    isCurrentPath('/portal/tickets')
-                      ? 'bg-slate-100 text-slate-900'
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
-                >
-                  <span className="material-symbols-outlined text-[18px]">report_problem</span>
-                  <span>{t('BÁO CÁO SỰ CỐ HỆ THỐNG', 'SYSTEM INCIDENT REPORTS')}</span>
-                </Link>
               </nav>
             </div>
           )}
