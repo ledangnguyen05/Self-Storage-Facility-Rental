@@ -69,5 +69,10 @@ public class BookingCancellationPreviewResponse {
 
     /** Có phát sinh hoàn tiền hay không (refundAmount > 0) */
     private boolean refundable;
+
+    private Integer cancellationFullRefundHours;
+    private Integer cancellationPartialRefundHours;
+    private Double cancellationPartialRefundPercent;
+    private Double cancellationAfter48hRefundPercent;
 }
 

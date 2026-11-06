@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Booking, BookingCancelResponse, BookingCancellationPreview } from '../../types'
+import { Booking, BookingCancelResponse, BookingCancellationPreview, FacilityPolicy } from '../../types'
 import { bookingService } from '../../services/bookingService'
+import { facilityPolicyService } from '../../services/facilityPolicyService'
 
 interface BookingCancelModalProps {
   isOpen: boolean
@@ -49,6 +50,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [successResult, setSuccessResult] = useState<BookingCancelResponse | null>(null)
   const [preview, setPreview] = useState<BookingCancellationPreview | null>(null)
+  const [facilityPolicy, setFacilityPolicy] = useState<FacilityPolicy | null>(null)
   const [loadingPreview, setLoadingPreview] = useState(false)
 
   // Thông tin tài khoản ngân hàng hoàn tiền (Dành riêng cho Phương thức 1: Thanh toán trực tuyến)
@@ -91,6 +93,7 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
       setSubmitError(null)
       setSuccessResult(null)
       setPreview(null)
+      setFacilityPolicy(null)
       setLoadingPreview(false)
       setIsSubmitting(false)
       setBankCode('VCB')
@@ -114,6 +117,39 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
     setBankAccountNameTouched(false)
     setBankAccountNumberTouched(false)
     setContactEmail(booking.customerEmail || '')
+
+    // Lấy chính sách vận hành thực tế của cơ sở từ DB để hiển thị đúng mốc hoàn tiền
+    let isCurrent = true
+    const loadFacilityPolicy = async () => {
+      try {
+        if (booking.facilityId) {
+          const pol = await facilityPolicyService.getByFacilityId(booking.facilityId)
+          if (isCurrent && pol) {
+            setFacilityPolicy(pol)
+            return
+          }
+        }
+      } catch {
+        // fallback by facility name below
+      }
+      if (booking.facilityName) {
+        try {
+          const page = await facilityPolicyService.getAll({ search: booking.facilityName, size: 50 })
+          const list = page?.content || []
+          const normName = booking.facilityName.trim().toLowerCase()
+          const matched =
+            list.find((p) => booking.facilityId && p.facilityId === booking.facilityId) ||
+            list.find((p) => (p.facilityName || '').trim().toLowerCase() === normName) ||
+            list[0]
+          if (isCurrent && matched) {
+            setFacilityPolicy(matched)
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+    void loadFacilityPolicy()
 
     // CHỈ gọi API tính toán hoàn tiền nếu là đơn đã thanh toán online cọc (Phương thức 1)
     const hasOnlineDeposit =
@@ -141,16 +177,42 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
       setPreview(null)
       setLoadingPreview(false)
     }
+
+    return () => {
+      isCurrent = false
+    }
   }, [isOpen, booking])
 
   if (!isOpen || !booking) return null
+
+  const fullRefundHours =
+    preview?.cancellationFullRefundHours ??
+    facilityPolicy?.cancellationFullRefundHours ??
+    24
+  const partialRefundHours =
+    preview?.cancellationPartialRefundHours ??
+    facilityPolicy?.cancellationPartialRefundHours ??
+    48
+  const partialRefundPercent =
+    preview?.cancellationPartialRefundPercent ??
+    facilityPolicy?.cancellationPartialRefundPercent ??
+    70
+  const after48hRefundPercent =
+    preview?.cancellationAfter48hRefundPercent ??
+    facilityPolicy?.cancellationAfter48hRefundPercent ??
+    50
 
   const depositAmount = preview?.depositPaid ?? booking.depositPaid ?? 0
   const rentalFee = preview?.totalRentalFee ?? booking.totalRentalFee ?? 0
   const totalPaidOnline = Number(rentalFee) + Number(depositAmount)
 
-  // Tính toán minh bạch chi tiết tiền thuê & tiền cọc
-  const depositRefundPercent = preview?.refundPercentage ?? 100
+  // Tính toán minh bạch chi tiết tiền thuê & tiền cọc theo đúng chính sách DB của cơ sở
+  const depositRefundPercent =
+    preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND'
+      ? partialRefundPercent
+      : preview?.milestoneStage === 'STAGE_3_OVER_48H_REFUND'
+        ? after48hRefundPercent
+        : (preview?.refundPercentage ?? 100)
   const depositRefundAmount = Math.round(Number(depositAmount) * (depositRefundPercent / 100))
   const depositPenaltyAmount = Math.max(0, Number(depositAmount) - depositRefundAmount)
   const rentRefundAmount = Number(rentalFee) // Hoàn 100% tiền thuê do khách chưa nhận kho
@@ -476,16 +538,16 @@ export const BookingCancelModal: React.FC<BookingCancelModalProps> = ({
 
                   <div className="grid grid-cols-3 gap-1.5 text-[10px] text-center font-medium">
                     <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_1_FULL_REFUND' ? 'bg-emerald-100 border-emerald-400 text-emerald-900 font-bold dark:bg-emerald-950 dark:text-emerald-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                      <div>Mốc 1 (≤ 24h)</div>
+                      <div>Mốc 1 (≤ {fullRefundHours}h)</div>
                       <div className="font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">Hoàn 100% cọc</div>
                     </div>
                     <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_2_PARTIAL_REFUND' ? 'bg-amber-100 border-amber-400 text-amber-900 font-bold dark:bg-amber-950 dark:text-amber-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                      <div>Mốc 2 (24h - 48h)</div>
-                      <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn 70% cọc</div>
+                      <div>Mốc 2 ({fullRefundHours}h - {partialRefundHours}h)</div>
+                      <div className="font-bold text-amber-600 dark:text-amber-400 mt-0.5">Hoàn {partialRefundPercent}% cọc</div>
                     </div>
                     <div className={`p-1.5 rounded-lg border ${preview?.milestoneStage === 'STAGE_3_OVER_48H_REFUND' ? 'bg-rose-100 border-rose-400 text-rose-900 font-bold dark:bg-rose-950 dark:text-rose-200' : 'bg-white/60 dark:bg-slate-800/50 border-indigo-200/70 dark:border-indigo-900 text-slate-600 dark:text-slate-400'}`}>
-                      <div>Mốc 3 (&gt; 48h)</div>
-                      <div className="font-bold text-rose-600 dark:text-rose-400 mt-0.5">Hoàn 50% cọc</div>
+                      <div>Mốc 3 (&gt; {partialRefundHours}h)</div>
+                      <div className="font-bold text-rose-600 dark:text-rose-400 mt-0.5">Hoàn {after48hRefundPercent}% cọc</div>
                     </div>
                   </div>
 

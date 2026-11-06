@@ -2553,27 +2553,34 @@ public class HandoverServiceImpl implements HandoverService {
                     if (supportTicketRepository != null) {
                         hasReturnTicket = supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(b.getId())
                                 .stream()
+                                .filter(t -> t.getStatus() != TicketStatus.CLOSED)
                                 .anyMatch(t -> t.getCategory() == TicketCategory.RETURN_REFUND
-                                        || t.getCategory() == TicketCategory.RETURN_EXPIRED
-                                        || (t.getTitle() != null && t.getTitle().toLowerCase().contains("trả kho"))
-                                        || (t.getDescription() != null && t.getDescription().toLowerCase().contains("trả kho")));
+                                        || t.getCategory() == TicketCategory.RETURN_EXPIRED);
                     }
+
+                    boolean hasReturnHandoverRecord = handoverRecordRepository.findByBooking_Id(b.getId())
+                            .stream()
+                            .anyMatch(r -> r.getRecordType() != null && (
+                                    "CHECKOUT_REQUEST".equalsIgnoreCase(r.getRecordType())
+                                    || "INSPECTION".equalsIgnoreCase(r.getRecordType())
+                                    || "RETURN".equalsIgnoreCase(r.getRecordType())
+                                    || "CHECK_OUT".equalsIgnoreCase(r.getRecordType())
+                            ));
 
                     return b.getStatus() == BookingStatus.CHECKOUT_REQUESTED
                             || b.getStatus() == BookingStatus.INSPECTED
-                            || (b.getStatus() == BookingStatus.COMPLETED && b.getReturnTime() != null)
-                            || (b.getStatus() == BookingStatus.ACTIVE && (b.getReturnTime() != null || b.getEndDate() != null))
-                            || !handoverRecordRepository.findByBooking_Id(b.getId()).isEmpty()
+                            || (b.getStatus() == BookingStatus.COMPLETED && (b.getReturnTime() != null || hasReturnHandoverRecord))
+                            || (b.getStatus() == BookingStatus.ACTIVE && b.getReturnTime() != null)
+                            || hasReturnHandoverRecord
                             || hasReturnTicket;
                 })
                 .peek(b -> {
                     if (b.getStatus() == BookingStatus.ACTIVE && supportTicketRepository != null) {
                         boolean hasReturnTicket = supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(b.getId())
                                 .stream()
+                                .filter(t -> t.getStatus() != TicketStatus.CLOSED)
                                 .anyMatch(t -> t.getCategory() == TicketCategory.RETURN_REFUND
-                                        || t.getCategory() == TicketCategory.RETURN_EXPIRED
-                                        || (t.getTitle() != null && t.getTitle().toLowerCase().contains("trả kho"))
-                                        || (t.getDescription() != null && t.getDescription().toLowerCase().contains("trả kho")));
+                                        || t.getCategory() == TicketCategory.RETURN_EXPIRED);
                         if (hasReturnTicket) {
                             b.setStatus(BookingStatus.CHECKOUT_REQUESTED);
                             bookingRepository.save(b);

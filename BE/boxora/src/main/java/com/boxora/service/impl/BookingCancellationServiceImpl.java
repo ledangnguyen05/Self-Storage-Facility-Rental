@@ -99,6 +99,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 ? policy.getCancellationPartialRefundHours() : 48;
         double partialRefundPercent = (policy != null && policy.getCancellationPartialRefundPercent() != null)
                 ? policy.getCancellationPartialRefundPercent() : 70.0;
+        double after48hPercent = (policy != null) ? policy.resolveAfter48hRefundPercent() : 50.0;
 
         String unitCode = booking.getStorageUnit() != null ? booking.getStorageUnit().getUnitCode() : null;
         BigDecimal depositPaid = booking.getDepositPaid() != null ? booking.getDepositPaid() : BigDecimal.ZERO;
@@ -113,7 +114,8 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         LocalDateTime bookingCreatedAt = booking.getCreatedAt() != null ? booking.getCreatedAt() : now;
         Duration durationSinceBooking = Duration.between(bookingCreatedAt, now);
         long hoursSinceBooking = Math.max(0, durationSinceBooking.toHours());
-        String timeRemainingLabel = formatBookingCancellationTimeLabel(durationSinceBooking, hoursSinceBooking, fullRefundHours, partialRefundHours);
+        String timeRemainingLabel = formatBookingCancellationTimeLabel(
+                durationSinceBooking, hoursSinceBooking, fullRefundHours, partialRefundHours, partialRefundPercent, after48hPercent);
 
         // Nếu booking chưa thanh toán cọc trực tuyến (depositPaid == 0) hoặc ở trạng thái PENDING_CONTACT / PENDING_PAYMENT / IN_PERSON:
         boolean hasPaidDeposit = depositPaid != null && depositPaid.compareTo(BigDecimal.ZERO) > 0;
@@ -143,6 +145,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                     .penaltyAmount(BigDecimal.ZERO)
                     .policyDescription("Đơn đặt giữ chỗ trả sau tại cơ sở (0 ₫ hôm nay). Hủy đơn không phát sinh chi phí và không có hoàn cọc.")
                     .refundable(false)
+                    .cancellationFullRefundHours(fullRefundHours)
+                    .cancellationPartialRefundHours(partialRefundHours)
+                    .cancellationPartialRefundPercent(partialRefundPercent)
+                    .cancellationAfter48hRefundPercent(after48hPercent)
                     .build();
         }
 
@@ -161,7 +167,7 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             penaltyAmount = BigDecimal.ZERO;
             policyDescription = String.format("Mốc 1: Hủy trong vòng %d giờ kể từ thời gian đặt kho. Hoàn 100%% tiền cọc và 100%% tiền thuê kho đã thanh toán.", fullRefundHours);
         } else if (hoursSinceBooking <= partialRefundHours) {
-            // MỐC 2: Từ 24h đến 48h kể từ thời gian đặt kho -> Hoàn 70% tiền cọc
+            // MỐC 2: Từ 24h đến 48h kể từ thời gian đặt kho -> Hoàn % tiền cọc theo cấu hình cơ sở
             milestoneStage = "STAGE_2_PARTIAL_REFUND";
             refundPercentage = partialRefundPercent;
             depositRefund = depositPaid.multiply(BigDecimal.valueOf(partialRefundPercent / 100.0))
@@ -172,7 +178,6 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
         } else {
             // MỐC 3: Quá 48h kể từ thời gian đặt kho -> Hoàn % tiền cọc theo cấu hình cơ sở (mặc định 50%)
             milestoneStage = "STAGE_3_OVER_48H_REFUND";
-            double after48hPercent = (policy != null) ? policy.resolveAfter48hRefundPercent() : 50.0;
             refundPercentage = after48hPercent;
             depositRefund = depositPaid.multiply(BigDecimal.valueOf(after48hPercent / 100.0))
                     .setScale(2, RoundingMode.HALF_UP);
@@ -205,6 +210,10 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
                 .penaltyAmount(penaltyAmount)
                 .policyDescription(policyDescription)
                 .refundable(refundable)
+                .cancellationFullRefundHours(fullRefundHours)
+                .cancellationPartialRefundHours(partialRefundHours)
+                .cancellationPartialRefundPercent(partialRefundPercent)
+                .cancellationAfter48hRefundPercent(after48hPercent)
                 .build();
     }
 
@@ -731,12 +740,21 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     }
 
     private FacilityPolicy getFacilityPolicy(Booking booking) {
+        UUID facilityId = null;
         if (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null) {
-            return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getStorageUnit().getFacility().getId())
-                    .orElse(null);
+            facilityId = booking.getStorageUnit().getFacility().getId();
+        } else if (booking.getFacility() != null) {
+            facilityId = booking.getFacility().getId();
+        } else if (rentalContractRepository != null && booking.getId() != null) {
+            RentalContract contract = rentalContractRepository.findByBookingId(booking.getId()).orElse(null);
+            if (contract != null && contract.getFacility() != null) {
+                facilityId = contract.getFacility().getId();
+            }
         }
-        if (booking.getFacility() != null) {
-            return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(booking.getFacility().getId())
+        if (facilityId != null) {
+            final UUID resolvedFacilityId = facilityId;
+            return facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(resolvedFacilityId)
+                    .or(() -> facilityPolicyRepository.findByFacility_Id(resolvedFacilityId))
                     .orElse(null);
         }
         return null;
@@ -769,7 +787,14 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
     /**
      * Định dạng nhãn thời gian tính từ khi đặt kho phục vụ hiển thị chính sách hủy:
      */
-    private String formatBookingCancellationTimeLabel(Duration durationSinceBooking, long hoursSinceBooking, int fullRefundHours, int partialRefundHours) {
+    private String formatBookingCancellationTimeLabel(
+            Duration durationSinceBooking,
+            long hoursSinceBooking,
+            int fullRefundHours,
+            int partialRefundHours,
+            double partialRefundPercent,
+            double after48hPercent
+    ) {
         if (hoursSinceBooking < 1) {
             long minutes = Math.max(1, durationSinceBooking.toMinutes());
             return String.format("Đã đặt kho %d phút trước (Trong khung %dh đầu - Hoàn 100%% cọc)", minutes, fullRefundHours);
@@ -778,14 +803,14 @@ public class BookingCancellationServiceImpl implements BookingCancellationServic
             return String.format("Đã đặt kho %d giờ (Trong khung %dh đầu - Hoàn 100%% cọc)", hoursSinceBooking, fullRefundHours);
         }
         if (hoursSinceBooking <= partialRefundHours) {
-            return String.format("Đã đặt kho %d giờ (Khung %dh - %dh - Hoàn 70%% cọc)", hoursSinceBooking, fullRefundHours, partialRefundHours);
+            return String.format("Đã đặt kho %d giờ (Khung %dh - %dh - Hoàn %.0f%% cọc)", hoursSinceBooking, fullRefundHours, partialRefundHours, partialRefundPercent);
         }
         long days = durationSinceBooking.toDays();
         long remainingHours = hoursSinceBooking % 24;
         if (days >= 1) {
-            return String.format("Đã đặt kho %d ngày %d giờ (Quá %dh - Hoàn 50%% cọc)", days, remainingHours, partialRefundHours);
+            return String.format("Đã đặt kho %d ngày %d giờ (Quá %dh - Hoàn %.0f%% cọc)", days, remainingHours, partialRefundHours, after48hPercent);
         }
-        return String.format("Đã đặt kho %d giờ (Quá %dh - Hoàn 50%% cọc)", hoursSinceBooking, partialRefundHours);
+        return String.format("Đã đặt kho %d giờ (Quá %dh - Hoàn %.0f%% cọc)", hoursSinceBooking, partialRefundHours, after48hPercent);
     }
 
     /**

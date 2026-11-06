@@ -335,6 +335,10 @@ export interface BookingCancellationPreview {
   penaltyAmount: number
   policyDescription: string
   refundable: boolean
+  cancellationFullRefundHours?: number
+  cancellationPartialRefundHours?: number
+  cancellationPartialRefundPercent?: number
+  cancellationAfter48hRefundPercent?: number
 }
 
 export interface BookingCancelResponse {

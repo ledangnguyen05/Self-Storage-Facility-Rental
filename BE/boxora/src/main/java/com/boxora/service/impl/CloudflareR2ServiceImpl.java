@@ -45,13 +45,13 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
             "jpg", "jpeg", "png", "webp", "gif"
     );
     private static final Set<String> ALLOWED_IMAGE_EXTENSIONS = Set.of(
-            "jpg", "jpeg", "png", "webp", "gif", "pdf"
+            "jpg", "jpeg", "png", "webp", "gif", "svg", "pdf"
     );
     private static final Set<String> ALLOWED_STRICT_IMAGE_MIME_TYPES = Set.of(
             "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "application/octet-stream"
     );
     private static final Set<String> ALLOWED_UPLOAD_MIME_TYPES = Set.of(
-            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "application/pdf", "application/octet-stream"
+            "image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif", "image/svg+xml", "application/pdf", "application/octet-stream"
     );
 
     @Override
@@ -349,6 +349,10 @@ public class CloudflareR2ServiceImpl implements CloudflareR2Service {
                     && header[3] == '8'
                     && (header[4] == '7' || header[4] == '9')
                     && header[5] == 'a';
+            case "svg" -> {
+                String headStr = new String(header, java.nio.charset.StandardCharsets.UTF_8).trim().toLowerCase(Locale.ROOT);
+                yield headStr.startsWith("<svg") || headStr.startsWith("<?xml") || headStr.startsWith("<!doctype");
+            }
             default -> false;
         };
     }

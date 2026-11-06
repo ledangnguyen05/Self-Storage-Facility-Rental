@@ -447,7 +447,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         facilityId: currentFacilityId
       })
 
-      if (data && data.length > 0) {
+      if (Array.isArray(data)) {
         const mapped: ReturnCaseItem[] = data.map((item) => ({
           id: item.id || `RET-${item.bookingCode}`,
           bookingId: item.bookingId,
@@ -544,111 +544,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
         setSelectedCaseId((prev) => (prev && mapped.some((c) => c.id === prev) ? prev : mapped[0]?.id || ''))
         if (showToast) toast.success(`Đã đồng bộ ${mapped.length} hồ sơ trả kho từ máy chủ!`)
       } else {
-        // Fallback to synthesizing activeRentals or rawReturnRequests if database has no records yet
-        const fallbackList: ReturnCaseItem[] = []
-        if (rawReturnRequests && rawReturnRequests.length > 0) {
-          rawReturnRequests.forEach((req, idx) => {
-            fallbackList.push({
-              id: req.id || `RET-REQ-${idx}`,
-              bookingId: req.bookingId || req.id,
-              bookingCode: req.bookingCode || `BX-${idx}`,
-              contractCode: req.contractCode || `CTR-${idx}`,
-              unitCode: req.unitCode || 'TD-B102',
-              customerName: req.customerName || 'Khách hàng',
-              customerPhone: req.customerPhone || 'Theo hồ sơ',
-              customerEmail: req.customerEmail || '',
-              facilityId: req.facilityId || currentFacilityId,
-              facilityName: req.facilityName || facilityName,
-              requestDate: req.requestDate || new Date().toISOString().split('T')[0],
-              expectedReturnDate: req.expectedReturnDate || '',
-              inspectionDate: req.inspectionDate || '',
-              reason: req.reason || 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-              bankName: req.bankName || '',
-              bankAccountNumber: req.bankAccountNumber || '',
-              bankAccountName: req.bankAccountName || '',
-              depositAmount: req.depositAmount || req.depositPaid || 3500000,
-              outstandingDebt: req.outstandingDebt || 0,
-              cleaningFee: 0,
-              damageFee: 0,
-              doorFee: 0,
-              smartLockFee: 0,
-              smartLockIssueType: 'NORMAL_WEAR',
-              lostCardFee: 0,
-              status: normalizeStatus(req.status),
-              inspectorName: 'Phan Van Hau',
-              historyNotes: ['Khách hàng gửi yêu cầu qua Boxora Portal'],
-              doorPassed: true,
-              doorNotes: 'Đóng mở êm ái, ray dẫn thẳng, không móp méo cong vênh.',
-              doorFeeInput: 0,
-              cleanlinessPassed: true,
-              cleanlinessNotes: 'Đã quét sạch rác, bề mặt sàn khô ráo, không ẩm mốc.',
-              cleaningFeeInput: 0,
-              damagePassed: true,
-              damageNotes: 'Vách ngăn composite, sàn và trần nguyên vẹn, không khoan đục.',
-              damageFeeInput: 0,
-              smartLockPassed: true,
-              smartLockNotes: 'Khóa thông minh IoT nhạy, chốt khóa an toàn, pin 94%.',
-              smartLockFeeInput: 0,
-              assetsClearedPassed: true,
-              assetsClearedNotes: 'Đã lấy toàn bộ thùng đồ & tài sản ra khỏi kho.',
-              photoUrls: [],
-              envPassed: true,
-              envNotes: 'Cảm biến IoT: 23°C • Độ ẩm 46% RH (Đạt tiêu chuẩn bảo quản)'
-            })
-          })
-        } else if (activeRentals && activeRentals.length > 0) {
-          activeRentals.slice(0, 5).forEach((r, idx) => {
-            fallbackList.push({
-              id: `RET-ACT-${r.id}`,
-              bookingId: r.id,
-              bookingCode: r.bookingCode || `BX-2026-${idx}`,
-              contractCode: r.contractCode || `CTR-${r.bookingCode || r.id}`,
-              unitCode: r.unitCode || `TD-A10${idx + 1}`,
-              customerName: r.customerName || 'Khách thuê',
-              customerPhone: r.customerPhone || '0987654321',
-              customerEmail: r.customerEmail || 'khach@gmail.com',
-              facilityId: r.facilityId || currentFacilityId,
-              facilityName: r.facilityName || facilityName,
-              requestDate: new Date().toISOString().split('T')[0],
-              expectedReturnDate: r.endDate || '',
-              inspectionDate: '',
-              reason: 'Đến hạn thanh lý hợp đồng & nghiệm thu hoàn cọc',
-              bankName: (r as any).bankName || '',
-              bankAccountNumber: (r as any).bankAccountNumber || '',
-              bankAccountName: (r.customerName || 'KHACH THUE').toUpperCase(),
-              depositAmount: r.depositPaid || r.depositAmount || 3000000,
-              outstandingDebt: 0,
-              cleaningFee: 0,
-              damageFee: 0,
-              doorFee: 0,
-              smartLockFee: 0,
-              smartLockIssueType: 'NORMAL_WEAR',
-              lostCardFee: 0,
-              status: 'RETURN_REQUESTED',
-              inspectorName: 'Phan Van Hau',
-              historyNotes: ['Hệ thống ghi nhận đơn đến hạn trả kho'],
-              doorPassed: true,
-              doorNotes: INSPECTION_DEFAULT_NOTES.door,
-              doorFeeInput: 0,
-              cleanlinessPassed: true,
-              cleanlinessNotes: INSPECTION_DEFAULT_NOTES.cleanliness,
-              cleaningFeeInput: 0,
-              damagePassed: true,
-              damageNotes: INSPECTION_DEFAULT_NOTES.damage,
-              damageFeeInput: 0,
-              smartLockPassed: true,
-              smartLockNotes: INSPECTION_DEFAULT_NOTES.smartLock,
-              smartLockFeeInput: 0,
-              assetsClearedPassed: true,
-              assetsClearedNotes: INSPECTION_DEFAULT_NOTES.assetsCleared,
-              photoUrls: [],
-              envPassed: true,
-              envNotes: INSPECTION_DEFAULT_NOTES.env
-            })
-          })
-        }
-        setReturnCases(fallbackList)
-        setSelectedCaseId((prev) => (prev && fallbackList.some((c) => c.id === prev) ? prev : fallbackList[0]?.id || ''))
+        setReturnCases([])
+        setSelectedCaseId('')
       }
     } catch (err: any) {
       console.warn('Could not load return cases from backend:', err)

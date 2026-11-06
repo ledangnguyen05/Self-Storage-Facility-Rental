@@ -698,7 +698,13 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
                         </div>
                         <div className="text-[10.5px] font-mono text-slate-600 mt-1 flex items-center gap-1.5 flex-wrap">
                           <span className="font-bold text-slate-800">{b.bookingCode}</span>
-                          
+                          {b.contractCode ? (
+                            <span className="text-slate-500 font-semibold">• HĐ: {b.contractCode}</span>
+                          ) : b.createdAt ? (
+                            <span className="text-slate-400">
+                              • {new Date(b.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          ) : null}
                         </div>
                       </td>
 
