@@ -34,6 +34,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -120,7 +121,26 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
 
         LocalDate oldEndDate = contract.getEndDate();
         LocalDate newEndDate = oldEndDate.plusMonths(cycleMonths);
-        BigDecimal renewalFee = contract.getMonthlyFee().multiply(BigDecimal.valueOf(cycleMonths));
+
+        FacilityPolicy policy = contract.getFacility() != null && contract.getFacility().getId() != null
+                ? facilityPolicyRepository.findByFacility_Id(contract.getFacility().getId()).orElse(null)
+                : null;
+        BigDecimal discountPercent = BigDecimal.ZERO;
+        if (cycleMonths >= 24) {
+            discountPercent = BigDecimal.valueOf(20.0);
+        } else if (cycleMonths >= 12) {
+            discountPercent = policy != null ? policy.resolveDiscount12MonthPercent() : BigDecimal.valueOf(15.0);
+        } else if (cycleMonths >= 6) {
+            discountPercent = policy != null ? policy.resolveDiscount6MonthPercent() : BigDecimal.valueOf(10.0);
+        } else if (cycleMonths >= 3) {
+            discountPercent = policy != null ? policy.resolveDiscount3MonthPercent() : BigDecimal.valueOf(5.0);
+        }
+
+        BigDecimal monthlyFee = contract.getMonthlyFee() != null ? contract.getMonthlyFee() : BigDecimal.ZERO;
+        BigDecimal rawFee = monthlyFee.multiply(BigDecimal.valueOf(cycleMonths));
+        BigDecimal discountAmount = rawFee.multiply(discountPercent)
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP);
+        BigDecimal renewalFee = rawFee.subtract(discountAmount);
 
         ContractRenewalStatus initialStatus = ContractRenewalStatus.PENDING_REVIEW;
 
@@ -141,15 +161,18 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
                 ActivityAction.RENEWAL_REQUEST,
                 "ContractRenewal",
                 renewal.getId(),
-                "Yeu cau gia han hop dong " + contract.getContractCode() + " them " + cycleMonths + " thang, so tien: " + renewalFee,
+                "Yeu cau gia han hop dong " + contract.getContractCode() + " them " + cycleMonths + " thang, so tien: " + renewalFee + (discountPercent.compareTo(BigDecimal.ZERO) > 0 ? " (chiet khau " + discountPercent.stripTrailingZeros().toPlainString() + "%)" : ""),
                 null,
                 renewal.getId()
         );
 
+        String discountNote = discountPercent.compareTo(BigDecimal.ZERO) > 0
+                ? " (đã áp dụng chiết khấu " + discountPercent.stripTrailingZeros().toPlainString() + "%)"
+                : "";
         sendCustomerRenewalNotification(
                 contract,
                 "Yêu cầu gia hạn hợp đồng " + contract.getContractCode(),
-                "Hệ thống Boxora đã tiếp nhận yêu cầu gia hạn thêm " + cycleMonths + " tháng (đến ngày " + newEndDate.format(DATE_FMT) + "). Yêu cầu đang được gửi tới Quản lý cơ sở để xem xét phê duyệt."
+                "Hệ thống Boxora đã tiếp nhận yêu cầu gia hạn thêm " + cycleMonths + " tháng (đến ngày " + newEndDate.format(DATE_FMT) + ") với tổng phí " + renewalFee.toPlainString() + " VND" + discountNote + ". Yêu cầu đang được gửi tới Quản lý cơ sở để xem xét phê duyệt."
         );
 
         return contractRenewalMapper.toResponse(renewal);

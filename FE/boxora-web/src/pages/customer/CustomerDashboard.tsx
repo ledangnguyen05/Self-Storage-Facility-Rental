@@ -1999,7 +1999,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   } | null>(null)
   const [renewMonths, setRenewMonths] = useState<number>(3)
   const [renewMonthlyPrice, setRenewMonthlyPrice] = useState<number>(1500000)
-  const [renewDiscountPercent, setRenewDiscountPercent] = useState<number>(0)
   const [renewOtherFee, setRenewOtherFee] = useState<number>(0)
   const [renewNotes, setRenewNotes] = useState<string>('')
   const [renewSuccess, setRenewSuccess] = useState<boolean>(false)
@@ -2638,12 +2637,30 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return Date.now() > latestEnd.getTime()
   }
 
+  const getRenewDiscountPercent = (months: number): number => {
+    if (months >= 24) return 20
+    if (months >= 12) return 15
+    if (months >= 6) return 10
+    if (months >= 3) return 5
+    return 0
+  }
+
+  const renewDiscountPercent = useMemo(() => {
+    return getRenewDiscountPercent(renewMonths)
+  }, [renewMonths])
+
+  const renewRawTotal = useMemo(() => {
+    return (renewMonthlyPrice || 0) * (renewMonths || 1)
+  }, [renewMonthlyPrice, renewMonths])
+
+  const renewDiscountAmount = useMemo(() => {
+    return Math.round(renewRawTotal * (renewDiscountPercent / 100))
+  }, [renewRawTotal, renewDiscountPercent])
+
   const totalRenewEstimate = useMemo(() => {
-    const base = (renewMonthlyPrice || 0) * (renewMonths || 1)
-    const discountAmt = base * ((renewDiscountPercent || 0) / 100)
-    const total = base - discountAmt + (renewOtherFee || 0)
+    const total = renewRawTotal - renewDiscountAmount + (renewOtherFee || 0)
     return Math.max(0, Math.round(total))
-  }, [renewMonthlyPrice, renewMonths, renewDiscountPercent, renewOtherFee])
+  }, [renewRawTotal, renewDiscountAmount, renewOtherFee])
 
   // Tổng hợp lịch sử thao tác kho, lịch sử gia hạn kho, kích hoạt hợp đồng & thông báo hệ thống
   const combinedUnitActivityHistory = useMemo<CustomerUnitActivityLog[]>(() => {
@@ -3623,7 +3640,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
     setRenewMonths(3)
     setRenewMonthlyPrice(numFee)
-    setRenewDiscountPercent(0)
     setRenewOtherFee(0)
     setRenewNotes('')
     setRenewSuccess(false)
@@ -8423,24 +8439,52 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   <div className="space-y-3 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
                     {/* Thời gian gia hạn options */}
                     <div>
-                      <label className="text-[11px] font-bold text-slate-600 block mb-1.5 uppercase tracking-wider">
-                        Thời gian gia hạn
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                          Thời gian gia hạn
+                        </label>
+                        {renewDiscountPercent > 0 && (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            Ưu đãi: Giảm {renewDiscountPercent}%
+                          </span>
+                        )}
+                      </div>
                       <div className="grid grid-cols-4 gap-2">
-                        {[1, 3, 6, 12].map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            onClick={() => setRenewMonths(m)}
-                            className={`py-2 px-1 text-center rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                              renewMonths === m
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
-                            }`}
-                          >
-                            {m} tháng
-                          </button>
-                        ))}
+                        {[1, 3, 6, 12].map((m) => {
+                          const disc = getRenewDiscountPercent(m)
+                          const isSelected = renewMonths === m
+                          return (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => setRenewMonths(m)}
+                              className={`py-2 px-1 text-center rounded-lg text-xs font-bold border transition-all cursor-pointer flex flex-col items-center justify-center ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs ring-2 ring-blue-300'
+                                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+                              }`}
+                            >
+                              <span>{m} tháng</span>
+                              {disc > 0 ? (
+                                <span
+                                  className={`text-[10px] font-semibold mt-0.5 ${
+                                    isSelected ? 'text-amber-200' : 'text-emerald-600'
+                                  }`}
+                                >
+                                  -{disc}%
+                                </span>
+                              ) : (
+                                <span
+                                  className={`text-[10px] font-normal mt-0.5 ${
+                                    isSelected ? 'text-blue-100' : 'text-slate-400'
+                                  }`}
+                                >
+                                  Gốc
+                                </span>
+                              )}
+                            </button>
+                          )
+                        })}
                       </div>
                     </div>
 
@@ -8471,22 +8515,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                       </div>
                     </div>
 
-                    {/* Đơn giá cố định theo hợp đồng gốc & Tiền cọc giữ nguyên */}
+                    {/* Tiền cọc lưu ký & Ưu đãi chiết khấu kỳ hạn (Đã xóa Đơn giá thuê theo hợp đồng cố định) */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-                        <span className="text-[10px] font-bold text-slate-500 block uppercase">
-                          Đơn giá thuê theo hợp đồng
-                        </span>
-                        <span className="font-mono text-xs font-bold text-slate-900 mt-0.5 block">
-                          {Number(renewMonthlyPrice || 0).toLocaleString('vi-VN')} ₫ / tháng (Cố định)
-                        </span>
-                      </div>
                       <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
                         <span className="text-[10px] font-bold text-slate-500 block uppercase">
                           Tiền cọc lưu ký
                         </span>
                         <span className="font-mono text-xs font-bold text-emerald-700 mt-0.5 block">
                           Giữ nguyên từ HĐ gốc (0 ₫ thu thêm)
+                        </span>
+                      </div>
+                      <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200">
+                        <span className="text-[10px] font-bold text-emerald-800 block uppercase">
+                          Ưu đãi chiết khấu kỳ hạn
+                        </span>
+                        <span className="font-mono text-xs font-bold text-emerald-700 mt-0.5 block">
+                          {renewDiscountPercent > 0
+                            ? `Giảm ${renewDiscountPercent}% (-${renewDiscountAmount.toLocaleString('vi-VN')} ₫)`
+                            : 'Không áp dụng (kỳ hạn < 3 tháng)'}
                         </span>
                       </div>
                     </div>
@@ -8508,15 +8554,34 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     {/* Tổng tiền dự kiến */}
                     <div className="mt-2 p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <div>
-                        <span className="text-xs font-bold text-slate-900 block">
-                          Tổng phí Phụ lục gia hạn ({renewMonths} tháng)
-                        </span>
-                        <span className="text-[10px] text-slate-500">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 block">
+                            Tổng phí Phụ lục gia hạn ({renewMonths} tháng)
+                          </span>
+                          {renewDiscountPercent > 0 && (
+                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 font-bold text-[10px] rounded border border-emerald-200">
+                              Đã giảm {renewDiscountPercent}%
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-500 block mt-0.5">
                           Thanh toán sau khi Quản lý duyệt và Quý khách ký số Phụ lục gia hạn
                         </span>
                       </div>
-                      <div className="font-mono text-xl sm:text-2xl font-extrabold text-blue-700">
-                        {totalRenewEstimate.toLocaleString('vi-VN')} ₫
+                      <div className="text-right">
+                        {renewDiscountPercent > 0 && (
+                          <div className="flex items-center justify-end gap-1.5 text-xs mb-0.5">
+                            <span className="text-slate-400 line-through font-mono">
+                              {renewRawTotal.toLocaleString('vi-VN')} ₫
+                            </span>
+                            <span className="text-emerald-700 font-bold text-[11px]">
+                              (-{renewDiscountAmount.toLocaleString('vi-VN')} ₫)
+                            </span>
+                          </div>
+                        )}
+                        <div className="font-mono text-xl sm:text-2xl font-extrabold text-blue-700">
+                          {totalRenewEstimate.toLocaleString('vi-VN')} ₫
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -206,6 +206,39 @@ class ContractRenewalServiceTest {
     }
 
     @Test
+    @DisplayName("requestRenewal should apply tiered duration discounts (3m=5%, 6m=10%, 12m=15%, 1m=0%)")
+    void testRequestRenewalAppliesTieredDiscounts() {
+        when(rentalContractRepository.findById(contractId)).thenReturn(Optional.of(mockContract));
+        mockContract.setMonthlyFee(new BigDecimal("1250000"));
+
+        org.mockito.ArgumentCaptor<ContractRenewal> captor = org.mockito.ArgumentCaptor.forClass(ContractRenewal.class);
+        when(contractRenewalRepository.save(captor.capture())).thenAnswer(inv -> inv.getArgument(0));
+        when(contractRenewalMapper.toResponse(any())).thenAnswer(inv -> {
+            ContractRenewal cr = inv.getArgument(0);
+            return ContractRenewalResponse.builder()
+                    .cycleMonths(cr.getCycleMonths())
+                    .renewalFee(cr.getRenewalFee())
+                    .build();
+        });
+
+        // 1 month: 1,250,000 * 1 = 1,250,000 (0% discount)
+        contractRenewalService.requestRenewal(contractId, 1, "1 thang");
+        assertThat(captor.getValue().getRenewalFee()).isEqualByComparingTo(new BigDecimal("1250000"));
+
+        // 3 months: 1,250,000 * 3 = 3,750,000 - 5% (187,500) = 3,562,500
+        contractRenewalService.requestRenewal(contractId, 3, "3 thang");
+        assertThat(captor.getValue().getRenewalFee()).isEqualByComparingTo(new BigDecimal("3562500"));
+
+        // 6 months: 1,250,000 * 6 = 7,500,000 - 10% (750,000) = 6,750,000
+        contractRenewalService.requestRenewal(contractId, 6, "6 thang");
+        assertThat(captor.getValue().getRenewalFee()).isEqualByComparingTo(new BigDecimal("6750000"));
+
+        // 12 months: 1,250,000 * 12 = 15,000,000 - 15% (2,250,000) = 12,750,000
+        contractRenewalService.requestRenewal(contractId, 12, "12 thang");
+        assertThat(captor.getValue().getRenewalFee()).isEqualByComparingTo(new BigDecimal("12750000"));
+    }
+
+    @Test
     @DisplayName("requestRenewal should throw UNIT_OVERDUE_LOCKED when unit is sealed")
     void testRequestRenewalFailsWhenUnitIsSealed() {
         mockContract.setStatus(RentalContractStatus.OVERDUE_LOCKED);
