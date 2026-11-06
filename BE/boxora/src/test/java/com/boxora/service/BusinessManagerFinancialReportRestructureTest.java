@@ -771,4 +771,64 @@ class BusinessManagerFinancialReportRestructureTest {
         // RefundBreakdown: returnCompensationAmount = 2.250.000
         assertThat(report.getRefundBreakdown().getReturnCompensationAmount()).isEqualByComparingTo("2250000");
     }
+
+    @Test
+    @DisplayName("TC14: Hủy đơn hỗn hợp (tiền thuê + cọc), FM đã chuyển khoản (AWAITING_CUSTOMER_CONFIRMATION) -> Tiền cọc đang giữ giảm đúng số cọc hoàn, NetRev chỉ trừ phần tiền thuê")
+    void tc14_cancelledBookingRefundAwaitingCustomerConfirmation_decreasesDepositsHeldAndDeductsRentalPortion() {
+        LocalDate from = LocalDate.of(2026, 11, 1);
+        LocalDate to = LocalDate.of(2026, 11, 30);
+        LocalDateTime fromDt = from.atStartOfDay();
+        LocalDateTime toDt = to.atTime(LocalTime.MAX);
+
+        when(paymentRepository.sumSystemRevenue(fromDt, toDt, null)).thenReturn(
+                new SystemRevenueSummaryResponse(
+                        new BigDecimal("1347500"), // totalRevenue
+                        new BigDecimal("350000"),  // depositRevenue
+                        new BigDecimal("997500"),  // rentalFeeRevenue
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        BigDecimal.ZERO,
+                        new BigDecimal("1347500"),
+                        2L
+                )
+        );
+        when(facilityRepository.findAll()).thenReturn(List.of(facilityA));
+        when(paymentRepository.sumRevenueByFacility(fromDt, toDt, null)).thenReturn(List.of());
+        when(paymentRepository.sumRevenueByMonth(fromDt, toDt, null)).thenReturn(Collections.emptyList());
+        when(paymentRepository.countPaidPaymentsByMethod(fromDt, toDt, null)).thenReturn(Collections.emptyList());
+
+        Booking booking = Booking.builder()
+                .facility(facilityA)
+                .bookingCode("BX-2026-5359")
+                .depositPaid(new BigDecimal("350000"))
+                .status(BookingStatus.CANCELLED)
+                .build();
+        booking.setId(UUID.randomUUID());
+        when(bookingRepository.findAll()).thenReturn(List.of(booking));
+        when(rentalContractRepository.findAll()).thenReturn(Collections.emptyList());
+
+        RefundRequest cancellationRefund = RefundRequest.builder()
+                .booking(booking)
+                .requestedAmount(new BigDecimal("1347500"))
+                .finalRefundAmount(new BigDecimal("1347500"))
+                .deductionAmount(BigDecimal.ZERO)
+                .status(RefundStatus.AWAITING_CUSTOMER_CONFIRMATION)
+                .reason("Hoàn tiền khi hủy đơn BX-2026-5359. Tiền thuê hoàn: 997500.00 đ, Cọc: 350000.00 đ (Khấu trừ: 0 đ). Lý do: Cần đổi sang kích thước ngăn kho khác")
+                .facility(facilityA)
+                .build();
+        cancellationRefund.setCreatedAt(LocalDateTime.of(2026, 11, 6, 13, 42));
+        when(refundRequestRepository.findAll()).thenReturn(List.of(cancellationRefund));
+
+        RevenueReportResponse report = reportService.getRevenueReport(from, to, null);
+
+        // 1. Tiền cọc đang giữ: Giảm từ 350.000 về 0 vì đã hoàn tiền chuyển khoản xong
+        assertThat(report.getSystemSummary().getDepositsHeld()).isEqualByComparingTo("0");
+
+        // 2. Doanh thu thuần (Net Revenue): 997.500 - 997.500 (chỉ trừ phần tiền thuê, KHÔNG trừ 1.347.500) = 0
+        assertThat(report.getSystemSummary().getNetRevenue()).isEqualByComparingTo("0");
+
+        // 3. Hoàn tiền đã chi trả (Group A): 1.347.500
+        assertThat(report.getSystemSummary().getRefundedAmount()).isEqualByComparingTo("1347500");
+    }
 }

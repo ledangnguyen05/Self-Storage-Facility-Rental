@@ -213,22 +213,21 @@ public class ReportServiceImpl implements ReportService {
             UUID facId = r.getFacility() != null ? r.getFacility().getId() : null;
             boolean isRentalRefund = isRentalFeeRefund(r);
 
-            if (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
-                    || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
-                    || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED) {
+            if (isDisbursedRefund(r.getStatus())) {
                 if (inPeriod) {
                     completedRefundAmount = completedRefundAmount.add(amt);
                     completedRefundCount++;
-                    if (isRentalRefund) {
-                        completedRentalRefundAmount = completedRentalRefundAmount.add(amt);
-                        if (facId != null) facilityCompletedRentalRefunds.merge(facId, amt, BigDecimal::add);
+                    BigDecimal rentalRefund = resolveRentalRefundAmount(r);
+                    if (rentalRefund.compareTo(BigDecimal.ZERO) > 0) {
+                        completedRentalRefundAmount = completedRentalRefundAmount.add(rentalRefund);
+                        if (facId != null) facilityCompletedRentalRefunds.merge(facId, rentalRefund, BigDecimal::add);
                     }
                     if (facId != null) facilityCompletedRefunds.merge(facId, amt, BigDecimal::add);
 
                     String mKey = String.format(Locale.ROOT, "%04d-%02d", refTime.getYear(), refTime.getMonthValue());
                     monthlyCompletedRefunds.merge(mKey, amt, BigDecimal::add);
-                    if (isRentalRefund) {
-                        monthlyCompletedRentalRefunds.merge(mKey, amt, BigDecimal::add);
+                    if (rentalRefund.compareTo(BigDecimal.ZERO) > 0) {
+                        monthlyCompletedRentalRefunds.merge(mKey, rentalRefund, BigDecimal::add);
                     }
                 }
             } else if (r.getStatus() == com.boxora.enums.RefundStatus.PENDING_REVIEW) {
@@ -236,8 +235,7 @@ public class ReportServiceImpl implements ReportService {
                 pendingReviewCount++;
                 if (facId != null) facilityPendingRefunds.merge(facId, amt, BigDecimal::add);
             } else if (r.getStatus() == com.boxora.enums.RefundStatus.APPROVED
-                    || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSING_TRANSFER
-                    || r.getStatus() == com.boxora.enums.RefundStatus.AWAITING_CUSTOMER_CONFIRMATION) {
+                    || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSING_TRANSFER) {
                 processingTransferAmount = processingTransferAmount.add(amt);
                 processingTransferCount++;
                 if (facId != null) facilityPendingRefunds.merge(facId, amt, BigDecimal::add);
@@ -318,13 +316,10 @@ public class ReportServiceImpl implements ReportService {
 
             // Subtract completed deposit refunds for this contract/booking
             BigDecimal refundedForContract = allRefunds.stream()
-                    .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
-                            || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
-                            || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED))
-                    .filter(r -> !isRentalFeeRefund(r))
+                    .filter(r -> isDisbursedRefund(r.getStatus()))
                     .filter(r -> (r.getContract() != null && r.getContract().getId() != null && c.getId() != null && r.getContract().getId().equals(c.getId()))
                             || (c.getBooking() != null && c.getBooking().getId() != null && r.getBooking() != null && r.getBooking().getId() != null && r.getBooking().getId().equals(c.getBooking().getId())))
-                    .map(r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : BigDecimal.ZERO)
+                    .map(this::resolveDepositRefundAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             // Subtract approved deductions
@@ -337,10 +332,7 @@ public class ReportServiceImpl implements ReportService {
             }
 
             BigDecimal refundDeduction = allRefunds.stream()
-                    .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
-                            || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
-                            || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED))
-                    .filter(r -> !isRentalFeeRefund(r))
+                    .filter(r -> isDisbursedRefund(r.getStatus()))
                     .filter(r -> (r.getContract() != null && r.getContract().getId() != null && c.getId() != null && r.getContract().getId().equals(c.getId()))
                             || (c.getBooking() != null && c.getBooking().getId() != null && r.getBooking() != null && r.getBooking().getId() != null && r.getBooking().getId().equals(c.getBooking().getId())))
                     .map(r -> r.getDeductionAmount() != null ? r.getDeductionAmount() : BigDecimal.ZERO)
@@ -348,12 +340,15 @@ public class ReportServiceImpl implements ReportService {
             deductedForContract = deductedForContract.max(refundDeduction).min(initDeposit);
 
             BigDecimal held = initDeposit.subtract(refundedForContract).subtract(deductedForContract).max(BigDecimal.ZERO);
-            if (c.getStatus() == RentalContractStatus.TERMINATED) {
+            if (c.getStatus() == RentalContractStatus.TERMINATED || c.getStatus() == RentalContractStatus.CANCELLED) {
                 if (refundedForContract.add(deductedForContract).compareTo(BigDecimal.ZERO) > 0 || refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0) {
                     held = BigDecimal.ZERO;
                 }
-            } else if (c.getStatus() == RentalContractStatus.CANCELLED && (refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0)) {
-                held = BigDecimal.ZERO;
+            }
+            if (c.getBooking() != null && (c.getBooking().getStatus() == BookingStatus.CANCELLED || "REFUNDED".equalsIgnoreCase(c.getBooking().getPaymentStatus()))) {
+                if (refundedForContract.add(deductedForContract).compareTo(BigDecimal.ZERO) > 0 || refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0) {
+                    held = BigDecimal.ZERO;
+                }
             }
 
             if (held.compareTo(BigDecimal.ZERO) > 0) {
@@ -390,15 +385,24 @@ public class ReportServiceImpl implements ReportService {
 
             BigDecimal bDeposit = b.getDepositPaid();
             BigDecimal refundedForBooking = allRefunds.stream()
-                    .filter(r -> (r.getStatus() == com.boxora.enums.RefundStatus.COMPLETED
-                            || r.getStatus() == com.boxora.enums.RefundStatus.RECONCILED
-                            || r.getStatus() == com.boxora.enums.RefundStatus.PROCESSED))
-                    .filter(r -> !isRentalFeeRefund(r))
+                    .filter(r -> isDisbursedRefund(r.getStatus()))
                     .filter(r -> r.getBooking() != null && r.getBooking().getId() != null && b.getId() != null && b.getId().equals(r.getBooking().getId()))
-                    .map(r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : BigDecimal.ZERO)
+                    .map(this::resolveDepositRefundAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-            BigDecimal heldBooking = bDeposit.subtract(refundedForBooking).max(BigDecimal.ZERO);
+            BigDecimal refundDeduction = allRefunds.stream()
+                    .filter(r -> isDisbursedRefund(r.getStatus()))
+                    .filter(r -> r.getBooking() != null && r.getBooking().getId() != null && b.getId() != null && b.getId().equals(r.getBooking().getId()))
+                    .map(r -> r.getDeductionAmount() != null ? r.getDeductionAmount() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            BigDecimal heldBooking = bDeposit.subtract(refundedForBooking).subtract(refundDeduction).max(BigDecimal.ZERO);
+            if (b.getStatus() == BookingStatus.CANCELLED || "REFUNDED".equalsIgnoreCase(b.getPaymentStatus())) {
+                if (refundedForBooking.add(refundDeduction).compareTo(BigDecimal.ZERO) > 0 || refundedForBooking.add(refundDeduction).compareTo(bDeposit) >= 0) {
+                    heldBooking = BigDecimal.ZERO;
+                }
+            }
+
             if (heldBooking.compareTo(BigDecimal.ZERO) > 0) {
                 systemDepositsHeld = systemDepositsHeld.add(heldBooking);
                 if (facId != null) {
@@ -569,11 +573,81 @@ public class ReportServiceImpl implements ReportService {
                 .build();
     }
 
-    private boolean isRentalFeeRefund(com.boxora.entity.RefundRequest r) {
-        if (r == null) return false;
+    private static final java.util.regex.Pattern DEPOSIT_REFUND_PATTERN =
+            java.util.regex.Pattern.compile("Cọc:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*đ", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern RENTAL_REFUND_PATTERN =
+            java.util.regex.Pattern.compile("Tiền thuê hoàn:\\s*([0-9]+(?:\\.[0-9]+)?)\\s*đ", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private boolean isDisbursedRefund(com.boxora.enums.RefundStatus status) {
+        return status == com.boxora.enums.RefundStatus.AWAITING_CUSTOMER_CONFIRMATION
+                || status == com.boxora.enums.RefundStatus.PROCESSED
+                || status == com.boxora.enums.RefundStatus.RECONCILED
+                || status == com.boxora.enums.RefundStatus.COMPLETED;
+    }
+
+    private BigDecimal resolveDepositRefundAmount(com.boxora.entity.RefundRequest r) {
+        if (r == null) return BigDecimal.ZERO;
+        BigDecimal finalAmount = r.getFinalRefundAmount() != null ? r.getFinalRefundAmount()
+                : (r.getRequestedAmount() != null ? r.getRequestedAmount() : BigDecimal.ZERO);
+        if (finalAmount.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+
         String reason = (r.getReason() != null ? r.getReason() : "") + " " + (r.getProcessNotes() != null ? r.getProcessNotes() : "");
+
+        var depMatcher = DEPOSIT_REFUND_PATTERN.matcher(reason);
+        if (depMatcher.find()) {
+            try {
+                BigDecimal parsedDep = new BigDecimal(depMatcher.group(1));
+                return parsedDep.min(finalAmount);
+            } catch (Exception ignored) {
+            }
+        }
+
         String lower = reason.toLowerCase(Locale.ROOT);
-        return lower.contains("tiền thuê") || lower.contains("cước thuê") || lower.contains("rental_fee") || lower.contains("rental fee");
+        boolean pureRentalFee = (lower.contains("tiền thuê") || lower.contains("cước thuê") || lower.contains("rental_fee") || lower.contains("rental fee"))
+                && !lower.contains("cọc") && !lower.contains("deposit");
+        if (pureRentalFee) {
+            return BigDecimal.ZERO;
+        }
+
+        boolean isDepositReason = lower.contains("cọc") || lower.contains("deposit") || lower.contains("trả kho")
+                || lower.contains("checkout") || lower.contains("return");
+        if (isDepositReason) {
+            return finalAmount;
+        }
+
+        if (r.getBooking() != null && r.getBooking().getDepositPaid() != null && r.getBooking().getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+            BigDecimal depPaid = r.getBooking().getDepositPaid();
+            BigDecimal deduction = r.getDeductionAmount() != null ? r.getDeductionAmount() : BigDecimal.ZERO;
+            BigDecimal netDep = depPaid.subtract(deduction).max(BigDecimal.ZERO);
+            return netDep.min(finalAmount);
+        }
+
+        return finalAmount;
+    }
+
+    private BigDecimal resolveRentalRefundAmount(com.boxora.entity.RefundRequest r) {
+        if (r == null) return BigDecimal.ZERO;
+        BigDecimal finalAmount = r.getFinalRefundAmount() != null ? r.getFinalRefundAmount()
+                : (r.getRequestedAmount() != null ? r.getRequestedAmount() : BigDecimal.ZERO);
+        if (finalAmount.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+
+        String reason = (r.getReason() != null ? r.getReason() : "") + " " + (r.getProcessNotes() != null ? r.getProcessNotes() : "");
+
+        var rentMatcher = RENTAL_REFUND_PATTERN.matcher(reason);
+        if (rentMatcher.find()) {
+            try {
+                BigDecimal parsedRent = new BigDecimal(rentMatcher.group(1));
+                return parsedRent.min(finalAmount);
+            } catch (Exception ignored) {
+            }
+        }
+
+        BigDecimal depPortion = resolveDepositRefundAmount(r);
+        return finalAmount.subtract(depPortion).max(BigDecimal.ZERO);
+    }
+
+    private boolean isRentalFeeRefund(com.boxora.entity.RefundRequest r) {
+        return resolveRentalRefundAmount(r).compareTo(BigDecimal.ZERO) > 0;
     }
 
     private UUID extractFacilityId(com.boxora.entity.HandoverRecord h) {
