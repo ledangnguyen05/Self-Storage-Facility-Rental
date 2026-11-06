@@ -1,6 +1,6 @@
 import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { useOutletContext, useSearchParams, useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAuth, DEFAULT_PERMISSIONS_BY_ROLE } from '../../context/AuthContext'
 import { userService } from '../../services/userService'
@@ -115,12 +115,26 @@ export const AdminDashboard: React.FC = () => {
   const [roles, setRoles] = useState<Role[]>([])
   const [permissions, setPermissions] = useState<Permission[]>([])
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
+  const selectedRoleIdRef = useRef<string | null>(null)
+  const selectedRoleRef = useRef<Role | null>(null)
   const [assignedPermIds, setAssignedPermIds] = useState<string[]>([])
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleSaveSuccess, setRoleSaveSuccess] = useState(false)
   const [roleSaveError, setRoleSaveError] = useState<string | null>(null)
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null)
   const [userActionLoadingId, setUserActionLoadingId] = useState<string | null>(null)
+
+  // Create Permission Modal state
+  const [isCreatePermModalOpen, setIsCreatePermModalOpen] = useState(false)
+  const [isCreatingPerm, setIsCreatingPerm] = useState(false)
+  const [createPermError, setCreatePermError] = useState<string | null>(null)
+  const [newPerm, setNewPerm] = useState({
+    code: '',
+    title: '',
+    permissionGroup: 'REPORT',
+    description: '',
+    autoAssign: true,
+  })
 
   // Activity Log state
   const fallbackRoles: Role[] = [
@@ -208,8 +222,6 @@ export const AdminDashboard: React.FC = () => {
   useRealtimeSync(() => {
     if (activeTab === 'users') {
       void fetchUsers(facilityFilter, true)
-    } else if (activeTab === 'roles') {
-      void fetchRolesAndPermissions()
     } else if (activeTab === 'logs') {
       void fetchLogs(isLoginHistoryMode, logsPage)
     } else if (activeTab === 'facilities') {
@@ -247,7 +259,7 @@ export const AdminDashboard: React.FC = () => {
     }
   }
 
-  const fetchRolesAndPermissions = async () => {
+  const fetchRolesAndPermissions = async (preserveRoleId?: string) => {
     try {
       const rRes = await roleService.getAll({ size: 50 })
       const pRes = await permissionService.getAll({ size: 100 })
@@ -256,8 +268,21 @@ export const AdminDashboard: React.FC = () => {
       setIsSampleRoleData(false)
       setRoles(loadedRoles)
       setPermissions(loadedPerms)
+
       if (loadedRoles.length > 0) {
-        void selectRole(loadedRoles[0], loadedPerms)
+        const keepId = preserveRoleId || selectedRoleIdRef.current || selectedRoleRef.current?.id
+        const matched = keepId
+          ? loadedRoles.find(r => r.id === keepId || r.name === keepId)
+          : null
+        const targetRole = matched || loadedRoles[0]
+
+        if (!selectedRoleIdRef.current || selectedRoleIdRef.current !== targetRole.id) {
+          void selectRole(targetRole, loadedPerms)
+        } else {
+          setSelectedRole(targetRole)
+          selectedRoleRef.current = targetRole
+          selectedRoleIdRef.current = targetRole.id
+        }
       }
     } catch {
       setIsSampleRoleData(false)
@@ -270,6 +295,8 @@ export const AdminDashboard: React.FC = () => {
     setRoleSaveError(null)
     setRoleSaveSuccess(false)
     setSelectedRole(role)
+    selectedRoleIdRef.current = role.id
+    selectedRoleRef.current = role
 
     const roleKey = (role.name || '').toUpperCase() as RoleType
     const standardCodes = DEFAULT_PERMISSIONS_BY_ROLE[roleKey] || []
@@ -347,6 +374,85 @@ export const AdminDashboard: React.FC = () => {
       setRoleSaveError('Không lưu được phân quyền. Thay đổi chưa được áp dụng.')
     } finally {
       setRoleSaving(false)
+    }
+  }
+
+  const handleCreatePermission = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setCreatePermError(null)
+
+    const rawCode = newPerm.code.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_')
+    if (!rawCode || rawCode.length < 2) {
+      setCreatePermError('Vui lòng nhập mã quyền hợp lệ (tối thiểu 2 ký tự, ví dụ: REPORT_EXPORT).')
+      return
+    }
+
+    const title = newPerm.title.trim()
+    if (!title) {
+      setCreatePermError('Vui lòng nhập tên hiển thị của quyền hạn.')
+      return
+    }
+
+    const desc = newPerm.description.trim()
+    const fullDescription = desc ? `${title} - ${desc}` : title
+    const truncatedDesc = fullDescription.slice(0, 250)
+
+    setIsCreatingPerm(true)
+    try {
+      const created = await permissionService.create({
+        name: rawCode,
+        permissionGroup: newPerm.permissionGroup || 'SYSTEM',
+        description: truncatedDesc,
+      })
+
+      if (created) {
+        // Cập nhật danh sách quyền hiện tại
+        setPermissions(prev => {
+          if (prev.some(p => p.id === created.id || p.name === created.name)) return prev
+          return [...prev, created]
+        })
+
+        // Tự động gán cho vai trò đang chọn nếu được bật
+        if (newPerm.autoAssign && selectedRole) {
+          const updatedPermIds = assignedPermIds.includes(created.id)
+            ? assignedPermIds
+            : [...assignedPermIds, created.id]
+          setAssignedPermIds(updatedPermIds)
+
+          try {
+            await roleService.bulkAssignPermissions(selectedRole.id, updatedPermIds)
+            window.dispatchEvent(new CustomEvent('boxora_permissions_updated', {
+              detail: {
+                roleId: selectedRole.id,
+                roleName: selectedRole.name,
+                permissionIds: updatedPermIds
+              }
+            }))
+          } catch (assignErr) {
+            console.warn('Auto bulk-assign permission warning:', assignErr)
+          }
+        }
+
+        setRoleSaveSuccess(true)
+        setTimeout(() => setRoleSaveSuccess(false), 3500)
+        setIsCreatePermModalOpen(false)
+        setNewPerm({
+          code: '',
+          title: '',
+          permissionGroup: 'REPORT',
+          description: '',
+          autoAssign: true,
+        })
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Không thể tạo mới quyền hạn.'
+      setCreatePermError(
+        msg.includes('existed') || msg.includes('đã tồn tại')
+          ? `Mã quyền "${rawCode}" đã tồn tại trong hệ thống. Vui lòng chọn mã khác.`
+          : msg
+      )
+    } finally {
+      setIsCreatingPerm(false)
     }
   }
 
@@ -745,18 +851,6 @@ export const AdminDashboard: React.FC = () => {
                     Giao diện chuyên sâu để thiết lập và cấu hình quyền hạn truy cập dữ liệu, định nghĩa rõ vai trò nào được phép thực thi các chức năng nghiệp vụ trong hệ thống Boxora.
                   </p>
                 </div>
-
-                <div className="flex items-center gap-2.5 shrink-0 flex-wrap">
-                  <button 
-                    type="button" 
-                    onClick={() => fetchRolesAndPermissions()}
-                    className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    title="Tải lại ma trận quyền"
-                  >
-                    <span className="material-symbols-outlined text-[16px] text-indigo-600">refresh</span>
-                    <span>Làm mới ma trận</span>
-                  </button>
-                </div>
               </div>
             </div>
           )}
@@ -1151,6 +1245,17 @@ export const AdminDashboard: React.FC = () => {
                   <div className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
                     {assignedPermIds.length} / {permissions.length} quyền
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatePermError(null)
+                      setIsCreatePermModalOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                    <span>Thêm quyền mới</span>
+                  </button>
                 </div>
               </div>
 
@@ -1692,6 +1797,170 @@ export const AdminDashboard: React.FC = () => {
           await fetchUsers(facilityFilter)
         }}
       />
+
+      {/* MODAL: Thêm mới mục phân quyền (RBAC) */}
+      {isCreatePermModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-lg w-full space-y-4 animate-scale-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-orange-50 text-orange-600 rounded-xl border border-orange-100">
+                  <span className="material-symbols-outlined text-[20px]">add_moderator</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    {t('Thêm Mới Mục Phân Quyền (RBAC)', 'Create New Permission')}
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    {t('Khởi tạo quyền hạn mới vào hệ thống Boxora', 'Define a new functional permission')}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isCreatingPerm) {
+                    setIsCreatePermModalOpen(false)
+                    setCreatePermError(null)
+                  }
+                }}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {createPermError && (
+              <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] shrink-0">error</span>
+                <span>{createPermError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreatePermission} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  {t('Mã định danh quyền')} <span className="text-rose-500">*</span>
+                  <span className="text-[10px] text-slate-400 font-normal ml-1.5 font-mono">(SCREAMING_SNAKE_CASE)</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: REPORT_EXPORT, OVERDUE_NOTIFY..."
+                  value={newPerm.code}
+                  onChange={(e) =>
+                    setNewPerm({
+                      ...newPerm,
+                      code: e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, '_'),
+                    })
+                  }
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-slate-50 font-mono font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                />
+                <p className="text-[10px] text-slate-400">
+                  Mã quyền duy nhất được dùng trong kiểm soát bảo mật Backend và Frontend.
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  {t('Tên hiển thị quyền')} <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Xuất dữ liệu báo cáo doanh thu"
+                  value={newPerm.title}
+                  onChange={(e) => setNewPerm({ ...newPerm, title: e.target.value })}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  {t('Nhóm chức năng (Permission Group)')} <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={newPerm.permissionGroup}
+                  onChange={(e) => setNewPerm({ ...newPerm, permissionGroup: e.target.value })}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-orange-500 cursor-pointer"
+                >
+                  <option value="REPORT">Báo cáo & Thống kê (REPORT)</option>
+                  <option value="SYSTEM">Hệ thống & Cấu hình (SYSTEM)</option>
+                  <option value="USER">Người dùng & Tài khoản (USER)</option>
+                  <option value="ROLE">Vai trò & Phân quyền (ROLE)</option>
+                  <option value="FACILITY">Cơ sở & Chi nhánh (FACILITY)</option>
+                  <option value="STORAGE_UNIT">Buồng kho & Sơ đồ tầng (STORAGE_UNIT)</option>
+                  <option value="POLICY">Chính sách & Quy định (POLICY)</option>
+                  <option value="BOOKING">Đơn đặt giữ chỗ (BOOKING)</option>
+                  <option value="CONTRACT">Hợp đồng cho thuê (CONTRACT)</option>
+                  <option value="PAYMENT">Thanh toán & Thu ngân (PAYMENT)</option>
+                  <option value="REFUND">Hoàn tiền & Quyết toán (REFUND)</option>
+                  <option value="SUPPORT">Sự cố & Hỗ trợ kỹ thuật (SUPPORT)</option>
+                  <option value="OVERDUE">Nợ cước & Xử lý quá hạn (OVERDUE)</option>
+                  <option value="STAFF_ASSIGNMENT">Trực ca & Phân công (STAFF_ASSIGNMENT)</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-700">
+                  {t('Mô tả chi tiết quyền')} <span className="text-[10px] text-slate-400 font-normal">({t('Tùy chọn')})</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Mô tả chức năng chi tiết mà quyền này cho phép thực hiện..."
+                  value={newPerm.description}
+                  onChange={(e) => setNewPerm({ ...newPerm, description: e.target.value })}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                />
+              </div>
+
+              {selectedRole && (
+                <div className="p-3 bg-orange-50/70 rounded-xl border border-orange-200/60 flex items-center gap-2.5">
+                  <input
+                    type="checkbox"
+                    id="autoAssignCheck"
+                    checked={newPerm.autoAssign}
+                    onChange={(e) => setNewPerm({ ...newPerm, autoAssign: e.target.checked })}
+                    className="rounded border-slate-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                  />
+                  <label htmlFor="autoAssignCheck" className="text-xs text-slate-700 cursor-pointer select-none">
+                    Tự động gán quyền này cho vai trò đang chọn:{' '}
+                    <span className="font-bold text-orange-700">{selectedRole.name}</span>
+                  </label>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsCreatePermModalOpen(false)}
+                  disabled={isCreatingPerm}
+                  className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition cursor-pointer"
+                >
+                  {t('Hủy')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingPerm}
+                  className="px-4 py-2 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {isCreatingPerm ? (
+                    <>
+                      <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                      <span>{t('Đang tạo...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-[16px]">check</span>
+                      <span>{t('Tạo quyền mới')}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

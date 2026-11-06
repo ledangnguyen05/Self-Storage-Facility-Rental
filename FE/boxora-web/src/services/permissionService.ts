@@ -13,13 +13,25 @@ export const permissionService = {
     return response.data?.data as Permission
   },
 
-  async create(data: { name: string; code?: string; description?: string }) {
-    const response = await api.post('/api/v1/permissions', data)
+  async create(data: { name: string; permissionGroup?: string; code?: string; description?: string }) {
+    const permName = (data.name || data.code || '').trim().toUpperCase()
+    const group = (data.permissionGroup || permName.split('_')[0] || 'SYSTEM').trim().toUpperCase()
+    const payload = {
+      name: permName,
+      permissionGroup: group,
+      description: data.description?.trim() || 'Quyền thực thi tác vụ hệ thống',
+    }
+    const response = await api.post('/api/v1/permissions', payload)
     return response.data?.data as Permission
   },
 
-  async update(id: string, data: { name: string; code?: string; description?: string }) {
-    const response = await api.put(`/api/v1/permissions/${id}`, data)
+  async update(id: string, data: { name?: string; permissionGroup?: string; code?: string; description?: string }) {
+    const payload = {
+      name: data.name ? data.name.trim().toUpperCase() : undefined,
+      permissionGroup: data.permissionGroup ? data.permissionGroup.trim().toUpperCase() : undefined,
+      description: data.description?.trim(),
+    }
+    const response = await api.put(`/api/v1/permissions/${id}`, payload)
     return response.data?.data as Permission
   },
 

@@ -720,6 +720,17 @@ export const formatPermission = (perm: { name?: string; code?: string; descripti
   let generatedTitle = perm.name || code
   let generatedDesc = perm.description || 'Thực hiện thao tác quyền hạn được chỉ định trong hệ thống.'
 
+  // Support custom permissions formatted as "Title - Description" or "Title: Description"
+  if (perm.description && perm.description.includes(' - ')) {
+    const [tPart, ...dParts] = perm.description.split(' - ')
+    if (tPart.trim()) generatedTitle = tPart.trim()
+    if (dParts.length > 0 && dParts.join(' - ').trim()) generatedDesc = dParts.join(' - ').trim()
+  } else if (perm.description && perm.description.includes(': ')) {
+    const [tPart, ...dParts] = perm.description.split(': ')
+    if (tPart.trim()) generatedTitle = tPart.trim()
+    if (dParts.length > 0 && dParts.join(': ').trim()) generatedDesc = dParts.join(': ').trim()
+  }
+
   // Replace mixed Vietnamese/English words
   generatedTitle = generatedTitle
     .replace(/^HỖ TRỢ_/i, 'Hỗ trợ: ')
