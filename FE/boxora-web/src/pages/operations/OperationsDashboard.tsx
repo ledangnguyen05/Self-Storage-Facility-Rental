@@ -1296,11 +1296,6 @@ export const OperationsDashboard: React.FC = () => {
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-rose-600 shrink-0"></span>{tr('4. Công nợ', '4. Debt')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-cyan-600 shrink-0"></span>{tr('5. Tiền cọc đang giữ', '5. Deposits')}</span>
                 <span className="flex items-center gap-1 shrink-0"><span className="h-2 w-2 rounded-full bg-purple-600 shrink-0"></span>{tr('6. Hoàn tiền & Bồi thường', '6. Refunds & Comp.')}</span>
-                <div className="h-3.5 w-px bg-slate-300 shrink-0"></div>
-                <span className="flex items-center gap-1 shrink-0">
-                  <span className="h-2 w-2 rounded-full bg-indigo-600 shrink-0"></span>
-                  <span className="font-semibold text-indigo-700">{tr('Dòng tiền ròng', 'Net Flow')}</span>
-                </span>
               </div>
 
               {/* Monthly Charts Container: MỖI THÁNG 1 BIỂU ĐỒ HOÀN CHỈNH */}
@@ -1376,7 +1371,7 @@ export const OperationsDashboard: React.FC = () => {
                       },
                     ]
 
-                    const maxVal = Math.max(...sources.map(s => s.amount), Math.abs(m.netCashFlow), 1)
+                    const maxVal = Math.max(...sources.map(s => s.amount), 1)
 
                     return (
                       <div
@@ -1444,28 +1439,6 @@ export const OperationsDashboard: React.FC = () => {
                                 </div>
                               )
                             })}
-
-                            {/* Dòng tiền ròng (Net) Bar */}
-                            <div className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group border-l border-slate-200 pl-1">
-                              <span className={`text-[9px] sm:text-[10px] font-mono font-extrabold text-center leading-none ${m.netCashFlow >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>
-                                {Math.abs(m.netCashFlow) >= 1_000_000
-                                  ? `${(m.netCashFlow / 1_000_000).toFixed(1)}M`
-                                  : `${(m.netCashFlow / 1_000).toFixed(0)}k`}
-                              </span>
-                              <div
-                                className={`w-full max-w-[28px] sm:max-w-[36px] rounded-t-md transition-all duration-300 group-hover:scale-105 cursor-pointer ${
-                                  m.netCashFlow >= 0 ? 'bg-indigo-600' : 'bg-rose-600'
-                                }`}
-                                style={{ height: `${Math.max(14, Math.min(100, Math.round(Math.pow(Math.abs(m.netCashFlow) / maxVal, 0.45) * 100)))}%` }}
-                                title={`${tr('Dòng tiền ròng thực nhận:', 'Net Cash Flow:')} ${formatVnd(m.netCashFlow)}`}
-                              />
-                              <div className="flex flex-col items-center">
-                                <span className="material-symbols-outlined text-[13px] text-indigo-600">account_balance</span>
-                                <span className="text-[9px] sm:text-[10px] text-indigo-700 font-bold truncate max-w-[46px] text-center">
-                                  {tr('Ròng', 'Net')}
-                                </span>
-                              </div>
-                            </div>
                           </div>
                         </div>
 
