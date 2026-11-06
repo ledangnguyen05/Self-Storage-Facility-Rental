@@ -90,19 +90,36 @@ import facilityTanBinhImg from '../../assets/facilities/facility-tanbinh.jpg'
 
 export const getFacilityImage = (fac?: Facility | null, index = 0): string => {
   if (!fac) return facilityD1Img
-  if (fac.imageUrl && fac.imageUrl.startsWith('http')) return fac.imageUrl
+  if (fac.imageUrl && fac.imageUrl.trim().length > 0) {
+    const trimmed = fac.imageUrl.trim()
+    if (
+      trimmed.startsWith('http://') ||
+      trimmed.startsWith('https://') ||
+      trimmed.startsWith('data:') ||
+      trimmed.startsWith('blob:')
+    ) {
+      return trimmed
+    }
+    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  }
 
   const code = (fac.code || '').toUpperCase()
   if (code.includes('D1') || code.includes('Q1')) return facilityD1Img
   if (code.includes('D7') || code.includes('Q7')) return facilityD7Img
   if (code.includes('TD') || code.includes('THUDUC')) return facilityThuDucImg
   if (code.includes('TB') || code.includes('TANBINH')) return facilityTanBinhImg
+  if (code.includes('Q3')) return facilityD1Img
+  if (code.includes('Q2') || code.includes('THAODIEN')) return facilityD7Img
+  if (code.includes('VGP') || code.includes('VINHOMES')) return facilityThuDucImg
 
   const name = (fac.name || '').toLowerCase()
   if (name.includes('district 1') || name.includes('quận 1') || name.includes('d1')) return facilityD1Img
   if (name.includes('district 7') || name.includes('quận 7') || name.includes('d7')) return facilityD7Img
   if (name.includes('thủ đức') || name.includes('thu duc')) return facilityThuDucImg
   if (name.includes('tân bình') || name.includes('tan binh')) return facilityTanBinhImg
+  if (name.includes('quận 3') || name.includes('q3')) return facilityD1Img
+  if (name.includes('quận 2') || name.includes('thảo điền') || name.includes('q2')) return facilityD7Img
+  if (name.includes('vinhomes') || name.includes('vgp')) return facilityThuDucImg
 
   const defaultList = [facilityD1Img, facilityD7Img, facilityThuDucImg, facilityTanBinhImg]
   return defaultList[index % defaultList.length]
@@ -2393,6 +2410,15 @@ export const BookingPage: React.FC = () => {
                           alt={fac.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                           loading="lazy"
+                          onError={(e) => {
+                            const target = e.currentTarget
+                            target.onerror = null
+                            const code = (fac.code || '').toUpperCase()
+                            if (code.includes('D7') || code.includes('Q7')) target.src = facilityD7Img
+                            else if (code.includes('TD') || code.includes('THUDUC')) target.src = facilityThuDucImg
+                            else if (code.includes('TB') || code.includes('TANBINH')) target.src = facilityTanBinhImg
+                            else target.src = facilityD1Img
+                          }}
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/20 to-transparent" />
 

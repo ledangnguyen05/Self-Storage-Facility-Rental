@@ -1236,14 +1236,27 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                     )}
 
                     {activeStep < 4 ? (
-                      <button
-                        type="button"
-                        onClick={handleNextStep}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer shadow-xs transition"
-                      >
-                        <span>{t('Tiếp theo', 'Next')}</span>
-                        <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {editingFacility && (
+                          <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={isSaving || isGeocoding}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-cyan-600 bg-cyan-50 px-4 py-2.5 text-xs font-bold text-cyan-800 hover:bg-cyan-100 disabled:opacity-50 cursor-pointer transition shadow-2xs dark:bg-cyan-950/50 dark:text-cyan-200"
+                          >
+                            {isSaving && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-700/40 border-t-cyan-700" />}
+                            <span>{isSaving ? t('Đang lưu...', 'Saving...') : t('Lưu thay đổi ngay', 'Save Changes Now')}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleNextStep}
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-cyan-700 px-5 py-2.5 text-xs font-bold text-white hover:bg-cyan-800 cursor-pointer shadow-xs transition"
+                        >
+                          <span>{t('Tiếp theo', 'Next')}</span>
+                          <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                        </button>
+                      </div>
                     ) : (
                       <button
                         type="button"
@@ -1281,26 +1294,42 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                   >
                     <div>
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h3 className="truncate text-base font-bold text-slate-900 dark:text-slate-100">
-                              {facility.name}
-                            </h3>
-                            <span
-                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
-                                facility.status === 'ACTIVE'
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
-                                  : facility.status === 'MAINTENANCE'
-                                  ? 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300'
-                                  : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400'
-                              }`}
-                            >
-                              {facility.status}
+                        <div className="flex items-center gap-3 min-w-0">
+                          {facility.imageUrl ? (
+                            <img
+                              src={facility.imageUrl}
+                              alt={facility.name}
+                              className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-2xs"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLElement).style.display = 'none'
+                              }}
+                            />
+                          ) : (
+                            <div className="w-11 h-11 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 text-slate-400">
+                              <span className="material-symbols-outlined text-[20px]">domain</span>
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="truncate text-base font-bold text-slate-900 dark:text-slate-100">
+                                {facility.name}
+                              </h3>
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                                  facility.status === 'ACTIVE'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300'
+                                    : facility.status === 'MAINTENANCE'
+                                    ? 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300'
+                                    : 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400'
+                                }`}
+                              >
+                                {facility.status}
+                              </span>
+                            </div>
+                            <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              {facility.code}
                             </span>
                           </div>
-                          <span className="mt-1 inline-flex rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                            {facility.code}
-                          </span>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           <button

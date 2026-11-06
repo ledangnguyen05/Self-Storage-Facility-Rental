@@ -6467,6 +6467,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         alt={fac.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         loading="lazy"
+                        onError={(e) => {
+                          const target = e.currentTarget
+                          target.onerror = null
+                          target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
+                        }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/25 to-transparent" />
 
