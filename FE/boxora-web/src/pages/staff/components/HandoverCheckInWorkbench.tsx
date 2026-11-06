@@ -611,7 +611,56 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     return 0
   }, [isRentMet, currentPrerequisites, currentBooking])
 
+  // Tổng tiền thuê cho toàn bộ thời hạn hợp đồng (ví dụ 3 tháng: 647.500đ)
+  const displayTotalRentalDue = useMemo(() => {
+    if (isRentMet && !currentBooking?.totalRentalFee) return 0
+    if (currentPrerequisites?.totalRentRemaining != null) {
+      const rem = Number(currentPrerequisites.totalRentRemaining)
+      if (rem > 0) return rem
+      if (isRentMet) return 0
+    }
+    const bookingTotalRentalFee = Number(currentBooking?.totalRentalFee || 0)
+    if (bookingTotalRentalFee > 0) {
+      const rentPaid = Number(currentPrerequisites?.firstMonthRentPaid || 0)
+      const remaining = Math.max(0, bookingTotalRentalFee - rentPaid)
+      if (remaining > 0) return remaining
+      if (isRentMet) return 0
+      return bookingTotalRentalFee
+    }
+    if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
+      const initAmount = Number(currentBooking.initialPaymentAmount)
+      const dep = displayDepositDue > 0 ? displayDepositDue : Number(currentBooking.depositAmount || 0)
+      if (initAmount > dep) {
+        return initAmount - dep
+      }
+    }
+    const months = currentBooking?.rentalMonths || 1
+    const unitPrice =
+      (currentBooking as any)?.storageUnit?.effectiveBasePrice ||
+      (currentBooking as any)?.storageUnit?.unitType?.basePriceMonthly ||
+      displayFirstMonthRentDue ||
+      0
+    if (unitPrice > 0) {
+      return Math.round(Number(unitPrice) * months)
+    }
+    return displayFirstMonthRentDue
+  }, [isRentMet, currentPrerequisites, currentBooking, displayDepositDue, displayFirstMonthRentDue])
+
+  // Tổng tiền phải trả tại cơ sở = Tiền cọc cần thu + Tổng tiền thuê
+  const displayTotalPayable = useMemo(() => {
+    if (currentPrerequisites?.totalPayableAmount != null && Number(currentPrerequisites.totalPayableAmount) > 0) {
+      return Number(currentPrerequisites.totalPayableAmount)
+    }
+    const sum = displayDepositDue + displayTotalRentalDue
+    if (sum > 0) return sum
+    if (currentBooking?.initialPaymentAmount != null && Number(currentBooking.initialPaymentAmount) > 0) {
+      return Number(currentBooking.initialPaymentAmount)
+    }
+    return displayDepositDue + displayFirstMonthRentDue
+  }, [currentPrerequisites?.totalPayableAmount, displayDepositDue, displayTotalRentalDue, currentBooking?.initialPaymentAmount, displayFirstMonthRentDue])
+
   const displayTotalDueAtFacility = useMemo(() => {
+    if (displayTotalPayable > 0) return displayTotalPayable
     if (isDepositMet && isRentMet) return 0
     if (displayDepositDue > 0 || displayFirstMonthRentDue > 0) {
       return displayDepositDue + displayFirstMonthRentDue
@@ -625,7 +674,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     if (prereqRemaining > 0) return prereqRemaining
 
     return 0
-  }, [isDepositMet, isRentMet, currentBooking, currentPrerequisites, displayDepositDue, displayFirstMonthRentDue])
+  }, [displayTotalPayable, isDepositMet, isRentMet, currentBooking, currentPrerequisites, displayDepositDue, displayFirstMonthRentDue])
 
   // Đồng bộ hai chiều từ CSDL backend vào workbench session khi nạp dữ liệu đơn
   useEffect(() => {
@@ -989,11 +1038,13 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             ? Number(currentPrerequisites.depositRemaining)
             : displayDepositDue
         )
-        const reqRent = isRentMet ? 0 : (
-          (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
-            ? Number(currentPrerequisites.firstMonthRentRemaining)
-            : displayFirstMonthRentDue
-        )
+        const reqRent = displayTotalRentalDue > 0
+          ? displayTotalRentalDue
+          : (isRentMet ? 0 : (
+              (currentPrerequisites?.firstMonthRentRemaining && Number(currentPrerequisites.firstMonthRentRemaining) > 0)
+                ? Number(currentPrerequisites.firstMonthRentRemaining)
+                : displayFirstMonthRentDue
+            ))
 
         if (reqDeposit > 0) {
           try {
@@ -1022,10 +1073,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               amount: reqRent,
               proofDocumentUrl: res.fileUrl,
               referenceCode: `PROOF-RENT-${bookingDisplayCode}-${Date.now()}`,
-              notes: 'Thanh toán tiền thuê tháng đầu có chứng từ kèm theo tại cơ sở'
+              notes: 'Thanh toán tổng tiền thuê có chứng từ kèm theo tại cơ sở'
             })
             if (rentPay?.id) {
-              await handoverService.confirmBankTransferPayment(rentPay.id, 'Xác nhận thu tiền thuê tháng đầu tại quầy cơ sở')
+              await handoverService.confirmBankTransferPayment(rentPay.id, 'Xác nhận thu tổng tiền thuê tại quầy cơ sở')
             }
           } catch (rentErr: any) {
             console.warn('Rent manual payment skipped or already processed:', rentErr)
@@ -2224,19 +2275,29 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
             </div>
           ) : (
-            /* TRƯỜNG HỢP 2: CHƯA KÝ HOẶC CHƯA THANH TOÁN -> HIỂN THỊ 2 KHOẢN TIỀN & 2 PHẦN UPLOAD */
+            /* TRƯỜNG HỢP 2: CHƯA KÝ HOẶC CHƯA THANH TOÁN -> HIỂN THỊ 3 KHOẢN TIỀN & 2 PHẦN UPLOAD */
             <div className="space-y-6">
-              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs shadow-2xs">
-                <div className="bg-white/70 p-3 rounded-lg border border-amber-100">
+              <div className="p-4 rounded-xl bg-amber-50/80 border border-amber-200 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs shadow-2xs">
+                <div className="bg-white/80 p-3 rounded-lg border border-amber-100 flex flex-col justify-between">
                   <span className="text-slate-500 text-[11px] uppercase font-bold block mb-1">Tiền Cọc Cần Thu:</span>
                   <span className="font-mono font-bold text-amber-950 text-base">
                     {displayDepositDue.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
-                <div className="bg-white/70 p-3 rounded-lg border border-amber-100">
-                  <span className="text-slate-500 text-[11px] uppercase font-bold block mb-1">Tổng Tiền Thu Tại Cơ Sở:</span>
+                <div className="bg-white/80 p-3 rounded-lg border border-amber-100 flex flex-col justify-between">
+                  <span className="text-slate-500 text-[11px] uppercase font-bold block mb-1">
+                    Tổng Tiền Thuê{currentBooking?.rentalMonths ? ` (${currentBooking.rentalMonths} tháng)` : ''}:
+                  </span>
+                  <span className="font-mono font-bold text-cyan-900 text-base">
+                    {displayTotalRentalDue.toLocaleString('vi-VN')}đ
+                  </span>
+                </div>
+                <div className="bg-white/90 p-3 rounded-lg border border-amber-200 flex flex-col justify-between">
+                  <span className="text-slate-600 text-[11px] uppercase font-extrabold block mb-1">
+                    Tổng Tiền Phải Trả (Cọc + Tổng tiền thuê):
+                  </span>
                   <span className="font-mono font-extrabold text-rose-700 text-base">
-                    {displayTotalDueAtFacility.toLocaleString('vi-VN')}đ
+                    {displayTotalPayable.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
               </div>

@@ -40,6 +40,12 @@ public class HandoverPrerequisitesResponse {
     private BigDecimal requiredFirstMonthRent;
     private BigDecimal firstMonthRentRemaining;
 
+    /** Tổng quan tiền thuê & quyết toán tại cơ sở */
+    private BigDecimal totalRentalFee;
+    private BigDecimal totalRentPaid;
+    private BigDecimal totalRentRemaining;
+    private BigDecimal totalPayableAmount;
+
     /** Điều kiện 3: Hợp đồng thuê kho (Electronic OTP/DocuSeal or Paper at Facility) */
     private boolean contractSigned;
     private String contractCode;

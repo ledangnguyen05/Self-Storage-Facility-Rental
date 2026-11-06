@@ -111,6 +111,19 @@ public class HandoverServiceImpl implements HandoverService {
         boolean firstMonthRentSatisfied = firstMonthRentPaid.compareTo(BigDecimal.ZERO) > 0
                 && firstMonthRentPaid.compareTo(requiredFirstMonthRent) >= 0;
 
+        // 2.1 Tính toán Tổng tiền thuê và Tổng tiền phải trả cho toàn bộ thời hạn hợp đồng
+        BigDecimal totalRentalFee = booking.getTotalRentalFee() != null ? booking.getTotalRentalFee() : BigDecimal.ZERO;
+        if (totalRentalFee.compareTo(BigDecimal.ZERO) <= 0 && unit != null && unit.getUnitType() != null && unit.getUnitType().getBasePricePerMonth() != null) {
+            int m = (booking.getRentalMonths() != null && booking.getRentalMonths() > 0) ? booking.getRentalMonths() : 1;
+            totalRentalFee = unit.getUnitType().getBasePricePerMonth().multiply(BigDecimal.valueOf(m));
+        }
+        if (totalRentalFee.compareTo(BigDecimal.ZERO) <= 0) {
+            totalRentalFee = requiredFirstMonthRent;
+        }
+        BigDecimal totalRentPaid = firstMonthRentPaid;
+        BigDecimal totalRentRemaining = totalRentalFee.subtract(totalRentPaid).max(BigDecimal.ZERO);
+        BigDecimal totalPayableAmount = depositRemaining.add(totalRentRemaining);
+
         // 3. Tính toán Điều kiện 3: Hợp đồng thuê kho (Electronic OTP/DocuSeal or Paper at Facility)
         Optional<RentalContract> contractOpt = rentalContractRepository.findByBookingId(booking.getId());
         boolean contractSigned = false;
@@ -308,6 +321,10 @@ public class HandoverServiceImpl implements HandoverService {
                 .firstMonthRentPaid(firstMonthRentPaid)
                 .requiredFirstMonthRent(requiredFirstMonthRent)
                 .firstMonthRentRemaining(firstMonthRentRemaining)
+                .totalRentalFee(totalRentalFee)
+                .totalRentPaid(totalRentPaid)
+                .totalRentRemaining(totalRentRemaining)
+                .totalPayableAmount(totalPayableAmount)
                 .contractSigned(contractSigned)
                 .contractCode(contractCode)
                 .contractStatus(contractStatus)
@@ -2099,9 +2116,17 @@ public class HandoverServiceImpl implements HandoverService {
             }
 
             // Kiểm tra nghĩa vụ còn thiếu để chống thu trùng / cộng tiền 2 lần
-            BigDecimal requiredAmount = (request.getPaymentType() == PaymentType.DEPOSIT)
-                    ? getRequiredDeposit(booking, unit)
-                    : getRequiredFirstMonthRent(booking, unit);
+            BigDecimal requiredAmount;
+            if (request.getPaymentType() == PaymentType.DEPOSIT) {
+                requiredAmount = getRequiredDeposit(booking, unit);
+            } else {
+                BigDecimal totalFee = booking.getTotalRentalFee();
+                if (totalFee != null && totalFee.compareTo(BigDecimal.ZERO) > 0) {
+                    requiredAmount = totalFee;
+                } else {
+                    requiredAmount = getRequiredFirstMonthRent(booking, unit);
+                }
+            }
             BigDecimal alreadyPaidAmount = (request.getPaymentType() == PaymentType.DEPOSIT)
                     ? calculateTotalDepositPaid(booking)
                     : calculateTotalFirstMonthRentPaid(booking);
@@ -2109,7 +2134,7 @@ public class HandoverServiceImpl implements HandoverService {
 
             if (remainingAmount.compareTo(BigDecimal.ZERO) <= 0) {
                 throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED,
-                        "Nghĩa vụ " + (request.getPaymentType() == PaymentType.DEPOSIT ? "tiền cọc" : "tiền thuê tháng đầu") + " đã được thanh toán đủ trước đó");
+                        "Nghĩa vụ " + (request.getPaymentType() == PaymentType.DEPOSIT ? "tiền cọc" : "tiền thuê") + " đã được thanh toán đủ trước đó");
             }
 
             if (request.getAmount().compareTo(remainingAmount) > 0) {
@@ -2251,9 +2276,17 @@ public class HandoverServiceImpl implements HandoverService {
                 throw new AppException(ErrorCode.INVALID_REQUEST, "Không thể xác nhận thanh toán cho đơn đặt kho đã hủy hoặc đã hoàn tất");
             }
             StorageUnit unit = b.getStorageUnit();
-            BigDecimal requiredAmount = (payment.getPaymentType() == PaymentType.DEPOSIT)
-                    ? getRequiredDeposit(b, unit)
-                    : getRequiredFirstMonthRent(b, unit);
+            BigDecimal requiredAmount;
+            if (payment.getPaymentType() == PaymentType.DEPOSIT) {
+                requiredAmount = getRequiredDeposit(b, unit);
+            } else {
+                BigDecimal totalFee = b.getTotalRentalFee();
+                if (totalFee != null && totalFee.compareTo(BigDecimal.ZERO) > 0) {
+                    requiredAmount = totalFee;
+                } else {
+                    requiredAmount = getRequiredFirstMonthRent(b, unit);
+                }
+            }
             BigDecimal alreadyPaidAmount = (payment.getPaymentType() == PaymentType.DEPOSIT)
                     ? calculateTotalDepositPaid(b)
                     : calculateTotalFirstMonthRentPaid(b);

@@ -68,6 +68,10 @@ export interface HandoverPrerequisites {
   firstMonthRentPaid?: number
   requiredFirstMonthRent?: number
   firstMonthRentRemaining?: number
+  totalRentalFee?: number
+  totalRentPaid?: number
+  totalRentRemaining?: number
+  totalPayableAmount?: number
   contractSigned: boolean
   contractCode?: string
   contractStatus?: string
