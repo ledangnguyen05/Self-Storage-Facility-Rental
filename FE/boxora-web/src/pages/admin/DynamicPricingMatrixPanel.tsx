@@ -57,6 +57,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
   const [editingDiscountTerm, setEditingDiscountTerm] = useState<3 | 6 | 12 | null>(null)
   const [tempDiscountVal, setTempDiscountVal] = useState<string>('')
   const [deleteConfirmTerm, setDeleteConfirmTerm] = useState<3 | 6 | 12 | null>(null)
+  const [deleteConfirmCustomDiscount, setDeleteConfirmCustomDiscount] = useState<CustomDiscount | null>(null)
 
   // Edit Unit Type Modal state (Task 3.3 & Task 5.1-5.4)
   const [selectedUnitTypeToEdit, setSelectedUnitTypeToEdit] = useState<UnitType | null>(null)
@@ -212,11 +213,13 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     setNewDiscountLabel('')
   }
 
-  const handleDeleteCustomDiscount = (id: string) => {
-    const updated = customDiscounts.filter((c) => c.id !== id)
+  const handleConfirmDeleteCustomDiscount = () => {
+    if (!deleteConfirmCustomDiscount) return
+    const updated = customDiscounts.filter((c) => c.id !== deleteConfirmCustomDiscount.id)
     setCustomDiscounts(updated)
     customDiscountService.saveDiscounts(selectedFacilityId, updated)
-    showToast('Đã xóa kỳ hạn chiết khấu.')
+    showToast(`Đã xóa kỳ hạn ${deleteConfirmCustomDiscount.months} tháng (-${deleteConfirmCustomDiscount.percent}%).`)
+    setDeleteConfirmCustomDiscount(null)
   }
 
   const handleActivateCustomDiscount = (id: string) => {
@@ -522,10 +525,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-xs font-mono font-bold ${
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border border-slate-200 shadow-2xs ${
                         discount3M > 0
-                          ? 'text-emerald-700'
-                          : 'text-slate-500'
+                          ? 'text-slate-900'
+                          : 'text-slate-400'
                       }`}
                     >
                       {discount3M > 0 ? `-${discount3M}%` : '0%'}
@@ -599,10 +602,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-xs font-mono font-bold ${
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border border-slate-200 shadow-2xs ${
                         discount6M > 0
-                          ? 'text-emerald-700'
-                          : 'text-slate-500'
+                          ? 'text-slate-900'
+                          : 'text-slate-400'
                       }`}
                     >
                       {discount6M > 0 ? `-${discount6M}%` : '0%'}
@@ -676,10 +679,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 ) : (
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-xs font-mono font-bold ${
+                      className={`text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border border-slate-200 shadow-2xs ${
                         discount12M > 0
-                          ? 'text-emerald-700'
-                          : 'text-slate-500'
+                          ? 'text-slate-900'
+                          : 'text-slate-400'
                       }`}
                     >
                       {discount12M > 0 ? `-${discount12M}%` : '0%'}
@@ -767,10 +770,10 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                   ) : (
                     <>
                       <span
-                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        className={`text-xs font-mono font-bold px-2 py-0.5 rounded bg-white border border-slate-200 shadow-2xs ${
                           cd.percent > 0
-                            ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                            : 'bg-slate-100 text-slate-500 border border-slate-200'
+                            ? 'text-slate-900'
+                            : 'text-slate-400'
                         }`}
                       >
                         {cd.percent > 0 ? `-${cd.percent}%` : '0%'}
@@ -799,7 +802,7 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                           )}
                           <button
                             type="button"
-                            onClick={() => handleDeleteCustomDiscount(cd.id)}
+                            onClick={() => setDeleteConfirmCustomDiscount(cd)}
                             className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                             title={t('Xóa kỳ hạn')}
                           >
@@ -1041,26 +1044,48 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
         />
       )}
 
-      {/* Confirmation Dialog: Delete Discount (Task 4.2) */}
+      {/* Confirmation Dialog: Delete Standard Discount (Task 4.2) */}
       {deleteConfirmTerm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-2xs">
-          <div className="bg-white rounded-2xl p-5 shadow-2xl border border-slate-200 max-w-sm w-full space-y-3 animate-scale-in">
-            <div className="flex items-center gap-2.5 text-rose-600">
-              <span className="material-symbols-outlined text-2xl">delete_forever</span>
-              <h4 className="text-sm font-bold text-slate-900">
-                {t('Xóa mức chiết khấu')} {deleteConfirmTerm} {t('tháng')}
-              </h4>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-md w-full space-y-4 animate-scale-in">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">delete</span>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-base font-bold text-slate-900">
+                  {t('Xóa mức chiết khấu')} {deleteConfirmTerm} {t('tháng')}
+                </h4>
+                <p className="text-xs text-slate-500">
+                  {t('Thao tác này sẽ đưa mức chiết khấu của kỳ hạn về 0%.')}
+                </p>
+              </div>
             </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Kỳ hạn áp dụng:</span>
+                <span className="font-bold text-slate-900">Thuê {deleteConfirmTerm} tháng</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Chiết khấu hiện tại:</span>
+                <span className="font-mono font-bold text-rose-600">
+                  -{deleteConfirmTerm === 3 ? discount3M : deleteConfirmTerm === 6 ? discount6M : discount12M}%
+                </span>
+              </div>
+            </div>
+
             <p className="text-xs text-slate-600 leading-relaxed">
               {t(
                 `Bạn có chắc chắn muốn xóa mức chiết khấu kỳ hạn ${deleteConfirmTerm} tháng? Sau khi xóa, mức chiết khấu sẽ về 0% và không ảnh hưởng đến các hợp đồng cũ đã ký.`
               )}
             </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
               <button
                 type="button"
                 onClick={() => setDeleteConfirmTerm(null)}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
                 {t('Hủy bỏ')}
               </button>
@@ -1068,9 +1093,78 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                 type="button"
                 onClick={handleConfirmDeleteDiscount}
                 disabled={isSavingDiscounts}
-                className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs"
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                {t('Xác nhận xóa')}
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+                <span>{isSavingDiscounts ? t('Đang xóa...') : t('Xác nhận xóa')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog: Delete Custom Discount */}
+      {deleteConfirmCustomDiscount && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-md w-full space-y-4 animate-scale-in">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">delete</span>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-base font-bold text-slate-900">
+                  {t('Xóa kỳ hạn chiết khấu')} {deleteConfirmCustomDiscount.months} {t('tháng')}
+                </h4>
+                <p className="text-xs text-slate-500">
+                  {t('Kỳ hạn tùy chỉnh này sẽ bị xóa hoàn toàn khỏi bảng giá cơ sở.')}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Kỳ hạn:</span>
+                <span className="font-bold text-slate-900">Thuê {deleteConfirmCustomDiscount.months} tháng</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Mức chiết khấu:</span>
+                <span className="font-mono font-bold text-rose-600">-{deleteConfirmCustomDiscount.percent}%</span>
+              </div>
+              {deleteConfirmCustomDiscount.label && (
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>Mô tả:</span>
+                  <span className="text-slate-800 font-medium">{deleteConfirmCustomDiscount.label}</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Trạng thái:</span>
+                <span className={`font-semibold ${deleteConfirmCustomDiscount.isActive ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {deleteConfirmCustomDiscount.isActive ? 'Đang kích hoạt' : 'Chưa kích hoạt'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {t(
+                `Bạn có chắc chắn muốn xóa kỳ hạn ${deleteConfirmCustomDiscount.months} tháng? Sau khi xóa, kỳ hạn này sẽ không còn xuất hiện trong các bước đặt kho mới.`
+              )}
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmCustomDiscount(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                {t('Hủy bỏ')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCustomDiscount}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[16px]">delete</span>
+                <span>{t('Xác nhận xóa')}</span>
               </button>
             </div>
           </div>
