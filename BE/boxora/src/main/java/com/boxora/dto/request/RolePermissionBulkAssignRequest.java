@@ -1,9 +1,9 @@
 package com.boxora.dto.request;
 
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -16,6 +16,10 @@ public class RolePermissionBulkAssignRequest {
     @NotNull(message = "Role id is required")
     private UUID roleId;
 
-    @NotEmpty(message = "Permission ids list cannot be empty")
-    private List<UUID> permissionIds;
+    @Builder.Default
+    private List<UUID> permissionIds = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> permissionCodes = new ArrayList<>();
 }
+

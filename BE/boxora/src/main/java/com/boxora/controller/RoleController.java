@@ -5,6 +5,9 @@ import com.boxora.common.response.PageResponse;
 import com.boxora.dto.request.RoleCreateRequest;
 import com.boxora.dto.request.RoleUpdateRequest;
 import com.boxora.dto.response.RoleResponse;
+import com.boxora.dto.request.RolePermissionBulkAssignRequest;
+import com.boxora.dto.response.RolePermissionResponse;
+import com.boxora.service.RolePermissionService;
 import com.boxora.service.RoleService;
 import jakarta.validation.Valid;
 import lombok.*;
@@ -13,6 +16,7 @@ import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -21,9 +25,10 @@ import java.util.UUID;
 @Slf4j
 public class RoleController {
     private final RoleService roleService;
+    private final RolePermissionService rolePermissionService;
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RoleResponse>> getById(@PathVariable UUID id){
         log.info("Get role by id : {}",id);
         RoleResponse response=roleService.getById(id);
@@ -31,7 +36,7 @@ public class RoleController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_CREATE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RoleResponse>> create
             (@Valid @RequestBody RoleCreateRequest request){
         log.info("Creating new role : {}", request.getName());
@@ -41,7 +46,7 @@ public class RoleController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_UPDATE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<RoleResponse>> update
             (@PathVariable UUID id,@Valid @RequestBody RoleUpdateRequest request){
         log.info("Updating role : {}", request.getName());
@@ -49,8 +54,22 @@ public class RoleController {
         return ResponseEntity.ok(ApiResponse.success("Cập nhật vai trò thành công", response));
     }
 
+    @PutMapping("/{roleId}/permissions")
+    @PreAuthorize("hasAuthority('ROLE_PERMISSION_ASSIGN') or hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<RolePermissionResponse>>> updatePermissions(
+            @PathVariable UUID roleId,
+            @RequestBody RolePermissionBulkAssignRequest request) {
+        log.info("Updating permissions for role ID: {}", roleId);
+        if (request == null) {
+            request = new RolePermissionBulkAssignRequest();
+        }
+        request.setRoleId(roleId);
+        List<RolePermissionResponse> response = rolePermissionService.bulkAssign(request);
+        return ResponseEntity.ok(ApiResponse.success("Cập nhật quyền cho vai trò thành công", response));
+    }
+
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ROLE_DELETE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id){
         log.info("Deleting role with id : {}",id);
         roleService.delete(id);
@@ -58,7 +77,7 @@ public class RoleController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('ROLE_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PageResponse<RoleResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,

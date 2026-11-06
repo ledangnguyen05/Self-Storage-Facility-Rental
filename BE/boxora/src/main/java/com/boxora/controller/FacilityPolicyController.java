@@ -51,7 +51,7 @@ public class FacilityPolicyController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('POLICY_CREATE') or hasRole('ADMIN')")
     @Operation(summary = "Create a new facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> create(
             @Valid @RequestBody FacilityPolicyCreateRequest request) {
@@ -63,7 +63,7 @@ public class FacilityPolicyController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAuthority('POLICY_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Update an existing facility policy")
     public ResponseEntity<ApiResponse<FacilityPolicyResponse>> update(
             @PathVariable UUID id,
@@ -76,14 +76,14 @@ public class FacilityPolicyController {
     }
 
     @GetMapping("{id}/exceptions")
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('POLICY_VIEW') or hasRole('ADMIN')")
     @Operation(summary = "List facility-manager policy exception grants")
     public ResponseEntity<ApiResponse<List<UUID>>> getExceptionGrants(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.success(facilityPolicyService.getExceptionGrants(id)));
     }
 
     @PutMapping("{id}/exceptions")
-    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('POLICY_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Grant or revoke a facility-manager policy exception")
     public ResponseEntity<ApiResponse<Void>> setExceptionGrant(
             @PathVariable UUID id,
@@ -93,7 +93,7 @@ public class FacilityPolicyController {
     }
 
     @DeleteMapping("{id}")
-    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('POLICY_DELETE') or hasRole('ADMIN')")
     @Operation(summary = "Delete a facility policy")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityPolicyService.delete(id);

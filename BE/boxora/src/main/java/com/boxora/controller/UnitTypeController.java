@@ -34,7 +34,7 @@ public class UnitTypeController {
     private final CloudflareR2Service cloudflareR2Service;
 
     @PostMapping("/upload-image")
-    @PreAuthorize("hasAnyAuthority('UNIT_TYPE_CREATE', 'UNIT_TYPE_UPDATE', 'STORAGE_UNIT_CREATE', 'STORAGE_UNIT_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('UNIT_TYPE_CREATE', 'UNIT_TYPE_UPDATE', 'STORAGE_UNIT_CREATE', 'STORAGE_UNIT_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Tải ảnh mô phỏng loại kho lưu trữ")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadUnitTypeImage(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = cloudflareR2Service.uploadUnitImage(file);
@@ -56,7 +56,7 @@ public class UnitTypeController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('UNIT_TYPE_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_CREATE') or hasRole('ADMIN')")
     @Operation(summary = "Tạo mới loại kho lưu trữ và ghi nhận giá niêm yết ban đầu")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> createUnitType(
             @Valid @RequestBody UnitTypeCreateRequest request
@@ -67,7 +67,7 @@ public class UnitTypeController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('UNIT_TYPE_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Cập nhật thông tin loại kho (nếu đổi giá phải kèm lý do theo BR-RULE-011)")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> updateUnitType(
             @PathVariable UUID id,
@@ -78,7 +78,7 @@ public class UnitTypeController {
     }
 
     @PostMapping("/{id}/price-adjustment")
-    @PreAuthorize("hasAuthority('UNIT_TYPE_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('PRICE_ADJUST', 'UNIT_TYPE_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Điều chỉnh giá niêm yết loại kho theo BR-RULE-011 (bắt buộc lý do và lưu lịch sử)")
     public ResponseEntity<ApiResponse<UnitTypeResponse>> adjustPrice(
             @PathVariable UUID id,
@@ -89,7 +89,7 @@ public class UnitTypeController {
     }
 
     @GetMapping("/{id}/price-history")
-    @PreAuthorize("hasAuthority('UNIT_TYPE_VIEW')")
+    @PreAuthorize("hasAnyAuthority('PRICE_HISTORY_VIEW', 'UNIT_TYPE_VIEW') or hasRole('ADMIN')")
     @Operation(summary = "Xem lịch sử biến động giá của một loại kho")
     public ResponseEntity<ApiResponse<List<StorageUnitPriceHistoryResponse>>> getPriceHistory(
             @PathVariable UUID id
@@ -99,7 +99,7 @@ public class UnitTypeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('UNIT_TYPE_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_DELETE') or hasRole('ADMIN')")
     @Operation(summary = "Xóa loại kho (chỉ xóa khi không có kho nào đang thuộc loại này)")
     public ResponseEntity<ApiResponse<Void>> deleteUnitType(@PathVariable UUID id) {
         unitTypeService.deleteUnitType(id);

@@ -34,7 +34,7 @@ public class StaffAssignmentController {
     private final StaffAssignmentService staffAssignmentService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasRole('ADMIN')")
     @Operation(summary = "Tạo mới phân công ca trực cho nhân viên")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> createAssignment(
             @Valid @RequestBody StaffAssignmentCreateRequest request
@@ -45,7 +45,7 @@ public class StaffAssignmentController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_CREATE') or hasRole('ADMIN')")
     @Operation(summary = "Cập nhật phân công ca trực (ca, khu vực, vai trò, ghi chú)")
     public ResponseEntity<ApiResponse<StaffAssignmentResponse>> updateAssignment(
             @PathVariable UUID id,
@@ -89,7 +89,7 @@ public class StaffAssignmentController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('STAFF_ASSIGNMENT_DELETE') or hasRole('ADMIN')")
     @Operation(summary = "Xóa hoặc hủy phân công ca trực")
     public ResponseEntity<ApiResponse<Void>> deleteAssignment(@PathVariable UUID id) {
         staffAssignmentService.deleteAssignment(id);

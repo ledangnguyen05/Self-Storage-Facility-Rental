@@ -342,9 +342,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const reloadPermissions = async (targetRole = role, roleId = user?.roleId || user?.role?.id) => {
     try {
-      // 1. Thu thập quyền hạn phân bổ qua API backend
+      // 1. Thu thập quyền hạn phân bổ qua API backend (nguồn chân lý trực tiếp từ DB)
       const res = await api.get('/api/v1/role-permissions/my-permissions')
-      if (res.data?.data && Array.isArray(res.data.data) && res.data.data.length > 0) {
+      if (res.data?.data && Array.isArray(res.data.data)) {
         setPermissions(res.data.data)
         localStorage.setItem('boxora_user_permissions', JSON.stringify(res.data.data))
         return
@@ -357,17 +357,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (roleId) {
         const res2 = await api.get(`/api/v1/role-permissions/by-role/${roleId}`)
         if (res2.data?.data && Array.isArray(res2.data.data)) {
-          const names = res2.data.data.filter((rp: any) => rp.isActive !== false).map((rp: any) => rp.permission?.name || rp.permissionName).filter(Boolean)
-          if (names.length > 0) {
-            setPermissions(names)
-            localStorage.setItem('boxora_user_permissions', JSON.stringify(names))
-            return
-          }
+          const names = res2.data.data
+            .filter((rp: any) => rp.isActive !== false)
+            .map((rp: any) => rp.permission?.name || rp.permissionName)
+            .filter(Boolean)
+          setPermissions(names)
+          localStorage.setItem('boxora_user_permissions', JSON.stringify(names))
+          return
         }
       }
     } catch {}
 
-    // Fallback sang danh mục quyền mặc định theo vai trò
+    // Fallback sang danh mục quyền mặc định theo vai trò khi mất kết nối mạng hoàn toàn
     const current = targetRole || role
     if (current && DEFAULT_PERMISSIONS_BY_ROLE[current]) {
       setPermissions(DEFAULT_PERMISSIONS_BY_ROLE[current])

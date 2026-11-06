@@ -16,6 +16,8 @@ public interface PermissionRepository extends JpaRepository<Permission, UUID> {
 
     Optional<Permission> findByName(String name);
 
+    java.util.List<Permission> findAllByNameIn(java.util.Collection<String> names);
+
     boolean existsByName(String name);
 
     boolean existsByNameAndIdNot(String name, UUID id);

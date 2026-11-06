@@ -155,13 +155,37 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 .toList();
     }
 
+    private static final Set<String> PROTECTED_ADMIN_PERMISSIONS = Set.of(
+            "ROLE_PERMISSION_VIEW",
+            "ROLE_PERMISSION_ASSIGN",
+            "ROLE_PERMISSION_REVOKE",
+            "USER_VIEW",
+            "ROLE_VIEW",
+            "PERMISSION_VIEW"
+    );
+
     @Override
     public List<RolePermissionResponse> bulkAssign(RolePermissionBulkAssignRequest request) {
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new AppException(ErrorCode.ROLE_NOT_FOUND));
 
-        List<UUID> permissionIds = request.getPermissionIds() != null ? request.getPermissionIds() : Collections.emptyList();
+        List<UUID> permissionIds = request.getPermissionIds() != null ? new ArrayList<>(request.getPermissionIds()) : new ArrayList<>();
         Set<UUID> targetPermSet = new HashSet<>(permissionIds);
+
+        // Ho tro nap them cac permission qua ma permissionCodes neu co truyen vao
+        if (request.getPermissionCodes() != null && !request.getPermissionCodes().isEmpty()) {
+            List<String> cleanCodes = request.getPermissionCodes().stream()
+                    .filter(Objects::nonNull)
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+            if (!cleanCodes.isEmpty()) {
+                List<Permission> matchedByCode = permissionRepository.findAllByNameIn(cleanCodes);
+                for (Permission p : matchedByCode) {
+                    targetPermSet.add(p.getId());
+                }
+            }
+        }
 
         // Lay toan bo phan quyen hien tai cua role
         List<RolePermission> allExistingForRole = rolePermissionRepository.findAllByRole_Id(role.getId());
@@ -169,7 +193,19 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 .filter(rp -> rp.getPermission() != null && rp.getPermission().getId() != null)
                 .collect(Collectors.toMap(rp -> rp.getPermission().getId(), rp -> rp, (a, b) -> a));
 
+        // Bao ve quyen quan tri he thong toi thieu cho ADMIN (Phase 5)
+        boolean isAdminRole = "ADMIN".equalsIgnoreCase(role.getName());
+        if (isAdminRole) {
+            for (RolePermission rp : allExistingForRole) {
+                if (rp.getPermission() != null && PROTECTED_ADMIN_PERMISSIONS.contains(rp.getPermission().getName())) {
+                    targetPermSet.add(rp.getPermission().getId());
+                }
+            }
+        }
+
         List<RolePermission> toSave = new ArrayList<>();
+        List<String> revokedPermNames = new ArrayList<>();
+        List<String> assignedPermNames = new ArrayList<>();
 
         // 1. Thu hoi cac quyen bi bo tick (deactivate)
         for (RolePermission rp : allExistingForRole) {
@@ -177,19 +213,21 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                 if (Boolean.TRUE.equals(rp.getIsActive())) {
                     rp.setIsActive(false);
                     toSave.add(rp);
+                    revokedPermNames.add(rp.getPermission().getName());
                 }
             }
         }
 
         // 2. Kich hoat hoac tao moi cac quyen duoc tick
-        if (!permissionIds.isEmpty()) {
-            List<Permission> permissions = permissionRepository.findAllById(permissionIds);
+        if (!targetPermSet.isEmpty()) {
+            List<Permission> permissions = permissionRepository.findAllById(targetPermSet);
             for (Permission permission : permissions) {
                 RolePermission rp = existingMap.get(permission.getId());
                 if (rp != null) {
                     if (!Boolean.TRUE.equals(rp.getIsActive())) {
                         rp.setIsActive(true);
                         toSave.add(rp);
+                        assignedPermNames.add(permission.getName());
                     }
                 } else {
                     RolePermission newRp = RolePermission.builder()
@@ -198,6 +236,7 @@ public class RolePermissionServiceImpl implements RolePermissionService {
                             .isActive(true)
                             .build();
                     toSave.add(newRp);
+                    assignedPermNames.add(permission.getName());
                 }
             }
         }
@@ -206,11 +245,35 @@ public class RolePermissionServiceImpl implements RolePermissionService {
             rolePermissionRepository.saveAll(toSave);
         }
 
+        // Ghi nhat ky kiem toan chi tiet cho tung quyen duoc thu hoi hoac cap phat (Phase 7)
+        for (String permName : revokedPermNames) {
+            activityLogService.record(
+                    ActivityAction.ROLE_PERMISSION_REVOKE,
+                    "RolePermission",
+                    role.getId(),
+                    "Thu hoi quyen " + permName + " khoi vai tro " + role.getName(),
+                    true,
+                    false
+            );
+        }
+        for (String permName : assignedPermNames) {
+            activityLogService.record(
+                    ActivityAction.ROLE_PERMISSION_ASSIGN,
+                    "RolePermission",
+                    role.getId(),
+                    "Cap quyen " + permName + " cho vai tro " + role.getName(),
+                    false,
+                    true
+            );
+        }
+
+        // Ghi nhat ky tong hop thay doi phan quyen
         activityLogService.record(
                 ActivityAction.ROLE_PERMISSION_ASSIGN,
                 "RolePermission",
                 role.getId(),
-                "Cap nhat phan quyen (" + targetPermSet.size() + " quyen hoat dong) cho role " + role.getName(),
+                "Cap nhat phan quyen (" + targetPermSet.size() + " quyen hoat dong) cho role " + role.getName()
+                        + " (Cap moi: " + assignedPermNames.size() + ", Thu hoi: " + revokedPermNames.size() + ")",
                 null,
                 targetPermSet.size()
         );

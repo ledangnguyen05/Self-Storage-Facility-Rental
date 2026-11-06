@@ -39,7 +39,7 @@ public class FacilityController {
     }
 
     @PostMapping(value = "/upload-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAnyAuthority('FACILITY_CREATE', 'FACILITY_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Tải ảnh cơ sở lên Cloudflare R2")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadFacilityImage(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = cloudflareR2Service.uploadFacilityImage(file);
@@ -54,7 +54,7 @@ public class FacilityController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('FACILITY_CREATE') or hasRole('ADMIN')")
     @Operation(summary = "Create a new facility")
     public ResponseEntity<ApiResponse<FacilityResponse>> create(
             @Valid @RequestBody FacilityCreateRequest request) {
@@ -64,7 +64,7 @@ public class FacilityController {
     }
 
     @PutMapping("{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('FACILITY_UPDATE') or hasRole('ADMIN')")
     @Operation(summary = "Update an existing facility")
     public ResponseEntity<ApiResponse<FacilityResponse>> update(
             @PathVariable UUID id,
@@ -74,7 +74,7 @@ public class FacilityController {
     }
 
     @DeleteMapping("{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('FACILITY_DELETE') or hasRole('ADMIN')")
     @Operation(summary = "Delete a facility")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         facilityService.delete(id);

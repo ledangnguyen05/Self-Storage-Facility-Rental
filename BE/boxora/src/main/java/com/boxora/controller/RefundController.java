@@ -31,7 +31,7 @@ public class RefundController {
     private final RefundService refundService;
 
     @PostMapping(value = "/upload-proof", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasRole('ADMIN')")
     @Operation(summary = "Tải lên ảnh chứng từ / ủy nhiệm chi chuyển khoản hoàn tiền")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadProofImage(
             @RequestParam("file") MultipartFile file) {
@@ -40,7 +40,7 @@ public class RefundController {
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('REFUND_APPROVE') or hasRole('ADMIN')")
     @Operation(summary = "Khởi tạo yêu cầu hoàn tiền mới (PENDING_REVIEW)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> createRefund(
             @Valid @RequestBody RefundCreateRequest request) {
@@ -50,7 +50,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/review")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasRole('ADMIN')")
     @Operation(summary = "Phê duyệt hoặc từ chối yêu cầu hoàn tiền (PENDING_REVIEW -> APPROVED / REJECTED)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> reviewRefund(
             @PathVariable UUID id,
@@ -60,7 +60,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/start-transfer")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasRole('ADMIN')")
     @Operation(summary = "Bắt đầu chuyển khoản hoàn tiền (APPROVED -> PROCESSING_TRANSFER)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> startTransfer(
             @PathVariable UUID id,
@@ -70,7 +70,7 @@ public class RefundController {
     }
 
     @PutMapping("{id}/process")
-    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN', 'STAFF')")
+    @PreAuthorize("hasAuthority('REFUND_APPROVE') or hasRole('ADMIN')")
     @Operation(summary = "Xác nhận chuyển tiền với mã đối soát (APPROVED/PROCESSING_TRANSFER -> AWAITING_CUSTOMER_CONFIRMATION)")
     public ResponseEntity<ApiResponse<RefundRequestResponse>> processRefund(
             @PathVariable UUID id,

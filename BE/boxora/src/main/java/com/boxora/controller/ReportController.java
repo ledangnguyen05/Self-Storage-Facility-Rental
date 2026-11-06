@@ -34,7 +34,7 @@ public class ReportController {
     private final ActivityLogService activityLogService;
 
     @GetMapping("/revenue")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasRole('ADMIN')")
     @Operation(summary = "Lấy báo cáo doanh thu toàn hệ thống hoặc theo cơ sở (Chỉ ADMIN và BUSINESS_MANAGER)")
     public ResponseEntity<ApiResponse<RevenueReportResponse>> getRevenueReport(
             @RequestParam(required = false)
@@ -55,7 +55,7 @@ public class ReportController {
     }
 
     @GetMapping("/revenue/export")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('REPORT_VIEW') or hasRole('ADMIN')")
     @Operation(summary = "Xuất file CSV báo cáo doanh thu toàn hệ thống hoặc theo cơ sở (Chỉ ADMIN và BUSINESS_MANAGER)")
     public ResponseEntity<byte[]> exportRevenueCsv(
             @RequestParam(required = false)
@@ -145,7 +145,7 @@ public class ReportController {
     }
 
     @PostMapping("/overdue-debt/{contractId}/send-reminder")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER', 'STAFF')")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'REPORT_VIEW') or hasRole('ADMIN')")
     @Operation(summary = "Gửi email thông báo nhắc nợ quá hạn và chi tiết tiền phạt trễ hạn tới khách hàng")
     public ResponseEntity<ApiResponse<Void>> sendOverdueReminder(@PathVariable UUID contractId) {
         reportService.sendOverdueReminder(contractId);

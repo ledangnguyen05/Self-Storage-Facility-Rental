@@ -117,7 +117,10 @@ export const AdminDashboard: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<Role | null>(null)
   const selectedRoleIdRef = useRef<string | null>(null)
   const selectedRoleRef = useRef<Role | null>(null)
+  const [persistedPermIds, setPersistedPermIds] = useState<string[]>([])
   const [assignedPermIds, setAssignedPermIds] = useState<string[]>([])
+  const [pendingRoleSwitch, setPendingRoleSwitch] = useState<Role | null>(null)
+  const [isUnsavedConfirmOpen, setIsUnsavedConfirmOpen] = useState(false)
   const [roleSaving, setRoleSaving] = useState(false)
   const [roleSaveSuccess, setRoleSaveSuccess] = useState(false)
   const [roleSaveError, setRoleSaveError] = useState<string | null>(null)
@@ -291,35 +294,46 @@ export const AdminDashboard: React.FC = () => {
     }
   }
 
-  const selectRole = async (role: Role, availablePermissions = permissions) => {
+  const hasUnsavedChanges = useMemo(() => {
+    if (persistedPermIds.length !== assignedPermIds.length) return true
+    const assignedSet = new Set(assignedPermIds)
+    return !persistedPermIds.every(id => assignedSet.has(id))
+  }, [persistedPermIds, assignedPermIds])
+
+  const selectRole = async (role: Role, availablePermissions = permissions, force = false) => {
+    if (!force && hasUnsavedChanges && selectedRole && selectedRole.id !== role.id) {
+      setPendingRoleSwitch(role)
+      setIsUnsavedConfirmOpen(true)
+      return
+    }
+
     setRoleSaveError(null)
     setRoleSaveSuccess(false)
     setSelectedRole(role)
     selectedRoleIdRef.current = role.id
     selectedRoleRef.current = role
 
-    const roleKey = (role.name || '').toUpperCase() as RoleType
-    const standardCodes = DEFAULT_PERMISSIONS_BY_ROLE[roleKey] || []
-
     try {
       const rolePerms = await roleService.getPermissionsByRoleId(role.id)
-      if (rolePerms && Array.isArray(rolePerms) && rolePerms.length > 0) {
-        // Chỉ lấy các quyền thực sự active từ cơ sở dữ liệu
+      if (Array.isArray(rolePerms)) {
+        // Lấy các quyền thực sự active từ cơ sở dữ liệu
         const activePerms = rolePerms.filter((rp: any) => {
           if (typeof rp.isActive === 'boolean') return rp.isActive
           if (typeof rp.active === 'boolean') return rp.active
-          return false
+          return true
         })
-        if (activePerms.length > 0) {
-          setAssignedPermIds(activePerms.map((rp: any) => rp.permissionId))
-          return
-        }
+        const activeIds = activePerms.map((rp: any) => rp.permissionId || rp.id)
+        setPersistedPermIds(activeIds)
+        setAssignedPermIds(activeIds)
+        return
       }
-    } catch {
-      // Fallback bên dưới
+    } catch (e) {
+      console.warn('Could not load permissions from API for role:', role.name, e)
     }
 
-    // Tự động gán quyền chuẩn hóa theo vai trò nếu API chưa trả về
+    // Chỉ dùng chuẩn hóa ban đầu khi API chưa thể kết nối
+    const roleKey = (role.name || '').toUpperCase() as RoleType
+    const standardCodes = DEFAULT_PERMISSIONS_BY_ROLE[roleKey] || []
     const standardIds = availablePermissions
       .filter((p: Permission) => {
         const code = (p.code || p.name || '').toUpperCase()
@@ -327,6 +341,7 @@ export const AdminDashboard: React.FC = () => {
       })
       .map((p: Permission) => p.id)
 
+    setPersistedPermIds(standardIds)
     setAssignedPermIds(standardIds)
   }
 
@@ -354,24 +369,40 @@ export const AdminDashboard: React.FC = () => {
   }
 
   const handleSaveRolePermissions = async () => {
-    if (!selectedRole) return
+    if (!selectedRole || roleSaving) return
     setRoleSaving(true)
+    setRoleSaveError(null)
+    setRoleSaveSuccess(false)
     try {
       await roleService.bulkAssignPermissions(selectedRole.id, assignedPermIds)
+
+      // Reload persisted permissions directly from backend to verify saved state
+      const verified = await roleService.getPermissionsByRoleId(selectedRole.id)
+      const verifiedActiveIds = (verified || [])
+        .filter((rp: any) => {
+          if (typeof rp.isActive === 'boolean') return rp.isActive
+          if (typeof rp.active === 'boolean') return rp.active
+          return true
+        })
+        .map((rp: any) => rp.permissionId || rp.id)
+
+      setPersistedPermIds(verifiedActiveIds)
+      setAssignedPermIds(verifiedActiveIds)
       setRoleSaveSuccess(true)
       setRoleSaveError(null)
-      setTimeout(() => setRoleSaveSuccess(false), 2500)
+      setTimeout(() => setRoleSaveSuccess(false), 3000)
 
       // Phát sự kiện toàn hệ thống để các Dashboard khác cập nhật ngay các quyền vừa phân
       window.dispatchEvent(new CustomEvent('boxora_permissions_updated', {
         detail: {
           roleId: selectedRole.id,
           roleName: selectedRole.name,
-          permissionIds: assignedPermIds
+          permissionIds: verifiedActiveIds
         }
       }))
-    } catch {
-      setRoleSaveError('Không lưu được phân quyền. Thay đổi chưa được áp dụng.')
+    } catch (err: any) {
+      console.error('Error saving role permissions:', err)
+      setRoleSaveError(err?.response?.data?.message || 'Không thể cập nhật quyền. Vui lòng kiểm tra quyền quản trị và thử lại.')
     } finally {
       setRoleSaving(false)
     }
@@ -1241,22 +1272,28 @@ export const AdminDashboard: React.FC = () => {
                     Các quyền hạn chức năng mà vai trò này được phép thực thi trong toàn hệ thống.
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-                    {assignedPermIds.length} / {permissions.length} quyền
+                  <div className="flex items-center gap-2">
+                    {hasUnsavedChanges && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-300 text-amber-800 text-[11px] font-bold animate-pulse">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        Có thay đổi chưa lưu
+                      </span>
+                    )}
+                    <div className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
+                      {assignedPermIds.length} / {permissions.length} quyền
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCreatePermError(null)
+                        setIsCreatePermModalOpen(true)
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                      <span>Thêm quyền mới</span>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCreatePermError(null)
-                      setIsCreatePermModalOpen(true)
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">add_circle</span>
-                    <span>Thêm quyền mới</span>
-                  </button>
-                </div>
               </div>
 
               {/* Search & Filter Toolbar */}
@@ -1300,7 +1337,7 @@ export const AdminDashboard: React.FC = () => {
               {roleSaveSuccess && (
                 <div className="p-3 mb-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
                   <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                  <span>Đã lưu ma trận phân quyền thành công qua RolePermission API!</span>
+                  <span>Đã cập nhật quyền thành công cho vai trò {selectedRole ? getRoleMeta(selectedRole.name, selectedRole.description).title : ''}.</span>
                 </div>
               )}
               {roleSaveError && (
@@ -1346,17 +1383,87 @@ export const AdminDashboard: React.FC = () => {
 
             <div className="pt-4 mt-6 border-t border-slate-100 flex items-center justify-between">
               <span className="text-[11px] text-slate-400">
-                Lưu ý: Thay đổi phân quyền sẽ có hiệu lực ngay trong phiên đăng nhập tiếp theo.
+                Lưu ý: Thay đổi phân quyền được cập nhật tức thì vào cơ sở dữ liệu và có hiệu lực ngay lập tức.
               </span>
               <button
                 type="button"
                 onClick={handleSaveRolePermissions}
-                disabled={roleSaving || isSampleRoleData}
-                title={isSampleRoleData ? 'Không thể lưu dữ liệu vai trò minh họa' : undefined}
-                className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!hasUnsavedChanges || roleSaving || isSampleRoleData}
+                title={
+                  !hasUnsavedChanges
+                    ? 'Không có thay đổi nào cần lưu'
+                    : isSampleRoleData
+                    ? 'Không thể lưu dữ liệu vai trò minh họa'
+                    : undefined
+                }
+                className="px-5 py-2 rounded-lg bg-slate-900 hover:bg-black text-white text-xs font-semibold flex items-center gap-2 shadow-sm transition-all disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[16px]">save</span>
-                <span>{roleSaving ? 'Đang lưu...' : 'Lưu Thay Đổi Quyền'}</span>
+                {roleSaving ? (
+                  <>
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                    <span>Đang lưu...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">save</span>
+                    <span>Lưu Thay Đổi Quyền</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xác nhận chuyển vai trò khi có thay đổi chưa lưu */}
+      {isUnsavedConfirmOpen && pendingRoleSwitch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-md w-full space-y-4 animate-scale-in">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[24px]">warning</span>
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-base font-bold text-slate-900">
+                  {t('Thay đổi phân quyền chưa được lưu')}
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Bạn đang có các quyền chưa lưu cho vai trò{' '}
+                  <span className="font-bold text-slate-800">{selectedRole ? getRoleMeta(selectedRole.name).title : ''}</span>.
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed bg-amber-50/70 border border-amber-200/70 p-3 rounded-xl">
+              Nếu chuyển sang vai trò{' '}
+              <span className="font-bold text-orange-700">{getRoleMeta(pendingRoleSwitch.name).title}</span>{' '}
+              ngay bây giờ, các thay đổi chưa lưu của vai trò hiện tại sẽ bị hủy bỏ.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUnsavedConfirmOpen(false)
+                  setPendingRoleSwitch(null)
+                }}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                Tiếp tục chỉnh sửa
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = pendingRoleSwitch
+                  setIsUnsavedConfirmOpen(false)
+                  setPendingRoleSwitch(null)
+                  if (target) {
+                    void selectRole(target, permissions, true)
+                  }
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+              >
+                Bỏ qua & Chuyển vai trò
               </button>
             </div>
           </div>

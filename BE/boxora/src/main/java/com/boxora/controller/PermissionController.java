@@ -23,14 +23,14 @@ public class PermissionController {
     private final PermissionService permissionService;
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('PERMISSION_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PermissionResponse>> getById(@PathVariable UUID id) {
         PermissionResponse response = permissionService.getById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_CREATE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PermissionResponse>> create
             (@Valid @RequestBody PermissionCreateRequest request) {
         PermissionResponse response = permissionService.create(request);
@@ -39,7 +39,7 @@ public class PermissionController {
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_UPDATE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PermissionResponse>> update
             (@PathVariable UUID id, @Valid @RequestBody PermissionUpdateRequest request) {
         PermissionResponse response = permissionService.update(id, request);
@@ -47,14 +47,14 @@ public class PermissionController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('PERMISSION_DELETE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable UUID id) {
         permissionService.delete(id);
         return ResponseEntity.ok(ApiResponse.success("Deleted permission successfully.", null));
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN', 'BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('PERMISSION_VIEW') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<PageResponse<PermissionResponse>>> getAll(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Boolean isActive,

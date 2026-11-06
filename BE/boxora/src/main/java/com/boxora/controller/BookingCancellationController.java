@@ -36,7 +36,7 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/bookings/{id}/cancel")
-    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Hủy đơn đặt kho, giải phóng ngăn kho và hoàn tiền cọc theo 3 mốc")
     public ResponseEntity<ApiResponse<BookingCancelResponse>> cancelBooking(
             @PathVariable UUID id,
@@ -47,7 +47,7 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/bookings/code/{bookingCode}/cancel")
-    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Hủy đơn đặt kho qua mã đặt chỗ (bookingCode)")
     public ResponseEntity<ApiResponse<BookingCancelResponse>> cancelBookingByCode(
             @PathVariable String bookingCode,
@@ -58,7 +58,7 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/bookings/{id}/revoke-cancel")
-    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('CUSTOMER') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Hủy yêu cầu trả kho / rút lại yêu cầu hủy đơn và hoàn cọc")
     public ResponseEntity<ApiResponse<BookingCancelResponse>> revokeCancellation(
             @PathVariable UUID id
@@ -68,7 +68,7 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/bookings/code/{bookingCode}/revoke-cancel")
-    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('CUSTOMER') or hasRole('STAFF') or hasRole('FACILITY_MANAGER') or hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasAuthority('BOOKING_UPDATE') or hasRole('CUSTOMER') or hasRole('ADMIN')")
     @Operation(summary = "Hủy yêu cầu trả kho / rút lại yêu cầu hủy đơn và hoàn cọc theo mã đặt chỗ")
     public ResponseEntity<ApiResponse<BookingCancelResponse>> revokeCancellationByCode(
             @PathVariable String bookingCode
@@ -78,7 +78,7 @@ public class BookingCancellationController {
     }
 
     @PostMapping("/cron/auto-cancel-process")
-    @PreAuthorize("hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("hasAuthority('BOOKING_CANCEL') or hasRole('ADMIN')")
     @Operation(summary = "Kích hoạt quét thủ công tự động hủy các booking PENDING_PAYMENT quá hạn thanh toán (mặc định 15 phút)")
     public ResponseEntity<ApiResponse<AutoCancelResult>> triggerAutoCancelProcess(
             @RequestParam(required = false, defaultValue = "15") Integer timeoutMinutes

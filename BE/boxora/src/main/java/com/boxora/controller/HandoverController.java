@@ -479,7 +479,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/payout")
-    @PreAuthorize("(hasAuthority('REFUND_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')) and !hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("(hasAuthority('REFUND_APPROVE') or hasRole('ADMIN')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Task 16.4: Kế toán / Quản lý kinh doanh (BUSINESS_MANAGER/ADMIN) xác nhận giải ngân hoàn tiền")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> executePayout(
             @PathVariable UUID bookingId,
@@ -489,7 +489,7 @@ public class HandoverController {
     }
 
     @PostMapping("/returns/{bookingId}/reopen-inspection")
-    @PreAuthorize("(hasAuthority('HANDOVER_APPROVE') or hasAnyRole('FACILITY_MANAGER', 'ADMIN')) and !hasRole('BUSINESS_MANAGER')")
+    @PreAuthorize("(hasAnyAuthority('HANDOVER_CREATE', 'HANDOVER_APPROVE') or hasRole('ADMIN')) and !hasRole('BUSINESS_MANAGER')")
     @Operation(summary = "Quản lý cơ sở (FACILITY_MANAGER) mở lại hồ sơ nghiệm thu hiện trường 7 bước để chỉnh sửa lại")
     public ResponseEntity<ApiResponse<ReturnSettlementResponse>> reopenInspection(
             @PathVariable UUID bookingId,
