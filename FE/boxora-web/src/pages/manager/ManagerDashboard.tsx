@@ -385,27 +385,12 @@ export const ManagerDashboard: React.FC = () => {
   // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho (kể cả từ tab/trình duyệt khác)
   useRealtimeSync(() => {
     const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
-    void fetchUpcomingHandovers(targetId)
     void fetchUnits(targetId, true)
-    void handoverService.getReturnCases({ facilityId: targetId }).then(data => {
-      if (Array.isArray(data)) {
-        let p = 0, i = 0, r = 0, comp = 0
-        data.forEach((c: any) => {
-          const st = String(c.status || '').toUpperCase()
-          if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) p++
-          else if (['INSPECTION_IN_PROGRESS', 'INSPECTION_SCHEDULED', 'INSPECTION_ISSUE', 'INSPECTION_PASSED', 'INSPECTING'].includes(st)) i++
-          else if (['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUNDING', 'DISPUTED'].includes(st) || c.approvalStatus === 'PENDING_APPROVAL' || c.approvalStatus === 'DISPUTED') r++
-          else if (st === 'COMPLETED' || st === 'RESOLVED') comp++
-          else p++
-        })
-        setReturnMetrics({ pending: p, inspecting: i, refunding: r, completed: comp, total: data.length })
-      }
-    }).catch(() => {})
-  }, { intervalMs: 5000 })
+  }, { intervalMs: 10000 })
 
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
-      setFacilities(contextFacilities)
+      setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(contextFacilities) ? prev : contextFacilities))
     } else {
       facilityService.getFacilities()
         .then(res => {
@@ -413,12 +398,15 @@ export const ManagerDashboard: React.FC = () => {
           if (isFacilityScoped && assignedFacilityId) {
             list = list.filter(f => f.id === assignedFacilityId)
           }
-          if (list.length > 0) setFacilities(list)
+          if (list.length > 0) {
+            setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))
+          }
         })
         .catch(() => {})
     }
   }, [contextFacilities, isFacilityScoped, assignedFacilityId])
 
+  const lastLoadedFacilityRef = React.useRef<string>('')
   useEffect(() => {
     let targetFacility = isFacilityScoped && assignedFacilityId ? assignedFacilityId : selectedFacility
     if (isFacilityScoped && assignedFacilityId) {
@@ -432,7 +420,9 @@ export const ManagerDashboard: React.FC = () => {
     }
     setSelectedFacilityId(targetFacility)
     if (targetFacility) {
-      void fetchUnits(targetFacility)
+      const isSameFacility = lastLoadedFacilityRef.current === targetFacility
+      lastLoadedFacilityRef.current = targetFacility
+      void fetchUnits(targetFacility, isSameFacility)
     }
   }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, selectedFacilityId])
 
@@ -631,7 +621,8 @@ export const ManagerDashboard: React.FC = () => {
     facId?: string,
     timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
     fromDate?: string,
-    toDate?: string
+    toDate?: string,
+    silent = false
   ) => {
     try {
       const targetId = (facId && facId !== 'ALL')
@@ -656,15 +647,17 @@ export const ManagerDashboard: React.FC = () => {
         }
         filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
         setUpcomingHandovers(filteredArrivals)
-        setHandoverPage(1)
+        if (!silent) setHandoverPage(1)
       } else {
         const localArrivals = mergeGuestArrivals([], targetId)
         setUpcomingHandovers(localArrivals)
-        setHandoverPage(1)
+        if (!silent) setHandoverPage(1)
       }
     } catch {
-      setUpcomingHandovers([])
-      setHandoverPage(1)
+      if (!silent) {
+        setUpcomingHandovers([])
+        setHandoverPage(1)
+      }
     }
   }
 

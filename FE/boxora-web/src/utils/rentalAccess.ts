@@ -58,12 +58,24 @@ export const getCustomerRentals = (user: User | null): CustomerRentalRecord[] =>
 }
 
 export const lockCustomerPortal = (user: User) => {
+  let changed = false
   getCustomerIdentityKeys(user).forEach(key => {
-    localStorage.removeItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`)
-    localStorage.removeItem(`${STORAGE_KEY_PREFIX}${key}`)
-    localStorage.setItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`, 'true')
+    if (localStorage.getItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`) !== null) {
+      localStorage.removeItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`)
+      changed = true
+    }
+    if (localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`) !== null) {
+      localStorage.removeItem(`${STORAGE_KEY_PREFIX}${key}`)
+      changed = true
+    }
+    if (localStorage.getItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`) !== 'true') {
+      localStorage.setItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`, 'true')
+      changed = true
+    }
   })
-  window.dispatchEvent(new Event('boxora_rental_updated'))
+  if (changed) {
+    window.dispatchEvent(new Event('boxora_rental_updated'))
+  }
 }
 
 export const checkCustomerPortalAccess = (user: User | null): {
@@ -108,12 +120,24 @@ export const checkCustomerPortalAccess = (user: User | null): {
 }
 
 export const unlockCustomerPortal = (user: User) => {
+  let changed = false
   getCustomerIdentityKeys(user).forEach(key => {
-    localStorage.setItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`, 'true')
-    localStorage.removeItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`)
-    localStorage.removeItem(`${NEW_CUSTOMER_KEY_PREFIX}${key.toLowerCase()}`)
+    if (localStorage.getItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`) !== 'true') {
+      localStorage.setItem(`${CUSTOMER_PORTAL_ACCESS_KEY_PREFIX}${key}`, 'true')
+      changed = true
+    }
+    if (localStorage.getItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`) !== null) {
+      localStorage.removeItem(`${NEW_CUSTOMER_KEY_PREFIX}${key}`)
+      changed = true
+    }
+    if (localStorage.getItem(`${NEW_CUSTOMER_KEY_PREFIX}${key.toLowerCase()}`) !== null) {
+      localStorage.removeItem(`${NEW_CUSTOMER_KEY_PREFIX}${key.toLowerCase()}`)
+      changed = true
+    }
   })
-  window.dispatchEvent(new Event('boxora_rental_updated'))
+  if (changed) {
+    window.dispatchEvent(new Event('boxora_rental_updated'))
+  }
 }
 
 export const activateCustomerRental = (
@@ -142,22 +166,27 @@ export const activateCustomerRental = (
     }
   }
 
+  const existingMatch = existing.find(r => r.unitCode === unitCode)
+  const resolvedContractCode = contractCode || existingMatch?.contractCode || `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`
+
   const newRental: CustomerRentalRecord = {
     unitCode,
     unitName,
-    contractCode: contractCode || `CTR-${unitCode.replace(/[^a-zA-Z0-9]/g, '')}`,
-
-    startDate: new Date().toLocaleDateString('vi-VN'),
+    contractCode: resolvedContractCode,
+    startDate: existingMatch?.startDate || new Date().toLocaleDateString('vi-VN'),
     isAppConfirmed: true
   }
 
   const updated = [newRental, ...existing.filter(r => r.unitCode !== unitCode)]
-  localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, JSON.stringify(updated))
-  if (username) localStorage.setItem(`${STORAGE_KEY_PREFIX}${username}`, JSON.stringify(updated))
-  if (email) localStorage.setItem(`${STORAGE_KEY_PREFIX}${email}`, JSON.stringify(updated))
+  const serialized = JSON.stringify(updated)
 
-  // Dispatch custom event for real-time reactive UI updates
-  window.dispatchEvent(new Event('boxora_rental_updated'))
+  if (raw !== serialized) {
+    localStorage.setItem(`${STORAGE_KEY_PREFIX}${userId}`, serialized)
+    if (username) localStorage.setItem(`${STORAGE_KEY_PREFIX}${username}`, serialized)
+    if (email) localStorage.setItem(`${STORAGE_KEY_PREFIX}${email}`, serialized)
+    // Dispatch custom event for real-time reactive UI updates only when data actually changed
+    window.dispatchEvent(new Event('boxora_rental_updated'))
+  }
 
   return updated
 }

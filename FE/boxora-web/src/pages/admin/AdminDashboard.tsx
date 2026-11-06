@@ -172,12 +172,12 @@ export const AdminDashboard: React.FC = () => {
   // Sync facilities and selectedFacility from DashboardLayout outlet context
   useEffect(() => {
     if (outletContext?.facilities && outletContext.facilities.length > 0) {
-      setFacilities(outletContext.facilities)
+      setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(outletContext.facilities) ? prev : outletContext.facilities!))
     } else {
       facilityService.getFacilities()
         .then(res => {
           if (res?.content && res.content.length > 0) {
-            setFacilities(res.content)
+            setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(res.content) ? prev : res.content))
           }
         })
         .catch(err => console.warn('Could not fetch facilities in AdminDashboard:', err))
@@ -215,7 +215,7 @@ export const AdminDashboard: React.FC = () => {
       facilityService.getFacilities()
         .then(res => {
           if (res?.content && res.content.length > 0) {
-            setFacilities(res.content)
+            setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(res.content) ? prev : res.content))
           }
         })
         .catch(err => console.warn('Could not refresh facilities on tab switch:', err))
@@ -226,17 +226,17 @@ export const AdminDashboard: React.FC = () => {
     if (activeTab === 'users') {
       void fetchUsers(facilityFilter, true)
     } else if (activeTab === 'logs') {
-      void fetchLogs(isLoginHistoryMode, logsPage)
+      void fetchLogs(isLoginHistoryMode, logsPage, true)
     } else if (activeTab === 'facilities') {
       facilityService.getFacilities()
         .then(res => {
           if (res?.content && res.content.length > 0) {
-            setFacilities(res.content)
+            setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(res.content) ? prev : res.content))
           }
         })
         .catch(() => {})
     }
-  }, { intervalMs: 6000 })
+  }, { intervalMs: 12000 })
 
   const fetchUsers = async (targetFacilityId?: string, silent: boolean = false) => {
     if (!silent) setIsLoadingUsers(true)
@@ -487,9 +487,11 @@ export const AdminDashboard: React.FC = () => {
     }
   }
 
-  const fetchLogs = async (loginHistoryMode = isLoginHistoryMode, page = logsPage) => {
-    setLogsError(false)
-    setIsLoadingLogs(true)
+  const fetchLogs = async (loginHistoryMode = isLoginHistoryMode, page = logsPage, silent = false) => {
+    if (!silent) {
+      setLogsError(false)
+      setIsLoadingLogs(true)
+    }
     try {
       if (loginHistoryMode) {
         const res = await activityLogService.getLoginHistory({ page, size: 20 })
@@ -503,10 +505,12 @@ export const AdminDashboard: React.FC = () => {
         setLogsTotalElements(res?.totalElements || 0)
       }
     } catch {
-      setLogs([])
-      setLogsError(true)
+      if (!silent) {
+        setLogs([])
+        setLogsError(true)
+      }
     } finally {
-      setIsLoadingLogs(false)
+      if (!silent) setIsLoadingLogs(false)
     }
   }
 

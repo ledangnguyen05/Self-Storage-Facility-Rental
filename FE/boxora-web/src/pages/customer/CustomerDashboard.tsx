@@ -1092,11 +1092,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       if (!silent) setLoadingPayments(true)
       const res = await paymentService.getMyPayments()
       if (Array.isArray(res)) {
-        setCustomerPayments(res.filter(p => p.paymentMethod !== 'LIQUIDATION' && !p.transactionId?.startsWith('LIQ-')))
+        const filtered = res.filter(p => p.paymentMethod !== 'LIQUIDATION' && !p.transactionId?.startsWith('LIQ-'))
+        setCustomerPayments(prev => (JSON.stringify(prev) === JSON.stringify(filtered) ? prev : filtered))
       }
     } catch (err) {
       console.error('Failed to load customer payments from database:', err)
-      setCustomerPayments([])
+      if (!silent) setCustomerPayments([])
     } finally {
       if (!silent) setLoadingPayments(false)
     }
@@ -1107,7 +1108,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       if (!silent) setLoadingUnits(true)
       const res = await storageUnitService.getUnits({ status: 'AVAILABLE' })
       if (Array.isArray(res)) {
-        setAvailableUnits(res)
+        setAvailableUnits(prev => (JSON.stringify(prev) === JSON.stringify(res) ? prev : res))
       }
     } catch (err) {
       console.error('Failed to load available storage units from database:', err)
@@ -1123,7 +1124,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
         const activeOnly = res.content.filter(
           (f) => f.status === 'ACTIVE' || (!f.status && (f as any).isActive !== false)
         )
-        setFacilities(activeOnly)
+        setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(activeOnly) ? prev : activeOnly))
       }
     } catch (err) {
       console.error('Failed to load facilities from database:', err)
@@ -1134,7 +1135,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     if (!silent) setLoadingRequests(true)
     try {
       const requests = await bookingService.getMyRequests()
-      setBookingRequests(Array.isArray(requests) ? requests : [])
+      const next = Array.isArray(requests) ? requests : []
+      setBookingRequests(prev => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next))
     } catch (err) {
       console.warn('Failed to load booking requests:', err)
     } finally {
@@ -1157,13 +1159,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       void fetchCustomerTickets(true)
     }
     window.addEventListener('boxora_settlement_confirmed', handleSettlementSync)
-    window.addEventListener('storage', handleSettlementSync)
     return () => {
       window.removeEventListener('boxora_settlement_confirmed', handleSettlementSync)
-      window.removeEventListener('storage', handleSettlementSync)
     }
   }, [user?.id, fetchCustomerNotifications])
 
+  const lastCancelledReturnRawRef = React.useRef<string | null>(null)
   useRealtimeSync(() => {
     void fetchContracts(true)
     void fetchCustomerBookings(true)
@@ -1174,16 +1175,24 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     void fetchCustomerNotifications(true)
     void fetchBookingRequests(true)
     void fetchCustomerTickets(true)
-    setCancelledReturnEpoch(prev => prev + 1)
+    try {
+      const rawCancelled = localStorage.getItem('boxora_cancelled_return_units')
+      if (rawCancelled !== lastCancelledReturnRawRef.current) {
+        lastCancelledReturnRawRef.current = rawCancelled
+        setCancelledReturnEpoch(prev => prev + 1)
+      }
+    } catch {}
     try {
       const savedUnlocked = localStorage.getItem('boxora_unlocked_units')
-      setUnlockedUnits(savedUnlocked ? JSON.parse(savedUnlocked) : {})
+      const nextUnlocked = savedUnlocked ? JSON.parse(savedUnlocked) : {}
+      setUnlockedUnits(prev => (JSON.stringify(prev) === JSON.stringify(nextUnlocked) ? prev : nextUnlocked))
     } catch {}
     try {
       const rawLogs = localStorage.getItem(activityStorageKey)
-      setUnitActivityLogs(rawLogs ? JSON.parse(rawLogs) : [])
+      const nextLogs = rawLogs ? JSON.parse(rawLogs) : []
+      setUnitActivityLogs(prev => (JSON.stringify(prev) === JSON.stringify(nextLogs) ? prev : nextLogs))
     } catch {}
-  }, { intervalMs: 3000 })
+  }, { intervalMs: 12000 })
 
   useEffect(() => {
     let isCurrent = true
@@ -1424,8 +1433,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [])
 
   const contractParam = searchParams.get('contractCode') || searchParams.get('contract') || searchParams.get('contractId')
+  const lastScrolledContractRef = React.useRef<string>('')
   useEffect(() => {
-    if (contractParam) {
+    if (contractParam && contracts.length > 0 && lastScrolledContractRef.current !== `${contractParam}::${activeTab}`) {
+      lastScrolledContractRef.current = `${contractParam}::${activeTab}`
       setHighlightedContractCode(contractParam)
       const clean = contractParam.toLowerCase().replace(/[^a-z0-9]/g, '')
       const tryScroll = () => {
@@ -1442,18 +1453,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
       const t1 = setTimeout(tryScroll, 150)
       const t2 = setTimeout(tryScroll, 450)
-      const t3 = setTimeout(tryScroll, 850)
       return () => {
         clearTimeout(t1)
         clearTimeout(t2)
-        clearTimeout(t3)
       }
     }
-  }, [contractParam, activeTab, loadingContracts, contracts.length])
+  }, [contractParam, activeTab, contracts.length])
 
   const unitParam = searchParams.get('unit') || searchParams.get('unitCode')
+  const lastScrolledUnitRef = React.useRef<string>('')
   useEffect(() => {
-    if (unitParam) {
+    if (unitParam && effectiveActiveContracts.length > 0 && lastScrolledUnitRef.current !== `${unitParam}::${activeTab}`) {
+      lastScrolledUnitRef.current = `${unitParam}::${activeTab}`
       setHighlightedUnitCode(unitParam)
       const clean = unitParam.toLowerCase().replace(/[^a-z0-9]/g, '')
       const tryScroll = () => {
@@ -1466,14 +1477,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
       const t1 = setTimeout(tryScroll, 150)
       const t2 = setTimeout(tryScroll, 450)
-      const t3 = setTimeout(tryScroll, 800)
       return () => {
         clearTimeout(t1)
         clearTimeout(t2)
-        clearTimeout(t3)
       }
     }
-  }, [unitParam, activeTab, loadingContracts, effectiveActiveContracts.length])
+  }, [unitParam, activeTab, effectiveActiveContracts.length])
 
   const getBookingNoticeInfo = useCallback((b: Booking) => {
     const matchingContract =

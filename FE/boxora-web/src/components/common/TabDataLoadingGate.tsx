@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
-import { triggerTabDataLoading, useTabDataLoading } from '../../utils/tabLoadingTracker'
+import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 
 interface TabDataLoadingGateProps {
   children: React.ReactNode
@@ -25,41 +25,20 @@ export const BoxoraMinimalLoader: React.FC<{ className?: string }> = ({ classNam
 
 export const TabDataLoadingGate: React.FC<TabDataLoadingGateProps> = ({
   children,
-  minHeightClass = 'min-h-[60vh]',
 }) => {
   const location = useLocation()
-  const { isTabLoading } = useTabDataLoading()
-  const prevRouteKeyRef = useRef<string>(`${location.pathname}${location.search}`)
+  const prevPathnameRef = useRef<string>(location.pathname)
 
   useEffect(() => {
-    triggerTabDataLoading(380)
-  }, [])
-
-  useEffect(() => {
-    const currentKey = `${location.pathname}${location.search}`
-    if (prevRouteKeyRef.current !== currentKey) {
-      prevRouteKeyRef.current = currentKey
-      triggerTabDataLoading(320)
+    if (prevPathnameRef.current !== location.pathname) {
+      prevPathnameRef.current = location.pathname
+      triggerTabDataLoading(150)
     }
-  }, [location.pathname, location.search])
+  }, [location.pathname])
 
   return (
     <div className="relative w-full">
-      {isTabLoading && (
-        <div className={`w-full ${minHeightClass} flex items-center justify-center py-16`}>
-          <BoxoraMinimalLoader />
-        </div>
-      )}
-
-      <div
-        className={
-          isTabLoading
-            ? 'opacity-0 pointer-events-none select-none h-0 overflow-hidden'
-            : 'opacity-100 transition-opacity duration-150'
-        }
-      >
-        {children}
-      </div>
+      {children}
     </div>
   )
 }

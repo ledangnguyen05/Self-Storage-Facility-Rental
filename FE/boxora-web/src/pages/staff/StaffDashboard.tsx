@@ -516,21 +516,28 @@ export const StaffDashboard: React.FC = () => {
   }, [])
 
   // Đồng bộ URL params và sự kiện click từ Chuông thông báo
+  const lastHandledStaffUrlKeyRef = useRef<string>('')
   useEffect(() => {
     const tabParam = searchParams.get('tab')
     const codeParam = searchParams.get('bookingCode')
+    const urlKey = `${tabParam || ''}::${codeParam || ''}`
 
     if (tabParam === 'pending_orders' || tabParam === 'reception' || tabParam === 'returns' || tabParam === 'renewals') {
-      setStaffActiveTab(tabParam as StaffTab)
+      if (lastHandledStaffUrlKeyRef.current.split('::')[0] !== tabParam) {
+        setStaffActiveTab(tabParam as StaffTab)
+      }
     }
 
-    if (codeParam) {
+    if (codeParam && lastHandledStaffUrlKeyRef.current !== urlKey) {
       setHighlightedBookingCode(codeParam)
       setPendingSearchTerm(codeParam)
       const matched = arrivals.find(b => b.bookingCode === codeParam)
       if (matched) {
+        lastHandledStaffUrlKeyRef.current = urlKey
         setReviewDetailBooking(matched)
       }
+    } else if (!codeParam) {
+      lastHandledStaffUrlKeyRef.current = urlKey
     }
   }, [searchParams, arrivals])
 

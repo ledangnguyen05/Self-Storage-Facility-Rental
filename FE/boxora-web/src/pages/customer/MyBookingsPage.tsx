@@ -968,11 +968,13 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
     }
   }
 
-  // Handle bookingCode from URL searchParams to navigate, highlight card, and view details
+  // Handle bookingCode from URL searchParams to navigate, highlight card, and view details (once per target param)
+  const lastHandledBookingParamRef = React.useRef<string>('')
   useEffect(() => {
     if (!targetBookingCodeParam || bookings.length === 0) return
-
     const cleanTarget = targetBookingCodeParam.trim().replace(/^#/, '').toLowerCase()
+    if (lastHandledBookingParamRef.current === cleanTarget) return
+
     const match = bookings.find(
       (b) =>
         b.bookingCode?.toLowerCase() === cleanTarget ||
@@ -982,6 +984,7 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
     )
 
     if (match) {
+      lastHandledBookingParamRef.current = cleanTarget
       setHighlightedBookingCode(match.bookingCode)
       setStatusFilter('ALL') // ensure it's not hidden by status filter tabs
       setSearchTerm('')     // ensure it's not hidden by search text
@@ -1006,7 +1009,6 @@ export const MyBookingsPage: React.FC<MyBookingsPageProps> = ({ embedded = false
         }
       }
       setTimeout(scrollToCard, 350)
-      setTimeout(scrollToCard, 750)
     }
   }, [targetBookingCodeParam, bookings])
 

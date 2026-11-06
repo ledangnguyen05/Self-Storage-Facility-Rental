@@ -63,7 +63,7 @@ export const DashboardLayout: React.FC = () => {
             } as unknown as Facility]
           }
         }
-        setFacilities(list)
+        setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(list) ? prev : list))
 
         if (isInitial) {
           if (isFacilityScopedRole && assignedFacilityId) {
@@ -86,7 +86,7 @@ export const DashboardLayout: React.FC = () => {
 
   useRealtimeSync(() => {
     loadLayoutFacilities(false)
-  }, { intervalMs: 4000 })
+  }, { intervalMs: 15000 })
 
   // When switching between dashboard sections, default facility filter to 'ALL' (Toàn hệ thống),
   // except for SƠ ĐỒ CƠ SỞ KHO (/portal/facility-manager) where a concrete facility branch must be selected.

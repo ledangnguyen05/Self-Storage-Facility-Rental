@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { markSilentSyncWindow } from '../utils/tabLoadingTracker'
+import { beginSilentSync, endSilentSync } from '../utils/tabLoadingTracker'
 
 const SYNC_CHANNEL_NAME = 'boxora_realtime_sync_channel'
 const SYNC_STORAGE_KEY = 'boxora_last_sync_event'
@@ -18,6 +18,7 @@ const TAB_ID = typeof window !== 'undefined'
 
 let broadcastChannel: BroadcastChannel | null = null
 let isListenerInitialized = false
+let lastBroadcastTs = 0
 
 function initCrossTabListeners() {
   if (typeof window === 'undefined' || isListenerInitialized) return
@@ -55,8 +56,6 @@ function initCrossTabListeners() {
 function dispatchLocalSyncEvents(detail: SyncEventDetail) {
   if (typeof window === 'undefined') return
   window.dispatchEvent(new CustomEvent(DATA_SYNC_EVENT, { detail }))
-  window.dispatchEvent(new Event('boxora:storage-units-refresh'))
-  window.dispatchEvent(new Event('boxora:notifications-refresh'))
 }
 
 /**
@@ -67,10 +66,16 @@ export function broadcastDataSync(url?: string, method?: string) {
   if (typeof window === 'undefined') return
   initCrossTabListeners()
 
+  const now = Date.now()
+  if (now - lastBroadcastTs < 150 && url === '/api/v1/shared-state') {
+    return
+  }
+  lastBroadcastTs = now
+
   const detail: SyncEventDetail = {
     url,
     method,
-    ts: Date.now(),
+    ts: now,
     sourceTabId: TAB_ID,
   }
 
@@ -90,25 +95,25 @@ export function broadcastDataSync(url?: string, method?: string) {
 }
 
 export interface UseRealtimeSyncOptions {
-  /** Polling interval in milliseconds while tab is visible (default: 5000ms) */
+  /** Polling interval in milliseconds while tab is visible (default: 10000ms) */
   intervalMs?: number
   /** Whether synchronization is active (default: true) */
   enabled?: boolean
-  /** Debounce delay in ms for event-driven refreshes (default: 250ms) */
+  /** Debounce delay in ms for event-driven refreshes (default: 220ms) */
   debounceMs?: number
 }
 
 /**
  * Keeps component data automatically synchronized in real time without requiring F5:
- * 1. Instant refresh (debounced) when any mutation happens in this tab or another browser tab (BroadcastChannel + localStorage).
+ * 1. Instant refresh (debounced) when any mutation happens in this tab or another browser tab (BroadcastChannel + localStorage + SSE).
  * 2. Instant refresh when the user focuses the window or switches back to the tab (visibilitychange / focus).
- * 3. Silent periodic polling while the tab is visible so changes from other devices/browsers appear automatically.
+ * 3. Silent periodic polling while the tab is visible so changes from other devices/browsers appear automatically without UI flicker.
  */
 export function useRealtimeSync(
   onSync: () => void | Promise<unknown>,
   options: UseRealtimeSyncOptions = {}
 ) {
-  const { intervalMs = 3000, enabled = true, debounceMs = 80 } = options
+  const { intervalMs = 10000, enabled = true, debounceMs = 220 } = options
   const onSyncRef = useRef(onSync)
   onSyncRef.current = onSync
 
@@ -116,6 +121,7 @@ export function useRealtimeSync(
   const pendingRerunRef = useRef(false)
   const debounceTimerRef = useRef<number | null>(null)
   const lastRunAtRef = useRef<number>(0)
+  const jitterMsRef = useRef<number>(Math.floor(Math.random() * 1400))
 
   useEffect(() => {
     if (typeof window === 'undefined' || !enabled) return
@@ -126,38 +132,53 @@ export function useRealtimeSync(
         return
       }
       if (isRunningRef.current) {
-        pendingRerunRef.current = true
+        if (!isPeriodicTick) {
+          pendingRerunRef.current = true
+        }
+        return
+      }
+      const now = Date.now()
+      if (isPeriodicTick && now - lastRunAtRef.current < 3000) {
         return
       }
       isRunningRef.current = true
-      lastRunAtRef.current = Date.now()
-      markSilentSyncWindow(400)
+      lastRunAtRef.current = now
+      beginSilentSync()
       try {
         await onSyncRef.current()
       } catch {
         // Silent background sync error handling
       } finally {
+        endSilentSync(600)
         isRunningRef.current = false
         if (pendingRerunRef.current) {
           pendingRerunRef.current = false
-          scheduleSync()
+          if (Date.now() - lastRunAtRef.current > 1200) {
+            scheduleSync()
+          }
         }
       }
     }
 
     function scheduleSync() {
+      // Ignore self-induced events fired while onSync is actively running
+      if (isRunningRef.current && Date.now() - lastRunAtRef.current < 900) {
+        return
+      }
       if (debounceTimerRef.current !== null) {
         window.clearTimeout(debounceTimerRef.current)
       }
+      const elapsed = Date.now() - lastRunAtRef.current
+      const waitMs = elapsed < 1000 ? Math.max(debounceMs, 1000 - elapsed) : debounceMs
       debounceTimerRef.current = window.setTimeout(() => {
         debounceTimerRef.current = null
         void executeSync(false)
-      }, debounceMs)
+      }, waitMs)
     }
 
     const handleVisibilityOrFocus = () => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        if (Date.now() - lastRunAtRef.current > 300) {
+        if (Date.now() - lastRunAtRef.current > 2500) {
           scheduleSync()
         }
       }
@@ -173,7 +194,7 @@ export function useRealtimeSync(
     window.addEventListener('focus', handleVisibilityOrFocus)
     document.addEventListener('visibilitychange', handleVisibilityOrFocus)
 
-    const effectiveInterval = Math.min(intervalMs, 4000)
+    const effectiveInterval = intervalMs > 0 ? Math.max(intervalMs, 10000) + jitterMsRef.current : 0
     const intervalId = effectiveInterval > 0
       ? window.setInterval(() => {
           void executeSync(true)

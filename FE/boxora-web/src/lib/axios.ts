@@ -21,6 +21,9 @@ const LOCAL_SESSION_ONLY_KEYS = new Set([
   'boxora_last_sync_event',
   'boxora_booking_draft',
   'boxora_selected_facility_id',
+  'boxora_admin_selected_facility_id',
+  'boxora_discounts_last_sync',
+  'boxora_facility_unittypes_last_sync',
   'boxora_theme',
   'boxora_lang',
   'boxora_language',
@@ -247,6 +250,7 @@ const discoverHealthyApiUrl = async (failedUrl?: string): Promise<string | null>
 // Ensures all computers see the exact same data from the Host PC's PostgreSQL DB
 // ============================================================================
 let isApplyingRemoteState = false
+let isSyncingSharedState = false
 let initialSharedStateSynced = false
 let rawLocalStorageSetItem: ((key: string, value: string) => void) | null = null
 let rawLocalStorageRemoveItem: ((key: string) => void) | null = null
@@ -254,17 +258,13 @@ let pendingUpserts: Record<string, string> = {}
 let pendingRemovals = new Set<string>()
 let flushTimer: number | null = null
 let lastKnownServerUpdatedAt = 0
+let lastLocalFlushCompletedAt = 0
+let lastFailoverProbeAt = 0
 
 const notifyAllComponentsOfRemoteChange = () => {
   if (typeof window === 'undefined') return
   broadcastDataSync('/api/v1/shared-state', 'sync')
   window.dispatchEvent(new Event('storage'))
-  window.dispatchEvent(new Event('boxora:storage-units-refresh'))
-  window.dispatchEvent(new Event('boxora:notifications-refresh'))
-  window.dispatchEvent(new Event('boxora_reservation_updated'))
-  window.dispatchEvent(new Event('boxora_reservation_status_changed'))
-  window.dispatchEvent(new Event('boxora_rental_updated'))
-  window.dispatchEvent(new Event('boxora_id_document_updated'))
 }
 
 const flushPendingSharedState = async () => {
@@ -293,6 +293,7 @@ const flushPendingSharedState = async () => {
       if (typeof data?.updatedAt === 'number' && data.updatedAt > lastKnownServerUpdatedAt) {
         lastKnownServerUpdatedAt = data.updatedAt
       }
+      lastLocalFlushCompletedAt = Date.now()
     }
   } catch {
     // Re-queue if network failed transiently
@@ -312,11 +313,13 @@ const scheduleSharedStateFlush = () => {
   flushTimer = window.setTimeout(() => {
     flushTimer = null
     void flushPendingSharedState()
-  }, 60)
+  }, 150)
 }
 
 export const syncSharedStateWithBackend = async (isInitialBoot = false, forceNotify = false): Promise<void> => {
   if (typeof window === 'undefined' || !rawLocalStorageSetItem || !rawLocalStorageRemoveItem) return
+  if (isSyncingSharedState && !isInitialBoot) return
+  isSyncingSharedState = true
   try {
     const baseUrl = getApiBaseUrl()
     const controller = new AbortController()
@@ -378,8 +381,8 @@ export const syncSharedStateWithBackend = async (isInitialBoot = false, forceNot
 
     const serverRevisionAdvanced = serverUpdatedAt > 0 && serverUpdatedAt !== lastKnownServerUpdatedAt
 
-    // Skip if nothing changed on server since last sync (unless initial boot, server instance changed, or forced by SSE)
-    if (!isInitialBoot && !instanceChanged && !forceNotify && !serverRevisionAdvanced && serverUpdatedAt > 0) {
+    // Skip if nothing changed on server since last sync
+    if (!isInitialBoot && !instanceChanged && !serverRevisionAdvanced && serverUpdatedAt > 0) {
       return
     }
 
@@ -442,11 +445,16 @@ export const syncSharedStateWithBackend = async (isInitialBoot = false, forceNot
       scheduleSharedStateFlush()
     }
 
-    if (hasChanges || serverRevisionAdvanced || isInitialBoot || forceNotify) {
+    const isEchoOfOwnFlush = !hasChanges && Date.now() - lastLocalFlushCompletedAt < 1200
+    if ((hasChanges || (serverRevisionAdvanced && !isEchoOfOwnFlush) || (forceNotify && hasChanges)) && !isInitialBoot) {
+      notifyAllComponentsOfRemoteChange()
+    } else if (isInitialBoot && hasChanges) {
       notifyAllComponentsOfRemoteChange()
     }
   } catch {
     initialSharedStateSynced = true
+  } finally {
+    isSyncingSharedState = false
   }
 }
 
@@ -475,15 +483,21 @@ const connectRealtimeSseStream = () => {
     activeEventSource = es
     activeEventSourceUrl = streamUrl
 
-    es.addEventListener('sync', () => {
-      void syncSharedStateWithBackend(false, true)
+    es.addEventListener('sync', (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data || '{}')
+        if (typeof payload?.updatedAt === 'number' && payload.updatedAt === lastKnownServerUpdatedAt) {
+          return
+        }
+      } catch {}
+      void syncSharedStateWithBackend(false, false)
     })
 
     es.addEventListener('connected', (event: MessageEvent) => {
       try {
         const payload = JSON.parse(event.data || '{}')
         if (typeof payload?.updatedAt === 'number' && payload.updatedAt > lastKnownServerUpdatedAt) {
-          void syncSharedStateWithBackend(false, true)
+          void syncSharedStateWithBackend(false, false)
         }
       } catch {}
     })
@@ -501,7 +515,7 @@ const connectRealtimeSseStream = () => {
       sseReconnectTimer = window.setTimeout(() => {
         sseReconnectTimer = null
         connectRealtimeSseStream()
-      }, 3000)
+      }, 5000)
     }
   } catch {
     // Fallback polling handles synchronization if SSE is blocked
@@ -513,17 +527,20 @@ if (typeof window !== 'undefined' && window.localStorage) {
   rawLocalStorageRemoveItem = window.localStorage.removeItem.bind(window.localStorage)
 
   window.localStorage.setItem = function (key: string, value: string) {
-    rawLocalStorageSetItem!(key, value)
-    if (!isApplyingRemoteState && isSharedBusinessKey(key)) {
+    const nextVal = String(value)
+    const prevVal = window.localStorage.getItem(key)
+    rawLocalStorageSetItem!(key, nextVal)
+    if (!isApplyingRemoteState && isSharedBusinessKey(key) && prevVal !== nextVal) {
       pendingRemovals.delete(key)
-      pendingUpserts[key] = String(value)
+      pendingUpserts[key] = nextVal
       scheduleSharedStateFlush()
     }
   }
 
   window.localStorage.removeItem = function (key: string) {
+    const existed = window.localStorage.getItem(key) !== null
     rawLocalStorageRemoveItem!(key)
-    if (!isApplyingRemoteState && isSharedBusinessKey(key)) {
+    if (!isApplyingRemoteState && isSharedBusinessKey(key) && existed) {
       delete pendingUpserts[key]
       pendingRemovals.add(key)
       scheduleSharedStateFlush()
@@ -539,11 +556,11 @@ if (typeof window !== 'undefined' && window.localStorage) {
     connectRealtimeSseStream()
   })()
 
-  // Continuous cross-machine sync every 1.5 seconds (works even when window is side-by-side / unfocused)
+  // Quiet background cross-machine fallback sync (SSE handles instant <50ms updates)
   window.setInterval(() => {
     void syncSharedStateWithBackend(false)
     connectRealtimeSseStream()
-  }, 1500)
+  }, 8000)
 
   window.addEventListener('focus', () => {
     void syncSharedStateWithBackend(false)
@@ -634,7 +651,13 @@ api.interceptors.response.use(
     const isNetworkOrTunnelError =
       !error.response || status === 502 || status === 503 || status === 504 || status === 530
 
-    if (isNetworkOrTunnelError && originalRequest && !originalRequest._apiFailoverRetried) {
+    if (
+      isNetworkOrTunnelError &&
+      originalRequest &&
+      !originalRequest._apiFailoverRetried &&
+      Date.now() - lastFailoverProbeAt > 10000
+    ) {
+      lastFailoverProbeAt = Date.now()
       originalRequest._apiFailoverRetried = true
       const recoveredBaseUrl = await discoverHealthyApiUrl(originalRequest.baseURL)
       if (recoveredBaseUrl) {

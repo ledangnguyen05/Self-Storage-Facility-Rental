@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 
 type Listener = (isLoading: boolean) => void
 
-let isGateLoading = true
+let isGateLoading = false
 let activeForegroundRequests = 0
-let minLoadingUntil = Date.now() + 450
-let maxLoadingUntil = Date.now() + 3000
+let minLoadingUntil = 0
+let maxLoadingUntil = 0
 let checkTimer: ReturnType<typeof setTimeout> | null = null
 let silentWindowUntil = 0
+let activeSilentSyncCount = 0
 
 const listeners = new Set<Listener>()
 
@@ -29,7 +30,7 @@ function evaluateLoadingState() {
 
   const now = Date.now()
 
-  // Safety cap so a slow/stalled request never blocks the UI forever
+  // Safety cap so a slow/stalled tunnel request never blocks or blanks the UI
   if (now >= maxLoadingUntil) {
     activeForegroundRequests = 0
     if (isGateLoading) {
@@ -46,7 +47,7 @@ function evaluateLoadingState() {
   }
 
   if (activeForegroundRequests > 0) {
-    const remainingMax = Math.min(200, Math.max(30, maxLoadingUntil - now))
+    const remainingMax = Math.min(120, Math.max(25, maxLoadingUntil - now))
     checkTimer = setTimeout(evaluateLoadingState, remainingMax)
     return
   }
@@ -61,26 +62,37 @@ function evaluateLoadingState() {
  * Mark an execution scope as a background silent sync so axios requests
  * fired inside it do not trigger or prolong the foreground tab loading gate.
  */
-export function markSilentSyncWindow(durationMs = 250) {
+export function markSilentSyncWindow(durationMs = 800) {
   const until = Date.now() + durationMs
   if (until > silentWindowUntil) {
     silentWindowUntil = until
   }
 }
 
+export function beginSilentSync() {
+  activeSilentSyncCount += 1
+  markSilentSyncWindow(2500)
+}
+
+export function endSilentSync(lingerMs = 600) {
+  activeSilentSyncCount = Math.max(0, activeSilentSyncCount - 1)
+  markSilentSyncWindow(lingerMs)
+}
+
 export function isSilentSyncActive(): boolean {
-  return Date.now() < silentWindowUntil
+  return activeSilentSyncCount > 0 || Date.now() < silentWindowUntil
 }
 
 /**
- * Trigger the foreground loading indicator immediately (e.g. on F5, route change, or tab switch).
- * Guarantees the loading spinner runs first for at least `minDurationMs` AND until in-flight
- * foreground GET requests settle.
+ * Trigger a subtle loading transition on explicit route change.
+ * Never blocks or unmounts existing DOM content during background syncs.
  */
-export function triggerTabDataLoading(minDurationMs = 360) {
+export function triggerTabDataLoading(minDurationMs = 150) {
+  if (isSilentSyncActive()) return
   const now = Date.now()
-  minLoadingUntil = Math.max(minLoadingUntil, now + minDurationMs)
-  maxLoadingUntil = now + 2800
+  const cappedMin = Math.min(minDurationMs, 180)
+  minLoadingUntil = Math.max(minLoadingUntil, now + cappedMin)
+  maxLoadingUntil = now + 350
   if (!isGateLoading) {
     isGateLoading = true
     notifyListeners()
@@ -89,11 +101,9 @@ export function triggerTabDataLoading(minDurationMs = 360) {
 }
 
 export function incrementForegroundRequest() {
-  if (isSilentSyncActive()) return false
+  if (isSilentSyncActive() || !isGateLoading) return false
   activeForegroundRequests += 1
-  if (isGateLoading) {
-    evaluateLoadingState()
-  }
+  evaluateLoadingState()
   return true
 }
 
@@ -121,7 +131,6 @@ export function useTabDataLoading() {
 
   useEffect(() => {
     setIsLoading(getIsTabDataLoading())
-    evaluateLoadingState()
     return subscribeTabDataLoading(setIsLoading)
   }, [])
 
@@ -131,6 +140,4 @@ export function useTabDataLoading() {
   }
 }
 
-// Kick off initial F5 loading gate evaluation on module load
-evaluateLoadingState()
 
