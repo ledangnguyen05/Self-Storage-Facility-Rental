@@ -1800,7 +1800,7 @@ export const IncidentTicketsPage: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <span className="material-symbols-outlined text-amber-400 text-[18px]">bolt</span>
                       <span className="font-bold text-xs uppercase tracking-wider text-slate-100">
-                        Nghiệp Vụ Xử Lý Sự Cố (Flow 7)
+                        Nghiệp Vụ Xử Lý Sự Cố
                       </span>
                     </div>
                     <span className="text-[10px] text-slate-400 font-mono">

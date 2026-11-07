@@ -3213,20 +3213,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               <span>{isUploadingPhoto ? 'Đang tải lên...' : '+ Tải ảnh hiện trường'}</span>
                             </button>
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const demo = [...DEFAULT_PROOF_PHOTOS]
-                                setPhotoUrls(demo)
-                                updateCurrentCase({ photoUrls: demo })
-                                toast.info('[DEMO] Đã nạp 2 ảnh mẫu cho môi trường kiểm thử.')
-                              }}
-                              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 font-medium text-xs cursor-pointer transition"
-                              title="Chỉ dùng trong môi trường kiểm thử"
-                            >
-                              [Demo] Ảnh mẫu
-                            </button>
-
                             {photoUrls.length > 0 && (
                               <button
                                 type="button"
