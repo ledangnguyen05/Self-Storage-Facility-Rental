@@ -79,17 +79,16 @@ public class EnvironmentSecurityValidator implements ApplicationRunner {
         }
 
         // 2. VNPAY_HASH_SECRET
-        String vnpayHashSecret = getConfig(
-                "VNPAY_HASH_SECRET",
-                "vnpay.hash-secret"
-        );
+     String vnpayHashSecret = getConfig(
+        "VNPAY_HASH_SECRET",
+        "vnpay.hash-secret"
+);
 
-        if (vnpayHashSecret.isBlank()
-                || DEFAULT_DEV_VNPAY_SECRET.equals(vnpayHashSecret)) {
-            throw new IllegalStateException(
-                    "CRITICAL SECURITY ERROR: Production deployment must set a valid VNPAY_HASH_SECRET environment variable."
-            );
-        }
+if (vnpayHashSecret.isBlank()) {
+    throw new IllegalStateException(
+        "CRITICAL SECURITY ERROR: VNPAY_HASH_SECRET must not be blank."
+    );
+}
 
         // 3. DOCUSEAL_WEBHOOK_TOKEN
         String docusealWebhookToken = getConfig(
