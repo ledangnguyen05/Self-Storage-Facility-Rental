@@ -1873,18 +1873,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       return
     }
 
-    if (!loadedPins[unitCode]) {
-      setLoadingPins(prev => ({ ...prev, [unitCode]: true }))
-      try {
-        const res = await bookingService.getBookingPin(bookingOrContractId)
-        if (res?.accessPin) {
-          setLoadedPins(prev => ({ ...prev, [unitCode]: res.accessPin }))
-        }
-      } catch (err) {
-        console.warn('Backend getBookingPin fallback:', err)
-      } finally {
-        setLoadingPins(prev => ({ ...prev, [unitCode]: false }))
+    // Always fetch fresh PIN from server to avoid serving stale cached PIN after reissuance
+    setLoadingPins(prev => ({ ...prev, [unitCode]: true }))
+    try {
+      const res = await bookingService.getBookingPin(bookingOrContractId)
+      if (res?.accessPin) {
+        setLoadedPins(prev => ({ ...prev, [unitCode]: res.accessPin }))
       }
+    } catch (err) {
+      console.warn('Backend getBookingPin fallback:', err)
+    } finally {
+      setLoadingPins(prev => ({ ...prev, [unitCode]: false }))
     }
 
     setRevealedPins(prev => ({ ...prev, [unitCode]: true }))

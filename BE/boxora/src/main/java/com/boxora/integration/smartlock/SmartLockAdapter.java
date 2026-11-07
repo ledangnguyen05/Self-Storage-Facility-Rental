@@ -8,6 +8,8 @@ public interface SmartLockAdapter {
 
     TempGrantResult grantTemporaryPin(String unitCode, int hours);
 
+    UnlockResult remoteUnlock(String unitCode, String reason);
+
     boolean isMock();
 
     record RevocationResult(
@@ -24,5 +26,13 @@ public interface SmartLockAdapter {
             String tempPin,
             String message
     ) {}
+
+    record UnlockResult(
+            boolean success,
+            boolean isMock,
+            String message,
+            String errorDetails
+    ) {}
 }
+
 

@@ -155,15 +155,27 @@ public class SupportTicketController {
     @PostMapping("/{id}/regenerate-pin")
     @PreAuthorize("hasAnyAuthority('SUPPORT_UPDATE', 'SUPPORT_VIEW')")
     @Operation(summary = "Cấp lại mã PIN mới cho ô kho gặp sự cố khóa")
-    public ResponseEntity<ApiResponse<SupportTicketResponse>> regeneratePin(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success("Đã cấp lại mã PIN mới và đồng bộ xuống khóa IoT", supportTicketService.regeneratePin(id)));
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> regeneratePin(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.TicketReissuePinRequest request,
+            @RequestParam(required = false) String reason
+    ) {
+        String effectiveReason = (request != null && request.getReason() != null && !request.getReason().isBlank())
+                ? request.getReason() : reason;
+        return ResponseEntity.ok(ApiResponse.success("Đã cấp lại mã PIN mới và đồng bộ xuống khóa IoT", supportTicketService.regeneratePin(id, effectiveReason)));
     }
 
     @PostMapping("/{id}/remote-unlock")
     @PreAuthorize("hasAnyAuthority('SUPPORT_UPDATE', 'SUPPORT_VIEW')")
     @Operation(summary = "Mở khóa từ xa khẩn cấp hỗ trợ khách hàng")
-    public ResponseEntity<ApiResponse<SupportTicketResponse>> remoteUnlock(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.success("Đã gửi lệnh mở khóa từ xa khẩn cấp", supportTicketService.remoteUnlock(id)));
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> remoteUnlock(
+            @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.TicketRemoteUnlockRequest request,
+            @RequestParam(required = false) String reason
+    ) {
+        String effectiveReason = (request != null && request.getReason() != null && !request.getReason().isBlank())
+                ? request.getReason() : reason;
+        return ResponseEntity.ok(ApiResponse.success("Đã gửi lệnh mở khóa từ xa khẩn cấp", supportTicketService.remoteUnlock(id, effectiveReason)));
     }
 
     @PostMapping("/{id}/adjust-billing")
@@ -171,10 +183,17 @@ public class SupportTicketController {
     @Operation(summary = "Điều chỉnh phụ phí / đối soát hóa đơn cho sự cố thanh toán")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> adjustBilling(
             @PathVariable UUID id,
+            @RequestBody(required = false) com.boxora.dto.request.TicketBillingAdjustmentRequest body,
             @RequestParam(required = false) java.math.BigDecimal amount,
-            @RequestParam(required = false) String note
+            @RequestParam(required = false) String note,
+            @RequestParam(required = false) Boolean isRefund
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận điều chỉnh thanh toán", supportTicketService.adjustBilling(id, amount, note)));
+        com.boxora.dto.request.TicketBillingAdjustmentRequest request = body != null ? body : com.boxora.dto.request.TicketBillingAdjustmentRequest.builder()
+                .amount(amount)
+                .note(note)
+                .isRefund(isRefund != null ? isRefund : (amount != null && amount.compareTo(java.math.BigDecimal.ZERO) > 0))
+                .build();
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận điều chỉnh thanh toán", supportTicketService.adjustBilling(id, request)));
     }
 
     @PostMapping("/{id}/maintenance")
@@ -188,15 +207,57 @@ public class SupportTicketController {
         return ResponseEntity.ok(ApiResponse.success("Đã chuyển ô kho sang trạng thái bảo trì", supportTicketService.setUnitMaintenance(id, reason, maintainerName)));
     }
 
+    @PostMapping("/{id}/complete-maintenance")
+    @PreAuthorize("hasAnyAuthority('SUPPORT_UPDATE', 'SUPPORT_VIEW')")
+    @Operation(summary = "Xác nhận hoàn tất bảo trì ô kho và khôi phục trạng thái sử dụng")
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> completeMaintenance(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success("Đã hoàn tất bảo trì và khôi phục trạng thái ô kho", supportTicketService.completeMaintenance(id)));
+    }
+
     @PostMapping("/{id}/transfer-unit")
     @PreAuthorize("hasAnyAuthority('SUPPORT_UPDATE', 'SUPPORT_VIEW')")
-    @Operation(summary = "Điều chuyển khách hàng sang ô kho trống khác cùng kích thước")
+    @Operation(summary = "Điều chuyển khách hàng sang ô kho trống khác cùng cơ sở")
     public ResponseEntity<ApiResponse<SupportTicketResponse>> transferUnit(
             @PathVariable UUID id,
-            @RequestParam UUID targetUnitId,
-            @RequestParam(required = false) String reason
+            @RequestBody(required = false) com.boxora.dto.request.TicketTransferUnitRequest body,
+            @RequestParam(required = false) UUID targetUnitId,
+            @RequestParam(required = false) String reason,
+            @RequestParam(required = false) Boolean customerAgreedDifferentType
     ) {
-        return ResponseEntity.ok(ApiResponse.success("Đã điều chuyển ô kho thành công cho khách hàng", supportTicketService.transferUnit(id, targetUnitId, reason)));
+        UUID effectiveTarget = body != null && body.getTargetUnitId() != null ? body.getTargetUnitId() : targetUnitId;
+        if (effectiveTarget == null) {
+            throw new com.boxora.exception.AppException(com.boxora.exception.ErrorCode.INVALID_REQUEST, "Mã ô kho đích không được để trống");
+        }
+        String effectiveReason = body != null && body.getReason() != null ? body.getReason() : reason;
+        Boolean effectiveAgreed = body != null && body.getCustomerAgreedDifferentType() != null ? body.getCustomerAgreedDifferentType() : customerAgreedDifferentType;
+
+        com.boxora.dto.request.TicketTransferUnitRequest req = com.boxora.dto.request.TicketTransferUnitRequest.builder()
+                .targetUnitId(effectiveTarget)
+                .reason(effectiveReason)
+                .customerAgreedDifferentType(effectiveAgreed)
+                .build();
+
+        return ResponseEntity.ok(ApiResponse.success("Đã điều chuyển ô kho thành công cho khách hàng", supportTicketService.transferUnit(id, req)));
+    }
+
+    @PostMapping(value = "/{id}/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAnyAuthority('SUPPORT_UPDATE', 'SUPPORT_CREATE')")
+    @Operation(summary = "Tải lên và đính kèm thêm nhiều ảnh hiện trường cho ticket hiện tại")
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> addEvidencePhotos(
+            @PathVariable UUID id,
+            @RequestParam("files") List<MultipartFile> files
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Đã tải lên và đính kèm ảnh hiện trường thành công", supportTicketService.appendEvidenceFiles(id, files)));
+    }
+
+    @PostMapping("/{id}/customer-refund-decision")
+    @PreAuthorize("hasRole('CUSTOMER') or hasAuthority('SUPPORT_VIEW')")
+    @Operation(summary = "Khách hàng phản hồi đồng ý hoặc không đồng ý với đề xuất hoàn tiền")
+    public ResponseEntity<ApiResponse<SupportTicketResponse>> customerDecideRefund(
+            @PathVariable UUID id,
+            @Valid @RequestBody com.boxora.dto.request.TicketCustomerRefundDecisionRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success("Đã ghi nhận phản hồi của khách hàng", supportTicketService.customerDecideRefund(id, request)));
     }
 
     @PostMapping("/{id}/messages")

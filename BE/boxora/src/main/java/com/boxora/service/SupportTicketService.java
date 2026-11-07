@@ -35,11 +35,18 @@ public interface SupportTicketService {
 
     // Flow 7 System Actions
     SupportTicketResponse regeneratePin(UUID ticketId);
+    SupportTicketResponse regeneratePin(UUID ticketId, String reason);
     SupportTicketResponse remoteUnlock(UUID ticketId);
+    SupportTicketResponse remoteUnlock(UUID ticketId, String reason);
     SupportTicketResponse adjustBilling(UUID ticketId, java.math.BigDecimal amount, String note);
+    SupportTicketResponse adjustBilling(UUID ticketId, com.boxora.dto.request.TicketBillingAdjustmentRequest request);
     SupportTicketResponse setUnitMaintenance(UUID ticketId, String reason, String maintainerName);
+    SupportTicketResponse completeMaintenance(UUID ticketId);
     SupportTicketResponse transferUnit(UUID ticketId, UUID targetUnitId, String reason);
+    SupportTicketResponse transferUnit(UUID ticketId, com.boxora.dto.request.TicketTransferUnitRequest request);
     SupportTicketContactLogResponse addTicketMessage(UUID ticketId, String messageType, String content);
+    SupportTicketResponse customerDecideRefund(UUID ticketId, com.boxora.dto.request.TicketCustomerRefundDecisionRequest request);
+    SupportTicketResponse appendEvidenceFiles(UUID ticketId, List<MultipartFile> files);
 
     SupportTicketResponse approveRefund(UUID id, com.boxora.dto.request.TicketApproveRefundRequest request);
     SupportTicketResponse submitBankInfo(UUID id, com.boxora.dto.request.TicketBankInfoRequest request);

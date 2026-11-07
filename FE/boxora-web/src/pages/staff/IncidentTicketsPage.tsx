@@ -131,28 +131,42 @@ export const IncidentTicketsPage: React.FC = () => {
   const [closeTicketError, setCloseTicketError] = useState<string | null>(null)
 
   // Flow 7 System Actions States
-  // 6A: IoT Lock Actions
+  // 6A: IoT Lock Actions (Flow 1 & 2)
+  const [showPinReissueModal, setShowPinReissueModal] = useState(false)
+  const [pinReissueReason, setPinReissueReason] = useState('Khách hàng yêu cầu cấp lại mã PIN do sự cố bàn phím hoặc quên mật mã')
   const [isRegeneratingPin, setIsRegeneratingPin] = useState(false)
+
+  const [showRemoteUnlockModal, setShowRemoteUnlockModal] = useState(false)
+  const [unlockReason, setUnlockReason] = useState('')
   const [isRemoteUnlocking, setIsRemoteUnlocking] = useState(false)
 
-  // 6B: Billing Adjustment Modal
+  // 6B: Billing Adjustment Modal (Flow 3)
   const [showBillingModal, setShowBillingModal] = useState(false)
+  const [billingMode, setBillingMode] = useState<'REFUND' | 'NO_REFUND'>('REFUND')
   const [billingAmount, setBillingAmount] = useState('')
   const [billingNote, setBillingNote] = useState('')
   const [isSubmittingBilling, setIsSubmittingBilling] = useState(false)
 
-  // 6C: Maintenance & Unit Transfer Modals
+  // 6C: Maintenance & Unit Transfer Modals (Flow 4 & 5)
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false)
   const [maintenanceReason, setMaintenanceReason] = useState('')
   const [maintenancePerson, setMaintenancePerson] = useState('')
   const [isSubmittingMaintenance, setIsSubmittingMaintenance] = useState(false)
+  const [isCompletingMaintenance, setIsCompletingMaintenance] = useState(false)
 
   const [showTransferModal, setShowTransferModal] = useState(false)
   const [transferTargetUnitId, setTransferTargetUnitId] = useState('')
   const [transferReason, setTransferReason] = useState('')
+  const [customerAgreedDifferentType, setCustomerAgreedDifferentType] = useState(false)
   const [availableUnitsForTransfer, setAvailableUnitsForTransfer] = useState<StorageUnit[]>([])
   const [isLoadingAvailableUnits, setIsLoadingAvailableUnits] = useState(false)
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false)
+
+  // 6D: Evidence photos multiple upload & preview lightbox (Flow 7)
+  const [newEvidenceFiles, setNewEvidenceFiles] = useState<File[]>([])
+  const [newEvidencePreviewUrls, setNewEvidencePreviewUrls] = useState<string[]>([])
+  const [previewModalImage, setPreviewModalImage] = useState<string | null>(null)
+  const [isUploadingMoreEvidence, setIsUploadingMoreEvidence] = useState(false)
 
   // Step 7: Tabbed Messaging Box in Detail Modal
   const [messageTab, setMessageTab] = useState<'INTERNAL_NOTE' | 'CUSTOMER_REPLY'>('INTERNAL_NOTE')
@@ -272,12 +286,20 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
-  // Flow 7 Bước 6A: IoT Lock Actions
-  const handleRegeneratePin = async (ticketId: string) => {
+  // Flow 7 Bước 6A: IoT Lock Actions (Flow 1 & 2)
+  const handleOpenReissuePinModal = () => {
+    setPinReissueReason('Khách hàng yêu cầu cấp lại mã PIN do sự cố bàn phím hoặc quên mật mã')
+    setShowPinReissueModal(true)
+  }
+
+  const handleSubmitReissuePin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket) return
     setIsRegeneratingPin(true)
     try {
-      const res = await supportTicketService.regeneratePin(ticketId)
+      const res = await supportTicketService.regeneratePin(detailTicket.id, pinReissueReason.trim() || undefined)
       toast.success('Đã tạo và đồng bộ mã PIN mới cho ô kho thành công!')
+      setShowPinReissueModal(false)
       setDetailTicket(res)
       await fetchTicketsAndData()
     } catch (err: any) {
@@ -287,12 +309,23 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
-  const handleRemoteUnlock = async (ticketId: string) => {
-    if (!window.confirm('CẢNH BÁO: Bạn có chắc chắn muốn phát lệnh MỞ KHÓA TỪ XA KHẨN CẤP cho ô kho này không?')) return
+  const handleOpenRemoteUnlockModal = () => {
+    setUnlockReason('Khách hàng gặp sự cố khẩn cấp cần mở kho trực tiếp tại chỗ')
+    setShowRemoteUnlockModal(true)
+  }
+
+  const handleSubmitRemoteUnlock = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket) return
+    if (!unlockReason.trim()) {
+      toast.warning('Vui lòng nhập lý do mở khóa từ xa khẩn cấp')
+      return
+    }
     setIsRemoteUnlocking(true)
     try {
-      const res = await supportTicketService.remoteUnlock(ticketId)
+      const res = await supportTicketService.remoteUnlock(detailTicket.id, unlockReason.trim())
       toast.success('Đã gửi lệnh mở khóa từ xa khẩn cấp thành công!')
+      setShowRemoteUnlockModal(false)
       setDetailTicket(res)
       await fetchTicketsAndData()
     } catch (err: any) {
@@ -302,18 +335,34 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
-  // Flow 7 Bước 6B: Billing Adjustment
+  // Flow 7 Bước 6B: Billing Adjustment (Flow 3)
   const handleSubmitBillingAdjustment = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!detailTicket) return
+    const isRefund = billingMode === 'REFUND'
+    const amountNum = isRefund ? (billingAmount ? Number(billingAmount) : 0) : 0
+
+    if (isRefund && (!amountNum || amountNum <= 0)) {
+      toast.warning('Vui lòng nhập số tiền dự kiến hoàn trả lớn hơn 0 VNĐ')
+      return
+    }
+    if (!billingNote.trim()) {
+      toast.warning(isRefund ? 'Vui lòng nhập căn cứ & lý do hoàn tiền' : 'Vui lòng nhập lý do và kết quả đối soát')
+      return
+    }
+
     setIsSubmittingBilling(true)
     try {
-      const amountNum = billingAmount ? Number(billingAmount) : undefined
       const res = await supportTicketService.adjustBilling(detailTicket.id, {
         amount: amountNum,
-        note: billingNote.trim() || undefined,
+        note: billingNote.trim(),
+        isRefund,
       })
-      toast.success('Đã cập nhật điều chỉnh/miễn trừ phụ phí thành công!')
+      toast.success(
+        isRefund
+          ? 'Đã gửi đề xuất hoàn tiền đến khách hàng để xác nhận!'
+          : 'Đã lưu kết quả đối soát và thông báo cho khách hàng!'
+      )
       setShowBillingModal(false)
       setBillingAmount('')
       setBillingNote('')
@@ -326,7 +375,7 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
-  // Flow 7 Bước 6C: Maintenance & Unit Transfer
+  // Flow 7 Bước 6C: Maintenance & Unit Transfer (Flow 4 & 5)
   const handleSubmitMaintenance = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!detailTicket) return
@@ -349,9 +398,25 @@ export const IncidentTicketsPage: React.FC = () => {
     }
   }
 
+  const handleCompleteMaintenance = async () => {
+    if (!detailTicket) return
+    setIsCompletingMaintenance(true)
+    try {
+      const res = await supportTicketService.completeMaintenance(detailTicket.id)
+      toast.success('Đã xác nhận hoàn tất bảo trì và khôi phục trạng thái buồng kho thành công!')
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể hoàn tất bảo trì.')
+    } finally {
+      setIsCompletingMaintenance(false)
+    }
+  }
+
   const handleOpenTransferModal = async (ticket: SupportTicketRecord) => {
     setShowTransferModal(true)
     setTransferTargetUnitId('')
+    setCustomerAgreedDifferentType(false)
     setTransferReason(`Điều chuyển kho tạm thời để xử lý sự cố #${ticket.ticketCode || ticket.id.slice(0, 8)}`)
     setIsLoadingAvailableUnits(true)
     try {
@@ -359,7 +424,8 @@ export const IncidentTicketsPage: React.FC = () => {
         facilityId: ticket.facilityId,
         status: 'AVAILABLE',
       })
-      setAvailableUnitsForTransfer(units || [])
+      // Loại bỏ ô kho hiện tại khỏi danh sách
+      setAvailableUnitsForTransfer((units || []).filter((u: any) => u.unitCode !== ticket.unitCode))
     } catch (err: any) {
       console.warn('Failed to load available units:', err)
       setAvailableUnitsForTransfer([])
@@ -374,11 +440,21 @@ export const IncidentTicketsPage: React.FC = () => {
       toast.warning('Vui lòng chọn ô kho đích để chuyển đến')
       return
     }
+
+    const selectedTarget = availableUnitsForTransfer.find(u => u.id === transferTargetUnitId)
+    // Kiểm tra khác loại
+    const isDifferent = selectedTarget && selectedTarget.unitTypeName && detailTicket.title && !detailTicket.title.includes(selectedTarget.unitTypeName)
+    if (isDifferent && !customerAgreedDifferentType) {
+      toast.warning('Vui lòng xác nhận sự đồng thuận của khách hàng về khác biệt loại kho trước khi chuyển.')
+      return
+    }
+
     setIsSubmittingTransfer(true)
     try {
       const res = await supportTicketService.transferUnit(detailTicket.id, {
         targetUnitId: transferTargetUnitId,
         reason: transferReason.trim() || undefined,
+        customerAgreedDifferentType,
       })
       toast.success('Đã điều chuyển khách hàng sang ô kho mới thành công!')
       setShowTransferModal(false)
@@ -388,6 +464,23 @@ export const IncidentTicketsPage: React.FC = () => {
       toast.error(err?.response?.data?.message || 'Không thể điều chuyển ô kho.')
     } finally {
       setIsSubmittingTransfer(false)
+    }
+  }
+
+  // Flow 7: Upload thêm ảnh cho Ticket hiện tại
+  const handleUploadMoreEvidence = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (!detailTicket || files.length === 0) return
+    setIsUploadingMoreEvidence(true)
+    try {
+      const res = await supportTicketService.appendEvidencePhotos(detailTicket.id, files)
+      toast.success(`Đã tải lên và đính kèm thêm ${files.length} ảnh hiện trường!`)
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Không thể đính kèm ảnh.')
+    } finally {
+      setIsUploadingMoreEvidence(false)
     }
   }
 
@@ -592,14 +685,18 @@ export const IncidentTicketsPage: React.FC = () => {
     if (isReadOnly || !newTitle.trim()) return
     setIsSubmittingCreate(true)
     try {
-      let uploadedEvidenceUrl: string | undefined = undefined
-      if (newEvidenceFile) {
+      let uploadedUrls: string[] = []
+      if (newEvidenceFiles.length > 0) {
+        uploadedUrls = await supportTicketService.uploadMultipleEvidenceFiles(newEvidenceFiles)
+      } else if (newEvidenceFile) {
         try {
-          uploadedEvidenceUrl = await supportTicketService.uploadAttachment(newEvidenceFile)
+          const u = await supportTicketService.uploadAttachment(newEvidenceFile)
+          if (u) uploadedUrls.push(u)
         } catch (uploadErr) {
           console.warn('Failed to upload incident evidence to R2:', uploadErr)
         }
       }
+      const primaryUrl = uploadedUrls.length > 0 ? uploadedUrls[0] : undefined
       await supportTicketService.createTicket({
         category: newCategory,
         title: newTitle.trim(),
@@ -607,9 +704,9 @@ export const IncidentTicketsPage: React.FC = () => {
         priority: newPriority,
         unitCode: newUnitCode.trim() || undefined,
         facilityId: newFacilityId || user?.facilityId || undefined,
-        attachmentUrl: uploadedEvidenceUrl,
-        imageEvidence: uploadedEvidenceUrl,
-        evidenceUrls: uploadedEvidenceUrl ? [uploadedEvidenceUrl] : undefined
+        attachmentUrl: primaryUrl,
+        imageEvidence: uploadedUrls.length > 0 ? uploadedUrls.join(';') : undefined,
+        evidenceUrls: uploadedUrls.length > 0 ? uploadedUrls : undefined
       })
       setIsCreateModalOpen(false)
       setNewTitle('')
@@ -617,6 +714,8 @@ export const IncidentTicketsPage: React.FC = () => {
       setNewDescription('')
       setNewEvidenceFile(null)
       setNewEvidencePreviewUrl(null)
+      setNewEvidenceFiles([])
+      setNewEvidencePreviewUrls([])
       await fetchTicketsAndData()
     } catch (err: any) {
       toast.error(err?.response?.data?.message || err?.message || 'Không thể tạo ticket mới')
@@ -1829,9 +1928,9 @@ export const IncidentTicketsPage: React.FC = () => {
                     <button
                       type="button"
                       disabled={isRegeneratingPin}
-                      onClick={() => handleRegeneratePin(detailTicket.id)}
+                      onClick={handleOpenReissuePinModal}
                       className="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 text-left"
-                      title="Tạo và đồng bộ mã PIN mới cho ô kho"
+                      title="Cấp lại mã PIN mới - Xác thực và vô hiệu hóa PIN cũ qua SmartLock IoT"
                     >
                       <span className="material-symbols-outlined text-blue-400 text-[18px]">key</span>
                       <div>
@@ -1843,7 +1942,7 @@ export const IncidentTicketsPage: React.FC = () => {
                     <button
                       type="button"
                       disabled={isRemoteUnlocking}
-                      onClick={() => handleRemoteUnlock(detailTicket.id)}
+                      onClick={handleOpenRemoteUnlockModal}
                       className="p-2.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/80 text-rose-200 flex items-center gap-2 transition-colors cursor-pointer disabled:opacity-50 text-left"
                       title="Mở khóa từ xa khẩn cấp qua IoT"
                     >
@@ -1864,21 +1963,35 @@ export const IncidentTicketsPage: React.FC = () => {
                       <span className="material-symbols-outlined text-emerald-400 text-[18px]">price_change</span>
                       <div>
                         <div className="font-bold text-[11px]">Điều chỉnh phụ phí</div>
-                        <div className="text-[10px] text-slate-400">Xử lý hóa đơn sai lệch</div>
+                        <div className="text-[10px] text-slate-400">Xử lý hóa đơn sai lệch / Hoàn tiền</div>
                       </div>
                     </button>
 
-                    {/* 6C: Maintenance */}
+                    {/* 6C: Maintenance & Restore */}
                     <button
                       type="button"
                       onClick={() => setShowMaintenanceModal(true)}
-                      className="p-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-2 transition-colors cursor-pointer text-left"
+                      className="p-2.5 rounded-lg bg-amber-950/60 hover:bg-amber-900/80 border border-amber-800/80 text-amber-200 flex items-center gap-2 transition-colors cursor-pointer text-left"
                       title="Chuyển ô kho sang trạng thái BẢO TRÌ"
                     >
                       <span className="material-symbols-outlined text-amber-400 text-[18px]">build</span>
                       <div>
                         <div className="font-bold text-[11px]">Kho sang Bảo Trì</div>
-                        <div className="text-[10px] text-slate-400">Hư hỏng vật lý / Thấm dột</div>
+                        <div className="text-[10px] text-amber-300/80">Hư hỏng vật lý / Thấm dột</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isCompletingMaintenance}
+                      onClick={handleCompleteMaintenance}
+                      className="p-2.5 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-800/80 text-emerald-200 flex items-center gap-2 transition-colors cursor-pointer text-left disabled:opacity-50"
+                      title="Khôi phục trạng thái kho sau khi sửa chữa bảo trì hoàn tất"
+                    >
+                      <span className="material-symbols-outlined text-emerald-400 text-[18px]">task_alt</span>
+                      <div>
+                        <div className="font-bold text-[11px]">Hoàn tất bảo trì</div>
+                        <div className="text-[10px] text-emerald-300/80">Khôi phục trạng thái buồng kho</div>
                       </div>
                     </button>
 
@@ -1886,13 +1999,13 @@ export const IncidentTicketsPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleOpenTransferModal(detailTicket)}
-                      className="p-2.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/90 border border-indigo-700/80 text-indigo-200 flex items-center gap-2 transition-colors cursor-pointer sm:col-span-2 text-left"
+                      className="p-2.5 rounded-lg bg-indigo-950/70 hover:bg-indigo-900/90 border border-indigo-700/80 text-indigo-200 flex items-center gap-2 transition-colors cursor-pointer text-left"
                       title="Điều chuyển khách sang ô kho khả dụng khác"
                     >
                       <span className="material-symbols-outlined text-indigo-400 text-[18px]">swap_horiz</span>
                       <div>
                         <div className="font-bold text-[11px]">Điều chuyển sang ô kho khác</div>
-                        <div className="text-[10px] text-indigo-300/80">Chuyển sang ô kho trống cùng loại trong cơ sở khi kho cũ gặp sự cố</div>
+                        <div className="text-[10px] text-indigo-300/80">Chuyển hợp đồng và đổi mã SmartLock</div>
                       </div>
                     </button>
                   </div>
@@ -1906,13 +2019,14 @@ export const IncidentTicketsPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setMessageTab('INTERNAL_NOTE')}
+                      title="Ghi chú nội bộ — Nhân viên & quản lý có quyền xem"
                       className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                         messageTab === 'INTERNAL_NOTE'
                           ? 'bg-amber-100 text-amber-900 border border-amber-300'
                           : 'text-slate-600 hover:bg-slate-200'
                       }`}
                     >
-                      🔒 Ghi chú nội bộ
+                      🔒 Ghi chú nội bộ — Nhân viên &amp; quản lý có quyền xem
                     </button>
                     <button
                       type="button"
@@ -1927,7 +2041,7 @@ export const IncidentTicketsPage: React.FC = () => {
                     </button>
                   </div>
                   <span className="text-[10px] text-slate-400">
-                    {messageTab === 'INTERNAL_NOTE' ? 'Chỉ nhân viên nhìn thấy' : 'Hiển thị trên app khách hàng'}
+                    {messageTab === 'INTERNAL_NOTE' ? 'Bảo mật nội bộ cơ sở' : 'Hiển thị trên app khách hàng'}
                   </span>
                 </div>
 
@@ -1939,7 +2053,7 @@ export const IncidentTicketsPage: React.FC = () => {
                       onChange={(e) => setMessageContent(e.target.value)}
                       placeholder={
                         messageTab === 'INTERNAL_NOTE'
-                          ? 'Ghi chú kỹ thuật hiện trường, vật tư cần thay, liên hệ thợ...'
+                          ? 'Ghi chú nội bộ — Nhân viên & quản lý có quyền xem: ghi chú kỹ thuật, vật tư cần thay, liên hệ thợ...'
                           : 'Soạn phản hồi gửi khách hàng về tiến độ khắc phục sự cố...'
                       }
                       className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
@@ -1958,21 +2072,49 @@ export const IncidentTicketsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Evidence photo preview */}
-              <div>
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-2">
-                  Minh chứng hiện trường (Camera &amp; Ảnh đính kèm)
-                </span>
+              {/* Evidence photo preview & Gallery */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    Minh chứng hiện trường (Camera &amp; Ảnh đính kèm)
+                  </span>
+                  {!isReadOnly && detailTicket.status !== 'CLOSED' && (
+                    <label className="cursor-pointer px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors border border-slate-300">
+                      <span className="material-symbols-outlined text-[14px] text-blue-600">add_photo_alternate</span>
+                      <span>{isUploadingMoreEvidence ? 'Đang tải ảnh...' : '+ Thêm ảnh hiện trường'}</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        disabled={isUploadingMoreEvidence}
+                        onChange={handleUploadMoreEvidence}
+                      />
+                    </label>
+                  )}
+                </div>
+
                 {detailTicket.imageEvidence || (detailTicket.evidenceUrls && detailTicket.evidenceUrls.length > 0) ? (
                   <div className="flex flex-wrap gap-2">
-                    {[detailTicket.imageEvidence, ...(detailTicket.evidenceUrls || [])].filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx).map((imgUrl, i) => (
-                      <a key={i} href={imgUrl} target="_blank" rel="noreferrer" className="block w-28 h-28 rounded-xl overflow-hidden border border-slate-200 hover:opacity-80 transition-opacity">
-                        <img src={imgUrl} alt="Hiện trường sự cố" className="w-full h-full object-cover" />
-                      </a>
-                    ))}
+                    {[detailTicket.imageEvidence, ...(detailTicket.evidenceUrls || [])]
+                      .flatMap((item) => (item ? item.split(';') : []))
+                      .filter((url, idx, arr) => Boolean(url) && arr.indexOf(url) === idx)
+                      .map((imgUrl, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => setPreviewModalImage(imgUrl)}
+                          className="block w-28 h-28 rounded-xl overflow-hidden border border-slate-200 hover:opacity-85 transition-opacity cursor-pointer group relative bg-slate-100"
+                        >
+                          <img src={imgUrl} alt="Hiện trường sự cố" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white">
+                            <span className="material-symbols-outlined text-[20px]">zoom_in</span>
+                          </div>
+                        </button>
+                      ))}
                   </div>
                 ) : (
-                  <div className="w-full h-40 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative">
+                  <div className="w-full h-36 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center relative">
                     <img
                       src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=80"
                       alt="Hiện trường sự cố"
@@ -1985,22 +2127,64 @@ export const IncidentTicketsPage: React.FC = () => {
                 )}
               </div>
 
-              {/* Contact history in detail modal */}
+              {/* Contact history in detail modal with Role/Type Badges */}
               {detailContactLogs.length > 0 && (
                 <div className="space-y-2 border-t border-slate-100 pt-3">
                   <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                    Nhật ký liên hệ Ban Quản Lý (BOM):
+                    Nhật ký xử lý &amp; Trao đổi liên hệ:
                   </div>
-                  <div className="space-y-1.5">
-                    {detailContactLogs.map((log) => (
-                      <div key={log.id} className="p-2.5 bg-slate-50 rounded-lg text-xs border border-slate-200">
-                        <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>{log.contactedByName} ({log.contactMethod})</span>
-                          <span>{log.createdAt ? new Date(log.createdAt).toLocaleString('vi-VN') : ''}</span>
+                  <div className="space-y-2">
+                    {detailContactLogs.map((log) => {
+                      const isInternal =
+                        log.contactMethod === 'INTERNAL_NOTE' ||
+                        log.targetRole === 'STAFF' ||
+                        (log.summary && log.summary.startsWith('[Ghi chú nội bộ]'))
+                      const isCustReply =
+                        log.contactMethod === 'CUSTOMER_REPLY' ||
+                        log.targetRole === 'CUSTOMER' ||
+                        (log.summary && log.summary.startsWith('[Phản hồi khách hàng]'))
+
+                      return (
+                        <div
+                          key={log.id}
+                          className={`p-2.5 rounded-lg text-xs border ${
+                            isInternal
+                              ? 'bg-amber-50/70 border-amber-200'
+                              : isCustReply
+                              ? 'bg-blue-50/70 border-blue-200'
+                              : 'bg-slate-50 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[10px] mb-1">
+                            <div className="flex items-center gap-1.5">
+                              {isInternal && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                  🔒 Ghi chú nội bộ
+                                </span>
+                              )}
+                              {isCustReply && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-900 border border-blue-300">
+                                  💬 Phản hồi khách hàng
+                                </span>
+                              )}
+                              {!isInternal && !isCustReply && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-700">
+                                  📞 {log.contactMethod || 'Ghi nhận'}
+                                </span>
+                              )}
+                              <span className="font-semibold text-slate-700">{log.contactedByName || 'Nhân viên'}</span>
+                            </div>
+                            <span className="text-slate-400">
+                              {log.createdAt ? new Date(log.createdAt).toLocaleString('vi-VN') : ''}
+                            </span>
+                          </div>
+                          <div className="text-slate-800 leading-relaxed whitespace-pre-wrap">{log.summary}</div>
+                          {log.result && (
+                            <div className="text-[11px] text-slate-500 mt-1 italic">Kết quả: {log.result}</div>
+                          )}
                         </div>
-                        <div className="text-slate-700 mt-0.5">{log.summary}</div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -2122,43 +2306,54 @@ export const IncidentTicketsPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Ảnh chụp hiện trường (tải lên R2)</label>
-                <div className="flex items-center gap-3">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Ảnh chụp hiện trường (Tải lên R2 — Chọn một hoặc nhiều ảnh, tối đa 10MB/ảnh)
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
                   <label className="cursor-pointer px-3.5 py-2 bg-slate-50 border border-dashed border-slate-300 hover:border-rose-500 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors">
                     <span className="material-symbols-outlined text-[16px] text-rose-600">add_photo_alternate</span>
-                    <span>{newEvidenceFile ? 'Đổi ảnh khác' : 'Chọn ảnh hiện trường'}</span>
+                    <span>{newEvidenceFiles.length > 0 ? '+ Thêm ảnh khác' : 'Chọn ảnh hiện trường'}</span>
                     <input
                       type="file"
-                      accept="image/*"
+                      multiple
+                      accept="image/png,image/jpeg,image/webp"
                       className="hidden"
                       onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (file) {
-                          setNewEvidenceFile(file)
-                          setNewEvidencePreviewUrl(URL.createObjectURL(file))
+                        const files = Array.from(e.target.files || [])
+                        if (files.length > 0) {
+                          setNewEvidenceFiles(prev => [...prev, ...files])
+                          const urls = files.map(f => URL.createObjectURL(f))
+                          setNewEvidencePreviewUrls(prev => [...prev, ...urls])
                         }
                       }}
                     />
                   </label>
-                  {newEvidenceFile && (
-                    <div className="flex items-center gap-2 p-1.5 bg-slate-50 border border-slate-200 rounded-lg">
-                      {newEvidencePreviewUrl && (
-                        <img src={newEvidencePreviewUrl} alt="Preview" className="w-8 h-8 object-cover rounded" />
-                      )}
-                      <span className="text-xs text-slate-600 truncate max-w-[160px]">{newEvidenceFile.name}</span>
+                  {newEvidenceFiles.map((file, idx) => (
+                    <div key={idx} className="relative group w-12 h-12 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
+                      <img
+                        src={newEvidencePreviewUrls[idx] || ''}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                      />
                       <button
                         type="button"
                         onClick={() => {
-                          setNewEvidenceFile(null)
-                          setNewEvidencePreviewUrl(null)
+                          setNewEvidenceFiles(prev => prev.filter((_, i) => i !== idx))
+                          setNewEvidencePreviewUrls(prev => prev.filter((_, i) => i !== idx))
                         }}
-                        className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
+                        className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[9px] font-bold opacity-80 group-hover:opacity-100 shadow-xs cursor-pointer"
+                        title="Xóa ảnh này"
                       >
                         ✕
                       </button>
                     </div>
-                  )}
+                  ))}
                 </div>
+                {newEvidenceFiles.length > 0 && (
+                  <div className="text-[10px] text-slate-500 mt-1 font-mono">
+                    Đã đính kèm {newEvidenceFiles.length} tệp ảnh hiện trường
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -2253,48 +2448,224 @@ export const IncidentTicketsPage: React.FC = () => {
         </div>
       )}
 
-      {/* FLOW 7 MODAL 6B: Điều Chỉnh / Miễn Trừ Phụ Phí */}
-      {showBillingModal && detailTicket && (
+      {/* FLOW 1 MODAL: Cấp Lại Mã PIN SmartLock Mới */}
+      {showPinReissueModal && detailTicket && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">key</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Xác Nhận Cấp Lại Mã PIN SmartLock</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Cấp mã PIN mới cho ô kho <strong>#{detailTicket.unitCode || 'N/A'}</strong> (Phiếu #{detailTicket.ticketCode || detailTicket.id.slice(0, 8)}).
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 text-xs space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <span className="material-symbols-outlined text-[16px]">warning</span>
+                <span>Lưu ý vô hiệu hóa mã PIN cũ</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Mã PIN cũ trên khóa IoT sẽ bị thu hồi và hủy hiệu lực ngay lập tức. Hệ thống sẽ sinh mã PIN 6 số mới, đồng bộ xuống thiết bị và gửi thông báo bảo mật đến khách hàng ({detailTicket.customerName || 'người thuê'}).
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmitReissuePin} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lý do cấp lại mã PIN *
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={pinReissueReason}
+                  onChange={(e) => setPinReissueReason(e.target.value)}
+                  placeholder="Khách hàng quên mật mã / sự cố bàn phím IoT..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isRegeneratingPin}
+                  onClick={() => setShowPinReissueModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRegeneratingPin || !pinReissueReason.trim()}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">sync_lock</span>
+                  <span>{isRegeneratingPin ? 'Đang đồng bộ SmartLock...' : 'Xác Nhận Cấp Lại PIN'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 2 MODAL: Mở Khóa Từ Xa Khẩn Cấp (Remote Unlock) */}
+      {showRemoteUnlockModal && detailTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">lock_open</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Mở Khóa Từ Xa Khẩn Cấp</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Gửi lệnh IoT mở chốt khóa ô <strong>#{detailTicket.unitCode || 'N/A'}</strong> tại {detailTicket.facilityName || 'cơ sở'}.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-950 text-xs space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-rose-800">
+                <span className="material-symbols-outlined text-[16px]">shield</span>
+                <span>Cảnh báo an ninh cơ sở</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                Chỉ thực hiện mở khóa khẩn cấp khi nhân viên đã xác minh danh tính khách hàng ({detailTicket.customerName || 'khách thuê'}) tại hiện trường hoặc trong tình huống khẩn cấp kỹ thuật. Hành động sẽ được ghi nhận vào nhật ký an ninh.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmitRemoteUnlock} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Lý do mở khóa khẩn cấp *
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={unlockReason}
+                  onChange={(e) => setUnlockReason(e.target.value)}
+                  placeholder="Ghi rõ lý do và tình huống khẩn cấp..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-rose-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isRemoteUnlocking}
+                  onClick={() => setShowRemoteUnlockModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRemoteUnlocking || !unlockReason.trim()}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">key_off</span>
+                  <span>{isRemoteUnlocking ? 'Đang gửi lệnh IoT...' : 'Xác Nhận Mở Khóa'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 3 MODAL: Điều Chỉnh Phụ Phí / Hoàn Tiền (Billing Adjustment) */}
+      {showBillingModal && detailTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-2xl">price_change</span>
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">Điều Chỉnh / Miễn Trừ Phụ Phí (Billing)</h3>
+                <h3 className="text-base font-bold text-slate-900">Xử Lý Phụ Phí &amp; Hoàn Tiền Sự Cố</h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Xử lý tranh chấp hóa đơn, phí phạt quá hạn do lỗi hệ thống hoặc bồi hoàn cho khách hàng.
+                  Phiếu #{detailTicket.ticketCode || detailTicket.id.slice(0, 8)} - Ô kho #{detailTicket.unitCode || 'N/A'}
                 </p>
               </div>
             </div>
 
+            {/* Mode Selector */}
+            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setBillingMode('REFUND')}
+                className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  billingMode === 'REFUND'
+                    ? 'bg-white text-emerald-800 shadow-xs border border-emerald-300'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">currency_exchange</span>
+                <span>Có hoàn tiền</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillingMode('NO_REFUND')}
+                className={`py-2 px-3 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  billingMode === 'NO_REFUND'
+                    ? 'bg-white text-blue-800 shadow-xs border border-blue-300'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">receipt_long</span>
+                <span>Không hoàn tiền (Đối soát)</span>
+              </button>
+            </div>
+
             <form onSubmit={handleSubmitBillingAdjustment} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Số tiền điều chỉnh / miễn trừ (VNĐ)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1000"
-                  value={billingAmount}
-                  onChange={(e) => setBillingAmount(e.target.value)}
-                  placeholder="Ví dụ: 200000 (Để trống nếu chỉ ghi nhận đối soát)"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
-                />
-              </div>
+              {billingMode === 'REFUND' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Số tiền hoàn trả dự kiến (VNĐ) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1000"
+                      step="1000"
+                      required
+                      value={billingAmount}
+                      onChange={(e) => setBillingAmount(e.target.value)}
+                      placeholder="Ví dụ: 150000"
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono"
+                    />
+                  </div>
+
+                  <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-950 text-[11px] space-y-1">
+                    <strong>Quy trình hoàn tiền an toàn:</strong>
+                    <div>1. Đề xuất hoàn tiền được gửi tới khách hàng để xác nhận STK ngân hàng.</div>
+                    <div>2. Sau khi khách hàng đồng ý, phiếu chuyển sang Quản lý cơ sở (FM) duyệt chi.</div>
+                  </div>
+                </>
+              ) : (
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-950 text-[11px] space-y-1">
+                  <strong>Thông báo kết quả đối soát:</strong>
+                  <div>Hệ thống ghi nhận kết luận đối soát vào lịch sử phiếu và gửi thông báo minh bạch tới khách hàng mà không phát sinh hoàn tiền.</div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Căn cứ / Lý do điều chỉnh *
+                  {billingMode === 'REFUND' ? 'Căn cứ & lý do hoàn tiền *' : 'Căn cứ & kết luận đối soát *'}
                 </label>
                 <textarea
                   rows={3}
                   required
                   value={billingNote}
                   onChange={(e) => setBillingNote(e.target.value)}
-                  placeholder="Ghi rõ: Lỗi cổng tự động kẹt xe quá giờ, hệ thống tính thừa phí quá hạn, hoặc bồi hoàn sự cố..."
+                  placeholder={
+                    billingMode === 'REFUND'
+                      ? 'Ghi rõ: Lỗi hệ thống tính thừa tiền quá hạn 2 ngày, đền bù sự cố kẹt cửa...'
+                      : 'Ghi rõ: Đã kiểm tra log camera và hệ thống, phí phát sinh là hợp lệ theo điều khoản...'
+                  }
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
                 />
               </div>
@@ -2310,11 +2681,11 @@ export const IncidentTicketsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingBilling}
+                  disabled={isSubmittingBilling || !billingNote.trim() || (billingMode === 'REFUND' && (!billingAmount || Number(billingAmount) <= 0))}
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                  <span>{isSubmittingBilling ? 'Đang lưu...' : 'Xác Nhận Điều Chỉnh'}</span>
+                  <span>{isSubmittingBilling ? 'Đang lưu...' : billingMode === 'REFUND' ? 'Gửi Đề Xuất Hoàn Tiền' : 'Lưu Kết Quả Đối Soát'}</span>
                 </button>
               </div>
             </form>
@@ -2322,7 +2693,7 @@ export const IncidentTicketsPage: React.FC = () => {
         </div>
       )}
 
-      {/* FLOW 7 MODAL 6C: Chuyển Kho Sang Trạng Thái BẢO TRÌ */}
+      {/* FLOW 4 MODAL: Chuyển Kho Sang Trạng Thái BẢO TRÌ */}
       {showMaintenanceModal && detailTicket && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -2333,7 +2704,7 @@ export const IncidentTicketsPage: React.FC = () => {
               <div>
                 <h3 className="text-base font-bold text-slate-900">Chuyển Kho Sang Trạng Thái Bảo Trì</h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Khóa ô kho #{detailTicket.unitCode || 'hiện tại'} để bảo trì kỹ thuật (UNDER_MAINTENANCE).
+                  Khóa buồng kho <strong>#{detailTicket.unitCode || 'hiện tại'}</strong> để bảo trì (UNDER_MAINTENANCE).
                 </p>
               </div>
             </div>
@@ -2377,7 +2748,7 @@ export const IncidentTicketsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingMaintenance}
+                  disabled={isSubmittingMaintenance || !maintenanceReason.trim()}
                   className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-[16px]">engineering</span>
@@ -2389,7 +2760,7 @@ export const IncidentTicketsPage: React.FC = () => {
         </div>
       )}
 
-      {/* FLOW 7 MODAL 6C: Điều Chuyển Sang Ô Kho Khác (Unit Transfer) */}
+      {/* FLOW 5 MODAL: Điều Chuyển Sang Ô Kho Khác (Unit Transfer) */}
       {showTransferModal && detailTicket && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
@@ -2400,7 +2771,7 @@ export const IncidentTicketsPage: React.FC = () => {
               <div>
                 <h3 className="text-base font-bold text-slate-900">Điều Chuyển Ô Kho</h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Chuyển hợp đồng của khách hàng từ kho <strong>#{detailTicket.unitCode || 'cũ'}</strong> sang một ô kho trống khả dụng khác tại cơ sở.
+                  Chuyển hợp đồng của khách từ kho <strong>#{detailTicket.unitCode || 'cũ'}</strong> sang ô kho trống khả dụng khác tại cơ sở.
                 </p>
               </div>
             </div>
@@ -2422,7 +2793,10 @@ export const IncidentTicketsPage: React.FC = () => {
                 ) : (
                   <select
                     value={transferTargetUnitId}
-                    onChange={(e) => setTransferTargetUnitId(e.target.value)}
+                    onChange={(e) => {
+                      setTransferTargetUnitId(e.target.value)
+                      setCustomerAgreedDifferentType(false)
+                    }}
                     required
                     className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                   >
@@ -2435,6 +2809,39 @@ export const IncidentTicketsPage: React.FC = () => {
                   </select>
                 )}
               </div>
+
+              {/* Warning for different unit type / size */}
+              {(() => {
+                const selectedTarget = availableUnitsForTransfer.find(u => u.id === transferTargetUnitId)
+                if (!selectedTarget) return null
+
+                const isDifferent =
+                  (selectedTarget.unitTypeName && detailTicket.title && !detailTicket.title.includes(selectedTarget.unitTypeName)) ||
+                  (detailTicket.unitCode && selectedTarget.unitCode && selectedTarget.unitCode.charAt(0) !== detailTicket.unitCode.charAt(0))
+
+                return (
+                  <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-2 text-amber-950 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-800">
+                      <span className="material-symbols-outlined text-[16px]">info</span>
+                      <span>Xác nhận thông tin ô kho mới:</span>
+                    </div>
+                    <div className="text-[11px] leading-relaxed">
+                      Kho nhận bàn giao: <strong>#{selectedTarget.unitCode}</strong> ({selectedTarget.unitTypeName || 'Tiêu chuẩn'} - {selectedTarget.areaSqMeters || 6}m²).
+                    </div>
+                    <label className="flex items-start gap-2 pt-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={customerAgreedDifferentType}
+                        onChange={(e) => setCustomerAgreedDifferentType(e.target.checked)}
+                        className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      />
+                      <span className="text-[11px] font-semibold text-slate-800">
+                        Khách hàng đã đồng ý với vị trí và đặc tính của buồng kho mới này (customerAgreedDifferentType).
+                      </span>
+                    </label>
+                  </div>
+                )
+              })()}
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -2450,10 +2857,11 @@ export const IncidentTicketsPage: React.FC = () => {
                 />
               </div>
 
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] space-y-1">
-                <strong>Quy trình xử lý hệ thống:</strong>
-                <div>• Ô kho cũ sẽ tự động chuyển sang trạng thái <strong>UNDER_MAINTENANCE (Bảo trì)</strong>.</div>
-                <div>• Hợp đồng thuê và phiếu sự cố sẽ được cập nhật sang mã kho mới.</div>
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-[11px] space-y-1">
+                <strong>Quy trình xử lý giao dịch tự động:</strong>
+                <div>• Ô kho cũ #{detailTicket.unitCode || ''} sẽ chuyển sang trạng thái <strong>UNDER_MAINTENANCE</strong>.</div>
+                <div>• Thu hồi mã PIN SmartLock của ô kho cũ và cấp mã PIN mới cho ô kho #{availableUnitsForTransfer.find(u => u.id === transferTargetUnitId)?.unitCode || ''}.</div>
+                <div>• Hợp đồng thuê và phiếu sự cố được cập nhật liên kết sang ô kho mới.</div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
@@ -2475,6 +2883,30 @@ export const IncidentTicketsPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 7 LIGHTBOX MODAL: Xem Ảnh Minh Chứng Đầy Đủ */}
+      {previewModalImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setPreviewModalImage(null)}
+              className="absolute -top-10 right-0 text-white hover:text-slate-300 text-xs font-bold flex items-center gap-1 cursor-pointer bg-slate-800/80 px-2.5 py-1 rounded-lg"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+              <span>Đóng</span>
+            </button>
+            <img
+              src={previewModalImage}
+              alt="Ảnh hiện trường sự cố"
+              className="max-w-full max-h-[85vh] rounded-xl object-contain shadow-2xl border border-white/20"
+            />
           </div>
         </div>
       )}

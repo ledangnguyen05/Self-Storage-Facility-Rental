@@ -222,17 +222,17 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
-  async regeneratePin(id: string) {
-    const response = await api.post(`/api/v1/support-tickets/${id}/regenerate-pin`)
+  async regeneratePin(id: string, reason?: string) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/regenerate-pin`, { reason })
     return response.data?.data as SupportTicketRecord
   },
 
-  async remoteUnlock(id: string) {
-    const response = await api.post(`/api/v1/support-tickets/${id}/remote-unlock`)
+  async remoteUnlock(id: string, reason: string) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/remote-unlock`, { reason })
     return response.data?.data as SupportTicketRecord
   },
 
-  async adjustBilling(id: string, data: { amount?: number; note?: string }) {
+  async adjustBilling(id: string, data: { amount?: number; note?: string; isRefund?: boolean }) {
     const response = await api.post(`/api/v1/support-tickets/${id}/adjust-billing`, data)
     return response.data?.data as SupportTicketRecord
   },
@@ -242,9 +242,48 @@ export const supportTicketService = {
     return response.data?.data as SupportTicketRecord
   },
 
-  async transferUnit(id: string, data: { targetUnitId: string; reason?: string }) {
+  async completeMaintenance(id: string) {
+    const response = await api.post(`/api/v1/support-tickets/${id}/complete-maintenance`)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async transferUnit(id: string, data: { targetUnitId: string; reason?: string; customerAgreedDifferentType?: boolean }) {
     const response = await api.post(`/api/v1/support-tickets/${id}/transfer-unit`, data)
     return response.data?.data as SupportTicketRecord
+  },
+
+  async customerDecideRefund(id: string, data: { agreed?: boolean; decision?: 'AGREED' | 'DISPUTED'; note?: string; disputeReason?: string; bankName?: string; bankAccountNumber?: string; bankAccountName?: string }) {
+    const payload = {
+      agreed: data.agreed !== undefined ? data.agreed : data.decision === 'AGREED',
+      note: data.note || data.disputeReason,
+      bankName: data.bankName,
+      bankAccountNumber: data.bankAccountNumber,
+      bankAccountName: data.bankAccountName,
+    }
+    const response = await api.post(`/api/v1/support-tickets/${id}/customer-refund-decision`, payload)
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async appendEvidencePhotos(id: string, files: File[]) {
+    const formData = new FormData()
+    files.forEach((f) => formData.append('files', f))
+    const response = await api.post(`/api/v1/support-tickets/${id}/evidence`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return response.data?.data as SupportTicketRecord
+  },
+
+  async uploadMultipleEvidenceFiles(files: File[]): Promise<string[]> {
+    const urls: string[] = []
+    for (const f of files) {
+      try {
+        const url = await this.uploadAttachment(f)
+        if (url) urls.push(url)
+      } catch (err) {
+        console.warn('Upload individual evidence file failed:', err)
+      }
+    }
+    return urls
   },
 
   async addTicketMessage(id: string, data: { messageType: 'INTERNAL_NOTE' | 'CUSTOMER_REPLY'; content: string }) {

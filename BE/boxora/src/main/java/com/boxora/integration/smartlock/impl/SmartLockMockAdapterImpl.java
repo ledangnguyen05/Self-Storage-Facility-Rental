@@ -52,6 +52,25 @@ public class SmartLockMockAdapterImpl implements SmartLockAdapter {
     }
 
     @Override
+    public UnlockResult remoteUnlock(String unitCode, String reason) {
+        log.info("[SMARTLOCK-MOCK] Executing emergency remote unlock on unit {}. Reason: {}", unitCode, reason);
+        if (unitCode == null || unitCode.isBlank()) {
+            return new UnlockResult(
+                    false,
+                    true,
+                    "Mã kho không hợp lệ",
+                    "ERR_INVALID_UNIT_CODE"
+            );
+        }
+        return new UnlockResult(
+                true,
+                true,
+                "Đã gửi lệnh mở khóa từ xa khẩn cấp qua SmartLock IoT Gateway [MOCK ADAPTER] cho buồng kho " + unitCode,
+                null
+        );
+    }
+
+    @Override
     public boolean isMock() {
         return true;
     }

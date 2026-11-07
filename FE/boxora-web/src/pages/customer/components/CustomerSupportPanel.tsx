@@ -285,6 +285,17 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
         bankAccountName: bankAccountName.trim().toUpperCase(),
         note: bankNote.trim() || undefined,
       })
+      try {
+        await supportTicketService.customerDecideRefund(bankInfoTicket.id, {
+          agreed: true,
+          decision: 'AGREED',
+          bankName: bankName.trim(),
+          bankAccountNumber: bankAccountNumber.trim(),
+          bankAccountName: bankAccountName.trim().toUpperCase(),
+        })
+      } catch (decisionErr) {
+        // fallback
+      }
       if (bankInfoTicket.bookingId) {
         try {
           await handoverService.submitCustomerDecision(bankInfoTicket.bookingId, {
@@ -460,8 +471,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
   // Handler for customer decision: AGREE
   const handleCustomerAgree = async (ticket: SupportTicketRecord, settlement: any) => {
-    if (!ticket.bookingId) return
-    const netRefund = settlement?.netRefundAmount || 0
+    const netRefund = settlement?.netRefundAmount ?? (ticket.refundAmount || 0)
     if (netRefund > 0) {
       // Directly prompt modal for customer to enter bank details
       setBankInfoTicket(ticket)
@@ -473,14 +483,29 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
     setIsSubmittingCustomerDecision(true)
     try {
-      await handoverService.submitCustomerDecision(ticket.bookingId, {
-        decision: 'AGREED'
-      })
-      toast.success('Quý khách đã đồng ý với quyết định quyết toán trả kho!')
-      const updated = await handoverService.calculateSettlement(ticket.bookingId)
-      if (updated) {
-        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+      if (ticket.bookingId) {
+        await handoverService.submitCustomerDecision(ticket.bookingId, {
+          decision: 'AGREED'
+        })
       }
+      if (ticket.id) {
+        try {
+          await supportTicketService.customerDecideRefund(ticket.id, {
+            agreed: true,
+            decision: 'AGREED'
+          })
+        } catch (e) {
+          // ignore if ticket is not in refund dispute
+        }
+      }
+      toast.success('Quý khách đã đồng ý với quyết định quyết toán / đối soát!')
+      if (ticket.bookingId) {
+        const updated = await handoverService.calculateSettlement(ticket.bookingId)
+        if (updated) {
+          setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+        }
+      }
+      await loadMyTickets()
     } catch (err: any) {
       toast.error('Lỗi gửi xác nhận: ' + (err.response?.data?.message || err.message))
     } finally {
@@ -490,26 +515,43 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
   // Handler for customer decision: DISPUTE
   const handleCustomerDisputeSubmit = async (ticket: SupportTicketRecord) => {
-    if (!ticket.bookingId || !customerDisputeReason.trim()) {
+    if (!customerDisputeReason.trim()) {
       toast.warning('Vui lòng nhập lý do khiếu nại.')
       return
     }
     setIsSubmittingCustomerDecision(true)
     try {
       const evidenceList = customerDisputeEvidence.trim() ? [customerDisputeEvidence.trim()] : []
-      await handoverService.submitCustomerDecision(ticket.bookingId, {
-        decision: 'DISPUTED',
-        disputeReason: customerDisputeReason.trim(),
-        disputeEvidenceUrls: evidenceList
-      })
+      if (ticket.bookingId) {
+        await handoverService.submitCustomerDecision(ticket.bookingId, {
+          decision: 'DISPUTED',
+          disputeReason: customerDisputeReason.trim(),
+          disputeEvidenceUrls: evidenceList
+        })
+      }
+      if (ticket.id) {
+        try {
+          await supportTicketService.customerDecideRefund(ticket.id, {
+            agreed: false,
+            decision: 'DISPUTED',
+            note: customerDisputeReason.trim(),
+            disputeReason: customerDisputeReason.trim()
+          })
+        } catch (e) {
+          // ignore if ticket is not in refund dispute
+        }
+      }
       toast.success('Đã gửi khiếu nại thành công. Quản lý cơ sở sẽ xem xét giải quyết!')
       setShowCustomerDisputeModal(false)
       setCustomerDisputeReason('')
       setCustomerDisputeEvidence('')
-      const updated = await handoverService.calculateSettlement(ticket.bookingId)
-      if (updated) {
-        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+      if (ticket.bookingId) {
+        const updated = await handoverService.calculateSettlement(ticket.bookingId)
+        if (updated) {
+          setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+        }
       }
+      await loadMyTickets()
     } catch (err: any) {
       toast.error('Lỗi gửi khiếu nại: ' + (err.response?.data?.message || err.message))
     } finally {

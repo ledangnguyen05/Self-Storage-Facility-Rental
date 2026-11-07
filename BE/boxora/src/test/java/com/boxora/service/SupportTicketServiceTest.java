@@ -16,8 +16,10 @@ import com.boxora.entity.StorageUnit;
 import com.boxora.entity.SupportTicket;
 import com.boxora.entity.SupportTicketContactLog;
 import com.boxora.entity.User;
+import com.boxora.enums.BookingStatus;
 import com.boxora.enums.TicketCategory;
 import com.boxora.enums.TicketStatus;
+import com.boxora.enums.UnitStatus;
 import com.boxora.exception.AppException;
 import com.boxora.exception.ErrorCode;
 import com.boxora.repository.ActivityLogRepository;
@@ -75,6 +77,24 @@ class SupportTicketServiceTest {
 
     @Mock
     private com.boxora.security.RequestContext requestContext;
+
+    @Mock
+    private com.boxora.integration.smartlock.SmartLockAdapter smartLockAdapter;
+
+    @Mock
+    private com.boxora.repository.StorageUnitRepository storageUnitRepository;
+
+    @Mock
+    private com.boxora.repository.RentalContractRepository rentalContractRepository;
+
+    @Mock
+    private com.boxora.repository.NotificationLogRepository notificationLogRepository;
+
+    @Mock
+    private com.boxora.repository.PaymentRepository paymentRepository;
+
+    @Mock
+    private com.boxora.service.EmailService emailService;
 
     @InjectMocks
     private SupportTicketServiceImpl supportTicketService;
@@ -1021,4 +1041,282 @@ class SupportTicketServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("7 Incident Management Flows Regression Tests")
+    class SevenFlowsRegressionTests {
+
+        private UUID staffId;
+        private User staffUser;
+        private StorageUnit unitA;
+        private StorageUnit unitB;
+        private Booking activeBooking;
+        private SupportTicket ticket;
+        private UUID ticketId;
+
+        @BeforeEach
+        void setUp() {
+            staffId = UUID.randomUUID();
+            staffUser = User.builder()
+                    .fullName("Nhân viên trực ca")
+                    .facility(testFacility)
+                    .role(Role.builder().name("STAFF").build())
+                    .build();
+            staffUser.setId(staffId);
+
+            unitA = StorageUnit.builder()
+                    .unitCode("TD-C215")
+                    .status(UnitStatus.OCCUPIED)
+                    .facility(testFacility)
+                    .build();
+            unitA.setId(UUID.randomUUID());
+
+            unitB = StorageUnit.builder()
+                    .unitCode("TD-C216")
+                    .status(UnitStatus.AVAILABLE)
+                    .facility(testFacility)
+                    .build();
+            unitB.setId(UUID.randomUUID());
+
+            activeBooking = Booking.builder()
+                    .bookingCode("BK-7411")
+                    .customer(testCustomer)
+                    .storageUnit(unitA)
+                    .status(BookingStatus.ACTIVE)
+                    .totalRentalFee(new BigDecimal("3000000"))
+                    .accessPin("123456")
+                    .build();
+            activeBooking.setId(UUID.randomUUID());
+
+            ticketId = UUID.randomUUID();
+            ticket = SupportTicket.builder()
+                    .ticketCode("TK-261106-7411")
+                    .title("Cửa hỏng")
+                    .description("Cửa cuốn kho bị kẹt")
+                    .customer(testCustomer)
+                    .facility(testFacility)
+                    .storageUnit(unitA)
+                    .booking(activeBooking)
+                    .status(TicketStatus.IN_PROGRESS)
+                    .category(TicketCategory.LOCK_ISSUE)
+                    .priority("HIGH")
+                    .build();
+            ticket.setId(ticketId);
+        }
+
+        @Test
+        @DisplayName("Flow 1: Cấp lại PIN thành công -> Gọi SmartLock, cập nhật Booking, Audit che giấu PIN")
+        void testFlow1_RegeneratePin_Success() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(bookingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(smartLockAdapter.grantTemporaryPin(eq("TD-C215"), anyInt()))
+                    .thenReturn(new com.boxora.integration.smartlock.SmartLockAdapter.TempGrantResult(true, true, "654321", "OK"));
+
+            SupportTicketResponse res = supportTicketService.regeneratePin(ticketId, "Khách hàng quên mã PIN tại quầy");
+
+            assertThat(res).isNotNull();
+            assertThat(activeBooking.getAccessPin()).isEqualTo("654321");
+            verify(smartLockAdapter).grantTemporaryPin(eq("TD-C215"), eq(720));
+            verify(smartLockAdapter).revokeCredentials(eq("TD-C215"), eq("ONLINE"), eq(false));
+            verify(bookingRepository).save(activeBooking);
+            verify(activityLogRepository).save(argThat(log -> log.getDescription() != null && log.getDescription().contains("******") && !log.getDescription().contains("654321")));
+        }
+
+        @Test
+        @DisplayName("Flow 1: Hợp đồng đã hoàn tất / ngưng thuê không được cấp lại PIN")
+        void testFlow1_RegeneratePin_TerminatedContract_Throws() {
+            activeBooking.setStatus(BookingStatus.COMPLETED);
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+            assertThrows(AppException.class, () -> supportTicketService.regeneratePin(ticketId, "Thử cấp PIN"));
+            verify(smartLockAdapter, never()).grantTemporaryPin(any(), anyInt());
+        }
+
+        @Test
+        @DisplayName("Flow 2: Mở khóa từ xa khẩn cấp có lý do -> Gọi SmartLock adapter & ghi audit")
+        void testFlow2_RemoteUnlock_Success() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(smartLockAdapter.remoteUnlock(eq("TD-C215"), anyString()))
+                    .thenReturn(new com.boxora.integration.smartlock.SmartLockAdapter.UnlockResult(true, true, "Success", null));
+
+            SupportTicketResponse res = supportTicketService.remoteUnlock(ticketId, "Khách hàng gặp sự cố kẹt cửa khẩn cấp");
+
+            assertThat(res).isNotNull();
+            verify(smartLockAdapter).remoteUnlock(eq("TD-C215"), eq("Khách hàng gặp sự cố kẹt cửa khẩn cấp"));
+            verify(activityLogRepository).save(argThat(log -> log.getDescription() != null && log.getDescription().toLowerCase().contains("mở khóa từ xa khẩn cấp")));
+        }
+
+        @Test
+        @DisplayName("Flow 2: Mở khóa từ xa thiếu lý do -> Bị từ chối")
+        void testFlow2_RemoteUnlock_MissingReason_Throws() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+
+            assertThrows(AppException.class, () -> supportTicketService.remoteUnlock(ticketId, "  "));
+            verify(smartLockAdapter, never()).remoteUnlock(any(), any());
+        }
+
+        @Test
+        @DisplayName("Flow 3: Có hoàn tiền -> Tạo đề xuất AWAITING_CUSTOMER_CONFIRMATION, không tạo Payment ngay")
+        void testFlow3_AdjustBilling_WithRefund() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.request.TicketBillingAdjustmentRequest req = com.boxora.dto.request.TicketBillingAdjustmentRequest.builder()
+                    .amount(new BigDecimal("500000"))
+                    .note("Bồi hoàn sự cố kẹt khóa 1 ngày")
+                    .isRefund(true)
+                    .build();
+
+            SupportTicketResponse res = supportTicketService.adjustBilling(ticketId, req);
+
+            assertThat(res).isNotNull();
+            assertThat(ticket.getRefundStatus()).isEqualTo("AWAITING_CUSTOMER_CONFIRMATION");
+            assertThat(ticket.getRefundAmount()).isEqualByComparingTo(new BigDecimal("500000"));
+            verify(paymentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Flow 3: Không hoàn tiền -> Chỉ ghi nhận kết quả đối soát, refundStatus = NONE")
+        void testFlow3_AdjustBilling_WithoutRefund() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.request.TicketBillingAdjustmentRequest req = com.boxora.dto.request.TicketBillingAdjustmentRequest.builder()
+                    .note("Hệ thống tính đúng giờ, đối soát xác nhận không có lỗi phát sinh")
+                    .isRefund(false)
+                    .build();
+
+            SupportTicketResponse res = supportTicketService.adjustBilling(ticketId, req);
+
+            assertThat(res).isNotNull();
+            assertThat(ticket.getRefundStatus()).isEqualTo("NONE");
+            assertThat(ticket.getRefundAmount()).isNull();
+            verify(paymentRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("Flow 4: Kho sang bảo trì và khôi phục đúng OCCUPIED khi hợp đồng còn hiệu lực")
+        void testFlow4_MaintenanceAndStateRestoration() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(storageUnitRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            // 1. Sang bảo trì
+            supportTicketService.setUnitMaintenance(ticketId, "Kẹt ray cửa", "Thợ kỹ thuật A");
+            assertThat(unitA.getStatus()).isEqualTo(UnitStatus.UNDER_MAINTENANCE);
+            assertThat(unitA.getMaintenanceReason()).contains("Kẹt ray cửa");
+
+            // 2. Hoàn tất bảo trì -> khôi phục OCCUPIED vì booking vẫn active
+            supportTicketService.completeMaintenance(ticketId);
+            assertThat(unitA.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+            assertThat(unitA.getMaintenanceReason()).isNull();
+        }
+
+        @Test
+        @DisplayName("Flow 5: Điều chuyển khách sang ô kho mới -> Kho cũ bảo trì, kho mới OCCUPIED, đổi khóa IoT")
+        void testFlow5_TransferUnit_Success() {
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(storageUnitRepository.findById(unitB.getId())).thenReturn(Optional.of(unitB));
+            when(smartLockAdapter.grantTemporaryPin(eq("TD-C216"), anyInt()))
+                    .thenReturn(new com.boxora.integration.smartlock.SmartLockAdapter.TempGrantResult(true, true, "987654", "OK"));
+            when(supportTicketRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            com.boxora.dto.request.TicketTransferUnitRequest req = com.boxora.dto.request.TicketTransferUnitRequest.builder()
+                    .targetUnitId(unitB.getId())
+                    .reason("Chuyển tạm tránh ẩm")
+                    .customerAgreedDifferentType(true)
+                    .build();
+
+            SupportTicketResponse res = supportTicketService.transferUnit(ticketId, req);
+
+            assertThat(res).isNotNull();
+            assertThat(unitA.getStatus()).isEqualTo(UnitStatus.UNDER_MAINTENANCE);
+            assertThat(unitB.getStatus()).isEqualTo(UnitStatus.OCCUPIED);
+            assertThat(activeBooking.getStorageUnit()).isEqualTo(unitB);
+            assertThat(activeBooking.getAccessPin()).isEqualTo("987654");
+            verify(smartLockAdapter).revokeCredentials(eq("TD-C215"), eq("ONLINE"), eq(false));
+            verify(smartLockAdapter).grantTemporaryPin(eq("TD-C216"), eq(720));
+        }
+
+        @Test
+        @DisplayName("Flow 6: Customer gọi getContactLogs không thấy INTERNAL_NOTE; Staff thấy đầy đủ")
+        void testFlow6_InternalNotesIsolation() {
+            SupportTicketContactLog noteLog = SupportTicketContactLog.builder()
+                    .ticket(ticket)
+                    .contactedBy(staffUser)
+                    .contactMethod("INTERNAL_NOTE")
+                    .targetRole("STAFF")
+                    .summary("Ghi chú kỹ thuật nội bộ")
+                    .build();
+            SupportTicketContactLog replyLog = SupportTicketContactLog.builder()
+                    .ticket(ticket)
+                    .contactedBy(staffUser)
+                    .contactMethod("CUSTOMER_REPLY")
+                    .targetRole("CUSTOMER")
+                    .summary("Phản hồi công khai cho khách")
+                    .build();
+
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(contactLogRepository.findByTicket_IdOrderByCreatedAtDesc(ticketId)).thenReturn(List.of(noteLog, replyLog));
+
+            // Customer view -> chỉ thấy phản hồi công khai
+            when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
+            when(requestContext.currentUserId()).thenReturn(testCustomer.getId());
+            List<SupportTicketContactLogResponse> customerLogs = supportTicketService.getContactLogs(ticketId);
+            assertThat(customerLogs).hasSize(1);
+            assertThat(customerLogs.get(0).getSummary()).isEqualTo("Phản hồi công khai cho khách");
+
+            // Staff view -> thấy cả 2
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            List<SupportTicketContactLogResponse> staffLogs = supportTicketService.getContactLogs(ticketId);
+            assertThat(staffLogs).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("Flow 7: Upload nhiều ảnh hiện trường nối tiếp không làm mất ảnh cũ")
+        void testFlow7_AppendEvidenceFiles() {
+            ticket.setImageEvidence("https://r2.boxora.com/photo1.jpg");
+            when(requestContext.currentUserId()).thenReturn(staffId);
+            when(requestContext.currentUserRole()).thenReturn("STAFF");
+            when(userRepository.findById(staffId)).thenReturn(Optional.of(staffUser));
+            when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            MockMultipartFile file = new MockMultipartFile("files", "photo2.jpg", "image/jpeg", new byte[]{1, 2, 3});
+            when(fileStorageService.storeFiles(anyList(), eq("tickets"))).thenReturn(List.of(
+                    FileUploadResponse.builder().fileUrl("https://r2.boxora.com/photo2.jpg").build()
+            ));
+
+            SupportTicketResponse res = supportTicketService.appendEvidenceFiles(ticketId, List.of(file));
+
+            assertThat(res).isNotNull();
+            assertThat(ticket.getImageEvidence()).contains("https://r2.boxora.com/photo1.jpg");
+            assertThat(ticket.getImageEvidence()).contains("https://r2.boxora.com/photo2.jpg");
+            assertThat(res.getEvidenceUrls()).containsExactly("https://r2.boxora.com/photo1.jpg", "https://r2.boxora.com/photo2.jpg");
+        }
+    }
 }
