@@ -103,7 +103,6 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
     if (!isOpen) return
 
     setUnitCode('')
-    setCustomImageUrl('')
     setErrorMessage('')
     setIsLoadingTypes(true)
 
