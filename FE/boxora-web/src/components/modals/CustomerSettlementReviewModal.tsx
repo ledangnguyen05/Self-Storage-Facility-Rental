@@ -341,20 +341,18 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     if (!settlement) return
     setSubmitting(true)
     try {
-      if (settlement.customerDecision !== 'AGREED') {
-        await handoverService.submitCustomerDecision(bookingId, {
-          decision: 'AGREED',
-          settlementVersion: settlement.settlementVersion
-        })
-      }
+      await handoverService.submitCustomerDecision(bookingId, {
+        decision: 'AGREED',
+        settlementVersion: settlement.settlementVersion
+      })
       toast.success(
-        'Đã ghi nhận bạn đã chuyển khoản thanh toán bồi thường! Quản lý cơ sở sẽ kiểm tra sao kê ngân hàng và xác nhận giải phóng kho hoàn tất.'
+        'Đã ghi nhận thanh toán bồi thường trả kho qua VietQR thành công! Trạng thái đơn đã được cập nhật hoàn tất.'
       )
       setViewStep('VIEW')
       await fetchSettlement()
       if (onUpdated) onUpdated()
     } catch (err: any) {
-      toast.error('Lỗi khi gửi xác nhận chuyển khoản: ' + (err?.response?.data?.message || err.message))
+      toast.error('Lỗi khi gửi xác nhận thanh toán: ' + (err?.response?.data?.message || err.message))
     } finally {
       setSubmitting(false)
     }
@@ -659,7 +657,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                       </span>
                     </div>
                     <p className="text-[11px] text-rose-800 leading-relaxed">
-                      Toàn bộ tiền cọc <strong>{depositPaid.toLocaleString('vi-VN')} ₫</strong> đã được khấu trừ cho chi phí sửa chữa. Quý khách cần thanh toán bổ sung số tiền trên qua cổng trực tuyến <strong>VNPay Sandbox</strong> để hoàn tất giải phóng kho.
+                      Toàn bộ tiền cọc <strong>{depositPaid.toLocaleString('vi-VN')} ₫</strong> đã được khấu trừ cho chi phí sửa chữa. Quý khách cần thanh toán bổ sung số tiền trên để hoàn tất giải phóng kho.
                     </p>
                   </div>
                 ) : (
@@ -804,7 +802,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         {settlement.additionalPaymentStatus === 'PAID' ? (
                           <div className="text-emerald-700 font-bold flex items-center gap-1">
                             <CheckCircle2 size={14} />
-                            <span>Bạn đã hoàn tất thanh toán bồi thường {additionalDue.toLocaleString('vi-VN')} ₫ qua VNPay thành công! (Mã GD: {settlement.additionalPaymentTxnRef})</span>
+                            <span>Bạn đã hoàn tất thanh toán bồi thường {additionalDue.toLocaleString('vi-VN')} ₫ thành công! (Mã GD: {settlement.additionalPaymentTxnRef})</span>
                           </div>
                         ) : (
                           <div className="flex items-center justify-between">
@@ -812,12 +810,12 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                             {!readOnly && isViewingLatestVersion && (
                               <button
                                 type="button"
-                                onClick={handleProceedVNPayCompensation}
+                                onClick={() => setViewStep('FORM_PAY')}
                                 disabled={submitting}
-                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer"
                               >
-                                <CreditCard size={13} />
-                                <span>Thanh toán VNPay Sandbox ngay</span>
+                                <CheckCircle2 size={13} />
+                                <span>Thanh toán VietQR ngay</span>
                               </button>
                             )}
                           </div>
@@ -1062,7 +1060,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                       <div className="flex items-center gap-2 font-bold text-slate-900">
                         <QrCode size={16} className="text-indigo-600" />
-                        <span>Cách 1: Quét mã VietQR chuẩn (Khuyên dùng)</span>
+                        <span>Quét mã VietQR chuẩn để thanh toán</span>
                       </div>
                       <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">
                         Xác nhận tức thì
@@ -1150,30 +1148,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     </div>
                   </div>
 
-                  {/* KHỐI 2: CỔNG THANH TOÁN TRỰC TUYẾN VNPAY SANDBOX */}
-                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 font-bold text-slate-800">
-                        <CreditCard size={15} className="text-indigo-600" />
-                        <span>Cách 2: Thanh toán qua Cổng VNPay Sandbox</span>
-                      </div>
-                      <span className="text-[10px] text-slate-500 font-medium">Hỗ trợ thẻ ATM / Visa / Master</span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 leading-relaxed">
-                      Chuyển sang trang thanh toán bảo mật của VNPay Sandbox để thanh toán trực tuyến ngay.
-                    </p>
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={handleProceedVNPayCompensation}
-                        disabled={submitting}
-                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                      >
-                        <ExternalLink size={14} />
-                        <span>{submitting ? 'Đang tạo giao dịch...' : 'Mở Cổng Thanh Toán VNPay Sandbox'}</span>
-                      </button>
-                    </div>
-                  </div>
+
 
                   <div className="pt-2 flex items-center justify-start">
                     <button

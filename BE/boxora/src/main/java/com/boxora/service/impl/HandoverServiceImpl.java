@@ -3765,7 +3765,7 @@ public class HandoverServiceImpl implements HandoverService {
         Payment payment = Payment.builder()
                 .booking(booking)
                 .collectedByStaff(staff)
-                .paymentType(PaymentType.EXTRA_CHARGE)
+                .paymentType(PaymentType.RETURN_COMPENSATION)
                 .paymentMethod(paymentMethod)
                 .amount(additionalDue)
                 .status(PaymentStatus.PAID)
@@ -4954,25 +4954,54 @@ public class HandoverServiceImpl implements HandoverService {
 
             } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
                 if (!"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
-                    record.setAdditionalPaymentStatus("PENDING");
-                }
+                    String txnRef = (record.getAdditionalPaymentTxnRef() != null && !record.getAdditionalPaymentTxnRef().isBlank())
+                            ? record.getAdditionalPaymentTxnRef()
+                            : "COMP-" + booking.getBookingCode() + "-" + System.currentTimeMillis();
+                    record.setAdditionalPaymentStatus("PAID");
+                    record.setAdditionalPaymentMethod("VIETQR");
+                    record.setAdditionalPaymentTxnRef(txnRef);
+                    record.setAdditionalPaymentRecordedAt(LocalDateTime.now());
 
-                if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
-                    NotificationLog custNotif = NotificationLog.builder()
-                            .recipient(booking.getCustomer())
-                            .recipientEmail(booking.getCustomer().getEmail())
-                            .recipientName(custName)
-                            .facility(facility)
-                            .channel(NotificationChannel.IN_APP)
-                            .notificationType(NotificationType.REFUND_STATUS)
-                            .referenceType("BOOKING")
-                            .referenceId(booking.getId())
-                            .title(String.format("Xác nhận đồng ý thanh toán bồi thường [%s]", unitCode))
-                            .content(String.format("Bạn đã đồng ý quyết toán kho %s. Vui lòng hoàn tất thanh toán khoản bổ sung %sđ qua cổng thanh toán trực tuyến VNPay Sandbox.",
-                                    unitCode, df.format(additionalDue)))
-                            .status("SENT")
+                    Payment payment = Payment.builder()
+                            .booking(booking)
+                            .contract(rentalContractRepository.findByBookingId(booking.getId()).orElse(null))
+                            .paymentType(PaymentType.RETURN_COMPENSATION)
+                            .paymentMethod("VIETQR")
+                            .amount(additionalDue)
+                            .status(PaymentStatus.PAID)
+                            .transactionId(txnRef)
+                            .paymentTime(LocalDateTime.now())
+                            .referenceCode("RETURN_COMPENSATION")
                             .build();
-                    notificationLogRepository.save(custNotif);
+                    payment = paymentRepository.save(payment);
+
+                    if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                        NotificationLog custNotif = NotificationLog.builder()
+                                .recipient(booking.getCustomer())
+                                .recipientEmail(booking.getCustomer().getEmail())
+                                .recipientName(custName)
+                                .facility(facility)
+                                .channel(NotificationChannel.IN_APP)
+                                .notificationType(NotificationType.PAYMENT_SUCCESS)
+                                .referenceType("BOOKING")
+                                .referenceId(booking.getId())
+                                .title(String.format("Thanh toán bồi thường trả kho thành công [%s]", unitCode))
+                                .content(String.format("Bạn đã hoàn tất thanh toán bồi thường trả kho %sđ cho ô kho %s qua VietQR (Mã GD: %s).",
+                                        df.format(additionalDue), unitCode, txnRef))
+                                .status("SENT")
+                                .build();
+                        notificationLogRepository.save(custNotif);
+                    }
+
+                    activityLogService.record(
+                            facility != null ? facility.getId() : null,
+                            ActivityAction.DAMAGE_FEE_RECORDED,
+                            "Payment",
+                            payment.getId(),
+                            String.format("Khách hàng đã thanh toán bồi thường bổ sung %s VNĐ qua VietQR cho đơn %s (GD: %s)", additionalDue, booking.getBookingCode(), txnRef),
+                            null,
+                            null
+                    );
                 }
             }
 

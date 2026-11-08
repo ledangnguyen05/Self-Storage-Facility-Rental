@@ -48,8 +48,12 @@ export const BoxoraChatWidget: React.FC = () => {
     if (
       path === '/' ||
       path === '' ||
+      path === '/landing' ||
       path.startsWith('/portal') ||
       path.startsWith('/customer') ||
+      path.startsWith('/my-bookings') ||
+      path.startsWith('/my-requests') ||
+      path.startsWith('/online-booking-contract') ||
       path.startsWith('/staff') ||
       path.startsWith('/facility-manager') ||
       path.startsWith('/manager') ||
