@@ -987,7 +987,6 @@ export const AdminDashboard: React.FC = () => {
               <thead>
                 <tr className="border-b border-slate-200 text-slate-600 bg-slate-50/80">
                   <th className="py-3 px-4 font-semibold">Người dùng</th>
-                  <th className="py-3 px-4 font-semibold">Tên đăng nhập</th>
                   <th className="py-3 px-4 font-semibold">Vai trò</th>
                   <th className="py-3 px-4 font-semibold">Cơ sở trực thuộc</th>
                   <th className="py-3 px-4 font-semibold">Trạng thái</th>
@@ -1009,7 +1008,6 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-slate-700 font-medium">{user.username}</td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-semibold border ${getRoleBadge(user.role?.name || (user.roleName as string))}`}>
                         {getRoleMeta(user.role?.name || (user.roleName as string)).title}
