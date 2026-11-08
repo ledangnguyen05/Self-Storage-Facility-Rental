@@ -603,23 +603,30 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     }
   }
 
-  // Handler for customer payment of compensation via VNPay
-  const handlePayCompensationVNPay = async (ticket: SupportTicketRecord, additionalDue: number) => {
+  // Handler for customer payment of compensation via VietQR
+  const handleConfirmCompensationVietQRPaid = async (ticket: SupportTicketRecord) => {
     if (!ticket.bookingId) return
     setIsPayingCompensation(true)
     try {
-      const response = await paymentService.createVNPayPayment({
-        bookingId: ticket.bookingId,
-        amount: additionalDue,
-        paymentType: 'RETURN_COMPENSATION'
+      await handoverService.submitCustomerDecision(ticket.bookingId, {
+        decision: 'AGREED'
       })
-      if (response?.paymentUrl) {
-        window.location.href = response.paymentUrl
-      } else {
-        toast.error('Không thể tạo liên kết thanh toán VNPay.')
+      if (ticket.id) {
+        try {
+          await supportTicketService.customerDecideRefund(ticket.id, {
+            agreed: true,
+            decision: 'AGREED'
+          })
+        } catch {}
       }
+      toast.success('Đã ghi nhận thanh toán bồi thường trả kho qua VietQR thành công!')
+      const updated = await handoverService.calculateSettlement(ticket.bookingId)
+      if (updated) {
+        setReturnSettlementMap(prev => ({ ...prev, [ticket.bookingId!]: updated }))
+      }
+      await loadMyTickets()
     } catch (err: any) {
-      toast.error('Lỗi thanh toán bồi thường: ' + (err.response?.data?.message || err.message))
+      toast.error('Lỗi xác nhận thanh toán: ' + (err.response?.data?.message || err.message))
     } finally {
       setIsPayingCompensation(false)
     }
@@ -1763,28 +1770,72 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                             </div>
                           )}
 
-                          {/* Trường hợp 2: Khách nợ thêm -> Thanh toán VNPay Sandbox */}
+                          {/* Trường hợp 2: Khách nợ thêm -> Quét mã VietQR chuẩn */}
                           {isOverDeposit && additionalDue > 0 && (
-                            <div className="p-3 bg-white rounded-xl border border-rose-200 text-xs space-y-2">
+                            <div className="p-3 bg-white rounded-xl border border-rose-200 text-xs space-y-3">
                               {settlement?.additionalPaymentStatus === 'PAID' ? (
-                                <div className="p-2 rounded-lg bg-emerald-50 text-emerald-900 font-bold flex items-center gap-1.5">
+                                <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-900 font-bold flex items-center gap-1.5 border border-emerald-200">
                                   <span className="material-symbols-outlined text-[16px] text-emerald-700">verified</span>
-                                  <span>Đã thanh toán bồi thường {formatVND(additionalDue)} qua VNPay (Mã GD: {settlement.additionalPaymentTxnRef || 'Thành công'})</span>
+                                  <span>Đã hoàn tất thanh toán bồi thường {formatVND(additionalDue)} (Mã GD: {settlement.additionalPaymentTxnRef || 'Thành công'})</span>
                                 </div>
                               ) : (
-                                <div className="space-y-1.5">
-                                  <p className="text-slate-600 text-[11px]">
-                                    Quý khách có thể thanh toán trực tiếp khoản bồi thường qua cổng thanh toán VNPay Sandbox:
-                                  </p>
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePayCompensationVNPay(currentTkt, additionalDue)}
-                                    disabled={isPayingCompensation}
-                                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                                  >
-                                    <span className="material-symbols-outlined text-[16px]">credit_card</span>
-                                    <span>{isPayingCompensation ? 'Đang tạo liên kết...' : `Thanh toán bồi thường ${formatVND(additionalDue)} qua VNPay Sandbox`}</span>
-                                  </button>
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                      <span className="material-symbols-outlined text-[16px] text-indigo-600">qr_code</span>
+                                      <span>Quét mã VietQR chuẩn để thanh toán bồi thường</span>
+                                    </div>
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">
+                                      Xác nhận tức thì
+                                    </span>
+                                  </div>
+
+                                  <div className="flex flex-col sm:flex-row items-center gap-3">
+                                    <div className="p-1.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-col items-center justify-center shrink-0">
+                                      <img
+                                        src={`https://img.vietqr.io/image/MB-0988219002-compact2.png?amount=${additionalDue}&addInfo=BT%20${encodeURIComponent(currentTkt.unitCode || '')}%20${encodeURIComponent(settlement?.bookingCode || currentTkt.ticketCode || '')}&accountName=CONG%20TY%20CO%20PHAN%20BOXORA`}
+                                        alt="VietQR Boxora"
+                                        className="w-28 h-28 object-contain rounded-md"
+                                      />
+                                      <span className="text-[9px] text-slate-500 mt-1 font-medium">Quét bằng App Ngân Hàng</span>
+                                    </div>
+                                    <div className="flex-1 space-y-1.5 w-full text-slate-700 text-[11px]">
+                                      <div className="flex items-center justify-between py-0.5 border-b border-slate-100">
+                                        <span className="text-slate-500">Ngân hàng:</span>
+                                        <span className="font-bold text-slate-900">MB Bank (Quân Đội)</span>
+                                      </div>
+                                      <div className="flex items-center justify-between py-0.5 border-b border-slate-100">
+                                        <span className="text-slate-500">Số TK (STK):</span>
+                                        <span className="font-mono font-bold text-indigo-700">0988219002</span>
+                                      </div>
+                                      <div className="flex items-center justify-between py-0.5 border-b border-slate-100">
+                                        <span className="text-slate-500">Chủ TK:</span>
+                                        <span className="font-bold text-slate-900 uppercase">CÔNG TY CỔ PHẦN BOXORA</span>
+                                      </div>
+                                      <div className="flex items-center justify-between py-0.5 border-b border-slate-100">
+                                        <span className="text-slate-500">Số tiền:</span>
+                                        <span className="font-bold text-rose-600 font-mono">{formatVND(additionalDue)}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between py-0.5">
+                                        <span className="text-slate-500">Nội dung CK:</span>
+                                        <span className="font-mono font-bold text-slate-800">
+                                          BT {currentTkt.unitCode || ''} {settlement?.bookingCode || currentTkt.ticketCode || ''}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConfirmCompensationVietQRPaid(currentTkt)}
+                                      disabled={isPayingCompensation}
+                                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                                    >
+                                      <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                      <span>{isPayingCompensation ? 'Đang gửi thông báo...' : 'Tôi Đã Chuyển Khoản Thành Công'}</span>
+                                    </button>
+                                  </div>
                                 </div>
                               )}
                             </div>

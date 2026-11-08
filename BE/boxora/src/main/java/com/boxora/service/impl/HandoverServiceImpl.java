@@ -4107,11 +4107,44 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.RETURN_APPROVAL_REQUIRED, "Khoản khấu trừ chưa được khách hàng đồng ý hoặc quản lý phê duyệt");
         }
 
-        // 7. Khoản thanh toán bổ sung (nếu có): tự động chuyển sang PAID khi nhân viên hoàn tất giải phóng kho
+        // 7. Khoản thanh toán bổ sung (nếu có): tự động chuyển sang PAID và ghi nhận Payment khi nhân viên hoàn tất giải phóng kho
         BigDecimal additionalDue = record.getAdditionalAmountDue() != null ? record.getAdditionalAmountDue() : BigDecimal.ZERO;
-        if (additionalDue.compareTo(BigDecimal.ZERO) > 0 && !"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
-            record.setAdditionalPaymentStatus("PAID");
-            handoverRecordRepository.save(record);
+        if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
+            List<Payment> existingPayments = paymentRepository != null ? paymentRepository.findAllByBooking_Id(booking.getId()) : List.of();
+            boolean hasCompensationPayment = existingPayments.stream().anyMatch(p ->
+                    p.getPaymentType() == PaymentType.RETURN_COMPENSATION && p.getStatus() == PaymentStatus.PAID
+            );
+
+            if (!hasCompensationPayment && paymentRepository != null) {
+                String txnRef = (record.getAdditionalPaymentTxnRef() != null && !record.getAdditionalPaymentTxnRef().isBlank())
+                        ? record.getAdditionalPaymentTxnRef()
+                        : "COMP-" + booking.getBookingCode() + "-" + System.currentTimeMillis();
+                String pMethod = (record.getAdditionalPaymentMethod() != null && !record.getAdditionalPaymentMethod().isBlank())
+                        ? record.getAdditionalPaymentMethod()
+                        : "DIRECT_AT_DESK";
+
+                Payment payment = Payment.builder()
+                        .booking(booking)
+                        .contract(rentalContractRepository != null ? rentalContractRepository.findByBookingId(booking.getId()).orElse(null) : null)
+                        .paymentType(PaymentType.RETURN_COMPENSATION)
+                        .paymentMethod(pMethod)
+                        .amount(additionalDue)
+                        .status(PaymentStatus.PAID)
+                        .transactionId(txnRef)
+                        .paymentTime(LocalDateTime.now(BUSINESS_ZONE))
+                        .referenceCode("RETURN_COMPENSATION")
+                        .build();
+                paymentRepository.save(payment);
+
+                record.setAdditionalPaymentStatus("PAID");
+                record.setAdditionalPaymentTxnRef(txnRef);
+                record.setAdditionalPaymentMethod(pMethod);
+                record.setAdditionalPaymentRecordedAt(LocalDateTime.now(BUSINESS_ZONE));
+                handoverRecordRepository.save(record);
+            } else if (!"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
+                record.setAdditionalPaymentStatus("PAID");
+                handoverRecordRepository.save(record);
+            }
         }
 
         // 8. Kiểm tra hoàn tiền (nếu có hoàn tiền)
@@ -4953,14 +4986,19 @@ public class HandoverServiceImpl implements HandoverService {
                 }
 
             } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
-                if (!"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
+                List<Payment> existingPayments = paymentRepository != null ? paymentRepository.findAllByBooking_Id(booking.getId()) : List.of();
+                boolean alreadyPaid = existingPayments.stream().anyMatch(p ->
+                        p.getPaymentType() == PaymentType.RETURN_COMPENSATION && p.getStatus() == PaymentStatus.PAID
+                );
+
+                if (!alreadyPaid && !"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
                     String txnRef = (record.getAdditionalPaymentTxnRef() != null && !record.getAdditionalPaymentTxnRef().isBlank())
                             ? record.getAdditionalPaymentTxnRef()
                             : "COMP-" + booking.getBookingCode() + "-" + System.currentTimeMillis();
                     record.setAdditionalPaymentStatus("PAID");
                     record.setAdditionalPaymentMethod("VIETQR");
                     record.setAdditionalPaymentTxnRef(txnRef);
-                    record.setAdditionalPaymentRecordedAt(LocalDateTime.now());
+                    record.setAdditionalPaymentRecordedAt(LocalDateTime.now(BUSINESS_ZONE));
 
                     Payment payment = Payment.builder()
                             .booking(booking)
@@ -4970,7 +5008,7 @@ public class HandoverServiceImpl implements HandoverService {
                             .amount(additionalDue)
                             .status(PaymentStatus.PAID)
                             .transactionId(txnRef)
-                            .paymentTime(LocalDateTime.now())
+                            .paymentTime(LocalDateTime.now(BUSINESS_ZONE))
                             .referenceCode("RETURN_COMPENSATION")
                             .build();
                     payment = paymentRepository.save(payment);

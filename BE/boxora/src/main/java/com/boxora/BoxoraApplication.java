@@ -26,6 +26,12 @@ public class BoxoraApplication {
         System.setProperty("spring.devtools.restart.enabled", "false");
     }
 
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        // Đồng bộ múi giờ mặc định sang giờ Việt Nam (UTC+7)
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+    }
+
     public static void main(String[] args) {
         SpringApplication.run(BoxoraApplication.class, args);
     }

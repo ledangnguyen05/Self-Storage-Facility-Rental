@@ -210,11 +210,13 @@ class WarehouseReturnServiceTest {
     }
 
     // =========================================================================
-    // 2. Thiếu ảnh bắt buộc (< 2 ảnh), không được chốt biên bản
+    // 2. Nghiệm thu hiện trường với ảnh tùy chọn (< 2 ảnh vẫn hợp lệ)
     // =========================================================================
     @Test
-    @DisplayName("Kịch bản 2: Thiếu ảnh bắt buộc (< 2 ảnh) -> Ném lỗi RETURN_PHOTO_COUNT_INSUFFICIENT")
-    void scenario02_InsufficientPhotos_ThrowsException() {
+    @DisplayName("Kịch bản 2: Ảnh hiện trường tùy chọn (< 2 ảnh) -> Lưu nghiệm thu thành công không bị chặn")
+    void scenario02_OptionalPhotos_Succeeds() {
+        when(handoverRecordRepository.findByBooking_IdOrderByRecordedAtDesc(bookingId)).thenReturn(Collections.emptyList());
+
         HandoverRequest req = HandoverRequest.builder()
                 .bookingId(bookingId)
                 .isDraft(false)
@@ -225,12 +227,12 @@ class WarehouseReturnServiceTest {
                 .assetsClearedPassed(true)
                 .sensorPassed(true)
                 .evidencePhotos(List.of("https://boxora.vn/only-one-photo.jpg")) // Chỉ 1 ảnh
-                .notes("Thiếu ảnh")
+                .notes("Ảnh hiện trường là tùy chọn")
                 .build();
 
-        AppException ex = assertThrows(AppException.class, () -> handoverService.saveInspection(req));
-        assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.RETURN_PHOTO_COUNT_INSUFFICIENT);
-        assertThat(ex.getMessage()).contains("tối thiểu 2 ảnh");
+        HandoverResponse res = handoverService.saveInspection(req);
+        assertThat(res).isNotNull();
+        assertThat(res.getEvidencePhotos()).hasSize(1);
     }
 
     // =========================================================================
