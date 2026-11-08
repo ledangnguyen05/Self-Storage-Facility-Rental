@@ -145,9 +145,11 @@ export const ReceptionDeskWorkbench: React.FC<ReceptionDeskWorkbenchProps> = ({
     }
   }, [propArrivals, fetchInternalArrivals])
 
-  useRealtimeSync(() => {
-    void fetchInternalArrivals(true)
-  }, { intervalMs: 3000 })
+  useRealtimeSync(async () => {
+    if (propArrivals === undefined) {
+      await fetchInternalArrivals(true)
+    }
+  }, { intervalMs: 60000, enabled: propArrivals === undefined })
 
   const rawArrivals = propArrivals !== undefined ? propArrivals : internalArrivals
   const radarUnits = propRadarUnits !== undefined ? propRadarUnits : internalUnits

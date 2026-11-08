@@ -123,9 +123,9 @@ export const CashierJournalPage: React.FC = () => {
     void fetchPayments(false)
   }, [activeFacilityId, periodStart, periodEnd, user?.role?.name, user?.facilityId])
 
-  useRealtimeSync(() => {
-    void fetchPayments(true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await fetchPayments(true)
+  }, { intervalMs: 60000 })
 
   // Reset page when filters change
   useEffect(() => {

@@ -315,10 +315,9 @@ export const OverdueManagementPage: React.FC = () => {
     void fetchContracts(false)
   }, [fetchContracts])
 
-  useRealtimeSync(() => {
-    void fetchSummary()
-    void fetchContracts(true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await Promise.allSettled([fetchSummary(), fetchContracts(true)])
+  }, { intervalMs: 60000 })
 
   const handleRefreshAll = () => {
     fetchSummary()

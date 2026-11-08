@@ -164,14 +164,15 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
     }
   }, [selectedFacilityId])
 
-  useRealtimeSync(() => {
+  useRealtimeSync(async () => {
     if (!isEditModalOpen && editingDiscountTerm === null) {
-      void loadUnitTypes()
+      const tasks: Promise<unknown>[] = [loadUnitTypes()]
       if (selectedFacilityId) {
-        void loadFacilityPolicy(selectedFacilityId)
+        tasks.push(loadFacilityPolicy(selectedFacilityId))
       }
+      await Promise.allSettled(tasks)
     }
-  }, { intervalMs: 6000 })
+  }, { intervalMs: 60000 })
 
   // Create or configure a new discount term
   const handleCreateDiscountTerm = async (e: React.FormEvent) => {

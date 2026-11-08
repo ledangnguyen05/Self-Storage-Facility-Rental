@@ -408,9 +408,9 @@ export const ShiftRosterPage: React.FC = () => {
     void fetchData(false)
   }, [fetchData])
 
-  useRealtimeSync(() => {
-    void fetchData(true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await fetchData(true)
+  }, { intervalMs: 60000 })
 
   const currentFacilityName = useMemo(() => {
     if (selectedFacilityId === 'ALL') return 'Toàn chuỗi (Tất cả cơ sở)'

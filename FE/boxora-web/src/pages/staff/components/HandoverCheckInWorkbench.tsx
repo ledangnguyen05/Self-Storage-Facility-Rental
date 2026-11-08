@@ -390,14 +390,14 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     fetchPrerequisitesForBooking
   ])
 
-  useRealtimeSync(() => {
+  useRealtimeSync(async () => {
     if (selectedBookingId) {
-      void fetchPrerequisitesForBooking(selectedBookingId, true)
+      await fetchPrerequisitesForBooking(selectedBookingId, true)
     }
     if (onRefreshArrivals) {
       onRefreshArrivals()
     }
-  }, { intervalMs: 5000 })
+  }, { intervalMs: 60000 })
 
   // Ensure session exists for current booking
   useEffect(() => {

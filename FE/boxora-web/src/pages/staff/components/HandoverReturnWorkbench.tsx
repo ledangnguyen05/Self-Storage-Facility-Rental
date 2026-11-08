@@ -561,9 +561,9 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     void fetchReturnCases(false, false)
   }, [fetchReturnCases])
 
-  useRealtimeSync(() => {
-    void fetchReturnCases(false, true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await fetchReturnCases(false, true)
+  }, { intervalMs: 60000 })
 
   const handleRefreshWorkbench = () => {
     fetchReturnCases(true)

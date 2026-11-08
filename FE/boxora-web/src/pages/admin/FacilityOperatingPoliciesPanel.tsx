@@ -71,9 +71,9 @@ export const FacilityOperatingPoliciesPanel: React.FC<FacilityOperatingPoliciesP
     void loadPolicies(false)
   }, [])
 
-  useRealtimeSync(() => {
-    void loadPolicies(true)
-  }, { intervalMs: 4000 })
+  useRealtimeSync(async () => {
+    await loadPolicies(true)
+  }, { intervalMs: 60000 })
 
   const handleOpenCreatePolicy = (fac?: Facility) => {
     setEditingPolicyFacility(fac || null)

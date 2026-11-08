@@ -95,7 +95,7 @@ export function broadcastDataSync(url?: string, method?: string) {
 }
 
 export interface UseRealtimeSyncOptions {
-  /** Polling interval in milliseconds while tab is visible (default: 10000ms) */
+  /** Polling interval in milliseconds while tab is visible (default: 60000ms, set 0 to disable periodic polling) */
   intervalMs?: number
   /** Whether synchronization is active (default: true) */
   enabled?: boolean
@@ -113,7 +113,7 @@ export function useRealtimeSync(
   onSync: () => void | Promise<unknown>,
   options: UseRealtimeSyncOptions = {}
 ) {
-  const { intervalMs = 10000, enabled = true, debounceMs = 220 } = options
+  const { intervalMs = 60000, enabled = true, debounceMs = 220 } = options
   const onSyncRef = useRef(onSync)
   onSyncRef.current = onSync
 
@@ -128,7 +128,7 @@ export function useRealtimeSync(
     initCrossTabListeners()
 
     const executeSync = async (isPeriodicTick = false) => {
-      if (isPeriodicTick && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
         return
       }
       if (isRunningRef.current) {
@@ -138,14 +138,14 @@ export function useRealtimeSync(
         return
       }
       const now = Date.now()
-      if (isPeriodicTick && now - lastRunAtRef.current < 3000) {
+      if (isPeriodicTick && now - lastRunAtRef.current < 20000) {
         return
       }
       isRunningRef.current = true
       lastRunAtRef.current = now
       beginSilentSync()
       try {
-        await onSyncRef.current()
+        await Promise.resolve(onSyncRef.current())
       } catch {
         // Silent background sync error handling
       } finally {
@@ -161,6 +161,9 @@ export function useRealtimeSync(
     }
 
     function scheduleSync() {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
       // Ignore self-induced events fired while onSync is actively running
       if (isRunningRef.current && Date.now() - lastRunAtRef.current < 900) {
         return
@@ -194,7 +197,7 @@ export function useRealtimeSync(
     window.addEventListener('focus', handleVisibilityOrFocus)
     document.addEventListener('visibilitychange', handleVisibilityOrFocus)
 
-    const effectiveInterval = intervalMs > 0 ? Math.max(intervalMs, 10000) + jitterMsRef.current : 0
+    const effectiveInterval = intervalMs > 0 ? Math.max(intervalMs, 30000) + jitterMsRef.current : 0
     const intervalId = effectiveInterval > 0
       ? window.setInterval(() => {
           void executeSync(true)

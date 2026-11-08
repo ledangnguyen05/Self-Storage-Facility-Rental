@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { AxiosResponse } from 'axios'
 import { broadcastDataSync } from '../hooks/useRealtimeSync'
 import { incrementForegroundRequest, decrementForegroundRequest } from '../utils/tabLoadingTracker'
 
@@ -558,9 +558,10 @@ if (typeof window !== 'undefined' && window.localStorage) {
 
   // Quiet background cross-machine fallback sync (SSE handles instant <50ms updates)
   window.setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
     void syncSharedStateWithBackend(false)
     connectRealtimeSseStream()
-  }, 8000)
+  }, 60000)
 
   window.addEventListener('focus', () => {
     void syncSharedStateWithBackend(false)
@@ -572,6 +573,44 @@ if (typeof window !== 'undefined' && window.localStorage) {
   })
 }
 
+// ============================================================================
+// IN-FLIGHT REQUEST COALESCING, LIGHTWEIGHT CACHING & DIAGNOSTIC LOGGING
+// ============================================================================
+const isDevLogging = Boolean(import.meta.env?.DEV) || (typeof window !== 'undefined' && Boolean((window as any).BOXORA_API_DEBUG))
+
+const inFlightGetRequests = new Map<string, Promise<any>>()
+const recentGetCache = new Map<string, { data: any; status: number; statusText: string; headers: any; timestamp: number }>()
+const GET_CACHE_TTL_MS = 15000 // 15-second short-lived cache for GET requests
+
+export function invalidateApiCache(pattern?: string) {
+  if (!pattern) {
+    recentGetCache.clear()
+    return
+  }
+  for (const key of recentGetCache.keys()) {
+    if (key.includes(pattern)) {
+      recentGetCache.delete(key)
+    }
+  }
+}
+
+const sanitizeUrlForLog = (url: string, params?: any): string => {
+  let cleanUrl = url || ''
+  if (params && typeof params === 'object') {
+    const safeParams: Record<string, any> = {}
+    for (const [k, v] of Object.entries(params)) {
+      if (/token|password|secret|auth|credit|cvv/i.test(k)) {
+        safeParams[k] = '***'
+      } else {
+        safeParams[k] = v
+      }
+    }
+    const query = new URLSearchParams(safeParams as any).toString()
+    if (query) cleanUrl += (cleanUrl.includes('?') ? '&' : '?') + query
+  }
+  return cleanUrl
+}
+
 export const api = axios.create({
   baseURL: getApiBaseUrl(),
   headers: {
@@ -579,6 +618,116 @@ export const api = axios.create({
   },
   withCredentials: true,
 })
+
+const originalApiRequest = api.request.bind(api)
+
+api.request = (function <T = any, R = AxiosResponse<T>, D = any>(
+  configOrUrl: any,
+  maybeConfig?: any
+): Promise<R> {
+  const config = typeof configOrUrl === 'string'
+    ? { ...(maybeConfig || {}), url: configOrUrl }
+    : { ...(configOrUrl || {}) }
+
+  const method = (config.method || 'get').toLowerCase()
+
+  if (method !== 'get') {
+    if (['post', 'put', 'patch', 'delete'].includes(method)) {
+      invalidateApiCache()
+    }
+    const startTime = performance.now()
+    const cleanUrl = sanitizeUrlForLog(config.url || '', config.params)
+    if (isDevLogging) {
+      console.debug(`%c[API REQ] ${method.toUpperCase()} ${cleanUrl}`, 'color: #3b82f6; font-weight: bold;', {
+        startTime: new Date().toLocaleTimeString(),
+      })
+    }
+    return (originalApiRequest(config) as unknown as Promise<R>)
+      .then((res: any) => {
+        const duration = Math.round(performance.now() - startTime)
+        if (isDevLogging) {
+          console.debug(`%c[API RES] ${method.toUpperCase()} ${cleanUrl} - ${res.status} (${duration}ms)`, 'color: #10b981; font-weight: bold;')
+        }
+        return res
+      })
+      .catch((err: any) => {
+        const duration = Math.round(performance.now() - startTime)
+        if (isDevLogging) {
+          console.debug(`%c[API ERR] ${method.toUpperCase()} ${cleanUrl} - ${err.response?.status || 'FAILED'} (${duration}ms)`, 'color: #ef4444; font-weight: bold;')
+        }
+        throw err
+      })
+  }
+
+  // Check if bypass requested
+  if ((config as any).skipCache || (config as any).skipDedup) {
+    return originalApiRequest(config) as unknown as Promise<R>
+  }
+
+  const cleanUrl = sanitizeUrlForLog(config.url || '', config.params)
+  const cacheKey = cleanUrl
+
+  // 1. Check TTL cache
+  const cached = recentGetCache.get(cacheKey)
+  const now = Date.now()
+  if (cached && now - cached.timestamp < GET_CACHE_TTL_MS) {
+    if (isDevLogging) {
+      console.debug(`%c[API CACHE] GET ${cacheKey} (served from 15s cache)`, 'color: #8b5cf6; font-weight: bold;')
+    }
+    return Promise.resolve({
+      data: cached.data,
+      status: cached.status,
+      statusText: cached.statusText,
+      headers: cached.headers,
+      config,
+    } as unknown as R)
+  }
+
+  // 2. Check in-flight deduplication
+  if (inFlightGetRequests.has(cacheKey)) {
+    if (isDevLogging) {
+      console.debug(`%c[API DEDUP] Coalesced concurrent GET: ${cacheKey}`, 'color: #f59e0b; font-weight: bold;')
+    }
+    return inFlightGetRequests.get(cacheKey)! as unknown as Promise<R>
+  }
+
+  // 3. Initiate request
+  const startTime = performance.now()
+  if (isDevLogging) {
+    console.debug(`%c[API REQ] GET ${cacheKey}`, 'color: #3b82f6; font-weight: bold;', {
+      startTime: new Date().toLocaleTimeString(),
+    })
+  }
+
+  const promise = (originalApiRequest(config) as unknown as Promise<R>)
+    .then((response: any) => {
+      const duration = Math.round(performance.now() - startTime)
+      if (isDevLogging) {
+        console.debug(`%c[API RES] GET ${cacheKey} - ${response.status} (${duration}ms)`, 'color: #10b981; font-weight: bold;')
+      }
+      recentGetCache.set(cacheKey, {
+        data: response.data,
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+        timestamp: Date.now(),
+      })
+      return response
+    })
+    .catch((error: any) => {
+      const duration = Math.round(performance.now() - startTime)
+      if (isDevLogging) {
+        console.debug(`%c[API ERR] GET ${cacheKey} - ${error.response?.status || 'FAILED'} (${duration}ms)`, 'color: #ef4444; font-weight: bold;')
+      }
+      throw error
+    })
+    .finally(() => {
+      inFlightGetRequests.delete(cacheKey)
+    })
+
+  inFlightGetRequests.set(cacheKey, promise)
+  return promise
+}) as any
 
 // Request Interceptor: Attach JWT Token and sync dynamic baseURL
 api.interceptors.request.use(
@@ -630,6 +779,7 @@ api.interceptors.response.use(
       url.includes('/api/v1/shared-state')
     const isVNPayVerify = url.includes('/vnpay-verify') || url.includes('/vnpay-return')
     if ((!isAuthOnly && ['post', 'put', 'patch', 'delete'].includes(method)) || isVNPayVerify) {
+      invalidateApiCache()
       broadcastDataSync(url, method)
       pendingUpserts['boxora_last_cluster_mutation'] = JSON.stringify({
         url,

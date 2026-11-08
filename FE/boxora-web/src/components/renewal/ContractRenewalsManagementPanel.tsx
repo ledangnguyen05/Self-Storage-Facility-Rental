@@ -338,9 +338,9 @@ export const ContractRenewalsManagementPanel: React.FC<ContractRenewalsManagemen
     void fetchRenewals(false)
   }, [fetchRenewals])
 
-  useRealtimeSync(() => {
-    void fetchRenewals(true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await fetchRenewals(true)
+  }, { intervalMs: 60000 })
 
   // Shift & Attendance check for reception desk
   const checkUserShiftStatus = useCallback(async (facId?: string) => {

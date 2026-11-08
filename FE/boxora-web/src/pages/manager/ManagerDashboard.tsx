@@ -167,22 +167,6 @@ export const ManagerDashboard: React.FC = () => {
     }, { replace: true })
   }
 
-  // Refresh targeted data when the active tab changes so each tab sees fresh data
-  useEffect(() => {
-    const fId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
-    if (activeTab === 'pending_orders' || activeTab === 'reception' || activeTab === 'handovers-returns') {
-      void fetchUpcomingHandovers(fId)
-    }
-    if (activeTab === 'tickets') {
-      const targetId = fId || facilities[0]?.id
-      supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined)
-        .then(data => {
-          if (Array.isArray(data)) setTickets(data)
-        })
-        .catch(() => {})
-    }
-  }, [activeTab])
-
   useEffect(() => {
     const currentTab = searchParams.get('tab') as ManagerDashboardTab | null
     if (isTabAllowed(currentTab)) {
@@ -221,6 +205,7 @@ export const ManagerDashboard: React.FC = () => {
   const [showAllRentals, setShowAllRentals] = useState(false)
   const [tickets, setTickets] = useState<SupportTicketRecord[]>([])
   const [renewalsCount, setRenewalsCount] = useState<number>(0)
+  const [pendingRefundCount, setPendingRefundCount] = useState<number>(0)
   const [returnMetrics, setReturnMetrics] = useState<{
     pending: number
     inspecting: number
@@ -382,11 +367,11 @@ export const ManagerDashboard: React.FC = () => {
     return () => clearInterval(interval)
   }, [])
 
-  // Tự động làm mới danh sách khi có thay đổi đơn đặt hoặc kho (kể cả từ tab/trình duyệt khác)
-  useRealtimeSync(() => {
+  // Tự động làm mới dữ liệu cho tab đang xem (tối ưu chu kỳ 60s, ngăn chồng chéo)
+  useRealtimeSync(async () => {
     const targetId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : undefined
-    void fetchUnits(targetId, true)
-  }, { intervalMs: 10000 })
+    await fetchActiveTabData(activeTab, targetId, true)
+  }, { intervalMs: 60000 })
 
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
@@ -407,6 +392,8 @@ export const ManagerDashboard: React.FC = () => {
   }, [contextFacilities, isFacilityScoped, assignedFacilityId])
 
   const lastLoadedFacilityRef = React.useRef<string>('')
+  const lastLoadedTabRef = React.useRef<string>('')
+
   useEffect(() => {
     let targetFacility = isFacilityScoped && assignedFacilityId ? assignedFacilityId : selectedFacility
     if (isFacilityScoped && assignedFacilityId) {
@@ -415,40 +402,38 @@ export const ManagerDashboard: React.FC = () => {
       targetFacility = facilities[0]?.id || ''
     }
 
+    if (!targetFacility) return
+
     if (targetFacility !== selectedFacilityId) {
       setStatusFilter('all')
+      setSelectedFacilityId(targetFacility)
     }
-    setSelectedFacilityId(targetFacility)
-    if (targetFacility) {
-      const isSameFacility = lastLoadedFacilityRef.current === targetFacility
-      lastLoadedFacilityRef.current = targetFacility
-      void fetchUnits(targetFacility, isSameFacility)
-    }
-  }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, selectedFacilityId])
 
-  const fetchUnits = async (facId?: string, silent: boolean = false) => {
+    const facilityChanged = lastLoadedFacilityRef.current !== targetFacility
+    const tabChanged = lastLoadedTabRef.current !== activeTab
+
+    if (facilityChanged || tabChanged) {
+      lastLoadedFacilityRef.current = targetFacility
+      lastLoadedTabRef.current = activeTab
+      void fetchActiveTabData(activeTab, targetFacility, !facilityChanged)
+    }
+  }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, activeTab])
+
+  // 1. Overview Tab Data (Storage Units, Overdue Debt, Facility Operating Policy)
+  const fetchOverviewData = async (facId?: string, silent: boolean = false) => {
     if (!silent) setIsLoading(true)
     try {
       const targetId = (facId && facId !== 'ALL')
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, polRes, arrivalsRes, rentalsRes, ticketsRes, renewalsRes, returnsRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, polRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
-        bookingService.getUpcomingArrivals(targetId, {
-          timeframe: 'ALL',
-          fromDate: checkinFromDate || undefined,
-          toDate: checkinToDate || undefined,
-        }),
-        bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
-        supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined),
-        contractService.getRenewals({ facilityId: targetId, status: 'PENDING_REVIEW', size: 100 }),
-        handoverService.getReturnCases({ facilityId: targetId }),
       ])
 
-      // 1. Process Storage Units
+      // Process Storage Units
       if (unitsRes.status === 'fulfilled' && Array.isArray(unitsRes.value) && unitsRes.value.length > 0) {
         const mapped: InspectedUnit[] = unitsRes.value.map((su: StorageUnit) => {
           const isAvail = su.status === 'AVAILABLE'
@@ -516,14 +501,14 @@ export const ManagerDashboard: React.FC = () => {
         setSelectedUnit(null)
       }
 
-      // 2. Overdue Debt
+      // Process Overdue Debt
       if (debtRes.status === 'fulfilled' && debtRes.value?.items) {
         setOverdueItems(debtRes.value.items)
       } else {
         setOverdueItems([])
       }
 
-      // 3. Policy & Policy Exception
+      // Process Policy & Policy Exception
       if (polRes.status === 'fulfilled' && polRes.value) {
         const loadedPol = polRes.value
         setFacilityPolicy(loadedPol)
@@ -541,82 +526,18 @@ export const ManagerDashboard: React.FC = () => {
         setFacilityPolicy(null)
         setHasPolicyException(false)
       }
-
-      // 4. Upcoming Arrivals / Handovers
-      if (arrivalsRes.status === 'fulfilled' && Array.isArray(arrivalsRes.value)) {
-        let filteredArrivals = arrivalsRes.value
-        if (targetId) {
-          filteredArrivals = filteredArrivals.filter(b => {
-            if (b.facilityId) return b.facilityId === targetId
-            return true
-          })
-        }
-        filteredArrivals = mergeGuestArrivals(filteredArrivals, targetId)
-        setUpcomingHandovers(filteredArrivals)
-        if (!silent) setHandoverPage(1)
-      } else {
-        const localArrivals = mergeGuestArrivals([], targetId)
-        setUpcomingHandovers(localArrivals)
-        if (!silent) setHandoverPage(1)
-      }
-
-      // 5. Active Rentals / Returns
-      if (rentalsRes.status === 'fulfilled' && rentalsRes.value?.content) {
-        let filteredRentals = rentalsRes.value.content
-        if (targetId) {
-          filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
-        }
-        setActiveRentals(filteredRentals)
-        if (!silent) setRentalPage(1)
-      } else {
-        setActiveRentals([])
-      }
-
-      // 6. Tickets
-      if (ticketsRes.status === 'fulfilled' && Array.isArray(ticketsRes.value)) {
-        setTickets(ticketsRes.value)
-      } else {
-        setTickets([])
-      }
-
-      // 7. Renewals Count: Chỉ đếm các đơn đang ở trạng thái cần phê duyệt (PENDING_REVIEW)
-      if (renewalsRes.status === 'fulfilled' && renewalsRes.value) {
-        const rawContent = renewalsRes.value.content || (Array.isArray(renewalsRes.value) ? renewalsRes.value : [])
-        const pendingCount = rawContent.filter((r: any) => String(r.status || '').toUpperCase() === 'PENDING_REVIEW').length
-        setRenewalsCount(pendingCount)
-      } else {
-        setRenewalsCount(0)
-      }
-
-      // 8. Return Cases Metrics (Tab 3: Trả Kho)
-      if (returnsRes && returnsRes.status === 'fulfilled' && Array.isArray(returnsRes.value)) {
-        let p = 0, i = 0, r = 0, comp = 0
-        returnsRes.value.forEach((c: any) => {
-          const st = String(c.status || '').toUpperCase()
-          if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) p++
-          else if (['INSPECTION_IN_PROGRESS', 'INSPECTION_SCHEDULED', 'INSPECTION_ISSUE', 'INSPECTION_PASSED', 'INSPECTING'].includes(st)) i++
-          else if (['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUNDING', 'DISPUTED'].includes(st) || c.approvalStatus === 'PENDING_APPROVAL' || c.approvalStatus === 'DISPUTED') r++
-          else if (st === 'COMPLETED' || st === 'RESOLVED') comp++
-          else p++
-        })
-        setReturnMetrics({ pending: p, inspecting: i, refunding: r, completed: comp, total: returnsRes.value.length })
-      }
-
     } catch {
       setUnits([])
       setOverdueItems([])
       setSelectedUnit(null)
       setFacilityPolicy(null)
       setHasPolicyException(false)
-      setUpcomingHandovers([])
-      setActiveRentals([])
-      setTickets([])
-      setRenewalsCount(0)
     } finally {
       setIsLoading(false)
     }
   }
 
+  // 2. Upcoming Arrivals / Handovers
   const fetchUpcomingHandovers = async (
     facId?: string,
     timeframe?: 'current' | 'today' | 'past' | 'future' | 'all',
@@ -659,6 +580,137 @@ export const ManagerDashboard: React.FC = () => {
         setHandoverPage(1)
       }
     }
+  }
+
+  // 3. Returns Tab Data (Active Rentals & Return Cases)
+  const fetchReturnsData = async (facId?: string, silent: boolean = false) => {
+    try {
+      const targetId = (facId && facId !== 'ALL')
+        ? facId
+        : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
+
+      const [rentalsRes, returnsRes] = await Promise.allSettled([
+        bookingService.getAll({ status: 'ACTIVE', size: 100, facilityId: targetId }),
+        handoverService.getReturnCases({ facilityId: targetId }),
+      ])
+
+      if (rentalsRes.status === 'fulfilled' && rentalsRes.value?.content) {
+        let filteredRentals = rentalsRes.value.content
+        if (targetId) {
+          filteredRentals = filteredRentals.filter(b => b.facilityId === targetId)
+        }
+        setActiveRentals(filteredRentals)
+        if (!silent) setRentalPage(1)
+      } else {
+        setActiveRentals([])
+      }
+
+      if (returnsRes && returnsRes.status === 'fulfilled' && Array.isArray(returnsRes.value)) {
+        let p = 0, i = 0, r = 0, comp = 0
+        returnsRes.value.forEach((c: any) => {
+          const st = String(c.status || '').toUpperCase()
+          if (st === 'RETURN_REQUESTED' || st === 'PENDING' || !st) p++
+          else if (['INSPECTION_IN_PROGRESS', 'INSPECTION_SCHEDULED', 'INSPECTION_ISSUE', 'INSPECTION_PASSED', 'INSPECTING'].includes(st)) i++
+          else if (['REFUND_PENDING_APPROVAL', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUNDING', 'DISPUTED'].includes(st) || c.approvalStatus === 'PENDING_APPROVAL' || c.approvalStatus === 'DISPUTED') r++
+          else if (st === 'COMPLETED' || st === 'RESOLVED') comp++
+          else p++
+        })
+        setReturnMetrics({ pending: p, inspecting: i, refunding: r, completed: comp, total: returnsRes.value.length })
+      }
+    } catch {
+      setActiveRentals([])
+    }
+  }
+
+  // 4. Renewals Tab Data
+  const fetchRenewalsData = async (facId?: string) => {
+    try {
+      const targetId = (facId && facId !== 'ALL')
+        ? facId
+        : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
+      const res = await contractService.getRenewals({ facilityId: targetId, status: 'PENDING_REVIEW', size: 100 })
+      if (res) {
+        const rawContent = res.content || (Array.isArray(res) ? res : [])
+        const pendingCount = rawContent.filter((r: any) => String(r.status || '').toUpperCase() === 'PENDING_REVIEW').length
+        setRenewalsCount(pendingCount)
+      }
+    } catch {
+      setRenewalsCount(0)
+    }
+  }
+
+  // 5. Tickets Tab Data
+  const fetchTicketsData = async (facId?: string) => {
+    try {
+      const targetId = (facId && facId !== 'ALL')
+        ? facId
+        : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
+      const res = await supportTicketService.getQueue(targetId ? { facilityId: targetId } : undefined)
+      if (Array.isArray(res)) {
+        setTickets(res)
+      }
+    } catch {
+      setTickets([])
+    }
+  }
+
+  // 6. Refunds Tab Data
+  const fetchPendingRefundCount = async (facId?: string) => {
+    try {
+      const targetFacId = (facId && facId !== 'ALL') ? facId : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : user?.facilityId)
+      const data = await refundService.getAll({
+        facilityId: targetFacId,
+        status: 'PENDING_REVIEW'
+      })
+      if (data && typeof data.totalElements === 'number') {
+        setPendingRefundCount(data.totalElements)
+      } else if (data && Array.isArray(data.content)) {
+        setPendingRefundCount(data.content.length)
+      } else if (Array.isArray(data)) {
+        setPendingRefundCount(data.length)
+      }
+    } catch {
+      // silent fail
+    }
+  }
+
+  // 7. Master Tab Dispatcher: Load ONLY the data required by the active tab
+  const fetchActiveTabData = async (tab: ManagerDashboardTab, facId?: string, silent: boolean = false) => {
+    const targetId = (facId && facId !== 'ALL')
+      ? facId
+      : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
+
+    switch (tab) {
+      case 'overview':
+      case 'policy':
+        await fetchOverviewData(targetId, silent)
+        break
+      case 'pending_orders':
+      case 'reception':
+      case 'handovers-returns':
+        await fetchUpcomingHandovers(targetId, checkinTimeframe, checkinFromDate, checkinToDate, silent)
+        break
+      case 'returns':
+        await fetchReturnsData(targetId, silent)
+        break
+      case 'renewals':
+        await fetchRenewalsData(targetId)
+        break
+      case 'tickets':
+        await fetchTicketsData(targetId)
+        break
+      case 'refunds':
+        await fetchPendingRefundCount(targetId)
+        break
+      default:
+        await fetchOverviewData(targetId, silent)
+        break
+    }
+  }
+
+  // Compatibility function for existing callers
+  const fetchUnits = async (facId?: string, silent: boolean = false) => {
+    return fetchActiveTabData(activeTab, facId, silent)
   }
 
   const handleCheckinTimeframeChange = (tf: 'current' | 'today' | 'past' | 'future' | 'all') => {
@@ -710,29 +762,6 @@ export const ManagerDashboard: React.FC = () => {
   }
 
   const [cancellingOverdueBooking, setCancellingOverdueBooking] = useState<Booking | null>(null)
-  const [pendingRefundCount, setPendingRefundCount] = useState<number>(0)
-
-  useEffect(() => {
-    const fetchPendingRefundCount = async () => {
-      try {
-        const targetFacId = selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : user?.facilityId
-        const data = await refundService.getAll({
-          facilityId: targetFacId,
-          status: 'PENDING_REVIEW'
-        })
-        if (data && typeof data.totalElements === 'number') {
-          setPendingRefundCount(data.totalElements)
-        } else if (data && Array.isArray(data.content)) {
-          setPendingRefundCount(data.content.length)
-        } else if (Array.isArray(data)) {
-          setPendingRefundCount(data.length)
-        }
-      } catch {
-        // silent fail
-      }
-    }
-    fetchPendingRefundCount()
-  }, [selectedFacilityId, user?.facilityId])
 
   const openManagerCancelOverdueModal = (booking: Booking) => {
     setCancellingOverdueBooking(booking)

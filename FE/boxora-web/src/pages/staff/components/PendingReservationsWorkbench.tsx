@@ -198,9 +198,11 @@ export const PendingReservationsWorkbench: React.FC<PendingReservationsWorkbench
     }
   }, [propArrivals, fetchInternalArrivals])
 
-  useRealtimeSync(() => {
-    void fetchInternalArrivals(true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    if (propArrivals === undefined) {
+      await fetchInternalArrivals(true)
+    }
+  }, { intervalMs: 60000, enabled: propArrivals === undefined })
 
   // Counts
   const counts = useMemo(() => {

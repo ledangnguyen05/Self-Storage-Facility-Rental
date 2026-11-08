@@ -84,9 +84,9 @@ export const DashboardLayout: React.FC = () => {
     loadLayoutFacilities(true)
   }, [loadLayoutFacilities])
 
-  useRealtimeSync(() => {
-    loadLayoutFacilities(false)
-  }, { intervalMs: 15000 })
+  useRealtimeSync(async () => {
+    await loadLayoutFacilities(false)
+  }, { intervalMs: 120000 })
 
   // When switching between dashboard sections, default facility filter to 'ALL' (Toàn hệ thống),
   // except for SƠ ĐỒ CƠ SỞ KHO (/portal/facility-manager) where a concrete facility branch must be selected.
