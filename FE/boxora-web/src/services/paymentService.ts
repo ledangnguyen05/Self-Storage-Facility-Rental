@@ -36,6 +36,7 @@ export interface PaymentItem {
   confirmedByName?: string | null
   confirmedAt?: string | null
   paymentNotes?: string | null
+  orderInfo?: string | null
 }
 
 export interface PaymentPage {

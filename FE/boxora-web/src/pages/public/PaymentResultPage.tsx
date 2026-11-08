@@ -8,9 +8,11 @@ import { bookingService } from '../../services/bookingService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { contractService } from '../../services/contractService'
 import { Booking, RentalContract, ContractRenewal } from '../../types'
+import { handoverService, ReturnCase } from '../../services/handoverService'
 import { ContractDocumentModal } from '../../components/modals/ContractDocumentModal'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { RenewalDocumentModal } from '../../components/modals/RenewalDocumentModal'
+import { CustomerSettlementReviewModal } from '../../components/modals/CustomerSettlementReviewModal'
 import { QuickThemeLanguageToggle } from '../../components/common/QuickThemeLanguageToggle'
 import { LayoutDashboard } from 'lucide-react'
 
@@ -53,6 +55,10 @@ export const PaymentResultPage = () => {
   const [booking, setBooking] = useState<Booking | null>(null)
   const [contract, setContract] = useState<RentalContract | null>(null)
   const [matchingRenewal, setMatchingRenewal] = useState<ContractRenewal | null>(null)
+  const [returnCase, setReturnCase] = useState<ReturnCase | null>(null)
+  const [showSettlementModal, setShowSettlementModal] = useState(false)
+  const [selectedVersion, setSelectedVersion] = useState<number | null>(null)
+  const [previewPhoto, setPreviewPhoto] = useState<string | null>(null)
   const [payments, setPayments] = useState<PaymentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(searchParams.get('error') || '')
@@ -105,12 +111,14 @@ export const PaymentResultPage = () => {
       // 2. Fetch booking details if targetBookingId is available
       if (targetBookingId && !targetBookingId.startsWith('mock-')) {
         try {
-          const [bookingResult, bookingPayments, contractResult] = await Promise.all([
+          const [bookingResult, bookingPayments, contractResult, returnCaseResult] = await Promise.all([
             bookingService.getById(targetBookingId).catch(() => null),
             paymentService.getByBookingId(targetBookingId).catch(() => [] as PaymentItem[]),
             contractService.getContractByBookingId(targetBookingId).catch(() => null),
+            handoverService.getReturnCaseDetail(targetBookingId).catch(() => null),
           ])
           if (bookingResult) setBooking(bookingResult)
+          if (returnCaseResult) setReturnCase(returnCaseResult)
           if (bookingPayments.length > 0) {
             setPayments(prev => {
               const ids = new Set(prev.map(item => item.id || item.transactionId))
@@ -121,7 +129,14 @@ export const PaymentResultPage = () => {
               return merged
             })
           }
-          if (contractResult) setContract(contractResult)
+          if (contractResult) {
+            setContract(contractResult)
+            if (!returnCaseResult && contractResult.bookingId) {
+              void handoverService.getReturnCaseDetail(contractResult.bookingId).then(rc => {
+                if (rc) setReturnCase(rc)
+              }).catch(() => {})
+            }
+          }
         } catch (err) {
           console.warn('Failed to load booking info:', err)
         }
@@ -249,10 +264,64 @@ export const PaymentResultPage = () => {
     }
   }, [paid, booking, authoritativePayment, bookingId])
 
-  const isRenewal = authoritativePayment?.paymentType === 'RENEWAL_FEE'
+  const orderInfoParam = searchParams.get('orderInfo') || searchParams.get('vnp_OrderInfo') || ''
+  const isCompensation = authoritativePayment?.paymentType === 'RETURN_COMPENSATION'
+    || paymentTypeParam === 'RETURN_COMPENSATION'
+    || orderInfoParam.toLowerCase().includes('bồi thường')
+    || (Boolean((authoritativePayment as any)?.orderInfo) && String((authoritativePayment as any).orderInfo).toLowerCase().includes('bồi thường'))
+    || Boolean(returnCase && (returnCase.additionalPaymentStatus === 'PAID' || returnCase.additionalPaymentTxnRef === txnRef))
+
+  const isRenewal = !isCompensation && (
+    authoritativePayment?.paymentType === 'RENEWAL_FEE'
     || paymentTypeParam === 'RENEWAL_FEE'
     || Boolean(matchingRenewal)
     || Boolean(contract && !booking && !bookingId && !authoritativePayment?.bookingId)
+  )
+
+  const snapshotsList = useMemo(() => returnCase?.snapshots || [], [returnCase])
+  const activeSnapshot = useMemo(() => {
+    if (!returnCase) return null
+    if (selectedVersion && snapshotsList.length > 0) {
+      const match = snapshotsList.find(s => s.settlementVersion === selectedVersion)
+      if (match) return match
+    }
+    if (snapshotsList.length > 0) {
+      return snapshotsList[snapshotsList.length - 1]
+    }
+    return null
+  }, [returnCase, selectedVersion, snapshotsList])
+
+  const currentVersion = activeSnapshot?.settlementVersion || returnCase?.settlementVersion || 1
+  const confirmedByName = activeSnapshot?.confirmedByName || returnCase?.settlementConfirmedByName || 'facility 1 q1'
+  const confirmedAt = activeSnapshot?.confirmedAt || returnCase?.settlementConfirmedAt
+
+  const displayDepositPaid = activeSnapshot != null ? Number(activeSnapshot.depositAmount || 0) : Number(returnCase?.depositAmount || 0)
+  const displayDoorFee = activeSnapshot != null ? Number(activeSnapshot.doorFee || 0) : Number(returnCase?.doorFee || returnCase?.doorFeeInput || 0)
+  const displayCleaningFee = activeSnapshot != null ? Number(activeSnapshot.cleaningFee || 0) : Number(returnCase?.cleaningFee || returnCase?.cleaningFeeInput || 0)
+  const displayWallStructureFee = activeSnapshot != null ? Number(activeSnapshot.wallStructureFee || 0) : Number(returnCase?.wallStructureFee || returnCase?.damageFee || returnCase?.damageFeeInput || 0)
+  const displaySmartLockFee = activeSnapshot != null ? Number(activeSnapshot.smartLockFee || 0) : Number(returnCase?.smartLockFee || returnCase?.smartLockFeeInput || 0)
+  const displayLostCardFee = activeSnapshot != null ? Number(activeSnapshot.lostCardFee || 0) : Number(returnCase?.lostCardFee || 0)
+  const displayOverdueDebt = activeSnapshot != null
+    ? Number(activeSnapshot.overdueDebt || 0)
+    : Number(returnCase?.outstandingDebt || (authoritativePayment?.amount ? authoritativePayment.amount : 0))
+  const displayTotalDeduction = activeSnapshot != null
+    ? Number(activeSnapshot.totalDeductions || 0)
+    : Number(returnCase?.totalDeduction || returnCase?.approvedDeductions || (displayDoorFee + displayCleaningFee + displayWallStructureFee + displaySmartLockFee + displayLostCardFee + displayOverdueDebt))
+  const displayAdditionalDue = activeSnapshot != null
+    ? Number(activeSnapshot.additionalAmountDue || 0)
+    : Number(returnCase?.additionalAmountDue || (authoritativePayment?.amount ? authoritativePayment.amount : Math.max(0, displayTotalDeduction - displayDepositPaid)))
+
+  const evidencePhotosList: string[] = useMemo(() => {
+    if (!returnCase) return []
+    const rawPhotos = (returnCase as any).evidencePhotos || returnCase.photoUrls
+    if (Array.isArray(rawPhotos)) {
+      return rawPhotos.map(String).map((s: string) => s.trim()).filter(Boolean)
+    }
+    if (typeof rawPhotos === 'string' && (rawPhotos as string).trim()) {
+      return (rawPhotos as string).split(/[;,|]/).map((s: string) => s.trim()).filter(Boolean)
+    }
+    return []
+  }, [returnCase])
 
   const contractSigned = Boolean(contract?.signedAt)
     || contract?.status === 'PENDING_ACTIVATION'
@@ -334,7 +403,273 @@ export const PaymentResultPage = () => {
         {loading ? (
           <div className="py-12 text-center text-sm text-slate-600">Đang đối soát thông tin giao dịch với Boxora…</div>
         ) : paid ? (
-          isRenewal ? (
+          isCompensation ? (
+            /* =========================================================================
+               1. GIAO DIỆN XÁC NHẬN THANH TOÁN BỒI THƯỜNG / CÔNG NỢ QUYẾT TOÁN TRẢ KHO
+               ========================================================================= */
+            <div className="space-y-6">
+              <header className="text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 shadow-sm">
+                  <span className="material-symbols-outlined text-3xl">check_circle</span>
+                </div>
+                <p className="mt-3 text-xs font-bold uppercase tracking-wider text-emerald-700">
+                  Giao dịch đã được ghi nhận thành công
+                </p>
+                <h1 className="mt-1 text-2xl font-extrabold text-slate-900">
+                  Thanh Toán Quyết Toán Trả Kho Thành Công!
+                </h1>
+                <p className="mt-1 text-xs text-slate-500 font-medium">
+                  Khoản bồi thường và công nợ quyết toán trả kho đã được thanh toán và đối soát hoàn tất qua VNPay Sandbox.
+                </p>
+              </header>
+
+              <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
+                  <dt className="text-xs text-slate-500 font-medium">Mã đặt thuê / Mã đơn</dt>
+                  <dd className="mt-1 font-mono font-bold text-blue-700 text-sm">
+                    #{returnCase?.bookingCode || booking?.bookingCode || bookingId || 'BX-2026-8001'}
+                  </dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
+                  <dt className="text-xs text-slate-500 font-medium">Kho &amp; Cơ sở</dt>
+                  <dd className="mt-1 font-semibold text-slate-800 text-sm">
+                    Kho #{returnCase?.unitCode || booking?.unitCode || 'D1-A103'} · {returnCase?.facilityName || booking?.facilityName || authoritativePayment?.facilityName || 'Boxora District 1'}
+                  </dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
+                  <dt className="text-xs text-slate-500 font-medium">Trạng thái quyết toán</dt>
+                  <dd className="mt-1 font-semibold text-emerald-700 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-base">verified</span>
+                    <span>Bạn đã đồng ý &amp; Hoàn tất thanh toán</span>
+                  </dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
+                  <dt className="text-xs text-slate-500 font-medium">Trạng thái thanh toán</dt>
+                  <dd className="mt-1 font-semibold text-emerald-700 flex items-center gap-1">
+                    <span className="material-symbols-outlined text-base">check</span>
+                    <span>Đã xác nhận (VNPay Sandbox)</span>
+                  </dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
+                  <dt className="text-xs text-slate-500 font-medium">Mã giao dịch VNPay</dt>
+                  <dd className="mt-1 break-all font-mono text-xs font-semibold text-slate-700">
+                    {authoritativePayment?.transactionId || txnRef || 'Đã xác nhận'}
+                  </dd>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3.5 border border-slate-100">
+                  <dt className="text-xs text-slate-500 font-medium">Số tiền đã thanh toán</dt>
+                  <dd className="mt-1 font-mono font-bold text-emerald-700 text-base">
+                    {money(authoritativePayment?.amount || effectiveAmountParam || displayAdditionalDue)}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/90 p-4 text-sm text-emerald-950">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <strong className="flex items-center gap-1.5 text-emerald-900">
+                    <span className="material-symbols-outlined text-lg text-emerald-600">task_alt</span>
+                    <span>Trạng thái hồ sơ trả kho</span>
+                  </strong>
+                  <span className="font-bold text-emerald-800">
+                    Đã hoàn tất thanh toán bồi thường
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-relaxed text-emerald-900">
+                  Khoản bồi thường và công nợ quyết toán trả kho đã được ghi nhận thanh toán thành công. Nhân viên cơ sở sẽ đối soát và thực hiện thủ tục giải phóng kho theo đúng quy trình.
+                </p>
+              </div>
+
+              {/* BIÊN BẢN NGHIỆM THU & QUYẾT TOÁN TRẢ KHO */}
+              <div className="rounded-2xl border-2 border-slate-200 bg-white overflow-hidden shadow-sm">
+                <div className="bg-slate-900 text-white p-4 sm:p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-amber-400 text-2xl">fact_check</span>
+                      <div>
+                        <h2 className="text-base font-bold text-white">Biên Bản Nghiệm Thu &amp; Quyết Toán TrẢ Kho</h2>
+                        <p className="text-xs text-slate-300 font-medium">
+                          Buồng kho #{returnCase?.unitCode || booking?.unitCode || 'D1-A103'} • Mã đơn #{returnCase?.bookingCode || booking?.bookingCode || bookingId || 'BX-2026-8001'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full text-xs font-bold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">check_circle</span>
+                      <span>Đã giải quyết</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Version History */}
+                <div className="p-4 sm:p-5 border-b border-slate-100 bg-slate-50/60">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wide">
+                      Lịch sử các phiên bản quyết toán ({snapshotsList.length > 0 ? snapshotsList.length : 1} phiên bản)
+                    </span>
+                    <span className="text-xs text-slate-500 font-semibold">
+                      Đang xem: Phiên bản V{currentVersion} (Mới nhất)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(snapshotsList.length > 0 ? snapshotsList : [{ settlementVersion: currentVersion, totalDeductions: displayTotalDeduction }]).map((s: any, idx: number) => {
+                      const vNum = s.settlementVersion || (idx + 1)
+                      const isLatest = vNum === (returnCase?.settlementVersion || snapshotsList.length || 1)
+                      const isSelected = vNum === currentVersion
+                      return (
+                        <button
+                          key={vNum}
+                          type="button"
+                          onClick={() => setSelectedVersion(vNum)}
+                          className={`px-3 py-2 rounded-xl text-left border text-xs transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-blue-50 border-blue-400 text-blue-900 font-bold shadow-xs'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 font-bold">
+                            <span>Phiên bản V{vNum}</span>
+                            {isLatest && <span className="text-[10px] bg-blue-600 text-white px-1.5 py-0.2 rounded font-semibold">Mới nhất</span>}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            • Trừ {money(s.totalDeductions || displayTotalDeduction)}
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between text-xs text-slate-600 pt-2 border-t border-slate-200/60">
+                    <div>
+                      Chốt bởi: <strong className="text-slate-800">{confirmedByName}</strong> {confirmedAt && <span>({dateTime(confirmedAt)})</span>}
+                    </div>
+                    <span className="text-emerald-700 font-bold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-sm">verified</span>
+                      <span>Bạn đã đồng ý</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* 7 checklist criteria */}
+                <div className="p-4 sm:p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Chi tiết đối soát 7 tiêu chí kiểm tra hiện trường
+                    </h3>
+                    <span className="text-[11px] text-slate-500 font-semibold">Đơn vị: VNĐ</span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">1. Tiền cọc bảo đảm ban đầu đã nộp:</span>
+                      <span className="font-mono font-bold text-slate-800">{money(displayDepositPaid)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">2. Chi phí sửa chữa cửa cuốn &amp; ray:</span>
+                      <span className="font-mono font-bold text-slate-800">{money(displayDoorFee)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">3. Chi phí dọn dẹp &amp; vệ sinh kho:</span>
+                      <span className="font-mono font-bold text-slate-800">{money(displayCleaningFee)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">4. Chi phí khắc phục hư hại vách / sàn / trần:</span>
+                      <span className="font-mono font-bold text-slate-800">{money(displayWallStructureFee)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">5. Chi phí sửa chữa ổ khóa SmartLock IoT:</span>
+                      <span className="font-mono font-bold text-slate-800">{money(displaySmartLockFee)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">6. Phí bồi thường mất thẻ từ / phụ kiện:</span>
+                      <span className="font-mono font-bold text-slate-800">{money(displayLostCardFee)}</span>
+                    </div>
+                    <div className="flex justify-between items-center py-1.5 border-b border-slate-100">
+                      <span className="text-slate-600">7. Công nợ / cước thuê trễ hạn (nếu có):</span>
+                      <span className="font-mono font-bold text-red-600">
+                        {displayOverdueDebt > 0 ? `-${money(displayOverdueDebt)}` : money(0)}
+                      </span>
+                    </div>
+
+                    <div className="pt-2 flex justify-between items-center text-sm font-bold text-slate-800">
+                      <span>Tổng chi phí khấu trừ xác minh:</span>
+                      <span className="font-mono text-red-600">{money(displayTotalDeduction)}</span>
+                    </div>
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex justify-between items-center mt-2">
+                      <div>
+                        <div className="text-xs font-bold text-emerald-950">Khoản khách cần thanh toán bổ sung (Bồi thường):</div>
+                        <div className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1 mt-0.5">
+                          <span className="material-symbols-outlined text-sm text-emerald-600">check_circle</span>
+                          <span>Đã thanh toán thành công qua VNPay Sandbox</span>
+                        </div>
+                      </div>
+                      <span className="font-mono text-base font-extrabold text-emerald-700">
+                        +{money(displayAdditionalDue)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                    Toàn bộ tiền cọc {money(displayDepositPaid)} đã được khấu trừ cho chi phí nghiệm thu và công nợ. Quý khách đã thanh toán bổ sung số tiền trên qua cổng trực tuyến VNPay Sandbox để hoàn tất giải phóng kho.
+                  </div>
+
+                  {/* Evidence photos */}
+                  {evidencePhotosList.length > 0 && (
+                    <div className="mt-4 pt-3 border-t border-slate-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                          <span className="material-symbols-outlined text-base text-slate-500">photo_library</span>
+                          <span>Hình ảnh kiểm tra &amp; nghiệm thu hiện trường (Bước 6)</span>
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          {evidencePhotosList.length} ảnh hiện trường
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {evidencePhotosList.map((url, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setPreviewPhoto(url)}
+                            className="group relative aspect-video rounded-lg overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer hover:border-blue-400"
+                          >
+                            <img src={url} alt={`Hiện trường ${idx + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            <span className="absolute bottom-1 left-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
+                              Bằng chứng hiện trường {idx + 1}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2.5 sm:flex-row">
+                {(returnCase || bookingId) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSettlementModal(true)}
+                    className="flex-1 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100 text-blue-800 px-4 py-3 text-sm font-bold transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">visibility</span>
+                    <span>Xem toàn bộ biên bản quyết toán</span>
+                  </button>
+                )}
+                <Link
+                  to="/portal/customer?tab=returns"
+                  className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm font-bold text-slate-800 hover:bg-slate-50 transition cursor-pointer flex items-center justify-center gap-1.5 text-center"
+                >
+                  <span className="material-symbols-outlined text-[18px] text-slate-600">inventory_2</span>
+                  <span>Hồ sơ trả kho của tôi</span>
+                </Link>
+                <Link
+                  to="/portal/customer"
+                  className="flex-1 rounded-xl bg-blue-700 hover:bg-blue-800 px-4 py-3 text-center text-sm font-bold text-white transition cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <LayoutDashboard className="h-4 w-4" />
+                  <span>Về trang tổng quan</span>
+                </Link>
+              </div>
+            </div>
+          ) : isRenewal ? (
             /* =========================================================================
                1. GIAO DIỆN XÁC NHẬN GIA HẠN HỢP ĐỒNG & THANH TOÁN THÀNH CÔNG
                ========================================================================= */
@@ -628,6 +963,30 @@ export const PaymentResultPage = () => {
             setShowContract(true)
           }}
         />
+      )}
+
+      {showSettlementModal && (returnCase?.bookingId || booking?.id || authoritativePayment?.bookingId || bookingId) && (
+        <CustomerSettlementReviewModal
+          isOpen={showSettlementModal}
+          onClose={() => setShowSettlementModal(false)}
+          bookingId={returnCase?.bookingId || booking?.id || authoritativePayment?.bookingId || bookingId || ''}
+          readOnly={true}
+        />
+      )}
+
+      {previewPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onClick={() => setPreviewPhoto(null)}>
+          <div className="relative max-w-3xl max-h-[90vh]">
+            <img src={previewPhoto} alt="Minh chứng hiện trường" className="max-w-full max-h-[85vh] rounded-lg shadow-2xl object-contain" />
+            <button
+              type="button"
+              onClick={() => setPreviewPhoto(null)}
+              className="absolute top-2 right-2 bg-black/70 hover:bg-black text-white rounded-full p-2 cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          </div>
+        </div>
       )}
     </main>
   )
