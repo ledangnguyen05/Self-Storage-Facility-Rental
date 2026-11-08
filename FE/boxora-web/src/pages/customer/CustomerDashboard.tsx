@@ -1276,7 +1276,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [activeContracts, contracts, customerBookings])
 
   const effectiveActivatedContracts = useMemo(() => {
-    return effectiveActiveContracts.filter(c => c.status === 'ACTIVE')
+    return effectiveActiveContracts.filter(c => {
+      if (!c) return false
+      const st = String(c.status || '').toUpperCase()
+      if (st !== 'ACTIVE') return false
+      if ((c as any).overduePinStatus && (c as any).overduePinStatus !== 'PIN_ACTIVE') return false
+      if ((c as any).overdueSealingStatus && (c as any).overdueSealingStatus !== 'NONE') return false
+      if (['OVERDUE', 'OVERDUE_LOCKED', 'TERMINATED', 'COMPLETED', 'EXPIRED'].includes(st)) return false
+      return true
+    })
   }, [effectiveActiveContracts])
   const nextPaymentDeadline = activatedContracts
     .map(contract => nextMonthlyPaymentDate(contract.startDate))

@@ -1,5 +1,5 @@
 import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
@@ -226,6 +226,36 @@ export const ManagerDashboard: React.FC = () => {
     handedOver: 0,
     total: 0,
   })
+
+  const handleReturnMetricsChange = useCallback((m: any) => {
+    setReturnMetrics(prev => {
+      if (
+        prev &&
+        prev.pending === m.pending &&
+        prev.inspecting === m.inspecting &&
+        prev.refunding === m.refunding &&
+        prev.completed === m.completed &&
+        prev.total === m.total
+      ) {
+        return prev
+      }
+      return m
+    })
+  }, [])
+
+  const handleReceptionMetricsChange = useCallback((metrics: ReceptionDeskMetrics) => {
+    setReceptionMetrics(prev => {
+      if (
+        prev &&
+        prev.pendingCheckIn === metrics.pendingCheckIn &&
+        prev.handedOver === metrics.handedOver &&
+        prev.total === metrics.total
+      ) {
+        return prev
+      }
+      return metrics
+    })
+  }, [])
 
   useEffect(() => {
     let pendingCheckIn = 0
@@ -2402,9 +2432,7 @@ export const ManagerDashboard: React.FC = () => {
               if (targetFac) void fetchUnits(targetFac)
               void fetchUpcomingHandovers(targetFac)
             }}
-            onMetricsChange={(metrics) => {
-              setReceptionMetrics(metrics)
-            }}
+            onMetricsChange={handleReceptionMetricsChange}
           />
         </section>
       )}
@@ -2416,7 +2444,7 @@ export const ManagerDashboard: React.FC = () => {
         <section className="flex flex-col gap-6 animate-in fade-in">
           <HandoverReturnWorkbench
             initialStatusTabFilter="PENDING"
-            onMetricsChange={(m) => setReturnMetrics(m)}
+            onMetricsChange={handleReturnMetricsChange}
             currentFacilityId={selectedFacilityId || user?.facilityId}
             facilityName={facilities.find(f => f.id === selectedFacilityId)?.name || 'Cơ sở Boxora'}
             userRole={role || 'FACILITY_MANAGER'}

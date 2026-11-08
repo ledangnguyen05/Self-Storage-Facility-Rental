@@ -438,6 +438,37 @@ export const StaffDashboard: React.FC = () => {
     return effectiveReturnPendingCount
   }, [returnMetrics, effectiveReturnPendingCount])
 
+  const handleReturnMetricsChange = useCallback((m: { pending: number; inspecting: number; refunding: number; completed: number; total: number }) => {
+    setReturnBadgeCount(prev => prev !== m.pending ? m.pending : prev)
+    setReturnMetrics(prev => {
+      if (
+        prev &&
+        prev.pending === m.pending &&
+        prev.inspecting === m.inspecting &&
+        prev.refunding === m.refunding &&
+        prev.completed === m.completed &&
+        prev.total === m.total
+      ) {
+        return prev
+      }
+      return m
+    })
+  }, [])
+
+  const handleReceptionMetricsChange = useCallback((metrics: ReceptionDeskMetrics) => {
+    setReceptionMetrics(prev => {
+      if (
+        prev &&
+        prev.pendingCheckIn === metrics.pendingCheckIn &&
+        prev.handedOver === metrics.handedOver &&
+        prev.total === metrics.total
+      ) {
+        return prev
+      }
+      return metrics
+    })
+  }, [])
+
   useEffect(() => {
     const targetFacility = currentTargetFacility || ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
     fetchArrivals(targetFacility)
@@ -1834,7 +1865,7 @@ export const StaffDashboard: React.FC = () => {
             userName={user?.fullName || 'Nhân viên trực ca'}
             activeRentals={activeRentals}
             rawReturnRequests={customerReturnRequests}
-            onMetricsChange={(m) => { setReturnBadgeCount(m.pending); setReturnMetrics(m); }}
+            onMetricsChange={handleReturnMetricsChange}
             onReturnCompleted={() => {
               fetchArrivals(currentTargetFacility)
               loadActiveRentals(currentTargetFacility)
@@ -1889,9 +1920,7 @@ export const StaffDashboard: React.FC = () => {
             fetchOccupancy()
             loadActiveRentals()
           }}
-          onMetricsChange={(metrics) => {
-            setReceptionMetrics(metrics)
-          }}
+          onMetricsChange={handleReceptionMetricsChange}
         />
       )}
 

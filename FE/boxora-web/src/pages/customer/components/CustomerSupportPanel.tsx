@@ -71,7 +71,19 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   // Chỉ hiển thị hợp đồng có trạng thái đang hoạt động (ACTIVE) trong form báo sự cố / hỗ trợ
   const onlyActiveContracts = useMemo(() => {
     const list = (activeContracts && activeContracts.length > 0) ? activeContracts : (contracts || [])
-    return list.filter((c: any) => c && c.status === 'ACTIVE')
+    const seen = new Set<string>()
+    return list.filter((c: any) => {
+      if (!c || !c.unitCode) return false
+      const st = String(c.status || '').toUpperCase()
+      if (st !== 'ACTIVE') return false
+      if (c.overduePinStatus && c.overduePinStatus !== 'PIN_ACTIVE') return false
+      if (c.overdueSealingStatus && c.overdueSealingStatus !== 'NONE') return false
+      if (c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || c.status === 'TERMINATED' || c.status === 'COMPLETED' || c.status === 'EXPIRED') return false
+      const cleanU = c.unitCode.trim().toUpperCase()
+      if (seen.has(cleanU)) return false
+      seen.add(cleanU)
+      return true
+    })
   }, [activeContracts, contracts])
 
   // Đồng bộ ticketUnit: Chỉ chấp nhận kho đang hoạt động (ACTIVE), nếu không có hoặc kho không hợp lệ thì chuyển về kho đầu tiên hoặc 'general'

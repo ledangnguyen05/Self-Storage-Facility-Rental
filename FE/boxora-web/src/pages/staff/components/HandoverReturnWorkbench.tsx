@@ -555,11 +555,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     } finally {
       setIsRefreshing(false)
     }
-  }, [currentFacilityId, facilityName, rawReturnRequests, activeRentals])
+  }, [currentFacilityId])
 
   useEffect(() => {
     void fetchReturnCases(false, false)
-  }, [fetchReturnCases])
+  }, [currentFacilityId])
 
   useRealtimeSync(async () => {
     await fetchReturnCases(false, true)
@@ -1523,8 +1523,11 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
     return { pending, inspecting, refunding, completed, total: returnCases.length }
   }, [returnCases])
 
+  const lastEmittedMetricsRef = useRef<string>('')
   useEffect(() => {
-    if (onMetricsChange) {
+    const key = `${metrics.pending}:${metrics.inspecting}:${metrics.refunding}:${metrics.completed}:${metrics.total}`
+    if (onMetricsChange && lastEmittedMetricsRef.current !== key) {
+      lastEmittedMetricsRef.current = key
       onMetricsChange(metrics)
     }
   }, [metrics, onMetricsChange])
