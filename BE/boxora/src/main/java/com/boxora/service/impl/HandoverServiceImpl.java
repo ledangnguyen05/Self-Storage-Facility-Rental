@@ -542,11 +542,9 @@ public class HandoverServiceImpl implements HandoverService {
                     && Boolean.TRUE.equals(latestInspection.getSmartLockPassed())
                     && Boolean.TRUE.equals(latestInspection.getSensorPassed())
                     && Boolean.TRUE.equals(latestInspection.getWallStructurePassed());
-            long inspectionPhotoCount = latestInspection.getEvidencePhotos() == null || latestInspection.getEvidencePhotos().isBlank()
-                    ? 0 : Arrays.stream(latestInspection.getEvidencePhotos().split(";")).filter(value -> !value.isBlank()).count();
-            if (!inspectionPassed || inspectionPhotoCount < 2) {
+            if (!inspectionPassed) {
                 throw new AppException(ErrorCode.CHECKIN_STEP_NOT_SATISFIED,
-                        "Biên bản nghiệm thu buồng kho check-in phải đạt tất cả các hạng mục kiểm định và có ít nhất 2 ảnh bằng chứng hiện trường.");
+                        "Biên bản nghiệm thu buồng kho check-in phải đạt tất cả các hạng mục kiểm định.");
             }
         }
 
@@ -1076,9 +1074,6 @@ public class HandoverServiceImpl implements HandoverService {
                     .distinct()
                     .collect(Collectors.toList())
                 : List.of();
-        if (evidencePhotos.size() < 2) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Two uploaded return inspection evidence photos are required.");
-        }
         String photosStr = String.join(";", evidencePhotos);
 
         booking.setStatus(BookingStatus.INSPECTED);
@@ -1245,10 +1240,6 @@ public class HandoverServiceImpl implements HandoverService {
         List<String> evidencePhotos = inspection.getEvidencePhotos() == null || inspection.getEvidencePhotos().isBlank()
                 ? List.of() : Arrays.stream(inspection.getEvidencePhotos().split(";"))
                     .filter(value -> !value.isBlank()).collect(Collectors.toList());
-        if (evidencePhotos.size() < 2) {
-            throw new AppException(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE,
-                    "The persisted return inspection must include two evidence photos.");
-        }
 
         // 2. Quyết toán cọc và các khoản khấu trừ (BR-RULE-014)
         BigDecimal depositPaid = calculateTotalDepositPaid(booking);
@@ -2456,9 +2447,6 @@ public class HandoverServiceImpl implements HandoverService {
                     .distinct()
                     .collect(Collectors.toList())
                 : List.of();
-        if (photos.size() < 2) {
-            throw new AppException(ErrorCode.INVALID_REQUEST, "Two uploaded check-in evidence photos are required.");
-        }
         String photosStr = String.join(";", photos);
 
         HandoverRecord record = HandoverRecord.builder()
@@ -3265,10 +3253,6 @@ public class HandoverServiceImpl implements HandoverService {
                     || request.getSensorPassed() == null) {
                 throw new AppException(ErrorCode.RETURN_INSPECTION_CHECKLIST_INCOMPLETE,
                         "Bắt buộc kiểm tra đầy đủ 7 tiêu chí hiện trường trước khi chốt biên bản nghiệm thu");
-            }
-            if (photos.size() < 2) {
-                throw new AppException(ErrorCode.RETURN_PHOTO_COUNT_INSUFFICIENT,
-                        "Biên bản nghiệm thu hiện trường yêu cầu tối thiểu 2 ảnh thực tế (ảnh toàn cảnh và chi tiết hư hại)");
             }
             // Tiêu chí 5: Dọn sạch đồ đạc. Nếu chưa dọn thì không thể chốt nghiệm thu đạt chuẩn
             if (Boolean.FALSE.equals(request.getAssetsClearedPassed())) {

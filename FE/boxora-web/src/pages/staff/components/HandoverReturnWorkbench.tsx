@@ -1655,11 +1655,6 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       }
 
       if (resultType === 'PASSED') {
-        if (photoUrls.length < 2) {
-          toast.error('Quy định Boxora bắt buộc: Cần tối thiểu 2 ảnh bằng chứng hiện trường trước khi lưu nghiệm thu ĐẠT CHUẨN!')
-          focusAndScrollToField('inspection-section-photos')
-          return false
-        }
         if (!assetsClearedPassed) {
           toast.error('Kho chưa dọn trống tài sản của khách hàng! Không thể lập biên bản ĐẠT CHUẨN.')
           focusAndScrollToField('inspection-assets-notes')
@@ -3186,14 +3181,14 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                         />
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-900 text-sm">6. Ảnh bằng chứng hiện trường (Tối thiểu 2 ảnh)</span>
-                            {photoUrls.length >= 2 ? (
+                            <span className="font-bold text-slate-900 text-sm">6. Ảnh bằng chứng hiện trường</span>
+                            {photoUrls.length > 0 ? (
                               <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                ✓ Đủ {photoUrls.length}/2 ảnh (Hợp lệ)
+                                ✓ Đã đính kèm {photoUrls.length} ảnh
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
-                                ⚠️ Cần tối thiểu 2 ảnh (hiện có {photoUrls.length}/2 ảnh)
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-300">
+                                Tùy chọn (không bắt buộc)
                               </span>
                             )}
                           </div>
@@ -3242,8 +3237,8 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                               <Camera size={24} />
                             </div>
                             <div>
-                              <p className="font-bold text-slate-800 text-sm">Nhấp vào đây để chọn ảnh hoặc chụp ảnh hiện trường</p>
-                              <p className="text-xs text-slate-500 mt-1">Yêu cầu tối thiểu 2 ảnh: Toàn cảnh kho và Chi tiết khóa / sàn nhà</p>
+                              <p className="font-bold text-slate-800 text-sm">Nhấp vào đây để chọn ảnh hoặc chụp ảnh hiện trường (Tùy chọn)</p>
+                              <p className="text-xs text-slate-500 mt-1">Ảnh bằng chứng hiện trường: Toàn cảnh kho và Chi tiết khóa / sàn nhà</p>
                             </div>
                             <span className="mt-1 px-4 py-1.5 rounded-lg bg-blue-600 group-hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs">
                               <Upload size={14} />
