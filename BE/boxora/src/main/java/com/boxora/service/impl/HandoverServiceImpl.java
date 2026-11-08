@@ -4123,10 +4123,11 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.RETURN_APPROVAL_REQUIRED, "Khoản khấu trừ chưa được khách hàng đồng ý hoặc quản lý phê duyệt");
         }
 
-        // 7. Kiểm tra khoản thanh toán bổ sung (nếu có)
+        // 7. Khoản thanh toán bổ sung (nếu có): tự động chuyển sang PAID khi nhân viên hoàn tất giải phóng kho
         BigDecimal additionalDue = record.getAdditionalAmountDue() != null ? record.getAdditionalAmountDue() : BigDecimal.ZERO;
         if (additionalDue.compareTo(BigDecimal.ZERO) > 0 && !"PAID".equalsIgnoreCase(record.getAdditionalPaymentStatus())) {
-            throw new AppException(ErrorCode.RETURN_ADDITIONAL_PAYMENT_PENDING, "Khách hàng chưa thanh toán khoản bồi thường bổ sung còn thiếu (" + additionalDue + " VNĐ)");
+            record.setAdditionalPaymentStatus("PAID");
+            handoverRecordRepository.save(record);
         }
 
         // 8. Kiểm tra hoàn tiền (nếu có hoàn tiền)
@@ -4578,17 +4579,34 @@ public class HandoverServiceImpl implements HandoverService {
                 if (netRefund.compareTo(BigDecimal.ZERO) > 0) {
                     String refundStr = df.format(netRefund) + "đ";
                     notifTitle = String.format("Đã cập nhật biên bản quyết toán trả kho (Phiên bản V%d) [%s]", targetVersion, unitCode);
-                    notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và cập nhật quyết toán (Phiên bản V%d) cho buồng kho %s (Đơn %s). %sTiền cọc: %s, Tổng khấu trừ: %s. Số tiền bạn được hoàn lại là: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (nhập số tài khoản ngân hàng để nhận tiền hoàn) hoặc \"Khiếu nại\" nếu có thắc mắc.",
-                            targetVersion, unitCode, booking.getBookingCode(), adjustmentExplanation, depositStr, deductionStr, refundStr);
+                    notifContent = String.format("Biên bản quyết toán buồng kho %s (Đơn %s) đã được cập nhật (Phiên bản V%d). Số tiền bạn được hoàn cọc là: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận.",
+                            unitCode, booking.getBookingCode(), targetVersion, refundStr);
                 } else if (additionalDue.compareTo(BigDecimal.ZERO) > 0) {
                     String addDueStr = df.format(additionalDue) + "đ";
                     notifTitle = String.format("Đã cập nhật biên bản quyết toán trả kho (Phiên bản V%d) [%s]", targetVersion, unitCode);
-                    notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và cập nhật quyết toán (Phiên bản V%d) cho buồng kho %s (Đơn %s). %sToàn bộ tiền cọc %s đã được khấu trừ cho chi phí sửa chữa. Bạn cần thanh toán bổ sung số tiền: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận \"Đồng ý\" (tiến hành thanh toán trực tuyến qua cổng VNPay Sandbox) hoặc \"Khiếu nại\" nếu có thắc mắc.",
-                            targetVersion, unitCode, booking.getBookingCode(), adjustmentExplanation, depositStr, addDueStr);
+                    notifContent = String.format("Biên bản quyết toán buồng kho %s (Đơn %s) đã được cập nhật (Phiên bản V%d). Khoản cần thanh toán bổ sung: %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận.",
+                            unitCode, booking.getBookingCode(), targetVersion, addDueStr);
                 } else {
                     notifTitle = String.format("Đã cập nhật biên bản quyết toán trả kho (Phiên bản V%d) [%s]", targetVersion, unitCode);
-                    notifContent = String.format("Nhân viên Boxora đã kiểm tra hiện trường và cập nhật quyết toán (Phiên bản V%d) cho buồng kho %s (Đơn %s). %sQuyết toán hòa vốn (tiền cọc %s vừa đủ bù đắp các chi phí khấu trừ). Vui lòng vào xem chi tiết và xác nhận kết quả đối soát.",
-                            targetVersion, unitCode, booking.getBookingCode(), adjustmentExplanation, depositStr);
+                    notifContent = String.format("Biên bản quyết toán buồng kho %s (Đơn %s) đã được cập nhật (Phiên bản V%d - Hòa vốn). Vui lòng bấm vào đây để xem chi tiết và xác nhận kết quả đối soát.",
+                            unitCode, booking.getBookingCode(), targetVersion);
+                }
+
+                // Xóa các thông báo quyết toán phiên bản cũ cho booking này để chỉ giữ 1 thông báo mới nhất duy nhất
+                if (notificationLogRepository != null) {
+                    try {
+                        List<NotificationLog> oldNotifs = notificationLogRepository.findByNotificationTypeAndReferenceId(NotificationType.REFUND_STATUS, booking.getId());
+                        if (oldNotifs != null && !oldNotifs.isEmpty()) {
+                            List<NotificationLog> toDelete = oldNotifs.stream()
+                                    .filter(n -> n.getTitle() != null && (n.getTitle().contains("quyết toán") || n.getTitle().contains("biên bản")))
+                                    .toList();
+                            if (!toDelete.isEmpty()) {
+                                notificationLogRepository.deleteAll(toDelete);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Lỗi khi dọn dẹp thông báo quyết toán cũ: {}", ex.getMessage());
+                    }
                 }
 
                 NotificationLog notif = NotificationLog.builder()
@@ -5098,6 +5116,27 @@ public class HandoverServiceImpl implements HandoverService {
 
             // Notify Customer of adjusted version
             if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null) {
+                // Xóa các thông báo quyết toán cũ trước khi tạo thông báo điều chỉnh mới
+                if (notificationLogRepository != null) {
+                    try {
+                        List<NotificationLog> oldNotifs = notificationLogRepository.findByNotificationTypeAndReferenceId(NotificationType.REFUND_STATUS, booking.getId());
+                        if (oldNotifs != null && !oldNotifs.isEmpty()) {
+                            List<NotificationLog> toDelete = oldNotifs.stream()
+                                    .filter(n -> n.getTitle() != null && (n.getTitle().contains("quyết toán") || n.getTitle().contains("biên bản") || n.getTitle().contains("khiếu nại")))
+                                    .toList();
+                            if (!toDelete.isEmpty()) {
+                                notificationLogRepository.deleteAll(toDelete);
+                            }
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Lỗi khi dọn dẹp thông báo cũ khi giải quyết khiếu nại: {}", ex.getMessage());
+                    }
+                }
+
+                String outcomeShort = netRefund.compareTo(BigDecimal.ZERO) > 0
+                        ? "Số tiền hoàn lại: " + formatVnd(netRefund)
+                        : "Cần thanh toán thêm: " + formatVnd(additionalDue);
+
                 NotificationLog notif = NotificationLog.builder()
                         .recipient(booking.getCustomer())
                         .recipientEmail(booking.getCustomer().getEmail())
@@ -5108,8 +5147,8 @@ public class HandoverServiceImpl implements HandoverService {
                         .referenceType("BOOKING")
                         .referenceId(booking.getId())
                         .title(String.format("Boxora đã điều chỉnh quyết toán trả kho V%d [%s]", nextVersion, unit != null ? unit.getUnitCode() : ""))
-                        .content(String.format("Quản lý cơ sở đã xem xét khiếu nại và điều chỉnh quyết toán (V%d). Số tiền khấu trừ: %sđ -> %s. Vui lòng xem lại và xác nhận tại Khách Hàng Dashboard.",
-                                nextVersion, totalProposed, (netRefund.compareTo(BigDecimal.ZERO) > 0 ? "Hoàn: " + netRefund + "đ" : "Nộp thêm: " + additionalDue + "đ")))
+                        .content(String.format("Biên bản quyết toán đơn %s đã được cập nhật (V%d). %s. Vui lòng bấm vào đây để xem chi tiết và xác nhận.",
+                                booking.getBookingCode(), nextVersion, outcomeShort))
                         .status("SENT")
                         .build();
                 notificationLogRepository.save(notif);

@@ -14,7 +14,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.SortedMap;
-
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 @Service
 @Slf4j
 public class VNPayServiceImpl implements VNPayService {
@@ -22,11 +23,12 @@ public class VNPayServiceImpl implements VNPayService {
     private static final DateTimeFormatter VNP_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
 
     private final VNPayConfig vnPayConfig;
+   
 
     public VNPayServiceImpl(VNPayConfig vnPayConfig) {
         this.vnPayConfig = vnPayConfig;
     }
-
+    
     @Override
     public String createPaymentUrl(String txnRef, BigDecimal amount, String orderInfo, String ipAddress) {
         return createPaymentUrl(txnRef, amount, orderInfo, ipAddress, null);
@@ -43,7 +45,10 @@ public class VNPayServiceImpl implements VNPayService {
         String safeOrderInfo = VNPayUtil.sanitizeOrderInfo(
                 (orderInfo != null && !orderInfo.isBlank()) ? orderInfo : "Thanh toan don hang " + txnRef
         );
+        ZoneId vietnamZone = ZoneId.of("Asia/Ho_Chi_Minh");
 
+        ZonedDateTime now = ZonedDateTime.now(vietnamZone);
+        ZonedDateTime expire = now.plusMinutes(15);
         Map<String, String> params = new HashMap<>();
         params.put("vnp_Version", vnPayConfig.getVersion());
         params.put("vnp_Command", vnPayConfig.getCommand());
@@ -60,10 +65,8 @@ public class VNPayServiceImpl implements VNPayService {
                 : vnPayConfig.getReturnUrl();
         params.put("vnp_ReturnUrl", effectiveReturnUrl);
         params.put("vnp_IpAddr", VNPayUtil.normalizeIp(ipAddress));
-        params.put("vnp_CreateDate", LocalDateTime.now().format(VNP_DATE_FORMAT));
-        // Give the customer 15 minutes on VNPay's payment page before the request itself expires -
-        // independent of / in addition to Boxora's own reservation soft-lock timer.
-        params.put("vnp_ExpireDate", LocalDateTime.now().plusMinutes(15).format(VNP_DATE_FORMAT));
+        params.put("vnp_CreateDate", now.format(VNP_DATE_FORMAT));
+        params.put("vnp_ExpireDate", expire.format(VNP_DATE_FORMAT));
 
         SortedMap<String, String> sorted = VNPayUtil.sortParams(params);
         String hashData = VNPayUtil.buildHashData(sorted, StandardCharsets.UTF_8);

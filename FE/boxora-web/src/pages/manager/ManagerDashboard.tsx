@@ -2488,7 +2488,16 @@ export const ManagerDashboard: React.FC = () => {
                   Hàng Đợi Sự Cố Tại Cơ Sở
                 </h3>
               </div>
-              <span className="text-xs text-slate-500 font-mono">{tickets.length} lượt ghi nhận</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-slate-500 font-mono">{tickets.length} lượt ghi nhận</span>
+                <Link
+                  to="/portal/tickets"
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1 transition-all shadow-xs"
+                >
+                  <span className="material-symbols-outlined text-[15px] text-rose-400">add_alert</span>
+                  <span>Ghi Nhận Sự Cố</span>
+                </Link>
+              </div>
             </div>
 
             {tickets.length === 0 ? (

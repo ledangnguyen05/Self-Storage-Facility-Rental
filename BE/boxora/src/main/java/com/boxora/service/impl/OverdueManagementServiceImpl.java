@@ -128,10 +128,13 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 case POLICY_UNCONFIGURED -> policyUnconfiguredCount++;
             }
 
-            if (contract.getOverduePinStatus() == OverduePinStatus.PIN_REVOCATION_PENDING) {
+            OverduePinStatus effPin = resolveEffectivePinStatus(contract, policy, calc.overdueDays());
+            OverdueSealingStatus effSeal = resolveEffectiveSealingStatus(contract, policy, calc.overdueDays());
+
+            if (effPin == OverduePinStatus.PIN_REVOCATION_PENDING) {
                 pendingPinRevocationsCount++;
             }
-            if (contract.getOverdueSealingStatus() == OverdueSealingStatus.SEALING_REQUESTED) {
+            if (effSeal == OverdueSealingStatus.SEALING_REQUESTED) {
                 pendingSealingApprovalsCount++;
             }
 
@@ -350,16 +353,19 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 continue;
             }
 
+            OverduePinStatus effPin = resolveEffectivePinStatus(contract, policy, calc.overdueDays());
+            OverdueSealingStatus effSeal = resolveEffectiveSealingStatus(contract, policy, calc.overdueDays());
+
             // Filter: PIN Status
             if (pinStatus != null && !pinStatus.equalsIgnoreCase("ALL")) {
-                if (contract.getOverduePinStatus() == null || !contract.getOverduePinStatus().name().equalsIgnoreCase(pinStatus)) {
+                if (!effPin.name().equalsIgnoreCase(pinStatus)) {
                     continue;
                 }
             }
 
             // Filter: Sealing Status
             if (sealingStatus != null && !sealingStatus.equalsIgnoreCase("ALL")) {
-                if (contract.getOverdueSealingStatus() == null || !contract.getOverdueSealingStatus().name().equalsIgnoreCase(sealingStatus)) {
+                if (!effSeal.name().equalsIgnoreCase(sealingStatus)) {
                     continue;
                 }
             }
@@ -409,8 +415,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     .unverifiedAmount(calc.unverifiedAmount())
                     .stage(calc.stage())
                     .stageLabel(resolveStageLabel(calc.stage()))
-                    .pinStatus(contract.getOverduePinStatus() != null ? contract.getOverduePinStatus() : OverduePinStatus.PIN_ACTIVE)
-                    .sealingStatus(contract.getOverdueSealingStatus() != null ? contract.getOverdueSealingStatus() : OverdueSealingStatus.NONE)
+                    .pinStatus(effPin)
+                    .sealingStatus(effSeal)
                     .smartLockOnlineStatus(contract.getSmartLockOnlineStatus() != null ? contract.getSmartLockOnlineStatus() : "ONLINE")
                     .smartLockIsMock(contract.getSmartLockIsMock() != null ? contract.getSmartLockIsMock() : true)
                     .isDemo(Boolean.TRUE.equals(contract.getIsDemo()))
@@ -585,9 +591,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .toList();
 
         // Tự động hết hạn quyền cấp PIN tạm thời nếu thời hạn đã qua
-        OverduePinStatus effectivePinStatus = contract.getOverduePinStatus() != null ? contract.getOverduePinStatus() : OverduePinStatus.PIN_ACTIVE;
         if (contract.getTempPinGrantedUntil() != null && contract.getTempPinGrantedUntil().isBefore(LocalDateTime.now())) {
-            effectivePinStatus = OverduePinStatus.PIN_REVOKED;
             contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
             contract.setStatus(RentalContractStatus.OVERDUE_LOCKED);
             contract.setTempAccessPin(null);
@@ -603,6 +607,9 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             }
             rentalContractRepository.save(contract);
         }
+
+        OverduePinStatus effectivePinStatus = resolveEffectivePinStatus(contract, policy, calc.overdueDays());
+        OverdueSealingStatus effectiveSealingStatus = resolveEffectiveSealingStatus(contract, policy, calc.overdueDays());
 
         boolean isTempActive = contract.getTempPinGrantedUntil() != null && contract.getTempPinGrantedUntil().isAfter(LocalDateTime.now());
         String maskedPin = "Chưa cấp";
@@ -649,8 +656,8 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 .stage(calc.stage())
                 .stageLabel(isSettled ? ("OVERDUE_LIQUIDATION_RELEASE".equals(settledAction) ? "Đã thanh lý & giải phóng kho" : "Đã xong (Khách trả kho)") : resolveStageLabel(calc.stage()))
                 .feeFormulaExplanation(calc.feeFormulaExplanation())
-                .pinStatus(effectivePinStatus)
-                .sealingStatus(isSettled ? OverdueSealingStatus.NONE : (contract.getOverdueSealingStatus() != null ? contract.getOverdueSealingStatus() : OverdueSealingStatus.NONE))
+                .pinStatus(isSettled ? OverduePinStatus.PIN_REVOKED : effectivePinStatus)
+                .sealingStatus(isSettled ? OverdueSealingStatus.NONE : effectiveSealingStatus)
                 .smartLockOnlineStatus(isSettled ? "OFFLINE" : (contract.getSmartLockOnlineStatus() != null ? contract.getSmartLockOnlineStatus() : "ONLINE"))
                 .smartLockIsMock(contract.getSmartLockIsMock() != null ? contract.getSmartLockIsMock() : true)
                 .maskedPin(isSettled ? "Đã thu hồi" : maskedPin)
@@ -691,6 +698,9 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 : null;
 
         var calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+        if (calc.overdueDays() < 1) {
+            throw new AppException(ErrorCode.INVALID_REQUEST, "Hợp đồng chưa phát sinh quá hạn (số ngày quá hạn < 1), không thể gửi thông báo nhắc nợ cước");
+        }
 
         // 1. Kiểm tra biên bản kiểm kê tài sản và niêm phong kho nếu có
         BigDecimal dailyPenalty = calc.dailyLateFee() != null && calc.dailyLateFee().compareTo(BigDecimal.ZERO) > 0
@@ -886,6 +896,19 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
         }
 
+        LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
+        FacilityPolicy policy = contract.getFacility() != null
+                ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null)
+                : null;
+        var calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+        int disableDays = (policy != null && policy.getOverdueAccessDisableDays() != null && policy.getOverdueAccessDisableDays() >= 0)
+                ? policy.getOverdueAccessDisableDays()
+                : 3;
+        if (calc.overdueDays() < disableDays) {
+            throw new AppException(ErrorCode.PIN_REVOCATION_THRESHOLD_NOT_MET,
+                    String.format("Hợp đồng chưa đạt ngưỡng thu hồi mã PIN (cần tối thiểu %d ngày quá hạn theo chính sách cơ sở, hiện tại: %d ngày)", disableDays, calc.overdueDays()));
+        }
+
         User currentUser = getCurrentUser();
         String reason = (request != null && request.getReason() != null) ? request.getReason() : "Quá hạn thanh toán cước thuê theo chính sách";
 
@@ -945,8 +968,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                     ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null)
                     : null;
             var calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
-            if (calc.overdueDays() < 3) {
-                throw new AppException(ErrorCode.PIN_REVOCATION_THRESHOLD_NOT_MET);
+            int disableDays = (policy != null && policy.getOverdueAccessDisableDays() != null && policy.getOverdueAccessDisableDays() >= 0)
+                    ? policy.getOverdueAccessDisableDays()
+                    : 3;
+            if (calc.overdueDays() < disableDays) {
+                throw new AppException(ErrorCode.PIN_REVOCATION_THRESHOLD_NOT_MET,
+                        String.format("Hợp đồng chưa đạt ngưỡng thu hồi mã PIN (cần tối thiểu %d ngày quá hạn theo chính sách cơ sở, hiện tại: %d ngày)", disableDays, calc.overdueDays()));
             }
         }
 
@@ -1131,6 +1158,19 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
 
         switch (action) {
             case "REQUEST" -> {
+                LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
+                FacilityPolicy policy = contract.getFacility() != null
+                        ? facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(contract.getFacility().getId()).orElse(null)
+                        : null;
+                var calc = overdueDebtCalculationService.calculateOverdueDebt(contract, policy, today);
+                int sealingDays = (policy != null && policy.getOverdueSealingDays() != null && policy.getOverdueSealingDays() >= 0)
+                        ? policy.getOverdueSealingDays()
+                        : 7;
+                if (calc.overdueDays() < sealingDays) {
+                    throw new AppException(ErrorCode.SEALING_THRESHOLD_NOT_MET,
+                            String.format("Hợp đồng chưa đủ điều kiện niêm phong (cần tối thiểu %d ngày quá hạn theo quy định cơ sở, hiện tại: %d ngày)", sealingDays, calc.overdueDays()));
+                }
+
                 contract.setOverdueSealingStatus(OverdueSealingStatus.SEALING_REQUESTED);
                 rentalContractRepository.save(contract);
 
@@ -1161,6 +1201,11 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 );
             }
             case "APPROVE" -> {
+                if (contract.getOverdueSealingStatus() != OverdueSealingStatus.SEALING_REQUESTED
+                        && !(existingSealingOpt.isPresent() && "REQUESTED".equalsIgnoreCase(existingSealingOpt.get().getRequestStatus()))) {
+                    throw new AppException(ErrorCode.SEALING_INVALID_WORKFLOW_STATE,
+                            "Chỉ có thể phê duyệt khi đề xuất niêm phong đang ở trạng thái Chờ phê duyệt (SEALING_REQUESTED)");
+                }
                 contract.setOverdueSealingStatus(OverdueSealingStatus.SEALING_APPROVED);
                 rentalContractRepository.save(contract);
 
@@ -1192,6 +1237,11 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 );
             }
             case "REJECT" -> {
+                if (contract.getOverdueSealingStatus() != OverdueSealingStatus.SEALING_REQUESTED
+                        && !(existingSealingOpt.isPresent() && "REQUESTED".equalsIgnoreCase(existingSealingOpt.get().getRequestStatus()))) {
+                    throw new AppException(ErrorCode.SEALING_INVALID_WORKFLOW_STATE,
+                            "Chỉ có thể từ chối khi đề xuất niêm phong đang ở trạng thái Chờ phê duyệt (SEALING_REQUESTED)");
+                }
                 contract.setOverdueSealingStatus(OverdueSealingStatus.SEALING_REJECTED);
                 rentalContractRepository.save(contract);
 
@@ -1222,6 +1272,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 );
             }
             case "INVENTORY" -> {
+                if (contract.getOverdueSealingStatus() != OverdueSealingStatus.SEALING_APPROVED
+                        && contract.getOverdueSealingStatus() != OverdueSealingStatus.SEALING_IN_PROGRESS
+                        && !existingSealingOpt.isPresent()) {
+                    throw new AppException(ErrorCode.SEALING_INVALID_WORKFLOW_STATE,
+                            "Chỉ được thực hiện kiểm kê tài sản khi đề xuất niêm phong đã được phê duyệt");
+                }
                 contract.setOverdueSealingStatus(OverdueSealingStatus.SEALING_IN_PROGRESS);
                 rentalContractRepository.save(contract);
 
@@ -1362,6 +1418,12 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
                 );
             }
             case "COMPLETE" -> {
+                if (contract.getOverdueSealingStatus() != OverdueSealingStatus.SEALING_IN_PROGRESS
+                        && contract.getOverdueSealingStatus() != OverdueSealingStatus.SEALING_APPROVED
+                        && !existingSealingOpt.isPresent()) {
+                    throw new AppException(ErrorCode.SEALING_INVALID_WORKFLOW_STATE,
+                            "Chỉ có thể hoàn tất niêm phong sau khi đề xuất đã được phê duyệt và kiểm kê");
+                }
                 if (request.getSealTagNumber() == null || request.getSealTagNumber().trim().isEmpty()) {
                     throw new AppException(ErrorCode.INVALID_REQUEST, "Số tem niêm phong không được để trống khi hoàn tất niêm phong");
                 }
@@ -1503,43 +1565,40 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     @Override
     @Transactional(readOnly = true)
     public byte[] exportOverdueCsv(UUID facilityId, String stage, String searchTerm) {
-        var pageResponse = getOverdueContracts(facilityId, stage, null, null, null, null, searchTerm, null, 0, 10000);
+        return exportOverdueCsv(facilityId, stage, "ALL", "ALL", searchTerm);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public byte[] exportOverdueCsv(UUID facilityId, String stage, String pinStatus, String sealingStatus, String searchTerm) {
+        var pageResponse = getOverdueContracts(facilityId, stage, null, null, pinStatus, sealingStatus, searchTerm, null, 0, 10000);
         List<OverdueContractItemResponse> list = pageResponse.getContent();
 
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (PrintWriter writer = new PrintWriter(out, true, StandardCharsets.UTF_8)) {
-            // Write UTF-8 BOM for Microsoft Excel Vietnamese character compatibility
-            out.write(0xEF);
-            out.write(0xBB);
-            out.write(0xBF);
+        StringBuilder sb = new StringBuilder();
+        // UTF-8 BOM (\uFEFF) for Microsoft Excel Vietnamese character compatibility
+        sb.append('\uFEFF');
 
-            writer.println("Mã Hợp Đồng,Mã Kho,Cơ Sở,Khách Hàng,SĐT,Email,Ngày Đến Hạn,Số Ngày Quá Hạn,Nợ Gốc (VNĐ),Phí Phạt (VNĐ),Tổng Nợ (VNĐ),Phân Nhóm,Trạng Thái PIN,Trạng Thái Niêm Phong,SmartLock IoT");
+        sb.append("\"Mã Hợp Đồng\",\"Mã Kho\",\"Cơ Sở\",\"Khách Hàng\",\"SĐT\",\"Email\",\"Ngày Đến Hạn\",\"Số Ngày Quá Hạn\",\"Nợ Gốc (VNĐ)\",\"Phí Phạt (VNĐ)\",\"Tổng Nợ (VNĐ)\",\"Phân Nhóm\",\"Trạng Thái PIN\",\"Trạng Thái Niêm Phong\",\"SmartLock IoT\"\r\n");
 
-            for (var item : list) {
-                writer.printf("\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",\"%s\",%d,%.0f,%.0f,%.0f,\"%s\",\"%s\",\"%s\",\"%s\"\n",
-                        escapeCsv(item.getContractCode()),
-                        escapeCsv(item.getUnitCode()),
-                        escapeCsv(item.getFacilityName()),
-                        escapeCsv(item.getCustomerName()),
-                        escapeCsv(item.getCustomerPhone()),
-                        escapeCsv(item.getCustomerEmail()),
-                        item.getDueDate() != null ? item.getDueDate().toString() : "",
-                        item.getDaysOverdue(),
-                        item.getPrincipalDebt() != null ? item.getPrincipalDebt().doubleValue() : 0.0,
-                        item.getLateFee() != null ? item.getLateFee().doubleValue() : 0.0,
-                        item.getTotalDebt() != null ? item.getTotalDebt().doubleValue() : 0.0,
-                        escapeCsv(item.getStageLabel()),
-                        item.getPinStatus() != null ? item.getPinStatus().name() : "",
-                        item.getSealingStatus() != null ? item.getSealingStatus().name() : "",
-                        item.getSmartLockOnlineStatus() != null ? (item.getSmartLockOnlineStatus() + (Boolean.TRUE.equals(item.getSmartLockIsMock()) ? " [MOCK]" : "")) : ""
-                );
-            }
-            writer.flush();
-        } catch (Exception e) {
-            log.error("Error generating CSV export", e);
+        for (var item : list) {
+            sb.append("\"").append(escapeCsv(item.getContractCode())).append("\",")
+              .append("\"").append(escapeCsv(item.getUnitCode())).append("\",")
+              .append("\"").append(escapeCsv(item.getFacilityName())).append("\",")
+              .append("\"").append(escapeCsv(item.getCustomerName())).append("\",")
+              .append("\"").append(escapeCsv(item.getCustomerPhone())).append("\",")
+              .append("\"").append(escapeCsv(item.getCustomerEmail())).append("\",")
+              .append("\"").append(item.getDueDate() != null ? item.getDueDate().toString() : "").append("\",")
+              .append(item.getDaysOverdue()).append(",")
+              .append(String.format(Locale.US, "%.0f", item.getPrincipalDebt() != null ? item.getPrincipalDebt().doubleValue() : 0.0)).append(",")
+              .append(String.format(Locale.US, "%.0f", item.getLateFee() != null ? item.getLateFee().doubleValue() : 0.0)).append(",")
+              .append(String.format(Locale.US, "%.0f", item.getTotalDebt() != null ? item.getTotalDebt().doubleValue() : 0.0)).append(",")
+              .append("\"").append(escapeCsv(item.getStageLabel())).append("\",")
+              .append("\"").append(escapeCsv(resolvePinStatusLabel(item.getPinStatus()))).append("\",")
+              .append("\"").append(escapeCsv(resolveSealingStatusLabel(item.getSealingStatus()))).append("\",")
+              .append("\"").append(escapeCsv(resolveSmartLockLabel(item.getSmartLockOnlineStatus(), item.getSmartLockIsMock()))).append("\"\r\n");
         }
 
-        return out.toByteArray();
+        return sb.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
@@ -1871,6 +1930,59 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
         return str.replace("\"", "\"\"");
     }
 
+    public OverdueSealingStatus resolveEffectiveSealingStatus(RentalContract contract, FacilityPolicy policy, long overdueDays) {
+        if (contract == null || contract.getStatus() == RentalContractStatus.TERMINATED) {
+            return OverdueSealingStatus.NONE;
+        }
+        OverdueSealingStatus current = contract.getOverdueSealingStatus();
+        if (current != null && current != OverdueSealingStatus.NONE && current != OverdueSealingStatus.SEALING_ELIGIBLE) {
+            return current;
+        }
+        int sealingDaysThreshold = (policy != null && policy.getOverdueSealingDays() != null && policy.getOverdueSealingDays() >= 0)
+                ? policy.getOverdueSealingDays()
+                : 7;
+        if (overdueDays >= sealingDaysThreshold) {
+            return OverdueSealingStatus.SEALING_ELIGIBLE;
+        }
+        return OverdueSealingStatus.NONE;
+    }
+
+    public OverduePinStatus resolveEffectivePinStatus(RentalContract contract, FacilityPolicy policy, long overdueDays) {
+        if (contract == null || contract.getStatus() == RentalContractStatus.TERMINATED) {
+            return OverduePinStatus.PIN_REVOKED;
+        }
+        OverduePinStatus current = contract.getOverduePinStatus() != null ? contract.getOverduePinStatus() : OverduePinStatus.PIN_ACTIVE;
+
+        if (contract.getTempPinGrantedUntil() != null && contract.getTempPinGrantedUntil().isBefore(LocalDateTime.now())) {
+            return OverduePinStatus.PIN_REVOKED;
+        }
+        boolean isTempActive = contract.getTempPinGrantedUntil() != null && contract.getTempPinGrantedUntil().isAfter(LocalDateTime.now());
+        if (isTempActive) {
+            return OverduePinStatus.PIN_ACTIVE;
+        }
+
+        if (current == OverduePinStatus.PIN_REVOCATION_PENDING || current == OverduePinStatus.PIN_REVOKED || current == OverduePinStatus.PIN_REVOCATION_FAILED) {
+            return current;
+        }
+
+        Booking b = contract.getBooking();
+        if (b == null && contract.getUnit() != null) {
+            b = bookingRepository.findFirstByStorageUnit_IdOrderByCreatedAtDesc(contract.getUnit().getId()).orElse(null);
+        }
+        if (b != null && b.getAccessPin() == null && b.getQrAccessToken() != null && b.getQrAccessToken().startsWith("REVOKED")) {
+            return OverduePinStatus.PIN_REVOKED;
+        }
+
+        int disableDaysThreshold = (policy != null && policy.getOverdueAccessDisableDays() != null && policy.getOverdueAccessDisableDays() >= 0)
+                ? policy.getOverdueAccessDisableDays()
+                : 3;
+
+        if (overdueDays >= disableDaysThreshold) {
+            return OverduePinStatus.PIN_ELIGIBLE;
+        }
+        return OverduePinStatus.PIN_ACTIVE;
+    }
+
     private String resolveStageLabel(OverdueStage stage) {
         if (stage == null) return "Chưa quá hạn";
         return switch (stage) {
@@ -1880,6 +1992,45 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
             case SEALING_ELIGIBLE -> "Đủ điều kiện niêm phong (>= 7 ngày)";
             case POLICY_UNCONFIGURED -> "Thiếu chính sách quá hạn";
         };
+    }
+
+    private String resolvePinStatusLabel(OverduePinStatus pinStatus) {
+        if (pinStatus == null) return "Chưa xác định";
+        return switch (pinStatus) {
+            case PIN_ACTIVE -> "Đang hoạt động";
+            case PIN_ELIGIBLE -> "Đủ điều kiện thu hồi (>= 3 ngày)";
+            case PIN_REVOCATION_PENDING -> "Chờ thu hồi PIN";
+            case PIN_REVOKED -> "Đã thu hồi (Lock)";
+            case PIN_REVOCATION_FAILED -> "Lỗi thu hồi PIN";
+        };
+    }
+
+    private String resolveSealingStatusLabel(OverdueSealingStatus sealingStatus) {
+        if (sealingStatus == null) return "Chưa niêm phong";
+        return switch (sealingStatus) {
+            case NONE -> "Chưa niêm phong";
+            case SEALING_ELIGIBLE -> "Đủ điều kiện niêm phong (>= 7 ngày)";
+            case SEALING_REQUESTED -> "Chờ duyệt niêm phong";
+            case SEALING_APPROVED -> "Đã duyệt niêm phong";
+            case SEALING_IN_PROGRESS -> "Đang niêm phong";
+            case SEALING_COMPLETED -> "Đã hoàn tất niêm phong";
+            case SEALING_REJECTED -> "Từ chối niêm phong";
+        };
+    }
+
+    private String resolveSmartLockLabel(String onlineStatus, Boolean isMock) {
+        String base;
+        if (onlineStatus == null || "ONLINE".equalsIgnoreCase(onlineStatus)) {
+            base = "Trực tuyến";
+        } else if ("OFFLINE".equalsIgnoreCase(onlineStatus)) {
+            base = "Ngoại tuyến";
+        } else {
+            base = "Không ổn định";
+        }
+        if (Boolean.TRUE.equals(isMock)) {
+            base += " [MOCK]";
+        }
+        return base;
     }
 
     private UUID resolveFacilityId(UUID requestedFacilityId) {

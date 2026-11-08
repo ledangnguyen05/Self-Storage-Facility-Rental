@@ -257,6 +257,29 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
 
   const hasInventory = dossierItems.length > 0
 
+  const effectiveSealingStatus = useMemo(() => {
+    if (isContractSettled) return 'NONE'
+    if (detail?.sealingStatus && detail.sealingStatus !== 'NONE') {
+      return detail.sealingStatus
+    }
+    if (detail?.stage === 'SEALING_ELIGIBLE' || (detail?.daysOverdue ?? 0) >= 7) {
+      return 'SEALING_ELIGIBLE'
+    }
+    return detail?.sealingStatus || 'NONE'
+  }, [detail, isContractSettled])
+
+  const effectivePinStatus = useMemo(() => {
+    if (isContractSettled) return 'PIN_REVOKED'
+    if (isTempPinActive) return 'PIN_ACTIVE'
+    if (detail?.pinStatus && detail.pinStatus !== 'PIN_ACTIVE') {
+      return detail.pinStatus
+    }
+    if (detail?.stage === 'PIN_REVOCATION' || detail?.stage === 'SEALING_ELIGIBLE' || (detail?.daysOverdue ?? 0) >= 3) {
+      return 'PIN_ELIGIBLE'
+    }
+    return detail?.pinStatus || 'PIN_ACTIVE'
+  }, [detail, isContractSettled, isTempPinActive])
+
   // Tự động phân loại mẫu thông báo theo hồ sơ nợ cước
   const autoClassifiedTemplate = useMemo(() => {
     if (!detail) {
@@ -272,7 +295,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
     }
 
     // Trường hợp 5: Đủ điều kiện niêm phong (>= 7 ngày) / Nợ vượt tiền cọc giữ VÀ có Danh mục kiểm kê tài sản
-    const isLiquidation = detail.totalDebt > 0 && (dossierItems.length > 0 || detail.sealingStatus === 'SEALING_COMPLETED' || detail.sealingStatus === 'SEALING_ELIGIBLE')
+    const isLiquidation = detail.totalDebt > 0 && (dossierItems.length > 0 || effectiveSealingStatus === 'SEALING_COMPLETED' || effectiveSealingStatus === 'SEALING_ELIGIBLE')
     if (isLiquidation) {
       return {
         key: 'LIQUIDATION_HOLDING_WARNING',
@@ -914,14 +937,16 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                       <span className="text-xs font-semibold text-slate-500">Trạng thái mã PIN/QR:</span>
                       <span className={`text-sm font-bold ${
                         isTempPinActive ? 'text-amber-700' :
-                        detail.pinStatus === 'PIN_ACTIVE' ? 'text-emerald-700' :
-                        detail.pinStatus === 'PIN_REVOCATION_PENDING' ? 'text-amber-700' :
-                        detail.pinStatus === 'PIN_REVOKED' ? 'text-rose-700' : 'text-slate-700'
+                        effectivePinStatus === 'PIN_ACTIVE' ? 'text-emerald-700' :
+                        effectivePinStatus === 'PIN_ELIGIBLE' ? 'text-amber-700' :
+                        effectivePinStatus === 'PIN_REVOCATION_PENDING' ? 'text-amber-700' :
+                        effectivePinStatus === 'PIN_REVOKED' ? 'text-rose-700' : 'text-slate-700'
                       }`}>
                         {isTempPinActive ? 'Đang cấp quyền tạm thời (24h)' :
-                         detail.pinStatus === 'PIN_ACTIVE' ? 'Đang hoạt động (Khách mở được kho)' :
-                         detail.pinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi mã PIN' :
-                         detail.pinStatus === 'PIN_REVOKED' ? 'Đã thu hồi quyền truy cập (Locked)' :
+                         effectivePinStatus === 'PIN_ACTIVE' ? 'Đang hoạt động (Khách mở được kho)' :
+                         effectivePinStatus === 'PIN_ELIGIBLE' ? 'Đủ điều kiện thu hồi PIN (Đã quá hạn >= 3 ngày)' :
+                         effectivePinStatus === 'PIN_REVOCATION_PENDING' ? 'Chờ thu hồi mã PIN' :
+                         effectivePinStatus === 'PIN_REVOKED' ? 'Đã thu hồi quyền truy cập (Locked)' :
                          'Thu hồi thất bại (Cần kiểm tra thiết bị)'}
                       </span>
                     </div>
@@ -1006,7 +1031,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                         )}
 
                         {/* Khi chưa thu hồi PIN và không có PIN tạm: Chỉ hiển thị nút Thu hồi PIN ngay khi tới ngày quá hạn thứ 3 trở đi */}
-                        {isBusinessOrFacilityManager && !isTempPinActive && detail.pinStatus !== 'PIN_REVOKED' && (
+                        {isBusinessOrFacilityManager && !isTempPinActive && effectivePinStatus !== 'PIN_REVOKED' && (
                           <>
                             {(detail.daysOverdue ?? 0) >= 3 ? (
                               <button
@@ -1033,7 +1058,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                         )}
 
                         {/* Khi đã thu hồi PIN và không có PIN tạm: Hiển thị nút Cấp quyền tạm thời (24h) */}
-                        {isBusinessOrFacilityManager && detail.pinStatus === 'PIN_REVOKED' && !isTempPinActive && (
+                        {isBusinessOrFacilityManager && effectivePinStatus === 'PIN_REVOKED' && !isTempPinActive && (
                           <button
                             type="button"
                             onClick={() => setShowTempPinDialog(true)}
@@ -1147,18 +1172,18 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                             </span>
                           ) : (
                             <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                              detail.sealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
-                              detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' :
-                              detail.sealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                              detail.sealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                              detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                              effectiveSealingStatus === 'SEALING_COMPLETED' ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                              effectiveSealingStatus === 'SEALING_IN_PROGRESS' ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' :
+                              effectiveSealingStatus === 'SEALING_APPROVED' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                              effectiveSealingStatus === 'SEALING_REQUESTED' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                              effectiveSealingStatus === 'SEALING_ELIGIBLE' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
                               'bg-slate-100 text-slate-700'
                             }`}>
-                              {detail.sealingStatus === 'SEALING_COMPLETED' ? 'Đã hoàn tất niêm phong & kiểm kê tài sản' :
-                               detail.sealingStatus === 'SEALING_IN_PROGRESS' ? 'Đã kiểm kê hiện trường • Sẵn sàng niêm phong' :
-                               detail.sealingStatus === 'SEALING_APPROVED' ? 'Business Manager đã duyệt niêm phong' :
-                               detail.sealingStatus === 'SEALING_REQUESTED' ? 'Chờ Business Manager phê duyệt' :
-                               detail.sealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ điều kiện niêm phong (>= 7 ngày)' :
+                              {effectiveSealingStatus === 'SEALING_COMPLETED' ? 'Đã hoàn tất niêm phong & kiểm kê tài sản' :
+                               effectiveSealingStatus === 'SEALING_IN_PROGRESS' ? 'Đã kiểm kê hiện trường • Sẵn sàng niêm phong' :
+                               effectiveSealingStatus === 'SEALING_APPROVED' ? 'Business Manager đã duyệt niêm phong' :
+                               effectiveSealingStatus === 'SEALING_REQUESTED' ? 'Chờ Business Manager phê duyệt' :
+                               effectiveSealingStatus === 'SEALING_ELIGIBLE' ? 'Đủ điều kiện niêm phong (>= 7 ngày)' :
                                'Chưa đạt ngưỡng niêm phong'}
                             </span>
                           )}
@@ -1175,8 +1200,8 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                         ) : (
                           <>
                             {/* TRƯỜNG HỢP 1: Đủ điều kiện niêm phong (Facility Manager chưa gửi request) */}
-                            {detail.sealingStatus === 'SEALING_ELIGIBLE' && (
-                              (isFacilityManager || isAdmin) ? (
+                            {effectiveSealingStatus === 'SEALING_ELIGIBLE' && (
+                              (isFacilityManager || isBusinessManager || isAdmin) ? (
                                 <button
                                   type="button"
                                   onClick={() => setShowSealingRequestDialog(true)}
@@ -1193,7 +1218,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                             )}
 
                             {/* TRƯỜNG HỢP 2: Facility Manager ĐÃ GỬI request -> Chờ Business Manager duyệt */}
-                            {detail.sealingStatus === 'SEALING_REQUESTED' && (
+                            {effectiveSealingStatus === 'SEALING_REQUESTED' && (
                               (isBusinessManager || isAdmin) ? (
                                 <div className="flex items-center gap-2">
                                   <button
@@ -1222,7 +1247,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                             )}
 
                             {/* TRƯỜNG HỢP 3: Business Manager ĐÃ DUYỆT -> Hiển thị Kiểm kê hiện trường */}
-                            {detail.sealingStatus === 'SEALING_APPROVED' && (
+                            {effectiveSealingStatus === 'SEALING_APPROVED' && (
                               <button
                                 type="button"
                                 onClick={() => setShowInventoryDialog(true)}
@@ -1233,7 +1258,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                               </button>
                             )}
 
-                            {detail.sealingStatus === 'SEALING_IN_PROGRESS' && (
+                            {effectiveSealingStatus === 'SEALING_IN_PROGRESS' && (
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"

@@ -68,14 +68,24 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const [ticketTitle, setTicketTitle] = useState<string>(initialTitle || '')
   const [ticketContent, setTicketContent] = useState<string>(initialContent || '')
 
-  // Keep state synced when props change (e.g. user clicks "Yêu cầu trả kho" on a specific unit)
+  // Chỉ hiển thị hợp đồng có trạng thái đang hoạt động (ACTIVE) trong form báo sự cố / hỗ trợ
+  const onlyActiveContracts = useMemo(() => {
+    const list = (activeContracts && activeContracts.length > 0) ? activeContracts : (contracts || [])
+    return list.filter((c: any) => c && c.status === 'ACTIVE')
+  }, [activeContracts, contracts])
+
+  // Đồng bộ ticketUnit: Chỉ chấp nhận kho đang hoạt động (ACTIVE), nếu không có hoặc kho không hợp lệ thì chuyển về kho đầu tiên hoặc 'general'
   useEffect(() => {
-    if (initialUnit) {
+    if (initialUnit && onlyActiveContracts.some(c => c.unitCode === initialUnit)) {
       setTicketUnit(initialUnit)
-    } else if (activeContracts.length > 0 && !ticketUnit) {
-      setTicketUnit(activeContracts[0].unitCode)
+    } else if (onlyActiveContracts.length > 0) {
+      if (!ticketUnit || (ticketUnit !== 'general' && !onlyActiveContracts.some(c => c.unitCode === ticketUnit))) {
+        setTicketUnit(onlyActiveContracts[0].unitCode)
+      }
+    } else {
+      setTicketUnit('general')
     }
-  }, [initialUnit, activeContracts])
+  }, [initialUnit, onlyActiveContracts, ticketUnit])
 
   useEffect(() => {
     if (initialCategory) {
@@ -151,13 +161,6 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const [customerDisputeEvidence, setCustomerDisputeEvidence] = useState('')
   const [isSubmittingCustomerDecision, setIsSubmittingCustomerDecision] = useState(false)
   const [isPayingCompensation, setIsPayingCompensation] = useState(false)
-
-  // Initialize selected unit
-  useEffect(() => {
-    if (activeContracts.length > 0 && !ticketUnit) {
-      setTicketUnit(activeContracts[0].unitCode)
-    }
-  }, [activeContracts, ticketUnit])
 
   // Fetch Tickets strictly for current user
   const loadMyTickets = useCallback(async (silent = false) => {
@@ -899,26 +902,16 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                       onChange={(e) => setTicketUnit(e.target.value)}
                       className="h-10 px-3 bg-white border border-slate-300 text-slate-900 text-xs font-semibold rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      {(() => {
-                        const contractsList = activeContracts.length > 0 ? activeContracts : contracts
-                        return (
-                          <>
-                            {contractsList.length > 0 ? (
-                              contractsList.map(c => (
-                                <option key={c.unitCode} value={c.unitCode}>
-                                  Kho #{c.unitCode} ({c.facilityName || 'Boxora'})
-                                </option>
-                              ))
-                            ) : (
-                              <option value="general">Chưa có kho hoạt động</option>
-                            )}
-                            {ticketUnit && !contractsList.some(c => c.unitCode === ticketUnit) && ticketUnit !== 'general' && (
-                              <option value={ticketUnit}>Kho #{ticketUnit}</option>
-                            )}
-                            <option value="general">Khác / Thắc mắc chung</option>
-                          </>
-                        )
-                      })()}
+                      {onlyActiveContracts.length > 0 ? (
+                        onlyActiveContracts.map(c => (
+                          <option key={c.unitCode} value={c.unitCode}>
+                            Kho #{c.unitCode} ({c.facilityName || 'Boxora'})
+                          </option>
+                        ))
+                      ) : (
+                        <option value="general">Chưa có kho đang hoạt động</option>
+                      )}
+                      <option value="general">Khác / Thắc mắc chung</option>
                     </select>
                   </div>
 

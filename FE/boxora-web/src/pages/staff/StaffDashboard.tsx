@@ -1646,6 +1646,15 @@ export const StaffDashboard: React.FC = () => {
           </div>
 
 
+          <div className="flex items-center gap-2">
+            <Link
+              to="/portal/tickets"
+              className="px-3.5 py-2 bg-slate-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px] text-rose-400">add_alert</span>
+              <span>Ghi Nhận Sự Cố</span>
+            </Link>
+          </div>
         </div>
       </div>
 

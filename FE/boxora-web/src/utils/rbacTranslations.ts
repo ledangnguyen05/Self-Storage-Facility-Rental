@@ -459,8 +459,8 @@ export const PERMISSION_VIETNAMESE_MAP: Record<string, { title: string; descript
     description: 'Tra cứu danh sách các phiếu yêu cầu hỗ trợ và báo cáo sự cố kỹ thuật.',
   },
   SUPPORT_CREATE: {
-    title: 'Tạo phiếu báo sự cố',
-    description: 'Tiếp nhận và lập phiếu yêu cầu khắc phục sự cố kỹ thuật hoặc hỗ trợ khách.',
+    title: 'Ghi Nhận Sự Cố',
+    description: 'Tiếp nhận, lập biên bản và ghi nhận phiếu yêu cầu khắc phục sự cố kỹ thuật hoặc hỗ trợ khách.',
   },
   SUPPORT_UPDATE: {
     title: 'Cập nhật tiến độ xử lý sự cố',
@@ -491,7 +491,7 @@ export const PERMISSION_VIETNAMESE_MAP: Record<string, { title: string; descript
     description: 'Kích hoạt kênh liên lạc khẩn cấp với cấp lãnh đạo điều hành.',
   },
   SUPPORT_TICKET_CREATE: {
-    title: 'Tạo phiếu sự cố buồng kho',
+    title: 'Ghi Nhận Sự Cố (Tạo ticket)',
     description: 'Lập ticket báo cáo hỏng hóc khóa, rò rỉ hoặc điện đóm.',
   },
   SUPPORT_TICKET_UPDATE: {
@@ -525,8 +525,8 @@ export const PERMISSION_VIETNAMESE_MAP: Record<string, { title: string; descript
     description: 'Tra cứu danh sách các phiếu yêu cầu hỗ trợ và báo cáo sự cố kỹ thuật.',
   },
   'HỖ TRỢ_CREATE': {
-    title: 'Tạo phiếu báo sự cố',
-    description: 'Tiếp nhận và lập phiếu yêu cầu khắc phục sự cố kỹ thuật.',
+    title: 'Ghi Nhận Sự Cố',
+    description: 'Tiếp nhận, lập biên bản và ghi nhận phiếu yêu cầu khắc phục sự cố kỹ thuật.',
   },
   'HỖ TRỢ_UPDATE': {
     title: 'Cập nhật tiến độ sự cố',

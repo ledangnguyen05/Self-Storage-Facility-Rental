@@ -14,7 +14,10 @@ import {
   Undo2,
   Camera,
   Image as ImageIcon,
-  ZoomIn
+  ZoomIn,
+  Copy,
+  Check,
+  QrCode
 } from 'lucide-react'
 import { handoverService, ReturnSettlementDetail, SettlementSnapshot } from '../../services/handoverService'
 import { paymentService } from '../../services/paymentService'
@@ -90,9 +93,20 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
 
   // Dispute Form State
   const [disputeReason, setDisputeReason] = useState('')
-  const [disputeEvidenceUrls, setDisputeEvidenceUrls] = useState('')
-  const [isUploadingDisputeEvidence, setIsUploadingDisputeEvidence] = useState(false)
   const [showCancelDisputeConfirmModal, setShowCancelDisputeConfirmModal] = useState(false)
+
+  // Copy to clipboard state
+  const [copiedField, setCopiedField] = useState<string | null>(null)
+  const handleCopyText = (text: string, label: string) => {
+    try {
+      navigator.clipboard.writeText(text)
+      setCopiedField(label)
+      toast.success(`Đã sao chép ${label}!`)
+      setTimeout(() => setCopiedField(null), 2500)
+    } catch {
+      toast.error('Không thể sao chép tự động')
+    }
+  }
 
   const fetchSettlement = async () => {
     if (!bookingId) return
@@ -193,6 +207,22 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
   const additionalDue = displayAdditionalDue
   const depositPaid = displayDepositPaid
   const totalDeduction = displayTotalDeduction
+
+  // Quyền hành động của khách hàng: Đồng ý / Thanh toán / Khiếu nại trên phiên bản mới nhất
+  const canCustomerAct = Boolean(
+    isViewingLatestVersion &&
+    settlement &&
+    (!settlement.customerDecision ||
+      settlement.customerDecision === 'PENDING' ||
+      settlement.customerDecision === 'NONE' ||
+      settlement.customerDecision === 'AWAITING_CUSTOMER_CONFIRMATION' ||
+      (settlement.customerDecision === 'AGREED' && displayAdditionalDue > 0 && settlement.additionalPaymentStatus !== 'PAID')) &&
+    (settlement as any).status !== 'COMPLETED' &&
+    settlement.approvalStatus !== 'COMPLETED' &&
+    settlement.refundStatus !== 'REFUNDED'
+  )
+
+  const effectiveReadOnly = readOnly && !canCustomerAct
 
   // Chỉ cho phép khiếu nại khi tiền cọc thực sự bị khấu trừ hoặc có phát sinh chi phí bồi thường/sửa chữa
   const isDepositDeducted = settlement
@@ -306,6 +336,30 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
     }
   }
 
+  // 3.1 Customer confirms bank transfer / VietQR payment completed
+  const handleConfirmBankTransferPaid = async () => {
+    if (!settlement) return
+    setSubmitting(true)
+    try {
+      if (settlement.customerDecision !== 'AGREED') {
+        await handoverService.submitCustomerDecision(bookingId, {
+          decision: 'AGREED',
+          settlementVersion: settlement.settlementVersion
+        })
+      }
+      toast.success(
+        'Đã ghi nhận bạn đã chuyển khoản thanh toán bồi thường! Quản lý cơ sở sẽ kiểm tra sao kê ngân hàng và xác nhận giải phóng kho hoàn tất.'
+      )
+      setViewStep('VIEW')
+      await fetchSettlement()
+      if (onUpdated) onUpdated()
+    } catch (err: any) {
+      toast.error('Lỗi khi gửi xác nhận chuyển khoản: ' + (err?.response?.data?.message || err.message))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   // 4. Customer submits dispute to Facility Manager
   const handleSubmitDispute = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -319,8 +373,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
       await handoverService.submitCustomerDecision(bookingId, {
         decision: 'DISPUTED',
         settlementVersion: settlement?.settlementVersion,
-        disputeReason: disputeReason.trim(),
-        disputeEvidenceUrls: disputeEvidenceUrls.trim() ? [disputeEvidenceUrls.trim()] : undefined
+        disputeReason: disputeReason.trim()
       })
       toast.success(
         'Đã gửi đơn khiếu nại thành công! Quản lý cơ sở (Facility Manager) sẽ tiếp nhận và trực tiếp xử lý khiếu nại của bạn.'
@@ -371,7 +424,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
             <div>
               <h3 className="font-extrabold text-sm sm:text-base text-slate-900 leading-tight flex items-center gap-2 flex-wrap">
                 <span>Biên Bản Nghiệm Thu &amp; Quyết Toán Trả Kho</span>
-                {readOnly && (
+                {effectiveReadOnly && (
                   <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold tracking-wide">
                     Chỉ xem
                   </span>
@@ -835,13 +888,14 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   </div>
                 )}
 
-                {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) - CHỈ HIỂN THỊ KHI KHÔNG PHẢI READ-ONLY VÀ ĐANG Ở BẢN MỚI NHẤT */}
-                {!readOnly &&
+                {/* HAI BUTTON CHÍNH NẾU ĐANG CHỜ PHẢN HỒI (PENDING) HOẶC CẦN THANH TOÁN TIẾP - CHỈ HIỂN THỊ KHI KHÔNG PHẢI READ-ONLY VÀ ĐANG Ở BẢN MỚI NHẤT */}
+                {!effectiveReadOnly &&
                   isViewingLatestVersion &&
                   (!settlement.customerDecision ||
                     settlement.customerDecision === 'PENDING' ||
                     settlement.customerDecision === 'NONE' ||
-                    settlement.customerDecision === 'AWAITING_CUSTOMER_CONFIRMATION') && (
+                    settlement.customerDecision === 'AWAITING_CUSTOMER_CONFIRMATION' ||
+                    (settlement.customerDecision === 'AGREED' && displayAdditionalDue > 0 && settlement.additionalPaymentStatus !== 'PAID')) && (
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-end gap-2.5">
                     {isDepositDeducted && (
                       <button
@@ -850,7 +904,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-rose-300 bg-white hover:bg-rose-50 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition shadow-2xs"
                       >
                         <MessageSquareWarning size={15} />
-                        <span>Khiếu nại kết quả</span>
+                        <span>Khiếu nại kết quả (Yêu cầu xử lý lại)</span>
                       </button>
                     )}
 
@@ -870,7 +924,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                         className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition"
                       >
                         <CreditCard size={15} />
-                        <span>Đồng ý &amp; Thanh toán qua VNPay Sandbox</span>
+                        <span>Đồng ý &amp; Thanh toán (+{additionalDue.toLocaleString('vi-VN')} ₫)</span>
                       </button>
                     ) : (
                       <button
@@ -887,7 +941,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                 )}
 
                 {/* FOOTER CHỈ XEM DÀNH CHO CÁC ĐƠN CŨ HOẶC KHI ĐANG XEM BẢN LƯU TRỮ CŨ */}
-                {(readOnly || !isViewingLatestVersion) && (
+                {effectiveReadOnly && (
                   <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50/80 -mx-6 -mb-6 p-4 rounded-b-2xl">
                     <div className="flex items-center gap-2 text-slate-600 text-xs">
                       <div className="w-6 h-6 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
@@ -985,7 +1039,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
               </form>
             )}
 
-            {/* FORM 2: THANH TOÁN BỒI THƯỜNG BỔ SUNG QUA VNPAY SANDBOX (CHỈ HIỂN THỊ CHO PHIÊN BẢN MỚI NHẤT) */}
+            {/* FORM 2: THANH TOÁN BỒI THƯỜNG BỔ SUNG QUA VIETQR HOẶC VNPAY SANDBOX (CHỈ HIỂN THỊ CHO PHIÊN BẢN MỚI NHẤT) */}
             {viewStep === 'FORM_PAY' && (
               isViewingLatestVersion ? (
                 <div className="space-y-4 text-xs">
@@ -1001,27 +1055,133 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                       <span>Số tiền cần thanh toán ngay:</span>
                       <span className="text-rose-600 text-sm">+{additionalDue.toLocaleString('vi-VN')} ₫</span>
                     </div>
-                    <p className="text-[10px] text-slate-500">
-                      Hình thức: Cổng thanh toán trực tuyến <strong>VNPay Sandbox</strong> (Hỗ trợ quét mã VietQR, Thẻ ATM nội địa, Visa, MasterCard). Sau khi thanh toán xong, hệ thống sẽ tự động gửi thông báo web và email biên lai cho bạn.
-                    </p>
                   </div>
 
-                  <div className="pt-2 flex items-center justify-end gap-2">
+                  {/* KHỐI 1: QUÉT MÃ VIETQR HOẶC CHUYỂN KHOẢN NGÂN HÀNG TRỰC TIẾP */}
+                  <div className="p-4 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-2 font-bold text-slate-900">
+                        <QrCode size={16} className="text-indigo-600" />
+                        <span>Cách 1: Quét mã VietQR chuẩn (Khuyên dùng)</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px]">
+                        Xác nhận tức thì
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                      {/* Ảnh QR VietQR */}
+                      <div className="p-2 bg-slate-50 border border-slate-200 rounded-xl flex flex-col items-center justify-center shrink-0">
+                        <img
+                          src={`https://img.vietqr.io/image/MB-0988219002-compact2.png?amount=${additionalDue}&addInfo=BT%20${encodeURIComponent(settlement?.unitCode || '')}%20${encodeURIComponent(settlement?.bookingCode || '')}&accountName=CONG%20TY%20CO%20PHAN%20BOXORA`}
+                          alt="VietQR Boxora"
+                          className="w-36 h-36 object-contain rounded-lg"
+                        />
+                        <span className="text-[10px] text-slate-500 mt-1 font-medium">Quét bằng App Ngân Hàng</span>
+                      </div>
+
+                      {/* Chi tiết thông tin chuyển khoản kèm nút sao chép 1-click */}
+                      <div className="flex-1 space-y-2 w-full text-slate-700">
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 text-[11px]">Ngân hàng thụ hưởng:</span>
+                          <span className="font-bold text-slate-900">MB Bank (Quân Đội)</span>
+                        </div>
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 text-[11px]">Số tài khoản (STK):</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-indigo-700 text-sm">0988219002</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText('0988219002', 'Số tài khoản')}
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                              title="Sao chép STK"
+                            >
+                              {copiedField === 'Số tài khoản' ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 text-[11px]">Chủ tài khoản:</span>
+                          <span className="font-bold text-slate-900 uppercase">CÔNG TY CỔ PHẦN BOXORA</span>
+                        </div>
+                        <div className="flex items-center justify-between py-1 border-b border-slate-100">
+                          <span className="text-slate-500 text-[11px]">Số tiền:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-rose-600">{additionalDue.toLocaleString('vi-VN')} ₫</span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(String(additionalDue), 'Số tiền')}
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                              title="Sao chép Số tiền"
+                            >
+                              {copiedField === 'Số tiền' ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between py-1">
+                          <span className="text-slate-500 text-[11px]">Nội dung CK:</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-slate-800">
+                              BT {settlement?.unitCode || ''} {settlement?.bookingCode || ''}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(`BT ${settlement?.unitCode || ''} ${settlement?.bookingCode || ''}`, 'Nội dung chuyển khoản')}
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer"
+                              title="Sao chép Nội dung"
+                            >
+                              {copiedField === 'Nội dung chuyển khoản' ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={handleConfirmBankTransferPaid}
+                        disabled={submitting}
+                        className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                      >
+                        <CheckCircle2 size={15} />
+                        <span>{submitting ? 'Đang gửi thông báo...' : 'Tôi Đã Chuyển Khoản Thành Công'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* KHỐI 2: CỔNG THANH TOÁN TRỰC TUYẾN VNPAY SANDBOX */}
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 font-bold text-slate-800">
+                        <CreditCard size={15} className="text-indigo-600" />
+                        <span>Cách 2: Thanh toán qua Cổng VNPay Sandbox</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-medium">Hỗ trợ thẻ ATM / Visa / Master</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Chuyển sang trang thanh toán bảo mật của VNPay Sandbox để thanh toán trực tuyến ngay.
+                    </p>
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleProceedVNPayCompensation}
+                        disabled={submitting}
+                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
+                      >
+                        <ExternalLink size={14} />
+                        <span>{submitting ? 'Đang tạo giao dịch...' : 'Mở Cổng Thanh Toán VNPay Sandbox'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex items-center justify-start">
                     <button
                       type="button"
                       onClick={() => setViewStep('VIEW')}
                       className="px-4 py-2 rounded-xl border border-slate-200 bg-white text-slate-700 font-bold text-xs cursor-pointer hover:bg-slate-50"
                     >
-                      Quay lại
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleProceedVNPayCompensation}
-                      disabled={submitting}
-                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition disabled:opacity-50"
-                    >
-                      <ExternalLink size={14} />
-                      <span>{submitting ? 'Đang tạo giao dịch...' : 'Mở Cổng Thanh Toán VNPay Sandbox'}</span>
+                      Quay lại xem chi tiết 7 tiêu chí
                     </button>
                   </div>
                 </div>
@@ -1032,7 +1192,7 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                     <span>Không thể mở cổng thanh toán trên phiên bản cũ (V{currentViewingVersion})</span>
                   </div>
                   <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Biên bản quyết toán đã được cơ sở cập nhật lên phiên bản mới nhất (Phiên bản V{settlement?.settlementVersion || 1}). Cổng thanh toán VNPay Sandbox chỉ chấp nhận giao dịch cho phiên bản quyết toán hiện hành.
+                    Biên bản quyết toán đã được cơ sở cập nhật lên phiên bản mới nhất (Phiên bản V{settlement?.settlementVersion || 1}). Cổng thanh toán chỉ chấp nhận giao dịch cho phiên bản quyết toán hiện hành.
                   </p>
                   <div className="flex items-center justify-end gap-2">
                     <button
@@ -1053,16 +1213,6 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
             {/* FORM 3: GỬI KHIẾU NẠI CHO FACILITY MANAGER */}
             {viewStep === 'FORM_DISPUTE' && (
               <form onSubmit={handleSubmitDispute} className="space-y-4 text-xs">
-                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-950 space-y-1.5">
-                  <div className="font-bold flex items-center gap-1.5 text-rose-900">
-                    <MessageSquareWarning size={16} />
-                    <span>Gửi đơn khiếu nại quyết toán trả kho</span>
-                  </div>
-                  <p className="text-[11px] text-rose-800 leading-relaxed">
-                    Đơn khiếu nại của bạn sẽ được chuyển riêng cho <strong>Quản lý cơ sở</strong> để tiếp nhận và xem xét phân xử độc lập.
-                  </p>
-                </div>
-
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
                     Lý do khiếu nại chi tiết <span className="text-rose-500">*</span>
@@ -1077,47 +1227,6 @@ export const CustomerSettlementReviewModal: React.FC<CustomerSettlementReviewMod
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Ảnh / Đường dẫn minh chứng đính kèm (tùy chọn):
-                  </label>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <label className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs cursor-pointer transition shrink-0">
-                      <Camera size={14} />
-                      <span>{isUploadingDisputeEvidence ? 'Đang tải lên R2...' : 'Tải ảnh minh chứng lên R2'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={isUploadingDisputeEvidence}
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (!file) return
-                          setIsUploadingDisputeEvidence(true)
-                          try {
-                            const url = await supportTicketService.uploadAttachment(file)
-                            if (url) {
-                              setDisputeEvidenceUrls(url)
-                              toast.success('Đã tải ảnh minh chứng lên Cloudflare R2 thành công!')
-                            }
-                          } catch (err: any) {
-                            toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh minh chứng.')
-                          } finally {
-                            setIsUploadingDisputeEvidence(false)
-                            e.target.value = ''
-                          }
-                        }}
-                      />
-                    </label>
-                    <input
-                      type="url"
-                      value={disputeEvidenceUrls}
-                      onChange={(e) => setDisputeEvidenceUrls(e.target.value)}
-                      placeholder="Hoặc dán link ảnh bằng chứng (tự động điền sau khi tải ảnh)"
-                      className="flex-1 p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-xs focus:bg-white focus:border-rose-400"
-                    />
-                  </div>
-                </div>
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <button
                     type="button"

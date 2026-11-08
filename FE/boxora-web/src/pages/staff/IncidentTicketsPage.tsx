@@ -15,13 +15,14 @@ import { User, Facility, StorageUnit } from '../../types'
 import { toast } from '../../utils/toast'
 
 export const IncidentTicketsPage: React.FC = () => {
-  const { user, role } = useAuth()
+  const { user, role, hasPermission } = useAuth()
   const effectiveRole = role || (typeof user?.role === 'string' ? user.role : user?.role?.name) || 'STAFF'
   const isStaff = effectiveRole === 'STAFF'
   const isFacilityManager = effectiveRole === 'FACILITY_MANAGER'
   const isBusinessManager = effectiveRole === 'BUSINESS_MANAGER'
   const isAdmin = effectiveRole === 'ADMIN'
   const isReadOnly = isBusinessManager || isAdmin
+  const canReportIncident = isStaff || isFacilityManager || hasPermission('SUPPORT_CREATE') || hasPermission('SUPPORT_TICKET_CREATE')
 
   // Task 3: Strictly enforce facility scope.
   // - Staff is always confined to assigned facility.
@@ -682,7 +683,7 @@ export const IncidentTicketsPage: React.FC = () => {
   // Handle Create Ticket (Staff / FM)
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (isReadOnly || !newTitle.trim()) return
+    if (!canReportIncident || !newTitle.trim()) return
     setIsSubmittingCreate(true)
     try {
       let uploadedUrls: string[] = []
@@ -893,7 +894,7 @@ export const IncidentTicketsPage: React.FC = () => {
             <span>Làm mới</span>
           </button>
 
-          {!isReadOnly && (
+          {canReportIncident && (
             <button
               type="button"
               onClick={() => {
@@ -2204,7 +2205,7 @@ export const IncidentTicketsPage: React.FC = () => {
       )}
 
       {/* MODAL 6: Ghi Nhận Sự Cố Mới (Staff & FM) */}
-      {isCreateModalOpen && !isReadOnly && (
+      {isCreateModalOpen && canReportIncident && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">

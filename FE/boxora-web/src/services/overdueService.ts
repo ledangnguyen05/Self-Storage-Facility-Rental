@@ -1,4 +1,5 @@
 import { api } from '../lib/axios'
+import { downloadCsv } from '../utils/exportUtils'
 
 export interface OverdueSummary {
   asOfDate: string
@@ -249,23 +250,54 @@ export const overdueService = {
     await api.post(`/api/v1/overdue/contracts/${contractId}/sealing`, payload)
   },
 
-  exportCsv: async (facilityId?: string, stage?: string, searchTerm?: string) => {
+  exportCsv: async (params?: {
+    facilityId?: string
+    stage?: string
+    pinStatus?: string
+    sealingStatus?: string
+    searchTerm?: string
+  } | string, stageArg?: string, searchTermArg?: string) => {
+    let facilityId: string | undefined
+    let stage: string | undefined
+    let pinStatus: string | undefined
+    let sealingStatus: string | undefined
+    let searchTerm: string | undefined
+
+    if (typeof params === 'object' && params !== null) {
+      facilityId = params.facilityId
+      stage = params.stage
+      pinStatus = params.pinStatus
+      sealingStatus = params.sealingStatus
+      searchTerm = params.searchTerm
+    } else {
+      facilityId = params
+      stage = stageArg
+      searchTerm = searchTermArg
+    }
+
     const res = await api.get('/api/v1/overdue/export/csv', {
       params: {
         facilityId: facilityId && facilityId !== 'ALL' ? facilityId : undefined,
-        stage: stage || undefined,
-        searchTerm: searchTerm || undefined
+        stage: stage && stage !== 'ALL' ? stage : undefined,
+        pinStatus: pinStatus && pinStatus !== 'ALL' ? pinStatus : undefined,
+        sealingStatus: sealingStatus && sealingStatus !== 'ALL' ? sealingStatus : undefined,
+        searchTerm: searchTerm?.trim() || undefined
       },
-      responseType: 'blob'
-    })
-    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8;' })
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', `bao-cao-no-cuoc-qua-han-${new Date().toISOString().slice(0, 10)}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
+      responseType: 'blob',
+      skipCache: true,
+      skipDedup: true,
+    } as any)
+
+    let csvText = ''
+    if (res.data instanceof Blob) {
+      csvText = await res.data.text()
+    } else if (typeof res.data === 'string') {
+      csvText = res.data
+    } else {
+      csvText = new TextDecoder('utf-8').decode(new Uint8Array(res.data))
+    }
+
+    downloadCsv(`bao-cao-no-cuoc-qua-han-${new Date().toISOString().slice(0, 10)}.csv`, csvText)
   },
 
   completeSettlement: async (contractId: string, payload?: OverdueSettlementPayload): Promise<void> => {

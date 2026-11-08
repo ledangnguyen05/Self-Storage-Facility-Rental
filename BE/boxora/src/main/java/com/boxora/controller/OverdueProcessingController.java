@@ -167,9 +167,11 @@ public class OverdueProcessingController {
     public ResponseEntity<byte[]> exportOverdueCsv(
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false, defaultValue = "ALL") String stage,
+            @RequestParam(required = false, defaultValue = "ALL") String pinStatus,
+            @RequestParam(required = false, defaultValue = "ALL") String sealingStatus,
             @RequestParam(required = false) String searchTerm
     ) {
-        byte[] csvData = overdueManagementService.exportOverdueCsv(facilityId, stage, searchTerm);
+        byte[] csvData = overdueManagementService.exportOverdueCsv(facilityId, stage, pinStatus, sealingStatus, searchTerm);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"overdue-debts-" + LocalDate.now() + ".csv\"")
                 .contentType(MediaType.parseMediaType("text/csv; charset=UTF-8"))

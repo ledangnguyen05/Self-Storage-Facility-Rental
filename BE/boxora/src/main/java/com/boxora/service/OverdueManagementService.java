@@ -44,6 +44,10 @@ public interface OverdueManagementService {
 
     byte[] exportOverdueCsv(UUID facilityId, String stage, String searchTerm);
 
+    default byte[] exportOverdueCsv(UUID facilityId, String stage, String pinStatus, String sealingStatus, String searchTerm) {
+        return exportOverdueCsv(facilityId, stage, searchTerm);
+    }
+
     default void completeSettlement(UUID contractId) {
         completeSettlement(contractId, null);
     }

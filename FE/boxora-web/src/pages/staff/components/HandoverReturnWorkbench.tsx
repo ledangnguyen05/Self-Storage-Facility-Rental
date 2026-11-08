@@ -2098,10 +2098,7 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
       }
     }
 
-    if (isOverDeposit && currentCase.additionalPaymentStatus !== 'PAID') {
-      toast.warning('Khoản bồi thường vượt cọc chưa được thanh toán! Vui lòng thu tiền tại quầy hoặc ghi nhận.')
-      return
-    }
+
 
     setIsFinishingHandover(true)
     try {
@@ -3986,29 +3983,18 @@ export const HandoverReturnWorkbench: React.FC<HandoverReturnWorkbenchProps> = (
                       ) : (
                       <div className="flex items-center gap-2 flex-wrap ml-auto">
 
-                        {/* Action: Thu tiền bồi thường tại quầy (khi vượt cọc) */}
-                        {isOverDeposit &&
-                          (currentCase.status === 'REFUND_APPROVED' || currentCase.customerDecision === 'AGREED') &&
-                          currentCase.additionalPaymentStatus !== 'PAID' && (
-                            <button
-                              type="button"
-                              onClick={() => setShowRefundModal(true)}
-                              className="px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition bg-rose-600 hover:bg-rose-700"
-                            >
-                              <Receipt size={15} />
-                              <span>
-                                {`Thu Tiền Bồi Thường Tại Quầy (${customerPayableAmount.toLocaleString('vi-VN')}đ)`}
-                              </span>
-                            </button>
-                          )}
-
-                        {/* Final Action: Hoàn tất hồ sơ & Giải phóng kho */}
-                        {(currentCase.status === 'REFUNDED' || currentCase.refundStatus === 'REFUNDED' || currentCase.refundStatus === 'COMPLETED' || currentCase.refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' || currentCase.refundStatus === 'PROCESSED' || (currentCase.status === 'REFUND_APPROVED' && netRefundAmount === 0 && customerPayableAmount === 0)) && (
+                        {/* Final Action: Hoàn tất hồ sơ & Giải phóng kho (Được click khi hoàn thành click Xác Nhận Đã Nhận Lại Kho) */}
+                        {currentCase.status !== 'COMPLETED' && (
                           <button
                             type="button"
                             onClick={handleCompleteHandoverAndRelease}
-                            disabled={isFinishingHandover}
-                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-emerald-600/20 transition"
+                            disabled={isFinishingHandover || !currentCase.unitReturnedPhysically}
+                            title={!currentCase.unitReturnedPhysically ? 'Vui lòng hoàn thành click "Xác Nhận Đã Nhận Lại Kho" ở bước trên trước' : undefined}
+                            className={`px-4 py-2 rounded-xl text-white font-bold text-xs flex items-center gap-1.5 transition ${
+                              currentCase.unitReturnedPhysically
+                                ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer shadow-md shadow-emerald-600/20'
+                                : 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+                            }`}
                           >
                             <Lock size={15} />
                             <span>{isFinishingHandover ? 'Đang hoàn tất...' : 'Hoàn Tất Hồ Sơ & Giải Phóng Kho'}</span>

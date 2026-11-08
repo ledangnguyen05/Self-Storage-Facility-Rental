@@ -138,12 +138,9 @@ export function downloadExcel(
 }
 
 export function downloadCsv(filename: string, csvContent: string): void {
-  // Always include UTF-8 BOM \uFEFF and sep=, so Excel & WPS on Windows parse UTF-8 Vietnamese properly
-  let content = csvContent.replace(/^\uFEFF/, '')
-  if (!content.startsWith('sep=')) {
-    content = 'sep=,\r\n' + content
-  }
-  const withBom = '\uFEFF' + content
+  // Always include UTF-8 BOM \uFEFF so Excel & WPS on Windows parse UTF-8 Vietnamese properly
+  const cleanContent = csvContent.replace(/^\uFEFF/, '').replace(/^sep=[,\t;]\r?\n/i, '')
+  const withBom = '\uFEFF' + cleanContent
   const blob = new Blob([withBom], { type: 'text/csv;charset=utf-8;' })
   const finalFilename = filename.endsWith('.csv') ? filename : `${filename}.csv`
   downloadFile(blob, finalFilename)

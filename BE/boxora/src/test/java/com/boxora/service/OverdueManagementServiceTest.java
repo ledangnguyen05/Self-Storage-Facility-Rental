@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -369,5 +370,54 @@ class OverdueManagementServiceTest {
         AppException ex = assertThrows(AppException.class, () ->
                 overdueManagementService.processSealingWorkflow(contractId, request));
         assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.CONTRACT_ALREADY_TERMINATED);
+    }
+
+    @Test
+    @DisplayName("exportOverdueCsv should include UTF-8 BOM and Vietnamese status labels")
+    void shouldExportOverdueCsv_withBomAndVietnameseLabels() {
+        // Arrange
+        when(rentalContractRepository.findActiveOrOverdueContractsBeforeDate(any())).thenReturn(List.of(testContract));
+        when(facilityAccessGuard.isFacilityScoped()).thenReturn(false);
+        FacilityPolicy policy = FacilityPolicy.builder()
+                .facility(testFacility)
+                .overdueAccessDisableDays(3)
+                .overdueSealingDays(7)
+                .build();
+        when(facilityPolicyRepository.findByFacility_IdAndIsActiveTrue(testFacility.getId())).thenReturn(Optional.of(policy));
+
+        OverdueDebtCalculationService.CalculationResult calcResult = new OverdueDebtCalculationService.CalculationResult(
+                7L,
+                BigDecimal.valueOf(1000000),
+                BigDecimal.valueOf(33333),
+                BigDecimal.valueOf(233331),
+                BigDecimal.valueOf(1233331),
+                BigDecimal.ZERO,
+                OverdueStage.SEALING_ELIGIBLE,
+                true,
+                null,
+                LocalDate.now().minusDays(7),
+                LocalDate.now(),
+                "1.000.000 + 233.331 = 1.233.331 ₫"
+        );
+        when(overdueDebtCalculationService.calculateOverdueDebt(eq(testContract), eq(policy), any()))
+                .thenReturn(calcResult);
+
+        // Act
+        byte[] csvBytes = overdueManagementService.exportOverdueCsv(testFacility.getId(), "ALL", "ALL", "ALL", null);
+
+        // Assert
+        assertThat(csvBytes).isNotNull().isNotEmpty();
+        String csvContent = new String(csvBytes, StandardCharsets.UTF_8);
+
+        // Must start with UTF-8 BOM
+        assertThat(csvContent.charAt(0)).isEqualTo('\uFEFF');
+        // Must contain Vietnamese column header
+        assertThat(csvContent).contains("Mã Hợp Đồng");
+        assertThat(csvContent).contains("Trạng Thái PIN");
+        assertThat(csvContent).contains("Trạng Thái Niêm Phong");
+        // Must contain contract data and resolved Vietnamese labels
+        assertThat(csvContent).contains("CTR-2026-001");
+        assertThat(csvContent).contains("Đủ điều kiện niêm phong (>= 7 ngày)");
+        assertThat(csvContent).contains("Trực tuyến [MOCK]");
     }
 }

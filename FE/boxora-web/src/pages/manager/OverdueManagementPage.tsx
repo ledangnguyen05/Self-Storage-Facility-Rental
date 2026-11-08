@@ -9,6 +9,7 @@ import { Facility } from '../../types'
 import { OverdueContractDetailModal } from './modals/OverdueContractDetailModal'
 import { toast } from '../../utils/toast'
 import { useLanguage } from '../../context/LanguageContext'
+import { downloadExcel, ExcelColumn, ExcelCell } from '../../utils/exportUtils'
 
 const formatSettledTime = (timeVal?: string | null, fallbackDate?: string | null): string => {
   if (timeVal && typeof timeVal === 'string' && timeVal.trim() && timeVal.trim() !== 'Vừa xong') {
@@ -326,10 +327,163 @@ export const OverdueManagementPage: React.FC = () => {
 
   const handleExportCsv = async () => {
     try {
-      await overdueService.exportCsv(activeFacilityId, filterStage !== 'ALL' ? filterStage : undefined, searchTerm)
-      toast.success('Đã xuất file báo cáo công nợ CSV thành công!')
+      await overdueService.exportCsv({
+        facilityId: activeFacilityId,
+        stage: filterStage !== 'ALL' ? filterStage : undefined,
+        pinStatus: pinStatusFilter !== 'ALL' ? pinStatusFilter : undefined,
+        sealingStatus: sealingStatusFilter !== 'ALL' ? sealingStatusFilter : undefined,
+        searchTerm: searchTerm.trim() || undefined
+      })
+      toast.success(t('Đã xuất file báo cáo công nợ CSV thành công!', 'Overdue report exported to CSV successfully!'))
     } catch (err: any) {
-      toast.error('Lỗi khi xuất file báo cáo CSV')
+      toast.error(t('Lỗi khi xuất file báo cáo CSV', 'Failed to export CSV report'))
+    }
+  }
+
+  const resolvePinText = (status?: string) => {
+    switch (status) {
+      case 'PIN_ACTIVE': return 'Đang hoạt động (PIN Active)'
+      case 'PIN_ELIGIBLE': return 'Đủ điều kiện thu hồi (>= 3 ngày)'
+      case 'PIN_REVOCATION_PENDING': return 'Chờ duyệt thu hồi PIN'
+      case 'PIN_REVOKED': return 'Đã thu hồi (Lock)'
+      case 'PIN_REVOCATION_FAILED': return 'Thu hồi thất bại'
+      default: return 'Đang hoạt động'
+    }
+  }
+
+  const resolveSealingText = (status?: string) => {
+    switch (status) {
+      case 'NONE': return 'Chưa niêm phong'
+      case 'SEALING_ELIGIBLE': return 'Đủ điều kiện niêm phong (>= 7 ngày)'
+      case 'SEALING_REQUESTED': return 'Chờ duyệt niêm phong'
+      case 'SEALING_APPROVED': return 'Đã duyệt niêm phong'
+      case 'SEALING_IN_PROGRESS': return 'Đang niêm phong'
+      case 'SEALING_COMPLETED': return 'Đã hoàn tất niêm phong'
+      case 'SEALING_REJECTED': return 'Từ chối niêm phong'
+      default: return 'Chưa niêm phong'
+    }
+  }
+
+  const resolveSmartLockText = (status?: string, isMock?: boolean) => {
+    let base = status === 'OFFLINE' ? 'Ngoại tuyến' : 'Trực tuyến'
+    if (isMock) base += ' [MOCK]'
+    return base
+  }
+
+  const handleExportExcel = async () => {
+    try {
+      const res = await overdueService.getContracts({
+        facilityId: activeFacilityId,
+        stage: filterStage !== 'ALL' ? filterStage : undefined,
+        pinStatus: pinStatusFilter !== 'ALL' ? pinStatusFilter : undefined,
+        sealingStatus: sealingStatusFilter !== 'ALL' ? sealingStatusFilter : undefined,
+        searchTerm: searchTerm.trim() || undefined,
+        isDemo: isDemoFilter,
+        page: 0,
+        size: 5000
+      })
+      const list = res?.content || []
+      if (list.length === 0) {
+        toast.info(t('Không có dữ liệu nợ cước để xuất Excel', 'No overdue contracts to export'))
+        return
+      }
+
+      const columns: ExcelColumn[] = [
+        { width: 120 },
+        { width: 90 },
+        { width: 150 },
+        { width: 150 },
+        { width: 110 },
+        { width: 180 },
+        { width: 100 },
+        { width: 90 },
+        { width: 110 },
+        { width: 110 },
+        { width: 120 },
+        { width: 220 },
+        { width: 170 },
+        { width: 190 },
+        { width: 130 }
+      ]
+
+      const rows: ExcelCell[][] = [
+        [
+          { val: 'BÁO CÁO NỢ CƯỚC QUÁ HẠN & THU HỒI PIN/QR SMARTLOCK', style: 'Title' }
+        ],
+        [
+          { val: `Ngày xuất: ${new Date().toLocaleDateString('vi-VN')} | Đơn vị tiền tệ: VNĐ | Hệ thống Quản Lý Boxora`, style: 'Subtitle' }
+        ],
+        [],
+        [
+          { val: 'Mã Hợp Đồng', style: 'Header' },
+          { val: 'Mã Kho', style: 'Header' },
+          { val: 'Cơ Sở', style: 'Header' },
+          { val: 'Khách Hàng', style: 'Header' },
+          { val: 'SĐT', style: 'Header' },
+          { val: 'Email', style: 'Header' },
+          { val: 'Ngày Đến Hạn', style: 'Header' },
+          { val: 'Quá Hạn (ngày)', style: 'Header' },
+          { val: 'Nợ Gốc (VNĐ)', style: 'Header' },
+          { val: 'Phí Phạt (VNĐ)', style: 'Header' },
+          { val: 'Tổng Nợ (VNĐ)', style: 'Header' },
+          { val: 'Phân Nhóm', style: 'Header' },
+          { val: 'Trạng Thái PIN', style: 'Header' },
+          { val: 'Trạng Thái Niêm Phong', style: 'Header' },
+          { val: 'SmartLock IoT', style: 'Header' }
+        ]
+      ]
+
+      list.forEach((item: OverdueContractItem) => {
+        rows.push([
+          { val: item.contractCode || '—' },
+          { val: item.unitCode || '—' },
+          { val: item.facilityName || '—' },
+          { val: item.customerName || '—' },
+          { val: item.customerPhone || '—' },
+          { val: item.customerEmail || '—' },
+          { val: item.dueDate || '—' },
+          { val: item.daysOverdue || 0, type: 'Number', style: 'Number' },
+          { val: item.principalDebt || 0, type: 'Number', style: 'Number' },
+          { val: item.lateFee || 0, type: 'Number', style: 'Number' },
+          { val: item.totalDebt || 0, type: 'Number', style: 'BoldNumber' },
+          { val: item.stageLabel || 'Chưa quá hạn' },
+          { val: resolvePinText(item.pinStatus) },
+          { val: resolveSealingText(item.sealingStatus) },
+          { val: resolveSmartLockText(item.smartLockOnlineStatus, item.smartLockIsMock) }
+        ])
+      })
+
+      const totalPrincipal = list.reduce((sum: number, i: OverdueContractItem) => sum + (i.principalDebt || 0), 0)
+      const totalLate = list.reduce((sum: number, i: OverdueContractItem) => sum + (i.lateFee || 0), 0)
+      const grandTotalDebt = list.reduce((sum: number, i: OverdueContractItem) => sum + (i.totalDebt || 0), 0)
+
+      rows.push([
+        { val: 'TỔNG CỘNG', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: list.length, type: 'Number', style: 'Total' },
+        { val: totalPrincipal, type: 'Number', style: 'Total' },
+        { val: totalLate, type: 'Number', style: 'Total' },
+        { val: grandTotalDebt, type: 'Number', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' },
+        { val: '', style: 'Total' }
+      ])
+
+      downloadExcel(
+        `boxora-bao-cao-no-cuoc-${new Date().toISOString().slice(0, 10)}.xls`,
+        'NoCuocQuaHan',
+        columns,
+        rows
+      )
+      toast.success(t('Đã xuất file Excel báo cáo nợ cước chuẩn tiếng Việt 100%!', 'Overdue report Excel exported successfully!'))
+    } catch (err: any) {
+      toast.error(t('Lỗi khi xuất file Excel báo cáo: ' + (err?.message || ''), 'Failed to export Excel report'))
     }
   }
 
@@ -366,14 +520,24 @@ export const OverdueManagementPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 self-end md:self-auto">
+        <div className="flex items-center gap-2 self-end md:self-auto">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            title={t('Tải file Excel báo cáo nợ cước (Khuyên dùng cho Microsoft Excel - Tiếng Việt chuẩn 100%, tự động chia cột và căn chỉnh)', 'Download overdue Excel report (Recommended for Excel)')}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer hover:shadow-sm"
+          >
+            <span className="material-symbols-outlined text-[17px]">table_view</span>
+            {t('Xuất Excel', 'Export Excel')}
+          </button>
           <button
             type="button"
             onClick={handleExportCsv}
-            className="px-4 py-2 bg-white text-slate-700 text-xs font-bold rounded-xl border border-slate-300 hover:bg-slate-50 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+            title={t('Tải file CSV danh sách nợ cước (UTF-8 BOM)', 'Download overdue CSV report')}
+            className="px-3.5 py-2 bg-white text-slate-700 text-xs font-bold rounded-xl border border-slate-300 hover:bg-slate-50 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
           >
-            <span className="material-symbols-outlined text-[18px] text-slate-500">download</span>
-            {t('Xuất Báo Cáo CSV', 'Export CSV Report')}
+            <span className="material-symbols-outlined text-[17px] text-slate-500">csv</span>
+            {t('Xuất CSV', 'Export CSV')}
           </button>
           <button
             type="button"
@@ -666,6 +830,7 @@ export const OverdueManagementPage: React.FC = () => {
             >
               <option value="ALL">{t('Tất cả trạng thái PIN', 'All PIN Statuses')}</option>
               <option value="PIN_ACTIVE">{t('PIN Active (Mở bình thường)', 'PIN Active (Normal Access)')}</option>
+              <option value="PIN_ELIGIBLE">{t('Đủ ĐK thu hồi PIN (>= 3 ngày)', 'PIN Revocation Eligible (>= 3 Days)')}</option>
               <option value="PIN_REVOCATION_PENDING">{t('Chờ thu hồi PIN', 'Pending PIN Revocation')}</option>
               <option value="PIN_REVOKED">{t('Đã thu hồi PIN (Locked)', 'PIN Revoked (Locked)')}</option>
               <option value="PIN_REVOCATION_FAILED">{t('Thu hồi PIN thất bại', 'PIN Revocation Failed')}</option>
@@ -942,11 +1107,13 @@ export const OverdueManagementPage: React.FC = () => {
                         <div className="flex flex-col gap-1 items-start">
                           <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                             item.pinStatus === 'PIN_ACTIVE' ? 'bg-emerald-100 text-emerald-800' :
+                            item.pinStatus === 'PIN_ELIGIBLE' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
                             item.pinStatus === 'PIN_REVOCATION_PENDING' ? 'bg-amber-100 text-amber-800' :
                             item.pinStatus === 'PIN_REVOKED' ? 'bg-rose-100 text-rose-800' :
                             'bg-slate-200 text-slate-700'
                           }`}>
                             {item.pinStatus === 'PIN_ACTIVE' ? 'PIN Active' :
+                             item.pinStatus === 'PIN_ELIGIBLE' ? t('Đủ ĐK thu hồi PIN', 'Eligible for Revocation') :
                              item.pinStatus === 'PIN_REVOCATION_PENDING' ? t('Chờ thu hồi', 'Revocation Pending') :
                              item.pinStatus === 'PIN_REVOKED' ? t('Đã thu hồi (Lock)', 'Revoked (Lock)') :
                              t('Thu hồi lỗi', 'Revocation Failed')}

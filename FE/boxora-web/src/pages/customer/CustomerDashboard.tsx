@@ -1316,10 +1316,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [selectedSupportTitle, setSelectedSupportTitle] = useState<string>('')
 
   useEffect(() => {
-    if (activeContracts.length > 0 && !ticketUnit) {
-      setTicketUnit(activeContracts[0].unitCode)
+    if (effectiveActivatedContracts.length > 0 && !ticketUnit) {
+      setTicketUnit(effectiveActivatedContracts[0].unitCode)
     }
-  }, [activeContracts, ticketUnit])
+  }, [effectiveActivatedContracts, ticketUnit])
   const nearestEndDate = activeContracts
     .map(c => c.endDate)
     .filter(Boolean)
@@ -2325,9 +2325,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [supportFacilities, ticketFormFacilityId])
 
   const availableActiveUnitsForTicket = useMemo(() => {
-    if (!ticketFormFacilityId) return activeContracts
-    return activeContracts.filter(c => c.facilityId === ticketFormFacilityId || c.facilityName === ticketFormFacilityId)
-  }, [activeContracts, ticketFormFacilityId])
+    if (!ticketFormFacilityId) return effectiveActivatedContracts
+    return effectiveActivatedContracts.filter(c => c.facilityId === ticketFormFacilityId || c.facilityName === ticketFormFacilityId)
+  }, [effectiveActivatedContracts, ticketFormFacilityId])
 
   useEffect(() => {
     if (availableActiveUnitsForTicket.length > 0) {
@@ -3033,7 +3033,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
 
     // 5. Lịch sử Thông báo hệ thống gửi cho khách (customerNotifications)
-    customerNotifications.forEach(n => {
+    const seenSettlementNotifKeys = new Set<string>()
+    const sortedCustomerNotifications = [...customerNotifications].sort((a, b) => {
+      const timeA = new Date(a.createdAt || 0).getTime()
+      const timeB = new Date(b.createdAt || 0).getTime()
+      return timeB - timeA
+    })
+
+    sortedCustomerNotifications.forEach(n => {
       const cleanContent = (n.content || '').replace(/\[\[[\s\S]*?\]\]/g, '').trim()
       const detectedUnit = extractUnitFromText(n.title) || extractUnitFromText(cleanContent)
 
@@ -3082,6 +3089,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               cleanContent.toLowerCase().includes('khấu trừ') ||
               cleanContent.toLowerCase().includes('hiện trường')))
       )
+
+      // Lọc bỏ thông báo quyết toán cũ nếu đã có bản mới hơn cho cùng booking / buồng kho
+      if (isSettlementNotif) {
+        const dedupKey = `${n.referenceId || ''}-${detectedUnit || ''}`
+        if (seenSettlementNotifKeys.has(dedupKey)) {
+          return
+        }
+        seenSettlementNotifKeys.add(dedupKey)
+      }
 
       const isRenewalNotif = !isOverdueDebtNotif && !isSettlementNotif && !isRefundRequestNotif && Boolean(
         n.notificationType?.includes('RENEWAL') ||
@@ -5016,11 +5032,16 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         </button>
                       ) : (
                         <>
-                          {/* Nếu CHƯA ngưng thuê, KHÔNG quá hạn và KHÔNG có yêu cầu trả kho -> hiển thị Yêu Cầu Gia Hạn */}
-                          {!isRentalExpired && c.status !== 'OVERDUE' && c.status !== 'OVERDUE_LOCKED' && !activeReturnRequest && (
+                          {/* Yêu Cầu Gia Hạn Kho: Hiển thị khi chưa ngưng thuê và không có yêu cầu trả kho đang xử lý (áp dụng cho cả đơn Active và Quá Hạn) */}
+                          {!isReturnCompleted && !activeReturnRequest && (
                             <button
+                              type="button"
                               onClick={() => openRenewModal(c)}
-                              className="stitch-btn-secondary flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5"
+                              className={`flex-1 min-w-[130px] text-xs py-2.5 flex items-center justify-center gap-1.5 font-bold transition-all cursor-pointer ${
+                                c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED' || isRentalExpired
+                                  ? 'bg-amber-600 hover:bg-amber-700 text-white rounded-lg shadow-sm shadow-amber-600/20'
+                                  : 'stitch-btn-secondary'
+                              }`}
                             >
                               <span className="material-symbols-outlined text-[18px]">
                                 {activePendingRenewal?.status === 'PENDING_SIGNATURE'
@@ -5034,7 +5055,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                   ? 'Ký Phụ Lục Gia Hạn'
                                   : activePendingRenewal?.status === 'PENDING_PAYMENT'
                                   ? 'Thanh Toán Gia Hạn'
-                                  : 'Yêu Cầu Gia Hạn'}
+                                  : 'Yêu Cầu Gia Hạn Kho'}
                               </span>
                             </button>
                           )}
@@ -5731,7 +5752,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                         <span>Phụ lục ({completedCRenewals.length})</span>
                                       </button>
                                     )}
-                                    {matchedContract.status === 'ACTIVE' && !isContractReturnCompleted(matchedContract) && (
+                                    {(matchedContract.status === 'ACTIVE' || matchedContract.status === 'OVERDUE' || matchedContract.status === 'OVERDUE_LOCKED') && !isContractReturnCompleted(matchedContract) && (
                                       <button
                                         type="button"
                                         onClick={() => openRenewModal(matchedContract)}
@@ -6923,7 +6944,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                         <span>Phụ lục ({completedCRenewals.length})</span>
                                       </button>
                                     )}
-                                    {c.status === 'ACTIVE' && !isContractReturnCompleted(c) && (
+                                    {(c.status === 'ACTIVE' || c.status === 'OVERDUE' || c.status === 'OVERDUE_LOCKED') && !isContractReturnCompleted(c) && (
                                       <button
                                         type="button"
                                         onClick={() => openRenewModal(c)}
@@ -7293,7 +7314,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       {activeTab === 'support' && (
         <CustomerSupportPanel
           user={user}
-          activeContracts={activeContracts}
+          activeContracts={effectiveActivatedContracts}
           contracts={contracts}
           initialUnit={selectedSupportUnit}
           initialCategory={selectedSupportCategory}
@@ -7393,17 +7414,28 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   .map(o => {
                     const isTargeted = returnUnitFilter !== 'ALL' && o.unitCode === returnUnitFilter
                     const isExpanded = Boolean(expandedReturnOrderIds[o.id])
+                    let seenSettlement = false
                     const orderRelatedLogs = returnActivityLogs.filter(log => {
+                      let matched = false
                       if (o.unitCode && log.unitCode && log.unitCode.toUpperCase() === o.unitCode.toUpperCase()) {
-                        return true
+                        matched = true
+                      } else if (o.bookingId && log.meta?.bookingId && log.meta.bookingId === o.bookingId) {
+                        matched = true
+                      } else if (o.ticketCode && (log.title.includes(o.ticketCode) || log.description.includes(o.ticketCode))) {
+                        matched = true
                       }
-                      if (o.bookingId && log.meta?.bookingId && log.meta.bookingId === o.bookingId) {
-                        return true
+                      if (!matched) return false
+
+                      const isSettlementNotif =
+                        log.actionType === 'RETURN_SETTLEMENT' ||
+                        log.title?.toLowerCase().includes('quyết toán') ||
+                        log.title?.toLowerCase().includes('nghiệm thu') ||
+                        log.description?.toLowerCase().includes('quyết toán')
+                      if (isSettlementNotif) {
+                        if (seenSettlement) return false
+                        seenSettlement = true
                       }
-                      if (o.ticketCode && (log.title.includes(o.ticketCode) || log.description.includes(o.ticketCode))) {
-                        return true
-                      }
-                      return false
+                      return true
                     })
 
                     // Kiểm tra xem đơn trả kho đã hoàn tất Bước 3 (Nghiệm thu 7 tiêu chí) và chuyển sang Bước 4 (Quyết toán hoàn cọc)
@@ -9201,834 +9233,5 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                           ? 'Đang Giữ Chỗ (Tại cơ sở)'
                           : selectedBookingForModal.status}
                       </span>
-                      <div className="text-[10px] font-semibold text-slate-600">
-                        {modalInfo.scenario === 'PAID_SIGNED'
-                          ? '✓ Đã thanh toán & Đã ký HĐ'
-                          : modalInfo.scenario === 'PAID_UNSIGNED'
-                          ? '✓ Đã thanh toán đủ'
-                          : '○ Chưa thanh toán (Tại cơ sở)'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Dynamic Status Notice Banner */}
-                  {modalInfo.scenario === 'PAID_SIGNED' && (
-                    <div className="p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 flex items-start gap-2.5">
-                      <span className="material-symbols-outlined text-[20px] text-emerald-600 shrink-0 mt-0.5">
-                        verified
-                      </span>
-                      <div className="leading-relaxed flex-1">
-                        <div className="font-bold text-emerald-900 text-xs mb-0.5 flex items-center justify-between">
-                          <span>Đã thanh toán &amp; ký hợp đồng rồi</span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
-                            <span className="material-symbols-outlined text-[12px]">task_alt</span>
-                            Chờ bàn giao tại cơ sở
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-emerald-800">
-                          Thủ tục hợp đồng và thanh toán đã hoàn tất 100%! Quý khách chỉ cần mang CCCD gốc đến cơ sở Boxora đúng lịch hẹn để đối soát và nhận bàn giao. Boxora sẽ lưu mã PIN/QR sau check-in; vui lòng xác nhận với nhân viên việc cài đặt khóa vật lý. <em>Thời hạn thuê và hiệu lực hợp đồng sẽ chính thức tính từ ngày bạn hoàn tất check-in.</em>
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-
-                  {modalInfo.scenario === 'UNPAID_IN_PERSON' && (
-                    <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-950 flex items-start gap-2.5">
-                      <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0 mt-0.5">
-                        storefront
-                      </span>
-                      <div className="leading-relaxed flex-1">
-                        <div className="font-bold text-amber-900 text-xs mb-0.5 flex items-center justify-between">
-                          <span>Check-in thanh toán và ký hợp đồng tại chỗ</span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-bold">
-                            Thanh toán tại quầy
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-amber-800">
-                          Đơn đặt chỗ được ghi nhận theo loại kho và cơ sở. Vị trí cụ thể sẽ được xác nhận cùng nhân viên khi check-in.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Schedule and Hold Expiry (Clearly distinguishes expected dates before handover vs official dates after handover) */}
-                  <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2.5">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {selectedBookingForModal.handoverTime ? 'Thời điểm bàn giao thực tế:' : 'Lịch hẹn nhận kho:'}
-                        </span>
-                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                          <strong className="font-mono text-slate-900 text-xs">
-                            {selectedBookingForModal.handoverTime
-                              ? new Date(selectedBookingForModal.handoverTime).toLocaleString('vi-VN')
-                              : selectedBookingForModal.expectedCheckInAt
-                              ? new Date(selectedBookingForModal.expectedCheckInAt).toLocaleString('vi-VN')
-                              : selectedBookingForModal.startDate}
-                          </strong>
-                          {(() => {
-                            const notice = getCheckInNoticeInfo(selectedBookingForModal)
-                            if (!notice) return null
-                            return (
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                notice.type === 'OVERDUE'
-                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                  : notice.type === 'TODAY'
-                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                  : 'bg-blue-100 text-blue-800 border-blue-300'
-                              }`}>
-                                <span className="material-symbols-outlined text-[11px]">
-                                  {notice.type === 'OVERDUE' ? 'warning' : notice.type === 'TODAY' ? 'schedule' : 'event'}
-                                </span>
-                                <span>{notice.text}</span>
-                              </span>
-                            )
-                          })()}
-                        </div>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {selectedBookingForModal.handoverTime ? 'Trạng thái bàn giao:' : 'Hạn bảo lưu giữ chỗ:'}
-                        </span>
-                        <strong className={`font-mono text-xs ${selectedBookingForModal.handoverTime ? 'text-emerald-700' : 'text-amber-700'}`}>
-                          {selectedBookingForModal.handoverTime
-                            ? 'Đã hoàn tất bàn giao & kích hoạt'
-                            : selectedBookingForModal.holdExpiresAt
-                            ? new Date(selectedBookingForModal.holdExpiresAt).toLocaleString('vi-VN')
-                            : 'Theo chính sách cơ sở'}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          {selectedBookingForModal.handoverTime ? 'Kỳ hạn thuê chính thức:' : 'Kỳ hạn thuê dự kiến:'}
-                        </span>
-                        <span className="font-semibold text-slate-800">
-                          {selectedBookingForModal.startDate} → {selectedBookingForModal.endDate} ({selectedBookingForModal.rentalMonths} tháng)
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Tiền cọc giữ chỗ:</span>
-                        <span className="font-mono font-bold text-blue-600">
-                          {Number(selectedBookingForModal.depositPaid || selectedBookingForModal.depositAmount || 0).toLocaleString('vi-VN')} ₫
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Handover Steps Guide */}
-                  <div className="space-y-2">
-                    <h4 className="font-bold text-slate-900 uppercase text-[11px] tracking-wider">
-                      Quy trình nhận kho tại cơ sở Boxora
-                    </h4>
-                    <div className="space-y-2 border border-slate-200 rounded-xl p-3 bg-white">
-                      <div className="flex items-start gap-2.5">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">1</span>
-                        <p className="text-[11px] leading-relaxed">
-                          <strong>Mang CCCD / Hộ chiếu gốc:</strong> Đến quầy tiếp đón của cơ sở <strong>{selectedBookingForModal.facilityName}</strong> đúng theo lịch hẹn.
-                        </p>
-                      </div>
-                      <div className="flex items-start gap-2.5">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">2</span>
-                        <p className="text-[11px] leading-relaxed">
-                          <strong>Cung cấp mã #{selectedBookingForModal.bookingCode}:</strong> Nhân viên trực quầy sẽ đối soát và dẫn bạn đi xem thực tế ngăn kho.
-                        </p>
-                      </div>
-                      <div className="flex items-start gap-2.5">
-                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">3</span>
-                        <p className="text-[11px] leading-relaxed">
-                          {modalInfo.scenario === 'PAID_SIGNED' ? (
-                            <>
-                              <strong>Nghiệm thu &amp; Bàn giao nhanh:</strong> Hồ sơ hợp đồng và thanh toán đã hoàn tất 100%. Quý khách chỉ cần nghiệm thu ngăn kho thực tế và nhận bàn giao ngay.
-                            </>
-                          ) : modalInfo.scenario === 'PAID_UNSIGNED' ? (
-                            <>
-                              <strong>Ký hợp đồng &amp; Nghiệm thu:</strong> Đơn kho đã thanh toán đủ. Quý khách vui lòng ký hợp đồng điện tử trực tuyến hoặc ký trực tiếp tại cơ sở trước khi nhận bàn giao kho.
-                            </>
-                          ) : (
-                            <>
-                              <strong>Ký hợp đồng &amp; Thanh toán tại chỗ:</strong> Nghiệm thu thực tế ngăn kho, ký hợp đồng và thanh toán trực tuyến qua quét mã VietQR / cổng VNPay.
-                            </>
-                          )}
-                        </p>
-                      </div>
-                      <div className="flex items-start gap-2.5">
-                        <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5">4</span>
-                        <p className="text-[11px] leading-relaxed">
-                          <strong>Lưu mã PIN/QR:</strong> Sau khi bàn giao hoàn tất, Boxora lưu mã PIN/QR. Việc cài đặt hoặc hoạt động của khóa vật lý cần được cơ sở xác nhận.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Append-Only Check-in Rescheduling History */}
-                  <div className="border-t border-slate-200/80 pt-3">
-                    <BookingRescheduleHistorySection bookingId={selectedBookingForModal.id} />
-                  </div>
-
-                  {/* Action buttons */}
-                  <div className="pt-2 flex flex-col sm:flex-row items-center gap-2">
-                    
-                    <button
-                      type="button"
-                      onClick={() => setSelectedBookingForModal(null)}
-                      className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer text-center shadow-sm"
-                    >
-                      Đóng
-                    </button>
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* Customer Policy Modal (Read-Only) */}
-      <CustomerPolicyModal
-        isOpen={isCustomerPolicyModalOpen}
-        onClose={() => setIsCustomerPolicyModalOpen(false)}
-        facilityId={customerPolicyFacility?.id || (selectedBookingUnit ? facilities.find(f => f.name === selectedBookingUnit.facilityName || f.id === selectedBookingUnit.facilityId)?.id : undefined) || facilities[0]?.id}
-        facilityName={customerPolicyFacility?.name || selectedBookingUnit?.facilityName || facilities[0]?.name}
-        initialTab={customerPolicyModalTab}
-      />
-
-      {/* Booking Cancellation Modal (3 Refund Milestones & Unit Release) */}
-      <BookingCancelModal
-        isOpen={Boolean(cancellingBookingTarget)}
-        booking={cancellingBookingTarget}
-        onClose={() => {
-          setCancellingBookingTarget(null)
-          handleTabChange('bookings')
-        }}
-        onSuccess={async () => {
-          await Promise.all([
-            fetchCustomerBookings(),
-            fetchContracts(),
-            fetchCustomerPayments(),
-            fetchAvailableUnits(),
-          ])
-          window.dispatchEvent(new Event('boxora:storage-units-refresh'))
-        }}
-      />
-
-      {/* Ticket closure confirmation: Task 2 standardized modal */}
-      <TicketCloseConfirmModal
-        isOpen={Boolean(closeTicketTarget)}
-        ticket={closeTicketTarget}
-        onClose={() => setCloseTicketTarget(null)}
-        onSuccess={async () => {
-          await fetchCustomerTickets()
-        }}
-      />
-
-      {/* Reopen Ticket Modal (Customer Request Re-handling) */}
-      {reopenModalTicket && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-rose-600 text-[22px]">restart_alt</span>
-                <h3 className="font-bold text-slate-900 text-sm">
-                  Yêu Cầu Xử Lý Lại Sự Cố #{reopenModalTicket.ticketCode || reopenModalTicket.id.substring(0, 8)}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setReopenModalTicket(null)}
-                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-lg"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Nếu sự cố của bạn chưa được khắc phục triệt để hoặc phát sinh vấn đề mới liên quan, vui lòng nêu rõ lý do để kỹ thuật viên kiểm tra lại.
-              </p>
-
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Lý do yêu cầu xử lý lại <span className="text-rose-500">*</span>
-                </label>
-                <textarea
-                  rows={4}
-                  value={reopenReasonText}
-                  onChange={(e) => setReopenReasonText(e.target.value)}
-                  placeholder="Ví dụ: Khóa thông minh vẫn báo lỗi sau khi mở lần đầu, hoặc cửa cuốn vẫn phát tiếng kêu bất thường..."
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-500 focus:bg-white transition-all resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                disabled={isProcessingTicketAction}
-                onClick={() => setReopenModalTicket(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                disabled={isProcessingTicketAction || !reopenReasonText.trim()}
-                onClick={handleReopenCustomerTicket}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer flex items-center gap-1.5"
-              >
-                {isProcessingTicketAction ? (
-                  <>
-                    <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
-                    <span>Đang gửi...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[16px]">send</span>
-                    <span>Gửi Yêu Cầu Xử Lý Lại</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: VĂN BẢN & KÝ SỐ PHỤ LỤC GIA HẠN HỢP ĐỒNG */}
-      <RenewalAddendumModal
-        renewal={selectedRenewalForDocModal}
-        contract={
-          selectedRenewalForDocModal
-            ? contracts.find(
-                c =>
-                  c.id === selectedRenewalForDocModal.contractId ||
-                  c.unitCode === selectedRenewalForDocModal.unitCode
-              ) || null
-            : null
-        }
-        onClose={() => setSelectedRenewalForDocModal(null)}
-        onSignedSuccess={async updatedRenewal => {
-          setSelectedRenewalForDocModal(updatedRenewal)
-          recordUnitActivity({
-            unitCode: updatedRenewal.unitCode,
-            facilityName: updatedRenewal.facilityName,
-            category: 'RENEWAL',
-            actionType: 'RENEWAL_APPROVED',
-            title: `Đã ký điện tử Phụ lục gia hạn kho #${updatedRenewal.unitCode} (+${updatedRenewal.cycleMonths} tháng)`,
-            description: `Khách hàng đã ký điện tử Phụ lục gia hạn hợp đồng #${updatedRenewal.contractCode} thêm ${updatedRenewal.cycleMonths} tháng (từ ${formatDisplayDate(updatedRenewal.oldEndDate)} đến ${formatDisplayDate(updatedRenewal.newEndDate)}). Chờ thanh toán phí gia hạn ${Number(updatedRenewal.renewalFee || 0).toLocaleString('vi-VN')} ₫.`,
-            statusLabel: 'Đã ký phụ lục • Chờ thanh toán',
-            statusTone: 'blue',
-            meta: {
-              oldEndDate: updatedRenewal.oldEndDate,
-              newEndDate: updatedRenewal.newEndDate,
-              cycleMonths: updatedRenewal.cycleMonths,
-              amount: updatedRenewal.renewalFee,
-              contractCode: updatedRenewal.contractCode,
-              renewalId: updatedRenewal.id,
-            },
-          })
-          await Promise.all([fetchMyRenewals(), fetchContracts(), fetchCustomerNotifications()])
-        }}
-        onPayNow={renewalToPay => {
-          setSelectedRenewalForDocModal(null)
-          void handlePayRenewal(renewalToPay)
-        }}
-      />
-
-      {/* MODAL: ĐỔI PHƯƠNG THỨC KÝ PHỤ LỤC & THANH TOÁN GIA HẠN (ONLINE <-> TẠI QUẦY) */}
-      {switchMethodTarget && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <form
-            onSubmit={handleSubmitSwitchRenewalMethod}
-            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4"
-          >
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div>
-                <h3 className="font-headline text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-blue-600 text-[20px]">swap_horiz</span>
-                  <span>Chọn Phương Thức Ký Phụ Lục &amp; Gia Hạn</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Kho #{switchMethodTarget.unitCode} • Phụ lục +{switchMethodTarget.cycleMonths} tháng
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSwitchMethodTarget(null)}
-                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setSwitchMethodMode('ONLINE')}
-                className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                  switchMethodMode === 'ONLINE'
-                    ? 'bg-blue-50 border-blue-500 text-blue-900 ring-2 ring-blue-500/20'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <span className="material-symbols-outlined text-[18px] text-blue-600">draw</span>
-                  <span>Ký Online &amp; VNPay</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Ký số phụ lục ngay trên web và thanh toán trực tuyến 24/7.
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSwitchMethodMode('COUNTER')}
-                className={`p-3 rounded-xl border text-left transition cursor-pointer ${
-                  switchMethodMode === 'COUNTER'
-                    ? 'bg-amber-50 border-amber-500 text-amber-900 ring-2 ring-amber-500/20'
-                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 font-bold text-xs">
-                  <span className="material-symbols-outlined text-[18px] text-amber-600">storefront</span>
-                  <span>Trực Tiếp Tại Quầy</span>
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Đặt lịch hẹn đến quầy lễ tân cơ sở để ký phụ lục giấy và nộp phí.
-                </p>
-              </button>
-            </div>
-
-            {switchMethodMode === 'COUNTER' && (
-              <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                    Ngày hẹn đến quầy
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={switchAppointmentDate}
-                    min={new Date().toISOString().split('T')[0]}
-                    onChange={e => setSwitchAppointmentDate(e.target.value)}
-                    className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                    Khung giờ hẹn
-                  </label>
-                  <input
-                    type="time"
-                    required
-                    value={switchAppointmentTime}
-                    onChange={e => setSwitchAppointmentTime(e.target.value)}
-                    className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
-                  />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                Ghi chú (tùy chọn)
-              </label>
-              <input
-                type="text"
-                value={switchMethodNotes}
-                onChange={e => setSwitchMethodNotes(e.target.value)}
-                placeholder="Ghi chú thêm cho nhân viên cơ sở..."
-                className="w-full h-9 px-3 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-              />
-            </div>
-
-            {switchMethodError && (
-              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
-                {switchMethodError}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setSwitchMethodTarget(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmittingSwitchMethod}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer"
-              >
-                {isSubmittingSwitchMethod ? 'Đang lưu...' : 'Xác Nhận Phương Thức'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* MODAL: CHI TIẾT CÁC HỢP ĐỒNG ĐÃ KÝ TRƯỚC ĐÓ */}
-      {contractHistoryModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shadow-xs">
-                  <span className="material-symbols-outlined text-[24px]">history_edu</span>
-                </div>
-                <div>
-                  <h3 className="font-headline text-base font-bold text-slate-900 flex items-center gap-2">
-                    <span>Lịch Sử Hợp Đồng &amp; Phụ Lục Gia Hạn</span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-100 text-blue-800">
-                      Tổng {contractHistoryModal.renewals.length + 1} Hợp đồng
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {contractHistoryModal.contract.unitCode ? `Kho #${contractHistoryModal.contract.unitCode}` : 'Vị trí kho xác nhận khi nhận kho'} • {contractHistoryModal.contract.facilityName}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setContractHistoryModal(null)}
-                className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-700 flex items-center justify-center transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Summary Banner */}
-            <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/80 rounded-xl flex items-center justify-between text-xs">
-              <div className="space-y-0.5">
-                <span className="text-slate-500 font-medium block text-[11px]">Hiệu lực thuê tích lũy hiện tại:</span>
-                <span className="font-mono font-bold text-blue-900 text-sm">
-                  {formatDisplayDate(contractHistoryModal.contract.startDate)} → {formatDisplayDate(contractHistoryModal.contract.endDate)}
-                </span>
-              </div>
-              <div className="text-right space-y-0.5">
-                <span className="text-slate-500 font-medium block text-[11px]">Trạng thái hợp đồng:</span>
-                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                  contractHistoryModal.contract.status === 'ACTIVE'
-                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                    : contractHistoryModal.contract.status === 'TERMINATED'
-                    ? 'bg-slate-100 text-slate-700 border-slate-300'
-                    : contractHistoryModal.contract.status === 'EXPIRED'
-                    ? 'bg-orange-100 text-orange-800 border-orange-300'
-                    : 'bg-slate-100 text-slate-700 border-slate-200'
-                }`}>
-                  {contractHistoryModal.contract.status === 'ACTIVE'
-                    ? 'Đang hoạt động'
-                    : contractHistoryModal.contract.status === 'TERMINATED'
-                    ? 'Đã thanh lý'
-                    : contractHistoryModal.contract.status === 'EXPIRED'
-                    ? 'Đã hết hạn'
-                    : contractHistoryModal.contract.status}
-                </span>
-              </div>
-            </div>
-
-            {/* Timeline of Contracts */}
-            <div className="space-y-4">
-              {/* 1. HỢP ĐỒNG GỐC BAN ĐẦU */}
-              <div className="border border-slate-200 rounded-xl p-4 bg-white shadow-2xs space-y-2.5 relative">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-slate-900 text-white text-[11px] font-bold flex items-center justify-center">
-                      1
-                    </span>
-                    <span className="font-bold text-slate-900 text-xs uppercase tracking-wider">
-                      Hợp Đồng Gốc Ban Đầu
-                    </span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
-                      Hợp đồng chính
-                    </span>
-                  </div>
-                  <span className="font-mono font-bold text-slate-800 text-xs">
-                    #{contractHistoryModal.contract.contractCode || `CTR-BX-${contractHistoryModal.contract.id.slice(0, 8)}`}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                  <div className="p-2 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-500 block">Ngày bắt đầu</span>
-                    <span className="font-mono font-semibold text-slate-900">
-                      {formatDisplayDate(contractHistoryModal.contract.startDate)}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-500 block">Ngày kết thúc ban đầu</span>
-                    <span className="font-mono font-semibold text-slate-900">
-                      {formatDisplayDate(
-                        contractHistoryModal.renewals.length > 0
-                          ? contractHistoryModal.renewals[0].oldEndDate
-                          : contractHistoryModal.contract.endDate
-                      )}
-                    </span>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-500 block">Cước thuê tháng</span>
-                    <span className="font-semibold text-blue-700">
-                      {Number(contractHistoryModal.contract.monthlyFee || 0).toLocaleString('vi-VN')} ₫
-                    </span>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg">
-                    <span className="text-[10px] text-slate-500 block">Tiền cọc lưu ký</span>
-                    <span className="font-semibold text-slate-900">
-                      {getContractDepositHeld(contractHistoryModal.contract).toLocaleString('vi-VN')} ₫
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[15px] text-emerald-600">verified_user</span>
-                    <span>Đã hoàn tất ký số &amp; thanh toán kích hoạt kho</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const initialContract = {
-                        ...contractHistoryModal.contract,
-                        endDate:
-                          contractHistoryModal.renewals.length > 0
-                            ? contractHistoryModal.renewals[0].oldEndDate
-                            : contractHistoryModal.contract.endDate,
-                      }
-                      setSelectedContractForModal(initialContract)
-                      setContractHistoryModal(null)
-                    }}
-                    className="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>Xem văn bản hợp đồng gốc</span>
-                    <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 2. CÁC PHỤ LỤC GIA HẠN */}
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    Các Phụ Lục Gia Hạn Hợp Đồng ({contractHistoryModal.renewals.length})
-                  </span>
-                </div>
-
-                {contractHistoryModal.renewals.map((r: any, idx: number) => (
-                  <div
-                    key={r.id}
-                    className="border border-blue-200/90 rounded-xl p-4 bg-gradient-to-r from-white to-blue-50/30 shadow-2xs space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold flex items-center justify-center">
-                          {idx + 2}
-                        </span>
-                        <span className="font-bold text-slate-900 text-xs">
-                          Phụ Lục Gia Hạn Lần {idx + 1}
-                        </span>
-                        <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[12px]">check</span>
-                          <span>Đã ký &amp; thanh toán</span>
-                        </span>
-                      </div>
-                      <span className="font-mono text-xs font-bold text-blue-700">
-                        + {r.cycleMonths} Tháng
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
-                        <span className="text-[10px] text-slate-500 block">Thời hạn nối tiếp</span>
-                        <span className="font-mono text-[11px] font-semibold text-slate-800">
-                          {formatDisplayDate(r.oldEndDate)}
-                        </span>
-                      </div>
-                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
-                        <span className="text-[10px] text-slate-500 block">Thời hạn gia hạn mới</span>
-                        <span className="font-mono text-[11px] font-bold text-emerald-700">
-                          {formatDisplayDate(r.newEndDate)}
-                        </span>
-                      </div>
-                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
-                        <span className="text-[10px] text-slate-500 block">Tổng phí gia hạn</span>
-                        <span className="font-bold text-blue-700">
-                          {Number(r.renewalFee || 0).toLocaleString('vi-VN')} ₫
-                        </span>
-                      </div>
-                      <div className="p-2 bg-white border border-slate-200/70 rounded-lg">
-                        <span className="text-[10px] text-slate-500 block">Phương thức</span>
-                        <span className="font-semibold text-slate-800">
-                          {r.paymentMethod ? r.paymentMethod : 'Ký online + Chuyển khoản'}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-slate-100">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] text-slate-500">
-                          {r.notes ? `Ghi chú: ${r.notes}` : 'Phụ lục gia hạn đã được lưu trữ và có giá trị pháp lý tương đương hợp đồng gốc.'}
-                        </span>
-                        {(r.customerName || r.reviewedByName) && (
-                          <span className="text-[11px] text-blue-800 font-medium">
-                            • Người ký: <strong>{r.customerName || r.reviewedByName}</strong>
-                          </span>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedRenewalForDocModal(r)
-                        }}
-                        className="text-blue-600 hover:text-blue-800 font-bold text-xs flex items-center gap-1 cursor-pointer py-1 ml-auto shrink-0"
-                        title="Xem văn bản phụ lục gia hạn"
-                      >
-                        <span>Xem văn bản phụ lục</span>
-                        <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setContractHistoryModal(null)}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Nghiệm thu, Đối soát hoàn cọc / bồi thường dành cho Khách hàng */}
-      {selectedBookingForSettlementModal && (
-        <CustomerSettlementReviewModal
-          isOpen={Boolean(selectedBookingForSettlementModal)}
-          onClose={() => {
-            setSelectedBookingForSettlementModal(null)
-            setIsSettlementReadOnly(false)
-          }}
-          bookingId={selectedBookingForSettlementModal}
-          readOnly={isSettlementReadOnly}
-          onUpdated={async () => {
-            await Promise.all([fetchCustomerNotifications(), fetchCustomerBookings()])
-          }}
-        />
-      )}
-
-      {/* Modal Xác Nhận Hủy Yêu Cầu Trả Kho */}
-      {confirmCancelReturnModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div
-            className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden text-left animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header Modal */}
-            <div className="p-5 border-b border-rose-100 bg-rose-50/70 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 text-rose-600 flex items-center justify-center font-bold shrink-0 shadow-2xs">
-                  <span className="material-symbols-outlined text-[22px]">undo</span>
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-rose-950">
-                    Xác Nhận Hủy Yêu Cầu Trả Kho
-                  </h3>
-                  <span className="text-[11px] font-mono text-rose-700/80">
-                    Kho #{confirmCancelReturnModal.unitCode} {confirmCancelReturnModal.contractCode ? `• Hợp đồng #${confirmCancelReturnModal.contractCode}` : ''}
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setConfirmCancelReturnModal(null)}
-                disabled={Boolean(cancellingReturnUnit)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer disabled:opacity-50"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Body Modal */}
-            <div className="p-6 space-y-4 text-xs text-slate-700">
-              <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-medium">Buồng kho áp dụng:</span>
-                  <span className="font-mono font-bold text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-                    #{confirmCancelReturnModal.unitCode}
-                  </span>
-                </div>
-                {confirmCancelReturnModal.facilityName && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-500 font-medium">Cơ sở lưu trữ:</span>
-                    <span className="font-bold text-slate-800">
-                      {confirmCancelReturnModal.facilityName}
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-medium">Trạng thái hiện tại:</span>
-                  <span className="font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                    Đang xử lý trả kho &amp; đối soát
-                  </span>
-                </div>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-blue-950 space-y-1.5 leading-relaxed">
-                <div className="font-bold flex items-center gap-1.5 text-blue-900">
-                  <span className="material-symbols-outlined text-[16px] text-blue-700">info</span>
-                  <span>Quyền lợi của bạn:</span>
-                </div>
-                <p className="text-[11px] text-blue-800">
-                  Sau khi hủy yêu cầu trả kho, kho của bạn sẽ <strong>tiếp tục duy trì trạng thái hoạt động bình thường</strong>. Bạn vẫn có thể truy cập kho và thực hiện <strong>Yêu Cầu Gia Hạn</strong> tiếp tục thuê kho.
-                </p>
-                <p className="text-[11px] text-blue-700 italic">
-                  * Mọi thủ tục nghiệm thu, kiểm tra hiện trường hoặc quyết toán hoàn cọc tương ứng sẽ được dừng lại.
-                </p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-slate-100">
-                <button
-                  type="button"
-                  disabled={Boolean(cancellingReturnUnit)}
-                  onClick={() => setConfirmCancelReturnModal(null)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer transition disabled:opacity-50"
-                >
-                  Giữ Lại Yêu Cầu
-                </button>
-                <button
-                  type="button"
-                  disabled={Boolean(cancellingReturnUnit)}
-                  onClick={handleConfirmCancelReturn}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-98 text-white text-xs font-bold transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {cancellingReturnUnit ? (
-                    <>
-                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Đang hủy yêu cầu...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[16px]">undo</span>
-                      <span>Xác Nhận Hủy Trả Kho</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
-  )
-}
-
-export default CustomerDashboard
+            
+... [truncated for diff preview]

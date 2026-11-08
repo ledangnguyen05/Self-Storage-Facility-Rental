@@ -101,6 +101,9 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                     booking.setAccessPin(null);
                     booking.setQrAccessToken("REVOKED_EXPIRED");
                     bookingRepository.save(booking);
+                    contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
+                    contract.setStatus(RentalContractStatus.OVERDUE_LOCKED);
+                    rentalContractRepository.save(contract);
                     activityLogService.recordSystem(
                             facility.getId(),
                             ActivityAction.ACCESS_CREDENTIAL_REVOKE,
@@ -215,6 +218,8 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                         && "REVOKED_OVERDUE".equals(booking.getQrAccessToken());
                 if (alreadyDisabled) {
                     pinAccessDisabled = true;
+                    contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
+                    contract.setStatus(RentalContractStatus.OVERDUE_LOCKED);
                     actions.add("PIN/QR credentials were already revoked in Boxora; physical lock state is unverified.");
                 } else if ((booking.getStatus() == BookingStatus.ACTIVE || booking.getStatus() == BookingStatus.OVERDUE)
                         && isRecognizedPaymentStatus(booking.getPaymentStatus())
@@ -225,6 +230,8 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                     bookingRepository.save(booking);
 
                     pinAccessDisabled = true;
+                    contract.setOverduePinStatus(OverduePinStatus.PIN_REVOKED);
+                    contract.setStatus(RentalContractStatus.OVERDUE_LOCKED);
                     pinLockCount++;
                     actions.add("PIN/QR credentials revoked in Boxora; physical lock state is unverified.");
                     activityLogService.recordSystem(
@@ -238,10 +245,19 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                 } else {
                     actions.add("Skipped credential revocation for cancelled or refunded booking.");
                 }
+            } else if (policy != null && policy.getOverdueAccessDisableDays() != null
+                    && overdueDays >= policy.getOverdueAccessDisableDays()) {
+                if (contract.getOverduePinStatus() == null || contract.getOverduePinStatus() == OverduePinStatus.PIN_ACTIVE) {
+                    contract.setOverduePinStatus(OverduePinStatus.PIN_ELIGIBLE);
+                }
             }
+
             if (policy != null && policy.getOverdueSealingDays() != null && policy.getOverdueSealingDays() >= 0
                     && overdueDays >= policy.getOverdueSealingDays()) {
                 sealingEligibleCount++;
+                if (contract.getOverdueSealingStatus() == null || contract.getOverdueSealingStatus() == OverdueSealingStatus.NONE) {
+                    contract.setOverdueSealingStatus(OverdueSealingStatus.SEALING_ELIGIBLE);
+                }
                 actions.add("Eligible for on-site sealing under the facility policy; no physical sealing was performed by this scan.");
             }
             rentalContractRepository.save(contract);
