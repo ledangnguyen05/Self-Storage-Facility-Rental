@@ -325,21 +325,6 @@ export const OverdueManagementPage: React.FC = () => {
     fetchContracts()
   }
 
-  const handleExportCsv = async () => {
-    try {
-      await overdueService.exportCsv({
-        facilityId: activeFacilityId,
-        stage: filterStage !== 'ALL' ? filterStage : undefined,
-        pinStatus: pinStatusFilter !== 'ALL' ? pinStatusFilter : undefined,
-        sealingStatus: sealingStatusFilter !== 'ALL' ? sealingStatusFilter : undefined,
-        searchTerm: searchTerm.trim() || undefined
-      })
-      toast.success(t('Đã xuất file báo cáo công nợ CSV thành công!', 'Overdue report exported to CSV successfully!'))
-    } catch (err: any) {
-      toast.error(t('Lỗi khi xuất file báo cáo CSV', 'Failed to export CSV report'))
-    }
-  }
-
   const resolvePinText = (status?: string) => {
     switch (status) {
       case 'PIN_ACTIVE': return 'Đang hoạt động (PIN Active)'
@@ -529,15 +514,6 @@ export const OverdueManagementPage: React.FC = () => {
           >
             <span className="material-symbols-outlined text-[17px]">table_view</span>
             {t('Xuất Excel', 'Export Excel')}
-          </button>
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            title={t('Tải file CSV danh sách nợ cước (UTF-8 BOM)', 'Download overdue CSV report')}
-            className="px-3.5 py-2 bg-white text-slate-700 text-xs font-bold rounded-xl border border-slate-300 hover:bg-slate-50 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[17px] text-slate-500">csv</span>
-            {t('Xuất CSV', 'Export CSV')}
           </button>
           <button
             type="button"
