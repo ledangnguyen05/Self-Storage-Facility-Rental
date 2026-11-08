@@ -37,7 +37,7 @@ public class PaymentController {
 
     private final PaymentService paymentService;
 
-    @Value("${app.frontend-url:https://boxora-storage.pages.dev}")
+    @Value("${app.frontend-url:https://boxora-web.vercel.app}")
     private String frontendUrl;
 
     private final Map<String, String> txnFrontendUrlMap = new java.util.concurrent.ConcurrentHashMap<>();
@@ -66,7 +66,7 @@ public class PaymentController {
                 return "http://localhost:5173";
             }
         }
-        return frontendUrl != null && !frontendUrl.isBlank() ? frontendUrl.replaceAll("/+$", "") : "http://localhost:5173";
+        return frontendUrl != null && !frontendUrl.isBlank() ? frontendUrl.replaceAll("/+$", "") : "https://boxora-web.vercel.app";
     }
 
     @PostMapping("vnpay/create")

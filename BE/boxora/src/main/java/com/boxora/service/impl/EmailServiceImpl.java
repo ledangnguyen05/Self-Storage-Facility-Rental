@@ -28,7 +28,7 @@ public class EmailServiceImpl implements EmailService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
-    @Value("${app.frontend-url}")
+    @Value("${app.frontend-url:https://boxora-web.vercel.app}")
     private String frontendUrl;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -361,7 +361,8 @@ public class EmailServiceImpl implements EmailService {
                 pinBoxBorder
         );
 
-        String button = renderButton("Xem Văn Bản Hợp Đồng Đã Ký", contractUrl, "#0284c7");
+        String resolvedContractUrl = resolveUrl(contractUrl != null && !contractUrl.isBlank() ? contractUrl : "/portal/customer?tab=contracts");
+        String button = renderButton("Xem Văn Bản Hợp Đồng Đã Ký", resolvedContractUrl, "#0284c7");
 
         String note = isCheckedIn
                 ? renderSecurityNote("Quý khách có thể đổi mã PIN bất kỳ lúc nào trên ứng dụng Boxora sau khi nhận kho. Vui lòng bảo mật thông tin mã PIN để bảo vệ tài sản lưu trữ.")
@@ -1466,7 +1467,7 @@ public class EmailServiceImpl implements EmailService {
                 unitCode != null ? unitCode : "Kho tự quản",
                 reason != null ? reason : "Không có lý do chi tiết",
                 (refundAmount != null && refundAmount.compareTo(BigDecimal.ZERO) > 0) ? "- Số tiền hoàn cọc: " + formatVnd(refundAmount) : "",
-                frontendUrl != null ? frontendUrl : "https://boxora.vn"
+                frontendUrl != null ? frontendUrl : "https://boxora-web.vercel.app"
         );
 
         sendHtmlEmail(toEmail, subject, html, plainText);
@@ -1610,7 +1611,7 @@ public class EmailServiceImpl implements EmailService {
         if (transferProofUrl != null && !transferProofUrl.isBlank()) {
             String fullProofUrl = transferProofUrl;
             if (transferProofUrl.startsWith("/uploads/")) {
-                String baseUrl = (frontendUrl != null && !frontendUrl.isBlank()) ? frontendUrl.trim().replaceAll("/+$", "") : "http://localhost:8080";
+                String baseUrl = (frontendUrl != null && !frontendUrl.isBlank()) ? frontendUrl.trim().replaceAll("/+$", "") : "https://boxora-web.vercel.app";
                 fullProofUrl = baseUrl + transferProofUrl;
             }
             detailsBuilder.append(renderDetailRow("Chứng từ chuyển tiền", "<a href='" + escape(fullProofUrl) + "' target='_blank' style='color: #1d4ed8; font-weight: 600; text-decoration: underline;'>Xem ảnh ủy nhiệm chi chuyển tiền</a>"));

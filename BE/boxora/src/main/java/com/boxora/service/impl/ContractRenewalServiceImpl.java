@@ -52,7 +52,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
-    @Value("${app.frontend-url:http://localhost:5173}")
+    @Value("${app.frontend-url:https://boxora-web.vercel.app}")
     private String frontendUrl;
 
     private final DocuSealClient docuSealClient;
@@ -773,7 +773,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
             renewal.setSignatureData(request.getSignatureData());
             renewal.setSignedAt(LocalDateTime.now());
             if (renewal.getSignedDocumentUrl() == null) {
-                renewal.setSignedDocumentUrl("https://boxora.vn/contracts/renewals/signed-" + renewal.getId() + ".pdf");
+                renewal.setSignedDocumentUrl("https://boxora-web.vercel.app/contracts/renewals/signed-" + renewal.getId() + ".pdf");
             }
         }
 
@@ -1069,7 +1069,7 @@ public class ContractRenewalServiceImpl implements ContractRenewalService {
         renewal.setPaymentMethod("ONLINE");
         renewal.setCounterAppointmentDate(null);
         renewal.setSignatureData(signatureData);
-        String mockSignedUrl = "https://boxora.vn/contracts/renewals/signed-" + renewal.getId() + ".pdf";
+        String mockSignedUrl = "https://boxora-web.vercel.app/contracts/renewals/signed-" + renewal.getId() + ".pdf";
         renewal.setSignedDocumentUrl(mockSignedUrl);
         renewal.setSignedAt(LocalDateTime.now());
         renewal = contractRenewalRepository.save(renewal);

@@ -37,7 +37,7 @@ class EmailServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(emailService, "fromEmail", "no-reply@boxora.com");
-        ReflectionTestUtils.setField(emailService, "frontendUrl", "https://boxora.vn");
+        ReflectionTestUtils.setField(emailService, "frontendUrl", "https://boxora-web.vercel.app");
 
         lenient().when(mailSender.createMimeMessage()).thenAnswer(inv -> new MimeMessage(Session.getInstance(new Properties())));
     }
@@ -539,7 +539,7 @@ class EmailServiceTest {
         String html = extractHtml(captor.getValue());
         assertThat(html).contains("Vũ Minh Tuấn");
         assertThat(html).contains("15 phút");
-        assertThat(html).contains("https://boxora.vn/reset-password?token=secret-reset-token-xyz");
+        assertThat(html).contains("https://boxora-web.vercel.app/reset-password?token=secret-reset-token-xyz");
         assertThat(html).contains("Đặt Lại Mật Khẩu Ngay");
     }
 

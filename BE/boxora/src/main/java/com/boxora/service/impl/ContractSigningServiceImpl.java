@@ -83,7 +83,7 @@ public class ContractSigningServiceImpl implements ContractSigningService {
     @Lazy
     private final ContractRenewalService contractRenewalService;
 
-    @org.springframework.beans.factory.annotation.Value("${app.frontend-url:https://boxora-storage.pages.dev}")
+    @org.springframework.beans.factory.annotation.Value("${app.frontend-url:https://boxora-web.vercel.app}")
     private String frontendUrl;
 
     @Override
