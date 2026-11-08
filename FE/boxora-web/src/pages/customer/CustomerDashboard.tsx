@@ -658,6 +658,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [loadingRequests, setLoadingRequests] = useState<boolean>(false)
   const [customerTickets, setCustomerTickets] = useState<SupportTicketRecord[]>([])
   const [loadingTickets, setLoadingTickets] = useState<boolean>(false)
+  const [isRefreshingDashboard, setIsRefreshingDashboard] = useState<boolean>(false)
   const [ticketStatusFilter, setTicketStatusFilter] = useState<string>('ALL')
   const [ticketSearchTerm, setTicketSearchTerm] = useState<string>('')
   const [highlightedUnitCode, setHighlightedUnitCode] = useState<string | null>(null)
@@ -1743,6 +1744,31 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
+
+  const handleRefreshDashboard = async () => {
+    try {
+      setIsRefreshingDashboard(true)
+      await Promise.allSettled([
+        fetchContracts(true),
+        fetchCustomerBookings(true),
+        fetchCustomerPayments(true),
+        fetchCustomerTickets(true),
+        fetchMyRenewals(true),
+        fetchCustomerNotifications(true),
+        fetchAvailableUnits(true),
+        fetchFacilities(),
+        fetchBookingRequests(true),
+      ])
+      window.dispatchEvent(new CustomEvent('boxora:storage-units-refresh'))
+      window.dispatchEvent(new Event('boxora:notifications-refresh'))
+      toast.success('Dữ liệu đã được làm mới thành công!')
+    } catch (err) {
+      console.error('Lỗi khi làm mới dữ liệu cổng khách hàng:', err)
+      toast.error('Có lỗi xảy ra khi làm mới dữ liệu.')
+    } finally {
+      setIsRefreshingDashboard(false)
+    }
+  }
 
 
 
@@ -4205,6 +4231,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefreshDashboard}
+              disabled={isRefreshingDashboard}
+              title="Làm mới dữ liệu cổng khách hàng"
+              className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+            >
+              <span className={`material-symbols-outlined text-[16px] ${isRefreshingDashboard ? 'animate-spin' : ''}`}>
+                refresh
+              </span>
+              <span>{isRefreshingDashboard ? 'Đang làm mới...' : 'Làm mới'}</span>
+            </button>
 
             <button
               onClick={() => handleTabChange('support')}
