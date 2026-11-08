@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { MotionConfig } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
-import { FloatingContactWidget } from '../../components/common/FloatingContactWidget'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { SmartLockerDynamicHero } from '../../components/home/SmartLockerDynamicHero'
 import {
@@ -386,8 +385,7 @@ export const HomePage: React.FC = () => {
           </div>
         </footer>
 
-        {/* Floating Action Speed-Dial Widget (Scroll Top, Zalo, Hotline, Maps) */}
-        <FloatingContactWidget />
+
 
         <AccountProfileModal
           isOpen={isProfileModalOpen}

@@ -6,15 +6,13 @@ export const FloatingContactWidget: React.FC = () => {
 
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [showBranchModal, setShowBranchModal] = useState(false)
-  const [showZaloModal, setShowZaloModal] = useState(false)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeButtonRef = useRef<HTMLButtonElement | null>(null)
   const triggerRef = useRef<HTMLElement | null>(null)
-  const isDialogOpen = showBranchModal || showZaloModal
+  const isDialogOpen = showBranchModal
 
   const closeDialogs = useCallback(() => {
     setShowBranchModal(false)
-    setShowZaloModal(false)
   }, [])
 
   // Track window scroll to display scroll-to-top button
@@ -118,73 +116,9 @@ export const FloatingContactWidget: React.FC = () => {
           </button>
         </div>
 
-        {/* ========================================================== */}
-        {/* BUTTON 2: ZALO CHAT / ONLINE SUPPORT                        */}
-        {/* ========================================================== */}
-        <div className="relative group">
-          {/* Tooltip */}
-          <div id="zalo-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-bold whitespace-nowrap text-slate-800 dark:text-slate-100 opacity-0 shadow-xl border transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
-            {t('Chat Zalo tư vấn 24/7')}
-          </div>
 
-          {/* Pulse Ripple Effect Ring */}
-          <div className="absolute inset-0 rounded-full bg-blue-500/25 animate-ping motion-reduce:animate-none pointer-events-none" />
 
-          <button
-            type="button"
-            onClick={(event) => {
-              triggerRef.current = event.currentTarget
-              setShowBranchModal(false)
-              setShowZaloModal(true)
-            }}
-            aria-label="Tư vấn qua Zalo"
-            aria-haspopup="dialog"
-            aria-expanded={showZaloModal}
-            aria-controls="boxora-zalo-dialog"
-            aria-describedby="zalo-tooltip"
-            className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-blue-700 text-white shadow-lg shadow-blue-900/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-blue-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer"
-          >
-            <svg
-              className="w-6 h-6 text-white"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-            </svg>
-          </button>
-        </div>
 
-        {/* ========================================================== */}
-        {/* BUTTON 3: HOTLINE PHONE CALL                               */}
-        {/* ========================================================== */}
-        <div className="relative group">
-          {/* Tooltip */}
-          <div id="hotline-tooltip" role="tooltip" className="absolute right-full mr-3 top-1/2 -translate-y-1/2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-[11px] font-bold whitespace-nowrap text-slate-800 dark:text-slate-100 opacity-0 shadow-xl border transition-all duration-200 group-hover:-translate-x-0.5 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none">
-            Hotline: 1900-BOXORA (1900 269 672)
-          </div>
-
-          {/* Pulse Ring */}
-          <div className="absolute inset-0 rounded-full bg-blue-500/20 animate-pulse motion-reduce:animate-none pointer-events-none" />
-
-          <a
-            href="tel:1900269672"
-            aria-label="Gọi hotline 1900-BOXORA"
-            aria-describedby="hotline-tooltip"
-            className="relative flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/25 shadow-slate-900/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:translate-y-0 cursor-pointer"
-          >
-            <svg
-              className="w-5 h-5 sm:w-6 sm:h-6 text-white transition-transform group-hover:rotate-[-8deg] motion-reduce:animate-none"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
-              <path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z" />
-            </svg>
-          </a>
-        </div>
 
         {/* ========================================================== */}
         {/* BUTTON 4: WAREHOUSE LOCATIONS & MAPS PIN (WHITE)           */}
@@ -199,7 +133,6 @@ export const FloatingContactWidget: React.FC = () => {
             type="button"
             onClick={(event) => {
               triggerRef.current = event.currentTarget
-              setShowZaloModal(false)
               setShowBranchModal(true)
             }}
             aria-label="Xem vị trí 3 cơ sở kho Boxora"
@@ -226,77 +159,7 @@ export const FloatingContactWidget: React.FC = () => {
 
       </div>
 
-      {/* ============================================================ */}
-      {/* MODAL 1: ZALO OA QUICK ASSISTANT DIALOG                      */}
-      {/* ============================================================ */}
-      {showZaloModal && (
-        <div
-          className="contact-modal-backdrop fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
-          onClick={(event) => event.target === event.currentTarget && closeDialogs()}
-        >
-          <div
-            id="boxora-zalo-dialog"
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="boxora-zalo-title"
-            tabIndex={-1}
-            className="contact-modal-panel max-h-[calc(100svh-2rem)] w-full max-w-sm overflow-y-auto rounded-3xl border border-white/80 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 text-left shadow-[0_24px_80px_rgba(15,23,42,.28)] sm:p-6"
-          >
-            <div className="space-y-5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-700 text-white shadow-xs">
-                    <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 id="boxora-zalo-title" className="font-headline text-base font-bold text-slate-900">Zalo Hỗ Trợ Boxora</h4>
-                    <p className="text-[11px] text-slate-500 font-mono">Tư vấn viên trực tuyến 24/7</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  ref={closeButtonRef}
-                  onClick={closeDialogs}
-                  aria-label="Đóng hộp thoại hỗ trợ Zalo"
-                  className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
-                </button>
-              </div>
 
-              <div className="space-y-2 rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
-                <div className="text-xs font-bold text-blue-950">Quý khách cần hỗ trợ nhanh?</div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Nhắn tin Zalo với chuyên viên Boxora để nhận hình ảnh buồng kho thực tế, bảng báo giá ưu đãi tháng này hoặc đặt lịch tham quan kho mẫu trực tiếp.
-                </p>
-              </div>
-
-              <div className="space-y-2.5">
-                <a
-                  href="https://zalo.me/0901234567"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-3 text-xs font-semibold text-white shadow-sm shadow-sm transition-all hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 cursor-pointer"
-                >
-                  <span>Mở Zalo Chat Ngay (0901 234 567)</span>
-                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                </a>
-
-                <a
-                  href="tel:1900269672"
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-800 transition-all hover:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px] text-blue-700">call</span>
-                  <span>Hoặc gọi Hotline: 1900-BOXORA</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ============================================================ */}
       {/* MODAL 2: 3 FACILITY HUBS LOCATIONS MODAL                     */}

@@ -42,21 +42,14 @@ export const BoxoraChatWidget: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Tab 6: Remove AI assistant button completely from internal dashboards
-  // (Staff, Facility Manager, Business Manager, and Admin dashboards)
-  // Retains AI assistant for Customer Dashboard and Public landing pages.
+  // Hide AI assistant button from home page, customer dashboard/portal, and all internal dashboards
   const isInternalDashboard = useMemo(() => {
     const path = location.pathname.toLowerCase()
     if (
-      path.startsWith('/portal/staff') ||
-      path.startsWith('/portal/facility-manager') ||
-      path.startsWith('/portal/business-manager') ||
-      path.startsWith('/portal/admin') ||
-      path.startsWith('/portal/facilities') ||
-      path.startsWith('/portal/cashier') ||
-      path.startsWith('/portal/tickets') ||
-      path.startsWith('/portal/overdue') ||
-      path.startsWith('/portal/shifts') ||
+      path === '/' ||
+      path === '' ||
+      path.startsWith('/portal') ||
+      path.startsWith('/customer') ||
       path.startsWith('/staff') ||
       path.startsWith('/facility-manager') ||
       path.startsWith('/manager') ||
@@ -68,9 +61,6 @@ export const BoxoraChatWidget: React.FC = () => {
       path.startsWith('/overdue') ||
       path.startsWith('/shifts')
     ) {
-      return true
-    }
-    if (path.startsWith('/portal') && !path.startsWith('/portal/customer')) {
       return true
     }
     return false
