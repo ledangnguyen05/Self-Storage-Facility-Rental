@@ -465,16 +465,24 @@ export const StaffDashboard: React.FC = () => {
     }
   }, [staffActiveTab, selectedFacility, currentTargetFacility, loadReturnMetrics])
 
-  useRealtimeSync(() => {
+  useRealtimeSync(async () => {
     const targetFacility = currentTargetFacility || ((!selectedFacility || selectedFacility === 'ALL') ? undefined : selectedFacility)
-    void fetchArrivals(targetFacility)
-    void fetchOccupancy(targetFacility)
-    void loadTicketQueue()
-    void loadActiveRentals(targetFacility)
-    void loadRadarUnits(targetFacility)
-    void loadShiftPayments(targetFacility, true)
-    void loadReturnMetrics(targetFacility)
-  }, { intervalMs: 5000 })
+    if (staffActiveTab === 'pending_orders' || staffActiveTab === 'reception') {
+      await fetchArrivals(targetFacility)
+    } else if (staffActiveTab === 'returns') {
+      await Promise.allSettled([loadActiveRentals(targetFacility), loadReturnMetrics(targetFacility)])
+    } else if (staffActiveTab === 'renewals') {
+      await loadActiveRentals(targetFacility)
+    } else if (staffActiveTab === 'radar') {
+      await Promise.allSettled([fetchOccupancy(targetFacility), loadRadarUnits(targetFacility)])
+    } else if (staffActiveTab === 'cashier') {
+      await loadShiftPayments(targetFacility, true)
+    } else if (staffActiveTab === 'tickets') {
+      await loadTicketQueue()
+    } else {
+      await fetchArrivals(targetFacility)
+    }
+  }, { intervalMs: 60000 })
 
   useEffect(() => {
     const handleReturnUpdated = () => {

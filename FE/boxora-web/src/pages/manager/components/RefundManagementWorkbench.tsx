@@ -60,9 +60,9 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
     void fetchRefunds(false)
   }, [facilityId])
 
-  useRealtimeSync(() => {
-    void fetchRefunds(true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await fetchRefunds(true)
+  }, { intervalMs: 60000 })
 
   // Copy to clipboard helper
   const copyToClipboard = (text: string, label: string) => {

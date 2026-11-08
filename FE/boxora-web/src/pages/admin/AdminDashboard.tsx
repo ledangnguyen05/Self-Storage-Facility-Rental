@@ -222,21 +222,20 @@ export const AdminDashboard: React.FC = () => {
     }
   }, [activeTab])
 
-  useRealtimeSync(() => {
+  useRealtimeSync(async () => {
     if (activeTab === 'users') {
-      void fetchUsers(facilityFilter, true)
+      await fetchUsers(facilityFilter, true)
     } else if (activeTab === 'logs') {
-      void fetchLogs(isLoginHistoryMode, logsPage, true)
+      await fetchLogs(isLoginHistoryMode, logsPage, true)
     } else if (activeTab === 'facilities') {
-      facilityService.getFacilities()
-        .then(res => {
-          if (res?.content && res.content.length > 0) {
-            setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(res.content) ? prev : res.content))
-          }
-        })
-        .catch(() => {})
+      try {
+        const res = await facilityService.getFacilities()
+        if (res?.content && res.content.length > 0) {
+          setFacilities(prev => (JSON.stringify(prev) === JSON.stringify(res.content) ? prev : res.content))
+        }
+      } catch {}
     }
-  }, { intervalMs: 12000 })
+  }, { intervalMs: 60000 })
 
   const fetchUsers = async (targetFacilityId?: string, silent: boolean = false) => {
     if (!silent) setIsLoadingUsers(true)

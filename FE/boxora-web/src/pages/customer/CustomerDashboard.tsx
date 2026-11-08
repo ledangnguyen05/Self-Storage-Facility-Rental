@@ -1165,16 +1165,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   }, [user?.id, fetchCustomerNotifications])
 
   const lastCancelledReturnRawRef = React.useRef<string | null>(null)
-  useRealtimeSync(() => {
-    void fetchContracts(true)
-    void fetchCustomerBookings(true)
-    void fetchCustomerPayments(true)
-    void fetchAvailableUnits(true)
-    void fetchFacilities()
-    void fetchMyRenewals(true)
-    void fetchCustomerNotifications(true)
-    void fetchBookingRequests(true)
-    void fetchCustomerTickets(true)
+  useRealtimeSync(async () => {
+    const syncTasks: Promise<unknown>[] = []
+    if (activeTab === 'contracts' || activeTab === 'my-units') {
+      syncTasks.push(fetchContracts(true))
+    } else if (activeTab === 'bookings') {
+      syncTasks.push(fetchCustomerBookings(true), fetchBookingRequests(true))
+    } else if (activeTab === 'history') {
+      syncTasks.push(fetchCustomerPayments(true))
+    } else if (activeTab === 'support') {
+      syncTasks.push(fetchCustomerTickets(true))
+    } else {
+      syncTasks.push(fetchContracts(true), fetchCustomerBookings(true))
+    }
+    await Promise.allSettled(syncTasks)
     try {
       const rawCancelled = localStorage.getItem('boxora_cancelled_return_units')
       if (rawCancelled !== lastCancelledReturnRawRef.current) {

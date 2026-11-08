@@ -290,10 +290,12 @@ export const OperationsDashboard: React.FC = () => {
     void loadPaymentsTable(fromDate, toDate, selectedFacilityId, paymentsPage, paymentsPageSize, false)
   }, [selectedFacilityId, fromDate, toDate, paymentsPage, paymentsPageSize, tablePaymentStatus, tablePaymentType])
 
-  useRealtimeSync(() => {
-    void loadDashboardData(fromDate, toDate, selectedFacilityId, true)
-    void loadPaymentsTable(fromDate, toDate, selectedFacilityId, paymentsPage, paymentsPageSize, true)
-  }, { intervalMs: 30000 })
+  useRealtimeSync(async () => {
+    await Promise.allSettled([
+      loadDashboardData(fromDate, toDate, selectedFacilityId, true),
+      loadPaymentsTable(fromDate, toDate, selectedFacilityId, paymentsPage, paymentsPageSize, true),
+    ])
+  }, { intervalMs: 60000 })
 
   // Preset Handlers
   const applyPreset = (presetKey: 'TODAY' | 'LAST_7_DAYS' | 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR') => {

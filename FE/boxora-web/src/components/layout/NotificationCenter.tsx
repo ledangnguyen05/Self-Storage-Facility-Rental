@@ -210,11 +210,11 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId }) => {
     }
   }, [userId, loadNotifications])
 
-  useRealtimeSync(() => {
+  useRealtimeSync(async () => {
     if (userId && UUID_PATTERN.test(userId)) {
-      void loadNotifications(true)
+      await loadNotifications(true)
     }
-  }, { intervalMs: 3000 })
+  }, { intervalMs: 60000 })
 
   useEffect(() => {
     const refreshAfterBooking = () => { void loadNotifications(true) }

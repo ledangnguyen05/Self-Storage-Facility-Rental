@@ -245,9 +245,9 @@ export const IncidentTicketsPage: React.FC = () => {
     void fetchTicketsAndData(selectedFacilityFilter, false)
   }, [selectedFacilityFilter, fetchTicketsAndData])
 
-  useRealtimeSync(() => {
-    void fetchTicketsAndData(selectedFacilityFilter, true)
-  }, { intervalMs: 5000 })
+  useRealtimeSync(async () => {
+    await fetchTicketsAndData(selectedFacilityFilter, true)
+  }, { intervalMs: 60000 })
 
   // Reset pagination on filter change
   useEffect(() => {
