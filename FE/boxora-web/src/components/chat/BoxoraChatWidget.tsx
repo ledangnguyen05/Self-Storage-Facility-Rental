@@ -42,13 +42,17 @@ export const BoxoraChatWidget: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Hide AI assistant button from home page, customer dashboard/portal, and all internal dashboards
+  // Hide AI assistant button from home page, auth pages (login, register), customer dashboard/portal, and all internal dashboards
   const isInternalDashboard = useMemo(() => {
     const path = location.pathname.toLowerCase()
     if (
       path === '/' ||
       path === '' ||
       path === '/landing' ||
+      path.startsWith('/login') ||
+      path.startsWith('/register') ||
+      path.startsWith('/reset-password') ||
+      path.startsWith('/forgot-password') ||
       path.startsWith('/portal') ||
       path.startsWith('/customer') ||
       path.startsWith('/my-bookings') ||
