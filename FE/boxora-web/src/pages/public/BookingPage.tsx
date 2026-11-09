@@ -36,7 +36,6 @@ import {
   Lock,
   QrCode,
   Smartphone,
-  CalendarCheck,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
@@ -3657,24 +3656,9 @@ export const BookingPage: React.FC = () => {
                         </p>
                       </div>
                     ) : (
-                      <>
-                        <p className="text-[11px] text-slate-500 leading-relaxed">
-                          Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {formatDateDDMMYYYY(checkInDate)}.
-                        </p>
-                        {!isStaffOrManager && (
-                          <div className="pt-2">
-                            <button
-                              type="button"
-                              disabled={isSubmitting}
-                              onClick={() => setShowPayLaterConfirmModal(true)}
-                              className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold text-xs sm:text-sm shadow-md shadow-blue-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
-                            >
-                              <CalendarCheck size={16} />
-                              <span>Xác nhận (Ký HĐ &amp; Thanh toán tại cơ sở)</span>
-                            </button>
-                          </div>
-                        )}
-                      </>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Quý khách không cần thanh toán trước. Giữ chỗ sẽ được lưu trên hệ thống, quý khách ký hợp đồng và thanh toán tại cơ sở vào ngày {formatDateDDMMYYYY(checkInDate)}.
+                      </p>
                     )}
 
                     {isStaffOrManager && (
