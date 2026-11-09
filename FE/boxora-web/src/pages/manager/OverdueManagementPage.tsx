@@ -140,7 +140,10 @@ export const OverdueManagementPage: React.FC = () => {
     if (isFacilityScoped && user?.facilityId) {
       return user.facilityId
     }
-    if (selectedFacilityFilter && selectedFacilityFilter !== 'ALL') {
+    if (selectedFacilityFilter === 'ALL') {
+      return undefined
+    }
+    if (selectedFacilityFilter) {
       return selectedFacilityFilter
     }
     return contextFacilityId && contextFacilityId !== 'ALL' ? contextFacilityId : undefined
@@ -237,7 +240,13 @@ export const OverdueManagementPage: React.FC = () => {
         return true
       })
     }
-    return contracts.filter(c => !settledIds.has(c.contractId))
+    return contracts.filter(c => {
+      if (c.contractStatus === 'TERMINATED') return false
+      if (c.contractStatus === 'OVERDUE' || c.contractStatus === 'OVERDUE_LOCKED' || c.contractStatus === 'ACTIVE') {
+        return true
+      }
+      return !settledIds.has(c.contractId)
+    })
   }, [filterStage, contracts, settledContracts, settledIds, activeFacilityId, searchTerm])
 
   const handleConfirmSettlement = async () => {

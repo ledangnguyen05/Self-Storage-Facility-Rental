@@ -94,7 +94,11 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                         || policy.getOverdueAccessDisableDays() < 0) {
                     continue;
                 }
-                long overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), today);
+                LocalDate dueDate = contract.getEndDate();
+                if (booking.getEndDate() != null && (dueDate == null || booking.getEndDate().isBefore(dueDate))) {
+                    dueDate = booking.getEndDate();
+                }
+                long overdueDays = (dueDate != null) ? ChronoUnit.DAYS.between(dueDate, today) : 0;
                 boolean credentialsNeedRevocation = booking.getAccessPin() != null
                         || (booking.getQrAccessToken() != null && !booking.getQrAccessToken().startsWith("REVOKED"));
                 if (overdueDays >= policy.getOverdueAccessDisableDays() && credentialsNeedRevocation) {
@@ -316,9 +320,13 @@ public class OverdueProcessingServiceImpl implements OverdueProcessingService {
                         || contract.getBooking().getStatus() == BookingStatus.OVERDUE)
                         && isRecognizedPaymentStatus(contract.getBooking().getPaymentStatus())))
                 .map(contract -> {
-                    long overdueDays = ChronoUnit.DAYS.between(contract.getEndDate(), today);
                     Booking booking = contract.getBooking();
                     StorageUnit unit = contract.getUnit();
+                    LocalDate dueDate = contract.getEndDate();
+                    if (booking != null && booking.getEndDate() != null && (dueDate == null || booking.getEndDate().isBefore(dueDate))) {
+                        dueDate = booking.getEndDate();
+                    }
+                    long overdueDays = (dueDate != null) ? ChronoUnit.DAYS.between(dueDate, today) : 0;
                     boolean penaltyRecorded = activityLogRepository.existsByResourceIdAndAction(
                             contract.getId(), ActivityAction.OVERDUE_DETECTED);
                     boolean credentialsRevoked = booking != null && booking.getAccessPin() == null

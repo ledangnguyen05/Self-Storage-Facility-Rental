@@ -180,4 +180,13 @@ public interface BookingRepository extends JpaRepository<Booking, UUID>, JpaSpec
             @Param("threshold") LocalDateTime threshold,
             @Param("todayThreshold") LocalDate todayThreshold
     );
+
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "storageUnit", "storageUnit.facility", "facility", "unitType"})
+    @Query("""
+        SELECT b FROM Booking b
+        WHERE b.status NOT IN (com.boxora.enums.BookingStatus.CANCELLED, com.boxora.enums.BookingStatus.COMPLETED)
+          AND b.endDate < :currentDate
+        ORDER BY b.endDate ASC
+    """)
+    List<Booking> findOverdueBookingsBeforeDate(@Param("currentDate") LocalDate currentDate);
 }

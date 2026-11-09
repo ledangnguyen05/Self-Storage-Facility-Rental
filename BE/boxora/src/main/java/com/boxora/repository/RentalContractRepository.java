@@ -57,8 +57,8 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
     @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"customer", "unit", "unit.facility", "facility", "booking"})
     @org.springframework.data.jpa.repository.Query("""
             SELECT c FROM RentalContract c
-            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED)
-              AND c.endDate < :currentDate
+            WHERE c.status NOT IN (com.boxora.enums.RentalContractStatus.TERMINATED, com.boxora.enums.RentalContractStatus.CANCELLED, com.boxora.enums.RentalContractStatus.SUPERSEDED)
+              AND (c.endDate < :currentDate OR (c.booking IS NOT NULL AND c.booking.endDate < :currentDate) OR c.status IN (com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED))
             ORDER BY c.endDate ASC
             """)
     List<RentalContract> findActiveOrOverdueContractsBeforeDate(
@@ -67,8 +67,8 @@ public interface RentalContractRepository extends JpaRepository<RentalContract, 
 
     @org.springframework.data.jpa.repository.Query("""
             SELECT COUNT(c) FROM RentalContract c
-            WHERE c.status IN (com.boxora.enums.RentalContractStatus.ACTIVE, com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED)
-              AND c.endDate < :currentDate
+            WHERE c.status NOT IN (com.boxora.enums.RentalContractStatus.TERMINATED, com.boxora.enums.RentalContractStatus.CANCELLED, com.boxora.enums.RentalContractStatus.SUPERSEDED)
+              AND (c.endDate < :currentDate OR (c.booking IS NOT NULL AND c.booking.endDate < :currentDate) OR c.status IN (com.boxora.enums.RentalContractStatus.OVERDUE, com.boxora.enums.RentalContractStatus.OVERDUE_LOCKED))
             """)
     long countActiveOrOverdueContractsBeforeDate(
             @org.springframework.data.repository.query.Param("currentDate") java.time.LocalDate currentDate

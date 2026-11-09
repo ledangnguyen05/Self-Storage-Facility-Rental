@@ -66,7 +66,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     private final NotificationLogRepository notificationLogRepository;
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public OverdueSummaryResponse getOverdueSummary(UUID facilityId) {
         UUID effectiveFacilityId = resolveFacilityId(facilityId);
         LocalDate today = LocalDate.now(OverdueDebtCalculationService.VN_ZONE);
@@ -209,7 +209,7 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public PageResponse<OverdueContractItemResponse> getOverdueContracts(
             UUID facilityId,
             String stage,
@@ -449,13 +449,27 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public OverdueContractDetailResponse getOverdueContractDetail(UUID contractId) {
         RentalContract contract = rentalContractRepository.findById(contractId)
-                .orElseThrow(() -> new AppException(ErrorCode.CONTRACT_NOT_FOUND));
+                .orElse(null);
+        if (contract == null) {
+            contract = rentalContractRepository.findByBookingId(contractId).orElse(null);
+        }
+        if (contract == null) {
+            throw new AppException(ErrorCode.CONTRACT_NOT_FOUND);
+        }
 
         if (contract.getFacility() != null) {
             facilityAccessGuard.checkFacilityAccess(contract.getFacility().getId());
+        }
+
+        if (contract.getBooking() != null && contract.getBooking().getEndDate() != null && contract.getBooking().getEndDate().isBefore(contract.getEndDate())) {
+            contract.setEndDate(contract.getBooking().getEndDate());
+            if (contract.getStatus() != RentalContractStatus.TERMINATED && contract.getStatus() != RentalContractStatus.CANCELLED) {
+                contract.setStatus(RentalContractStatus.OVERDUE);
+            }
+            rentalContractRepository.save(contract);
         }
 
         boolean isSettled = contract.getStatus() == RentalContractStatus.TERMINATED;
@@ -2041,9 +2055,144 @@ public class OverdueManagementServiceImpl implements OverdueManagementService {
     }
 
     private List<RentalContract> getScopedOverdueContracts(UUID facilityId, LocalDate today) {
+        syncOverdueBookingsAndContracts(facilityId, today);
         return rentalContractRepository.findActiveOrOverdueContractsBeforeDate(today).stream()
                 .filter(c -> facilityId == null || (c.getFacility() != null && facilityId.equals(c.getFacility().getId())))
                 .toList();
+    }
+
+    @Transactional
+    public void syncOverdueBookingsAndContracts(UUID facilityId, LocalDate today) {
+        try {
+            List<Booking> overdueBookings = bookingRepository.findOverdueBookingsBeforeDate(today);
+            for (Booking b : overdueBookings) {
+                UUID bFacId = (b.getFacility() != null) ? b.getFacility().getId()
+                        : (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null ? b.getStorageUnit().getFacility().getId() : null);
+                if (facilityId != null && bFacId != null && !facilityId.equals(bFacId)) {
+                    continue;
+                }
+
+                RentalContract contract = rentalContractRepository.findByBookingId(b.getId()).orElse(null);
+                if (contract == null && b.getStorageUnit() != null) {
+                    contract = rentalContractRepository.findFirstByUnit_IdOrderByCreatedAtDesc(b.getStorageUnit().getId()).orElse(null);
+                }
+
+                if (contract != null) {
+                    boolean contractUpdated = false;
+                    if (b.getEndDate() != null && (contract.getEndDate() == null || b.getEndDate().isBefore(contract.getEndDate()))) {
+                        contract.setEndDate(b.getEndDate());
+                        contractUpdated = true;
+                    }
+                    if (contract.getStartDate() == null && b.getStartDate() != null) {
+                        contract.setStartDate(b.getStartDate());
+                        contractUpdated = true;
+                    }
+                    if (contract.getMonthlyFee() == null || contract.getMonthlyFee().compareTo(BigDecimal.ZERO) <= 0) {
+                        BigDecimal fee = b.getTotalRentalFee();
+                        if (fee == null && b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null) {
+                            fee = b.getStorageUnit().getUnitType().getBasePricePerMonth();
+                        }
+                        if (fee != null) {
+                            contract.setMonthlyFee(fee);
+                            contractUpdated = true;
+                        }
+                    }
+                    if (contract.getDepositHeld() == null || contract.getDepositHeld().compareTo(BigDecimal.ZERO) <= 0) {
+                        if (b.getDepositPaid() != null && b.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                            contract.setDepositHeld(b.getDepositPaid());
+                            contractUpdated = true;
+                        } else if (b.getDepositAmount() != null && b.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+                            contract.setDepositHeld(b.getDepositAmount());
+                            contractUpdated = true;
+                        }
+                    }
+                    if (contract.getStatus() != RentalContractStatus.TERMINATED
+                            && contract.getStatus() != RentalContractStatus.CANCELLED
+                            && contract.getStatus() != RentalContractStatus.OVERDUE
+                            && contract.getStatus() != RentalContractStatus.OVERDUE_LOCKED) {
+                        contract.setStatus(RentalContractStatus.OVERDUE);
+                        contractUpdated = true;
+                    }
+                    if (contract.getBooking() == null) {
+                        contract.setBooking(b);
+                        contractUpdated = true;
+                    }
+                    if (contractUpdated) {
+                        rentalContractRepository.save(contract);
+                    }
+                } else if (b.getCustomer() != null && (b.getFacility() != null || (b.getStorageUnit() != null && b.getStorageUnit().getFacility() != null))) {
+                    Facility fac = b.getFacility() != null ? b.getFacility() : b.getStorageUnit().getFacility();
+                    BigDecimal fee = b.getTotalRentalFee();
+                    if (fee == null && b.getStorageUnit() != null && b.getStorageUnit().getUnitType() != null) {
+                        fee = b.getStorageUnit().getUnitType().getBasePricePerMonth();
+                    }
+                    if (fee == null) {
+                        fee = BigDecimal.ZERO;
+                    }
+
+                    BigDecimal deposit = BigDecimal.ZERO;
+                    if (b.getDepositPaid() != null && b.getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                        deposit = b.getDepositPaid();
+                    } else if (b.getDepositAmount() != null && b.getDepositAmount().compareTo(BigDecimal.ZERO) > 0) {
+                        deposit = b.getDepositAmount();
+                    }
+
+                    String rawCode = b.getBookingCode();
+                    String codeSuffix = (rawCode != null && !rawCode.isBlank()) ? rawCode : ("BK-" + b.getId().toString().substring(0, 8).toUpperCase());
+                    String contractCode = "CTR-" + (codeSuffix.startsWith("CTR-") ? codeSuffix.substring(4) : codeSuffix);
+                    if (rentalContractRepository.findByContractCodeIgnoreCase(contractCode).isPresent()) {
+                        contractCode = contractCode + "-OVD";
+                    }
+
+                    RentalContract newContract = RentalContract.builder()
+                            .contractCode(contractCode)
+                            .customer(b.getCustomer())
+                            .unit(b.getStorageUnit())
+                            .facility(fac)
+                            .booking(b)
+                            .startDate(b.getStartDate() != null ? b.getStartDate() : today.minusMonths(1))
+                            .endDate(b.getEndDate() != null ? b.getEndDate() : today.minusDays(1))
+                            .monthlyFee(fee)
+                            .depositHeld(deposit)
+                            .status(RentalContractStatus.OVERDUE)
+                            .overduePinStatus(OverduePinStatus.PIN_ACTIVE)
+                            .overdueSealingStatus(OverdueSealingStatus.NONE)
+                            .isDemo(false)
+                            .signingMethod("ONLINE")
+                            .build();
+                    rentalContractRepository.save(newContract);
+                }
+
+                if (b.getStatus() == BookingStatus.ACTIVE || b.getStatus() == BookingStatus.PAID_AND_SIGNED || b.getStatus() == BookingStatus.CONFIRMED) {
+                    b.setStatus(BookingStatus.OVERDUE);
+                    bookingRepository.save(b);
+                }
+            }
+
+            List<RentalContract> overdueContracts = rentalContractRepository.findActiveOrOverdueContractsBeforeDate(today);
+            for (RentalContract c : overdueContracts) {
+                if (facilityId != null && c.getFacility() != null && !facilityId.equals(c.getFacility().getId())) {
+                    continue;
+                }
+                boolean changed = false;
+                if (c.getBooking() != null && c.getBooking().getEndDate() != null && c.getBooking().getEndDate().isBefore(c.getEndDate())) {
+                    c.setEndDate(c.getBooking().getEndDate());
+                    changed = true;
+                }
+                if (c.getStatus() != RentalContractStatus.TERMINATED
+                        && c.getStatus() != RentalContractStatus.CANCELLED
+                        && c.getStatus() != RentalContractStatus.OVERDUE
+                        && c.getStatus() != RentalContractStatus.OVERDUE_LOCKED) {
+                    c.setStatus(RentalContractStatus.OVERDUE);
+                    changed = true;
+                }
+                if (changed) {
+                    rentalContractRepository.save(c);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error syncing overdue bookings and contracts: {}", e.getMessage(), e);
+        }
     }
 
     private User getCurrentUser() {

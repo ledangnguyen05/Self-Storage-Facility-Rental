@@ -6,6 +6,7 @@ import com.boxora.entity.RentalContract;
 import com.boxora.enums.OverdueStage;
 import com.boxora.enums.PaymentStatus;
 import com.boxora.enums.PaymentType;
+import com.boxora.enums.RentalContractStatus;
 import com.boxora.repository.PaymentRepository;
 import com.boxora.service.OverdueDebtCalculationService;
 import lombok.RequiredArgsConstructor;
@@ -36,10 +37,19 @@ public class OverdueDebtCalculationServiceImpl implements OverdueDebtCalculation
     public CalculationResult calculateOverdueDebt(RentalContract contract, FacilityPolicy policy, LocalDate referenceDate) {
         LocalDate today = (referenceDate != null) ? referenceDate : LocalDate.now(VN_ZONE);
         LocalDate dueDate = contract.getEndDate();
+        if (contract.getBooking() != null && contract.getBooking().getEndDate() != null) {
+            if (dueDate == null || contract.getBooking().getEndDate().isBefore(dueDate)) {
+                dueDate = contract.getBooking().getEndDate();
+            }
+        }
 
         long overdueDays = (dueDate != null && dueDate.isBefore(today))
                 ? ChronoUnit.DAYS.between(dueDate, today)
                 : 0L;
+
+        if (overdueDays < 1 && contract != null && (contract.getStatus() == RentalContractStatus.OVERDUE || contract.getStatus() == RentalContractStatus.OVERDUE_LOCKED)) {
+            overdueDays = 1L;
+        }
 
         boolean policyValid = isPolicyValid(policy);
 
