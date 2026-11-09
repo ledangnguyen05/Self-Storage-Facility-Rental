@@ -867,21 +867,27 @@ public class HandoverServiceImpl implements HandoverService {
             if (booking.getCustomer() != null && booking.getCustomer().getEmail() != null
                     && !booking.getCustomer().getEmail().isBlank()) {
                 String facilityName = (unit.getFacility() != null) ? unit.getFacility().getName() : "Boxora Facility";
-                NotificationLog notifLog = NotificationLog.builder()
-                        .recipient(booking.getCustomer())
-                        .recipientEmail(booking.getCustomer().getEmail())
-                        .recipientName(booking.getCustomer().getFullName())
-                        .facility(unit.getFacility())
-                        .channel(NotificationChannel.IN_APP)
-                        .notificationType(NotificationType.HANDOVER_PIN)
-                        .referenceType("BOOKING")
-                        .referenceId(booking.getId())
-                        .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unit.getUnitCode()))
-                        .content(String.format("Kính gửi quý khách, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Boxora lưu mã PIN của bạn là: %s. Vui lòng xác nhận với nhân viên việc cài đặt mã trên khóa vật lý; Boxora chưa xác minh trạng thái thiết bị.",
-                                unit.getUnitCode(), facilityName, plainPin))
-                        .status("SENT")
-                        .build();
-                notificationLogRepository.save(notifLog);
+
+                boolean alreadySent = notificationLogRepository.existsByNotificationTypeAndReferenceId(
+                        NotificationType.HANDOVER_PIN, booking.getId());
+
+                if (!alreadySent) {
+                    NotificationLog notifLog = NotificationLog.builder()
+                            .recipient(booking.getCustomer())
+                            .recipientEmail(booking.getCustomer().getEmail())
+                            .recipientName(booking.getCustomer().getFullName())
+                            .facility(unit.getFacility())
+                            .channel(NotificationChannel.IN_APP)
+                            .notificationType(NotificationType.HANDOVER_PIN)
+                            .referenceType("BOOKING")
+                            .referenceId(booking.getId())
+                            .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unit.getUnitCode()))
+                            .content(String.format("Kính gửi quý khách, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Boxora lưu mã PIN của bạn là: %s. Vui lòng xác nhận với nhân viên việc cài đặt mã trên khóa vật lý; Boxora chưa xác minh trạng thái thiết bị.",
+                                    unit.getUnitCode(), facilityName, plainPin))
+                            .status("SENT")
+                            .build();
+                    notificationLogRepository.save(notifLog);
+                }
             }
         } catch (Exception e) {
             log.warn("[CHECK_IN] Could not save in-app notification log: {}", e.getMessage());
@@ -1773,22 +1779,30 @@ public class HandoverServiceImpl implements HandoverService {
             throw new AppException(ErrorCode.USER_NOT_FOUND, "The customer has no email address for the in-app notification record.");
         }
 
-        NotificationLog logEntity = NotificationLog.builder()
-                .recipient(booking.getCustomer())
-                .recipientEmail(custEmail)
-                .recipientName(custName)
-                .facility(unit != null ? unit.getFacility() : null)
-                .channel(NotificationChannel.IN_APP)
-                .notificationType(NotificationType.HANDOVER_PIN)
-                .referenceType("BOOKING")
-                .referenceId(booking.getId())
-                .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unitCode))
-                .content(String.format("Kính gửi %s, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Boxora lưu mã PIN của bạn là: %s. Vui lòng xác nhận với nhân viên việc cài đặt mã trên khóa vật lý; Boxora chưa xác minh trạng thái thiết bị.",
-                        custName, unitCode, facilityName, plainPin))
-                .status("SENT")
-                .build();
+        java.util.List<NotificationLog> existingLogs = notificationLogRepository
+                .findByNotificationTypeAndReferenceId(NotificationType.HANDOVER_PIN, booking.getId());
 
-        logEntity = notificationLogRepository.save(logEntity);
+        NotificationLog logEntity;
+        if (!existingLogs.isEmpty()) {
+            logEntity = existingLogs.get(0);
+        } else {
+            logEntity = NotificationLog.builder()
+                    .recipient(booking.getCustomer())
+                    .recipientEmail(custEmail)
+                    .recipientName(custName)
+                    .facility(unit != null ? unit.getFacility() : null)
+                    .channel(NotificationChannel.IN_APP)
+                    .notificationType(NotificationType.HANDOVER_PIN)
+                    .referenceType("BOOKING")
+                    .referenceId(booking.getId())
+                    .title(String.format("Bàn giao kho & Cấp mã PIN [%s]", unitCode))
+                    .content(String.format("Kính gửi %s, quy trình bàn giao kho %s tại cơ sở %s đã hoàn tất. Boxora lưu mã PIN của bạn là: %s. Vui lòng xác nhận với nhân viên việc cài đặt mã trên khóa vật lý; Boxora chưa xác minh trạng thái thiết bị.",
+                            custName, unitCode, facilityName, plainPin))
+                    .status("SENT")
+                    .build();
+
+            logEntity = notificationLogRepository.save(logEntity);
+        }
 
         return NotificationLogResponse.builder()
                 .id(logEntity.getId())

@@ -2908,30 +2908,43 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       })
 
       if (c.status === 'ACTIVE' || c.status === 'OVERDUE' || c.status === 'EXPIRED' || c.status === 'TERMINATED') {
-        const activatedTs =
-          c.paperVerifiedAt ||
-          c.signedAt ||
-          (c.startDate ? `${c.startDate.split('T')[0]}T08:30:00` : new Date().toISOString())
-        items.push({
-          id: `CTR-ACT-${c.id}`,
-          unitCode: c.unitCode,
-          facilityName: c.facilityName,
-          category: 'ACCESS',
-          actionType: 'PIN_ISSUED',
-          title: `Bàn giao kho ${c.unitCode ? `#${c.unitCode}` : ''} & Cấp mã PIN`.trim(),
-          description: `Hợp đồng #${c.contractCode} tại ${c.facilityName} đã hoàn tất bàn giao kho và cấp mã PIN truy cập buồng kho (AES-256). Thời hạn thuê: ${formatDisplayDate(c.startDate)} → ${formatDisplayDate(c.endDate)}.`,
-          timestamp: activatedTs,
-          actorName: 'Hệ thống Boxora IoT',
-          statusLabel: 'Bàn giao kho & Cấp mã PIN',
-          statusTone: 'emerald',
-          meta: {
-            oldEndDate: c.startDate,
-            newEndDate: c.endDate,
-            amount: c.monthlyFee,
-            contractCode: c.contractCode,
-            contractId: c.id,
-          },
-        })
+        // Chỉ tạo thông báo tổng hợp mã PIN nếu trong danh sách thông báo thực tế chưa có thông báo bàn giao PIN
+        const hasRealPinNotif = customerNotifications.some(n =>
+          (n.notificationType === 'HANDOVER_PIN' || n.title?.toLowerCase().includes('cấp mã pin') || n.title?.toLowerCase().includes('bàn giao kho')) &&
+          (
+            (c.unitCode && (n.title?.includes(c.unitCode) || n.content?.includes(c.unitCode))) ||
+            (c.bookingId && n.referenceId === c.bookingId) ||
+            (c.id && n.referenceId === c.id) ||
+            (c.contractCode && (n.title?.includes(c.contractCode) || n.content?.includes(c.contractCode)))
+          )
+        )
+
+        if (!hasRealPinNotif) {
+          const activatedTs =
+            c.paperVerifiedAt ||
+            c.signedAt ||
+            (c.startDate ? `${c.startDate.split('T')[0]}T08:30:00` : new Date().toISOString())
+          items.push({
+            id: `CTR-ACT-${c.id}`,
+            unitCode: c.unitCode,
+            facilityName: c.facilityName,
+            category: 'ACCESS',
+            actionType: 'PIN_ISSUED',
+            title: `Bàn giao kho ${c.unitCode ? `#${c.unitCode}` : ''} & Cấp mã PIN`.trim(),
+            description: `Hợp đồng #${c.contractCode} tại ${c.facilityName} đã hoàn tất bàn giao kho và cấp mã PIN truy cập buồng kho (AES-256). Thời hạn thuê: ${formatDisplayDate(c.startDate)} → ${formatDisplayDate(c.endDate)}.`,
+            timestamp: activatedTs,
+            actorName: 'Hệ thống Boxora IoT',
+            statusLabel: 'Bàn giao kho & Cấp mã PIN',
+            statusTone: 'emerald',
+            meta: {
+              oldEndDate: c.startDate,
+              newEndDate: c.endDate,
+              amount: c.monthlyFee,
+              contractCode: c.contractCode,
+              contractId: c.id,
+            },
+          })
+        }
       }
 
       if (c.status === 'OVERDUE') {
@@ -2993,8 +3006,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       }
 
       if (b.unitCode && (b.accessPin || b.status === 'ACTIVE' || b.status === 'CONFIRMED')) {
+        const hasRealPinNotif = customerNotifications.some(n =>
+          (n.notificationType === 'HANDOVER_PIN' || n.title?.toLowerCase().includes('cấp mã pin') || n.title?.toLowerCase().includes('bàn giao kho')) &&
+          (
+            n.referenceId === b.id ||
+            (b.unitCode && (n.title?.includes(b.unitCode) || n.content?.includes(b.unitCode)))
+          )
+        )
         const exists = items.some(it => it.unitCode === b.unitCode && it.actionType === 'PIN_ISSUED')
-        if (!exists) {
+        if (!exists && !hasRealPinNotif) {
           items.push({
             id: `BKG-PIN-${b.id}`,
             unitCode: b.unitCode,
@@ -3016,15 +3036,154 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
 
     // 4. Lịch sử giao dịch thanh toán & biên lai điện tử (customerPayments)
-    customerPayments.forEach(p => {
-      // Bỏ qua giao dịch đã bị hủy, thất bại hoặc giao dịch giải phóng thanh lý nội bộ
-      if (p.status === 'CANCELLED' || p.status === 'FAILED' || p.paymentMethod === 'LIQUIDATION' || p.transactionId?.startsWith('LIQ-')) return
+    // Gộp 2 khoản thanh toán bàn giao kho ban đầu (Cọc giữ kho + Tiền thuê) thành 1 thông báo duy nhất hiển thị tổng tiền
+    const validPayments = customerPayments.filter(
+      p => p.status !== 'CANCELLED' && p.status !== 'FAILED' && p.paymentMethod !== 'LIQUIDATION' && !p.transactionId?.startsWith('LIQ-')
+    )
+    const processedPaymentIds = new Set<string>()
 
-      const payTs = p.paymentTime || p.createdAt || new Date().toISOString()
+    validPayments.forEach(p => {
+      if (processedPaymentIds.has(p.id)) return
+
       const isDeposit = p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT'
       const isRenewalFee = p.paymentType === 'RENEWAL' || p.paymentType === 'RENEWAL_FEE'
       const isRefund = p.status === 'REFUNDED' || p.paymentType === 'REFUND' || p.paymentType === 'REFUND_DEPOSIT'
+      const isRent = !isDeposit && !isRenewalFee && !isRefund
 
+      const matchedContract = contracts.find(
+        c =>
+          (p.contractId && c.id === p.contractId) ||
+          (p.contractCode && c.contractCode === p.contractCode) ||
+          (p.unitCode && c.unitCode === p.unitCode)
+      )
+
+      // Tìm khoản thanh toán đối ứng khi bàn giao kho (Cọc + Tiền thuê cùng kho/hợp đồng/booking)
+      let partnerPayment: PaymentItem | undefined
+      if (isDeposit || isRent) {
+        partnerPayment = validPayments.find(other => {
+          if (other.id === p.id || processedPaymentIds.has(other.id)) return false
+          const otherIsDeposit = other.paymentType === 'DEPOSIT' || other.paymentType === 'BOOKING_PAYMENT'
+          const otherIsRenewalFee = other.paymentType === 'RENEWAL' || other.paymentType === 'RENEWAL_FEE'
+          const otherIsRefund = other.status === 'REFUNDED' || other.paymentType === 'REFUND' || other.paymentType === 'REFUND_DEPOSIT'
+          const otherIsRent = !otherIsDeposit && !otherIsRenewalFee && !otherIsRefund
+
+          if (isDeposit && !otherIsRent) return false
+          if (isRent && !otherIsDeposit) return false
+
+          if (p.contractId && other.contractId && p.contractId === other.contractId) return true
+          if (p.contractCode && other.contractCode && p.contractCode === other.contractCode) return true
+          if (p.bookingId && other.bookingId && p.bookingId === other.bookingId) return true
+
+          const otherMatched = contracts.find(
+            c =>
+              (other.contractId && c.id === other.contractId) ||
+              (other.contractCode && c.contractCode === other.contractCode) ||
+              (other.unitCode && c.unitCode === other.unitCode)
+          )
+          if (matchedContract && otherMatched && matchedContract.id === otherMatched.id) return true
+
+          if (p.unitCode && other.unitCode && p.unitCode === other.unitCode) {
+            const t1 = new Date(p.paymentTime || p.createdAt || 0).getTime()
+            const t2 = new Date(other.paymentTime || other.createdAt || 0).getTime()
+            if (Math.abs(t1 - t2) < 24 * 3600 * 1000) return true
+          }
+
+          return false
+        })
+      }
+
+      if (partnerPayment) {
+        processedPaymentIds.add(p.id)
+        processedPaymentIds.add(partnerPayment.id)
+
+        const depositPayment = isDeposit ? p : partnerPayment
+        const rentPayment = isRent ? p : partnerPayment
+        const totalAmount = Number(depositPayment.amount || 0) + Number(rentPayment.amount || 0)
+
+        if (
+          (depositPayment.paymentMethod === 'CASH' || rentPayment.paymentMethod === 'CASH' || matchedContract?.signingMethod === 'IN_PERSON') &&
+          matchedContract &&
+          matchedContract.status !== 'ACTIVE' &&
+          matchedContract.status !== 'OVERDUE' &&
+          matchedContract.status !== 'EXPIRED' &&
+          matchedContract.status !== 'TERMINATED'
+        ) {
+          return
+        }
+
+        const uCode = p.unitCode || partnerPayment.unitCode || matchedContract?.unitCode
+        const facName = p.facilityName || partnerPayment.facilityName || matchedContract?.facilityName
+        const payTs = (new Date(rentPayment.paymentTime || rentPayment.createdAt || 0).getTime() >=
+          new Date(depositPayment.paymentTime || depositPayment.createdAt || 0).getTime())
+            ? (rentPayment.paymentTime || rentPayment.createdAt || new Date().toISOString())
+            : (depositPayment.paymentTime || depositPayment.createdAt || new Date().toISOString())
+
+        const method = rentPayment.paymentMethod || depositPayment.paymentMethod || 'BANK_TRANSFER'
+        const methodLabel =
+          method === 'VNPAY'
+            ? 'VNPAY (Cổng thanh toán điện tử)'
+            : method === 'BANK_TRANSFER'
+            ? 'Chuyển khoản ngân hàng'
+            : method === 'CASH'
+            ? 'Tiền mặt tại cơ sở'
+            : method
+
+        const primaryTx = rentPayment.transactionId || depositPayment.transactionId || rentPayment.id.slice(0, 10)
+        const primaryVoucher = rentPayment.receiptVoucherCode || depositPayment.receiptVoucherCode
+
+        const combinedPaymentObj: PaymentItem & { breakdown?: Array<{ title: string; amount: number; transactionId?: string }> } = {
+          ...rentPayment,
+          id: `COMBINED-${rentPayment.id}-${depositPayment.id}`,
+          amount: totalAmount,
+          paymentType: 'CHECKIN_FULL_PAYMENT',
+          paymentMethod: method,
+          unitCode: uCode,
+          facilityName: facName,
+          proofDocumentUrl: rentPayment.proofDocumentUrl || depositPayment.proofDocumentUrl,
+          transactionId: primaryTx,
+          receiptVoucherCode: primaryVoucher,
+          breakdown: [
+            {
+              title: `Tiền thuê buồng kho ${uCode ? `#${uCode}` : ''}`,
+              amount: rentPayment.amount,
+              transactionId: rentPayment.transactionId,
+            },
+            {
+              title: `Tiền ký quỹ (Cọc giữ kho) ${uCode ? `#${uCode}` : ''}`,
+              amount: depositPayment.amount,
+              transactionId: depositPayment.transactionId,
+            },
+          ],
+        }
+
+        items.push({
+          id: `PAY-REC-COMBINED-${rentPayment.id}-${depositPayment.id}`,
+          unitCode: uCode,
+          facilityName: facName,
+          category: 'CONTRACT',
+          actionType: 'PAYMENT_COMPLETED',
+          title: `Thanh toán tiền thuê & ký quỹ cọc ${uCode ? `• Kho #${uCode}` : ''}`,
+          description: `Đã hoàn tất thanh toán tổng cộng số tiền ${totalAmount.toLocaleString('vi-VN')} ₫ qua hình thức ${methodLabel} (gồm Tiền thuê: ${Number(rentPayment.amount || 0).toLocaleString('vi-VN')} ₫ và Tiền cọc giữ kho: ${Number(depositPayment.amount || 0).toLocaleString('vi-VN')} ₫). Mã giao dịch: ${primaryTx}${primaryVoucher ? ` • Số chứng từ: ${primaryVoucher}` : ''}.`,
+          timestamp: payTs,
+          actorName: method === 'VNPAY' ? 'Cổng thanh toán VNPAY' : (rentPayment.confirmedByName || depositPayment.confirmedByName || 'Hệ thống Kế toán Boxora'),
+          statusLabel: 'Thanh toán thành công',
+          statusTone: 'emerald',
+          meta: {
+            amount: totalAmount,
+            contractCode: rentPayment.contractCode || depositPayment.contractCode || matchedContract?.contractCode,
+            contractId: rentPayment.contractId || depositPayment.contractId || matchedContract?.id,
+            bookingId: rentPayment.bookingId || depositPayment.bookingId,
+            paymentId: rentPayment.id,
+            payment: combinedPaymentObj,
+          },
+        })
+        return
+      }
+
+      // Khoản thanh toán đơn lẻ
+      processedPaymentIds.add(p.id)
+
+      const payTs = p.paymentTime || p.createdAt || new Date().toISOString()
       const paymentTypeTitle = isRefund
         ? 'Hoàn trả tiền ký quỹ cọc'
         : isDeposit
@@ -3042,15 +3201,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           ? 'Tiền mặt tại cơ sở'
           : p.paymentMethod || 'Cổng thanh toán'
 
-      const matchedContract = contracts.find(
-        c =>
-          (p.contractId && c.id === p.contractId) ||
-          (p.contractCode && c.contractCode === p.contractCode) ||
-          (p.unitCode && c.unitCode === p.unitCode)
-      )
-
-      // Đối với thanh toán tại quầy (IN_PERSON): chỉ khi hoàn tất tiếp nhận 4 bước và cấp mã PIN (hợp đồng ACTIVE)
-      // thì mới hiển thị biên lai / thông báo thanh toán
       if (
         (p.paymentMethod === 'CASH' || matchedContract?.signingMethod === 'IN_PERSON') &&
         matchedContract &&
@@ -3089,6 +3239,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
     // 5. Lịch sử Thông báo hệ thống gửi cho khách (customerNotifications)
     const seenSettlementNotifKeys = new Set<string>()
+    const seenPinNotifKeys = new Set<string>()
     const sortedCustomerNotifications = [...customerNotifications].sort((a, b) => {
       const timeA = new Date(a.createdAt || 0).getTime()
       const timeB = new Date(b.createdAt || 0).getTime()
@@ -3164,6 +3315,18 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
           n.title?.toLowerCase().includes('mã pin') ||
           n.title?.toLowerCase().includes('mở khóa')
       )
+
+      // Lọc bỏ thông báo bàn giao PIN trùng lặp nếu đã có 1 bản duy nhất cho booking / buồng kho
+      const isPinOrHandoverNotif = n.notificationType === 'HANDOVER_PIN' ||
+        (isAccessNotif && (n.title?.toLowerCase().includes('mã pin') || n.title?.toLowerCase().includes('bàn giao')))
+
+      if (isPinOrHandoverNotif) {
+        const pinKey = `${n.referenceId || ''}-${detectedUnit || ''}`
+        if (seenPinNotifKeys.has(pinKey)) {
+          return
+        }
+        seenPinNotifKeys.add(pinKey)
+      }
       const isContractOrPayNotif = !isOverdueDebtNotif && !isSettlementNotif && Boolean(
         isRefundRequestNotif ||
           n.notificationType?.includes('PAYMENT') ||
@@ -9121,21 +9284,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    <tr>
-                      <td className="py-3 px-3">
-                        <span className="font-semibold text-slate-900">
-                          {selectedVatPayment.paymentType === 'DEPOSIT'
-                            ? 'Tiền đặt cọc bảo đảm ngăn kho'
-                            : 'Tiền thuê ngăn kho tự quản Boxora'}{' '}
-                          {selectedVatPayment.unitCode ? `#${selectedVatPayment.unitCode}` : '(vị trí xác nhận khi check-in)'}
-                        </span>
-                        <div className="text-[10px] text-slate-400">Mã GD đối soát: {selectedVatPayment.transactionId || selectedVatPayment.id}</div>
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono">10% VAT</td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
-                        {selectedVatPayment.amount.toLocaleString('vi-VN')} ₫
-                      </td>
-                    </tr>
+                    {(selectedVatPayment as any).breakdown && (selectedVatPayment as any).breakdown.length > 0 ? (
+                      (selectedVatPayment as any).breakdown.map((item: any, idx: number) => (
+                        <tr key={idx}>
+                          <td className="py-3 px-3">
+                            <span className="font-semibold text-slate-900">{item.title}</span>
+                            {item.transactionId && (
+                              <div className="text-[10px] text-slate-400">Mã GD đối soát: {item.transactionId}</div>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono">10% VAT</td>
+                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                            {Number(item.amount || 0).toLocaleString('vi-VN')} ₫
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td className="py-3 px-3">
+                          <span className="font-semibold text-slate-900">
+                            {selectedVatPayment.paymentType === 'DEPOSIT'
+                              ? 'Tiền đặt cọc bảo đảm ngăn kho'
+                              : 'Tiền thuê ngăn kho tự quản Boxora'}{' '}
+                            {selectedVatPayment.unitCode ? `#${selectedVatPayment.unitCode}` : '(vị trí xác nhận khi check-in)'}
+                          </span>
+                          <div className="text-[10px] text-slate-400">Mã GD đối soát: {selectedVatPayment.transactionId || selectedVatPayment.id}</div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono">10% VAT</td>
+                        <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                          {selectedVatPayment.amount.toLocaleString('vi-VN')} ₫
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -9225,7 +9405,9 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 <div>
                   <span className="text-slate-400 text-[10px] uppercase font-bold block">Khoản thanh toán:</span>
                   <span className="font-semibold text-slate-800">
-                    {selectedProofPayment.paymentType === 'DEPOSIT' || selectedProofPayment.paymentType === 'BOOKING_PAYMENT'
+                    {(selectedProofPayment as any).breakdown
+                      ? 'Tiền thuê buồng kho & tiền ký quỹ cọc'
+                      : selectedProofPayment.paymentType === 'DEPOSIT' || selectedProofPayment.paymentType === 'BOOKING_PAYMENT'
                       ? 'Tiền ký quỹ (Cọc giữ chỗ)'
                       : selectedProofPayment.paymentType === 'RENEWAL'
                       ? 'Phí gia hạn hợp đồng'
@@ -9267,13 +9449,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     </div>
                     <div className="max-h-[480px] w-full overflow-hidden rounded-lg border border-slate-200 bg-white flex items-center justify-center p-2 shadow-xs">
                       <img
-                        src={selectedProofPayment.proofDocumentUrl}
+                        src={resolveImageUrl(selectedProofPayment.proofDocumentUrl)}
                         alt="Màn hình chuyển tiền"
                         className="max-h-[460px] max-w-full object-contain rounded shadow-sm"
                       />
                     </div>
                     <a
-                      href={selectedProofPayment.proofDocumentUrl}
+                      href={resolveImageUrl(selectedProofPayment.proofDocumentUrl)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg border border-blue-200 transition-colors cursor-pointer"

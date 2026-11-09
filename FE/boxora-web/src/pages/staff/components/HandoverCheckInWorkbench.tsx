@@ -1538,17 +1538,9 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
         console.warn('Lỗi đồng bộ localStorage sau check-in:', syncErr)
       }
 
-      // Backend check-in automatically dispatches the PIN & handover completion email (Task 8.6)
+      // Backend check-in automatically dispatches the PIN & handover completion email and in-app notification (Task 8.6)
       let emailSentSuccess = true
-      let webPushSentSuccess = false
-
-      // Tự động bắn thông báo web vào mục thông báo trên hệ thống
-      try {
-        await handoverService.sendWebNotification(currentBooking.id)
-        webPushSentSuccess = true
-      } catch (wErr) {
-        console.warn('Send web notification failed:', wErr)
-      }
+      let webPushSentSuccess = true
 
       window.dispatchEvent(new Event('boxora:notifications-refresh'))
 
