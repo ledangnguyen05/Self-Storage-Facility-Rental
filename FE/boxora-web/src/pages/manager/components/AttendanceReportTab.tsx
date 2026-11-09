@@ -168,6 +168,9 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
       if (selectedStatus === 'CHECKED_IN') {
         return a.status === 'CHECKED_IN' && !isShiftForgottenCheckout(a)
       }
+      if (selectedStatus === 'PENDING') {
+        return a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftForgottenCheckout(a)
+      }
       return true
     })
   }, [assignments, selectedStaffId, selectedStatus])
@@ -432,6 +435,17 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
           >
             Không vào ca ({assignments.filter(a => isShiftAbsent(a) && !isShiftForgottenCheckout(a)).length})
           </button>
+          <button
+            type="button"
+            onClick={() => setSelectedStatus('PENDING')}
+            className={`px-3 py-1 rounded-full font-bold transition-colors cursor-pointer ${
+              selectedStatus === 'PENDING'
+                ? 'bg-amber-600 text-white'
+                : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+            }`}
+          >
+            Chờ vào ca ({assignments.filter(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftForgottenCheckout(a)).length})
+          </button>
         </div>
 
         {/* Note Quy định Chấm công */}
@@ -587,12 +601,12 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
 
                       <td className="py-3 px-4 text-center">
                         {isForgotten ? (
-                          <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-rose-50 text-rose-700 border border-rose-200">
-                            Không đi làm (Quên ra ca)
+                          <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-rose-50 text-rose-700 border border-rose-200" title="Quên ra ca sau 23:59:59 ngày làm việc -> Ghi nhận không đi làm (0 công)">
+                            Quên ra ca (0 công)
                           </span>
                         ) : isAbsentShift ? (
-                          <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-slate-100 text-slate-700 border border-slate-200">
-                            Không đi làm (Chưa vào)
+                          <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-slate-100 text-slate-700 border border-slate-200" title="Vắng mặt, không check-in vào ca">
+                            Không vào ca
                           </span>
                         ) : assignment.status === 'COMPLETED' ? (
                           <span className="inline-block px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -602,6 +616,10 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-blue-50 text-blue-700 border border-blue-200">
                             <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
                             Đang trực ca
+                          </span>
+                        ) : assignment.status === 'CANCELLED' ? (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full font-semibold text-[10px] bg-rose-50 text-rose-600 border border-rose-200">
+                            Đã hủy ca
                           </span>
                         ) : (
                           <span className="inline-block px-2.5 py-0.5 rounded-full font-semibold text-[10px] bg-amber-50 text-amber-700 border border-amber-200">
@@ -718,12 +736,16 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
                   </td>
                   <td className="border border-black p-1 text-center font-semibold text-[9.5px]">
                     {isForgotten
-                      ? 'KHÔNG ĐI LÀM (Quên ra ca)'
+                      ? 'QUÊN RA CA (0 CÔNG)'
                       : isAbsentShift
-                      ? 'KHÔNG ĐI LÀM (Vắng)'
+                      ? 'KHÔNG VÀO CA'
                       : item.status === 'COMPLETED'
                       ? 'HỢP LỆ'
-                      : item.status}
+                      : item.status === 'CHECKED_IN'
+                      ? 'ĐANG TRỰC CA'
+                      : item.status === 'CANCELLED'
+                      ? 'ĐÃ HỦY'
+                      : 'CHỜ VÀO CA'}
                   </td>
                   <td className="border border-black p-1 text-[9px] max-w-[150px] truncate">
                     {item.notes || item.checkInNote || '—'}

@@ -44,8 +44,10 @@ export interface StaffAssignmentResponse {
 }
 
 /**
- * Kiểm tra xem nhân viên đã vào ca (CHECKED_IN) nhưng quên ra ca trong ngày làm việc:
- * Sau 23:59:59 của ngày kết thúc ca làm việc mà chưa check-out.
+ * Kiểm tra xem nhân viên đã vào ca nhưng quên ra ca trong ngày làm việc:
+ * 1. Đã có checkedInAt nhưng chưa có checkedOutAt
+ * 2. Đã được hệ thống ghi nhận là ABSENT (hoặc trong ghi chú có "Quên ra ca")
+ * 3. Hoặc đang ở trạng thái CHECKED_IN nhưng đã quá 23:59:59 của ngày làm việc mà chưa ra ca
  */
 export const isShiftForgottenCheckout = (assignment?: {
   status: string
@@ -55,17 +57,32 @@ export const isShiftForgottenCheckout = (assignment?: {
   checkedInAt?: string | null
   checkedOutAt?: string | null
   shift?: string | null
+  notes?: string | null
+  checkInNote?: string | null
+  checkOutNote?: string | null
 } | null, now = new Date()): boolean => {
   if (!assignment) return false
-  if (assignment.status === 'CHECKED_IN' && !assignment.checkedOutAt) {
-    const win = getAssignmentWindow(assignment)
-    if (win) {
-      // Hết ngày của ca trực (23:59:59 ngày kết thúc ca trực)
-      const endOfDay = new Date(win.end.getFullYear(), win.end.getMonth(), win.end.getDate(), 23, 59, 59, 999)
-      return now.getTime() > endOfDay.getTime()
+  if (assignment.checkedOutAt) return false
+
+  const notesText = `${assignment.notes || ''} ${assignment.checkInNote || ''} ${assignment.checkOutNote || ''}`
+  if (notesText.includes('Quên ra ca')) {
+    return true
+  }
+
+  if (assignment.checkedInAt) {
+    if (assignment.status === 'ABSENT') {
+      return true
     }
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    return assignment.assignedDate < todayStr
+    if (assignment.status === 'CHECKED_IN') {
+      const win = getAssignmentWindow(assignment)
+      if (win) {
+        // Hết ngày của ca trực (23:59:59 ngày kết thúc ca trực)
+        const endOfDay = new Date(win.end.getFullYear(), win.end.getMonth(), win.end.getDate(), 23, 59, 59, 999)
+        return now.getTime() > endOfDay.getTime()
+      }
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      return assignment.assignedDate < todayStr
+    }
   }
   return false
 }
@@ -84,6 +101,9 @@ export const isShiftAbsent = (assignment?: {
   checkedInAt?: string | null
   checkedOutAt?: string | null
   shift?: string | null
+  notes?: string | null
+  checkInNote?: string | null
+  checkOutNote?: string | null
 } | null, now = new Date()): boolean => {
   if (!assignment) return false
   if (assignment.status === 'ABSENT') return true
@@ -112,8 +132,12 @@ export const calculateShiftWorkHours = (assignment?: {
   checkedInAt?: string | null
   checkedOutAt?: string | null
   shift?: string | null
+  notes?: string | null
+  checkInNote?: string | null
+  checkOutNote?: string | null
 } | null): number => {
   if (!assignment) return 0
+  if (isShiftForgottenCheckout(assignment)) return 0
   if (isShiftAbsent(assignment)) return 0
   if (assignment.status !== 'COMPLETED') return 0
   if (assignment.checkedInAt && assignment.checkedOutAt) {

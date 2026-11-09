@@ -1309,6 +1309,8 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                             <div className="text-[11px] font-mono text-slate-600 whitespace-nowrap">
                               Ra: {new Date(assignment.checkedOutAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </div>
+                          ) : isShiftForgottenCheckout(assignment) ? (
+                            <div className="text-[10px] text-rose-500 font-semibold whitespace-nowrap">Quên ra ca</div>
                           ) : isCheckedIn ? (
                             <div className="text-[10px] text-emerald-500 font-semibold whitespace-nowrap">Đang trực...</div>
                           ) : null}

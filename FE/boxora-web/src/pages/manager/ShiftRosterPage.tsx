@@ -437,7 +437,7 @@ export const ShiftRosterPage: React.FC = () => {
 
   // Real KPI calculations from DB data with clear scopes
   const totalStaffCount = staffList.length
-  const checkedInCount = useMemo(() => assignments.filter(a => a.status === 'CHECKED_IN').length, [assignments])
+  const checkedInCount = useMemo(() => assignments.filter(a => a.status === 'CHECKED_IN' && !isShiftForgottenCheckout(a)).length, [assignments])
   const assignedCount = useMemo(() => assignments.filter(a => a.status === 'ASSIGNED' && !isShiftAbsent(a)).length, [assignments])
   const absentCount = useMemo(() => assignments.filter(a => isShiftAbsent(a)).length, [assignments])
   const completedCount = useMemo(() => assignments.filter(a => a.status === 'COMPLETED').length, [assignments])
@@ -1436,6 +1436,8 @@ export const ShiftRosterPage: React.FC = () => {
                             <div className="text-[11px] font-mono text-slate-600 whitespace-nowrap">
                               Ra: {new Date(assignment.checkedOutAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                             </div>
+                          ) : isShiftForgottenCheckout(assignment) ? (
+                            <div className="text-[10px] text-rose-500 font-semibold whitespace-nowrap">Quên ra ca</div>
                           ) : isCheckedIn ? (
                             <div className="text-[10px] text-emerald-500 font-semibold whitespace-nowrap">Đang trực...</div>
                           ) : null}
