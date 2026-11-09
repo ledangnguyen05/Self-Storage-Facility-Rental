@@ -30,6 +30,28 @@ import { notificationService, NotificationLog } from '../../services/notificatio
 import { toast } from '../../utils/toast'
 import { MyBookingsPage } from './MyBookingsPage'
 import { CustomerSupportPanel } from './components/CustomerSupportPanel'
+import { getApiBaseUrl } from '../../lib/axios'
+
+const resolveImageUrl = (url: string | null | undefined): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  return base ? `${base}${cleanUrl}` : cleanUrl
+}
+
+const isPdfFile = (url?: string | null): boolean => {
+  if (!url) return false
+  return url.toLowerCase().split('?')[0].endsWith('.pdf')
+}
 
 
 const BookingRequestCountdown: React.FC<{ request: Booking }> = ({ request }) => {
@@ -2051,6 +2073,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Contract Details & Signing Modals
   const [selectedContractForModal, setSelectedContractForModal] = useState<RentalContract | null>(null)
+  const [selectedPaperContractForModal, setSelectedPaperContractForModal] = useState<RentalContract | null>(null)
   const [contractForDocuSealModal, setContractForDocuSealModal] = useState<RentalContract | null>(null)
   const [contractForOtpModal, setContractForOtpModal] = useState<RentalContract | null>(null)
   const [fetchingSigningUrl, setFetchingSigningUrl] = useState(false)
@@ -2251,7 +2274,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const visibleContracts = useMemo(() => {
     return contracts.filter(c => {
       const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
-      const isCounter = c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON'
+      const isCounter = c.signingMethod === 'IN_PERSON' || c.signingMethod === 'PAPER' || b?.signingMethod === 'IN_PERSON'
 
       if (isCounter) {
         // Hợp đồng tại cơ sở: nếu chưa hoàn tất check-in & ký giấy tại kho thì chưa hiển thị trong mục Hợp đồng & Hóa đơn
@@ -5737,6 +5760,17 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 const completedCRenewals = cRenewals.filter(r => r.status === 'COMPLETED')
                                 return (
                                   <div className="flex items-center gap-2">
+                                    {matchedContract.paperContractUrl && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedPaperContractForModal(matchedContract)}
+                                        className="px-2.5 py-1 rounded-md bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 font-bold text-[11px] flex items-center gap-1 shadow-2xs transition cursor-pointer"
+                                        title="Xem bản scan hợp đồng giấy đã tiếp nhận tại cơ sở"
+                                      >
+                                        <span className="material-symbols-outlined text-[13px]">document_scanner</span>
+                                        <span>Bản scan HĐ</span>
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => setSelectedContractForModal(matchedContract)}
@@ -6810,7 +6844,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                   ) : (
                     filteredContracts.map(c => {
                       const b = customerBookings.find(bk => bk.id === c.bookingId || bk.bookingCode === c.contractCode.replace(/^CTR-/, ''))
-                      const isPaper = Boolean(c.paperContractUrl || c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON')
+                      const isPaper = Boolean(c.paperContractUrl || c.signingMethod === 'PAPER' || c.signingMethod === 'IN_PERSON' || b?.signingMethod === 'IN_PERSON')
                       const isOnlinePaid = b
                         ? (b.paymentStatus === 'PAID' || (b.depositPaid && Number(b.depositPaid) > 0))
                         : (c.depositHeld && Number(c.depositHeld) > 0)
@@ -6921,7 +6955,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                               {isPaper && c.paperContractUrl ? (
                                 <button
                                   type="button"
-                                  onClick={() => setSelectedContractForModal(c)}
+                                  onClick={() => setSelectedPaperContractForModal(c)}
                                   className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-md font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                                   title="Xem bản scan hợp đồng giấy đã tiếp nhận tại cơ sở"
                                 >
@@ -8876,6 +8910,116 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal Xem Bản Scan Hợp Đồng Giấy (Tải lên ở Bước 3) */}
+      {selectedPaperContractForModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-3 sm:p-6 animate-in fade-in duration-200 overflow-y-auto">
+          <div className="relative w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-teal-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-teal-600/20 border border-teal-500/30 flex items-center justify-center text-teal-600 dark:text-teal-400 shrink-0">
+                  <span className="material-symbols-outlined text-[22px]">document_scanner</span>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs font-bold text-teal-700 dark:text-teal-400">
+                      #{selectedPaperContractForModal.contractCode}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-100 text-teal-800 dark:bg-teal-900/50 dark:text-teal-300 border border-teal-300 dark:border-teal-700">
+                      HĐ GIẤY ĐÃ KÝ TẠI CƠ SỞ
+                    </span>
+                    {selectedPaperContractForModal.unitCode && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        Kho #{selectedPaperContractForModal.unitCode}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-sm font-bold text-slate-900 dark:text-white truncate mt-0.5">
+                    Bản Scan Hợp Đồng Giấy Ký Trực Tiếp Tại Cơ Sở
+                  </h2>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const contract = selectedPaperContractForModal
+                    setSelectedPaperContractForModal(null)
+                    setSelectedContractForModal(contract)
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+                  title="Xem điều khoản văn bản chi tiết"
+                >
+                  <span className="material-symbols-outlined text-[16px]">description</span>
+                  <span className="hidden sm:inline">Xem điều khoản</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPaperContractForModal(null)}
+                  className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                  title="Đóng"
+                >
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-auto p-4 sm:p-6 flex items-center justify-center bg-slate-950/70 dark:bg-slate-950 min-h-[380px]">
+              {selectedPaperContractForModal.paperContractUrl ? (
+                isPdfFile(selectedPaperContractForModal.paperContractUrl) ? (
+                  <iframe
+                    src={resolveImageUrl(selectedPaperContractForModal.paperContractUrl)}
+                    title={`Bản scan hợp đồng ${selectedPaperContractForModal.contractCode}`}
+                    className="w-full h-[72vh] rounded-xl border border-slate-700 bg-white"
+                  />
+                ) : (
+                  <div className="relative flex items-center justify-center w-full">
+                    <img
+                      src={resolveImageUrl(selectedPaperContractForModal.paperContractUrl)}
+                      alt={`Bản scan hợp đồng ${selectedPaperContractForModal.contractCode}`}
+                      className="max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-2xl border border-slate-700/80 bg-slate-900"
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        const rawUrl = selectedPaperContractForModal.paperContractUrl
+                        if (!target.src.includes('localhost:8080') && rawUrl?.startsWith('/uploads')) {
+                          target.src = `http://localhost:8080${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+                        }
+                      }}
+                    />
+                  </div>
+                )
+              ) : (
+                <div className="text-center p-8 space-y-3">
+                  <span className="material-symbols-outlined text-4xl text-slate-500">broken_image</span>
+                  <p className="text-sm text-slate-400">Không tìm thấy file ảnh bản scan của hợp đồng này.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-teal-600">verified</span>
+                <span>
+                  Bản scan đã được nhân viên lưu trữ tại cơ sở <strong>{selectedPaperContractForModal.facilityName || 'Boxora'}</strong>. Bản gốc được lưu trữ tại tủ hồ sơ chi nhánh.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPaperContractForModal(null)}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

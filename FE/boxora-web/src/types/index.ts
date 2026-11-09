@@ -289,7 +289,7 @@ export interface Booking {
   qrAccessToken?: string | null
   handoverTime?: string
   returnTime?: string
-  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  signingMethod?: 'ONLINE' | 'IN_PERSON' | 'PAPER' | string | null
   assignedStaffId?: string | null
   assignedStaffName?: string | null
   staffAssignmentNotes?: string | null
@@ -463,7 +463,7 @@ export interface RentalContract {
   docusealSubmissionId?: string | null
   docusealSubmitterSlug?: string | null
   signedAt?: string | null
-  signingMethod?: 'ONLINE' | 'IN_PERSON'
+  signingMethod?: 'ONLINE' | 'IN_PERSON' | 'PAPER' | string | null
   signatureData?: string | null
   unitTypeName?: string | null
   unitPricePerMonth?: number | null

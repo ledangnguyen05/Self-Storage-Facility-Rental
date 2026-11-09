@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { RentalContract } from '../../types'
+import { getApiBaseUrl } from '../../lib/axios'
 
 interface ContractDocumentModalProps {
   contract: RentalContract | null
@@ -7,15 +8,49 @@ interface ContractDocumentModalProps {
   onClose: () => void
   onSignNow?: (contract?: any) => void
   isSigning?: boolean
+  initialTab?: 'scan' | 'terms'
+}
+
+const resolveImageUrl = (url: string | null | undefined): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  return base ? `${base}${cleanUrl}` : cleanUrl
+}
+
+const isPdfFile = (url?: string | null): boolean => {
+  if (!url) return false
+  return url.toLowerCase().split('?')[0].endsWith('.pdf')
 }
 
 export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
   contract,
+  booking,
   onClose,
   onSignNow,
   isSigning = false,
+  initialTab,
 }) => {
   if (!contract) return null
+
+  const isPaper = Boolean(
+    contract.paperContractUrl ||
+    contract.signingMethod === 'PAPER' ||
+    contract.signingMethod === 'IN_PERSON' ||
+    booking?.signingMethod === 'IN_PERSON'
+  )
+  const [activeTab, setActiveTab] = useState<'scan' | 'terms'>(
+    initialTab || (isPaper && contract.paperContractUrl ? 'scan' : 'terms')
+  )
 
   const isSigned = Boolean(contract.signedAt) || contract.status === 'PENDING_ACTIVATION' || contract.status === 'ACTIVE'
   const isPendingSignature = contract.status === 'PENDING_SIGNATURE' && !isSigned
@@ -32,19 +67,21 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
         <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-h-none print:shadow-none print:border-none print:rounded-none">
         
         {/* Modal Top Bar - Hidden when printing */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white print:hidden shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400">
-              <span className="material-symbols-outlined text-[20px]">description</span>
+        <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-blue-50 via-white to-cyan-50 dark:from-slate-900 dark:via-slate-850 dark:to-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white print:hidden shrink-0 gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">{isPaper ? 'document_scanner' : 'description'}</span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-mono text-xs font-bold text-blue-400">#{contract.contractCode}</span>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                   contract.status === 'TERMINATED'
                     ? 'bg-slate-500/20 text-slate-300 border border-slate-500/30'
                     : contract.status === 'EXPIRED'
                     ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30'
+                    : isPaper
+                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
                     : isActive
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     : isSigned
@@ -57,6 +94,8 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                     ? 'ĐÃ THANH LÝ'
                     : contract.status === 'EXPIRED'
                     ? 'ĐÃ HẾT HẠN'
+                    : isPaper
+                    ? 'HỢP ĐỒNG GIẤY ĐÃ KÝ'
                     : isActive
                     ? 'ĐANG HIỆU LỰC (ACTIVE)'
                     : isSigned
@@ -66,13 +105,43 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                     : contract.status}
                 </span>
               </div>
-              <h2 className="text-sm font-bold text-slate-100">
-                Văn Bản Hợp Đồng Thuê Kho Tự Quản Thông Minh
+              <h2 className="text-sm font-bold text-slate-100 truncate">
+                {isPaper ? 'Hồ Sơ Hợp Đồng Giấy Tiếp Nhận Tại Cơ Sở' : 'Văn Bản Hợp Đồng Thuê Kho Tự Quản Thông Minh'}
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Switcher Tab for Paper Contracts */}
+          {isPaper && contract.paperContractUrl && (
+            <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-300 dark:border-slate-700 text-xs font-semibold shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('scan')}
+                className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'scan'
+                    ? 'bg-teal-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">document_scanner</span>
+                <span>Bản scan HĐ</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('terms')}
+                className={`px-3 py-1.5 rounded-md transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'terms'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">description</span>
+                <span>Điều khoản</span>
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={handlePrint}
@@ -105,8 +174,53 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
           </div>
         </div>
 
-        {/* Contract Content - Formatted as Legal Document */}
-        <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-sans leading-relaxed print:p-0 print:overflow-visible">
+        {/* Contract Content - Formatted as Legal Document or Paper Contract Scan */}
+        {activeTab === 'scan' && isPaper && contract.paperContractUrl ? (
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col items-center justify-center bg-slate-950/80 min-h-[420px] print:bg-white print:p-0">
+            <div className="w-full max-w-4xl mb-4 p-3.5 rounded-xl bg-teal-950/90 border border-teal-700/60 text-teal-100 flex flex-wrap items-center justify-between gap-3 text-xs print:hidden shadow-lg">
+              <div className="flex items-center gap-2.5">
+                <span className="material-symbols-outlined text-teal-400 text-2xl">verified</span>
+                <div>
+                  <div className="font-bold text-sm text-teal-200">Bản Scan Hợp Đồng Giấy Đã Ký Tại Cơ Sở</div>
+                  <div className="text-[11px] text-teal-300">
+                    Hợp đồng được ký trực tiếp tại cơ sở {contract.facilityName || 'Boxora'}. Tệp ảnh/scan đã lưu trữ xác thực ở Bước 3 check-in.
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('terms')}
+                className="px-3 py-1.5 rounded-lg bg-teal-800 hover:bg-teal-700 text-teal-100 border border-teal-600 font-bold text-xs shrink-0 transition cursor-pointer"
+              >
+                Xem điều khoản chuẩn &rarr;
+              </button>
+            </div>
+
+            {isPdfFile(contract.paperContractUrl) ? (
+              <iframe
+                src={resolveImageUrl(contract.paperContractUrl)}
+                title={`Bản scan hợp đồng ${contract.contractCode}`}
+                className="w-full h-[72vh] rounded-xl border border-slate-700 bg-white"
+              />
+            ) : (
+              <div className="relative flex items-center justify-center w-full">
+                <img
+                  src={resolveImageUrl(contract.paperContractUrl)}
+                  alt={`Bản scan hợp đồng ${contract.contractCode}`}
+                  className="max-h-[72vh] w-auto max-w-full object-contain rounded-xl shadow-2xl border border-slate-700 bg-slate-900"
+                  onError={(e) => {
+                    const target = e.currentTarget
+                    const rawUrl = contract.paperContractUrl
+                    if (!target.src.includes('localhost:8080') && rawUrl?.startsWith('/uploads')) {
+                      target.src = `http://localhost:8080${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+                    }
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-6 sm:p-12 text-slate-800 font-sans leading-relaxed print:p-0 print:overflow-visible">
           
           {/* Header Quốc Hiệu */}
           <div className="text-center pb-6 border-b border-slate-300">
@@ -226,14 +340,27 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
             <div>
               <h4 className="font-bold text-slate-900 font-sans uppercase text-xs mb-1.5 flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-800 flex items-center justify-center font-bold text-[10px]">4</span>
-                Điều 4: PHƯƠNG THỨC KÝ KẾT VĂN BẢN &amp; XÁC THỰC DOCUSEAL
+                Điều 4: PHƯƠNG THỨC KÝ KẾT VĂN BẢN &amp; XÁC THỰC
               </h4>
-              <p className="text-justify leading-relaxed pl-7">
-                4.1. Hợp đồng này được tạo lập và ký kết bằng hình thức điện tử thông qua hạ tầng DocuSeal e-Signature Verification theo tiêu chuẩn mã hóa PKI SHA-256 hoặc ký trực tiếp tại quầy tiếp đón cơ sở.
-              </p>
-              <p className="text-justify leading-relaxed pl-7 mt-1">
-                4.2. Chữ ký số và con dấu điện tử được chứng thực số liệu toàn vẹn trên hệ thống Boxora Cloud, có đầy đủ giá trị pháp lý ràng buộc quyền và nghĩa vụ của hai bên.
-              </p>
+              {isPaper ? (
+                <>
+                  <p className="text-justify leading-relaxed pl-7">
+                    4.1. Hợp đồng này được lập và ký trực tiếp bằng văn bản giấy tại quầy tiếp đón cơ sở {contract.facilityName || 'Boxora'}. Bản scan hợp đồng có chữ ký gốc của hai bên đã được số hóa ở Bước 3 check-in và lưu trữ đối chiếu an toàn trên hệ thống.
+                  </p>
+                  <p className="text-justify leading-relaxed pl-7 mt-1">
+                    4.2. Bản gốc được lưu trữ tại tủ hồ sơ chi nhánh cơ sở, có đầy đủ giá trị pháp lý ràng buộc quyền và nghĩa vụ của hai bên theo quy định của pháp luật Việt Nam.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-justify leading-relaxed pl-7">
+                    4.1. Hợp đồng này được tạo lập và ký kết bằng hình thức điện tử thông qua hạ tầng DocuSeal e-Signature Verification theo tiêu chuẩn mã hóa PKI SHA-256 hoặc ký trực tiếp tại quầy tiếp đón cơ sở.
+                  </p>
+                  <p className="text-justify leading-relaxed pl-7 mt-1">
+                    4.2. Chữ ký số và con dấu điện tử được chứng thực số liệu toàn vẹn trên hệ thống Boxora Cloud, có đầy đủ giá trị pháp lý ràng buộc quyền và nghĩa vụ của hai bên.
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Article 5 */}
@@ -280,7 +407,27 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
                 <span className="font-bold uppercase text-slate-900">ĐẠI DIỆN BÊN THUÊ KHO (BÊN B)</span>
                 <span className="text-[11px] text-slate-500 italic mt-0.5">Khách hàng xác thực chữ ký</span>
 
-                {isSigned ? (
+                {isPaper ? (
+                  <div className="my-4 w-52 h-36 rounded-xl border border-teal-300 bg-teal-50/80 flex flex-col items-center justify-center p-3 text-center">
+                    <span className="material-symbols-outlined text-2xl text-teal-700 mb-1">draw</span>
+                    <span className="font-sans italic font-bold text-sm text-teal-950 select-none">
+                      {contract.customerName || 'Khách hàng'}
+                    </span>
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-teal-700 font-bold font-sans">
+                      <span className="material-symbols-outlined text-[14px]">verified</span>
+                      <span>Ký trực tiếp trên HĐ giấy</span>
+                    </div>
+                    {contract.paperContractUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('scan')}
+                        className="mt-1 text-[9px] text-teal-600 hover:text-teal-800 font-semibold underline cursor-pointer"
+                      >
+                        Xem bản scan đã tải lên &rarr;
+                      </button>
+                    )}
+                  </div>
+                ) : isSigned ? (
                   <div className="my-4 w-48 h-36 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-center justify-center p-3">
                     {savedSig && (savedSig.startsWith('data:image/') || savedSig.startsWith('http')) ? (
                       <img
@@ -343,6 +490,7 @@ export const ContractDocumentModal: React.FC<ContractDocumentModalProps> = ({
             Bản hợp đồng số #{contract.contractCode} được số hóa và lưu trữ bảo mật trên hạ tầng Boxora Cloud. Chứng thư DocuSeal PKI.
           </div>
         </div>
+        )}
 
         {/* Modal Bottom Bar - Hidden when printing */}
         <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 print:hidden shrink-0">
