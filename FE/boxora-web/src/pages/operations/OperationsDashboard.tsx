@@ -1015,28 +1015,17 @@ export const OperationsDashboard: React.FC = () => {
                 )}
               </div>
 
-              {/* CSV & PDF Buttons */}
+              {/* Excel & PDF Buttons */}
               <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={handleExportSystemExcel}
-                    title={tr('Tải file Excel báo cáo doanh thu (Khuyên dùng cho Excel, tiếng Việt chuẩn 100%, tự động chia cột)', 'Download revenue Excel report (Recommended)')}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-sm"
-                  >
-                    <span className="material-symbols-outlined text-[17px]">table_view</span>
-                    {tr('Xuất Excel', 'Export Excel')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleExportSystemCsv}
-                    title={tr('Tải file CSV báo cáo tài chính Boxora (UTF-8 BOM)', 'Download financial overview CSV')}
-                    className="flex items-center gap-1 px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[16px] text-slate-500">csv</span>
-                    {tr('CSV', 'CSV')}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={handleExportSystemExcel}
+                  title={tr('Tải file Excel báo cáo doanh thu (Khuyên dùng cho Excel, tiếng Việt chuẩn 100%, tự động chia cột)', 'Download revenue Excel report (Recommended)')}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer hover:shadow-sm"
+                >
+                  <span className="material-symbols-outlined text-[17px]">table_view</span>
+                  {tr('Xuất Excel', 'Export Excel')}
+                </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -2001,15 +1990,6 @@ export const OperationsDashboard: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[16px]">table_view</span>
                   {tr('Xuất Excel', 'Export Excel')}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleExportTableCsv}
-                  title={tr('Xuất bảng này ra CSV', 'Export Table CSV')}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all border border-slate-200 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[15px] text-slate-500">csv</span>
-                  {tr('CSV', 'CSV')}
                 </button>
               </div>
             </div>

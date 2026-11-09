@@ -188,7 +188,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                 {isEdit ? 'Chỉnh sửa chính sách vận hành cơ sở' : 'Tạo mới chính sách cơ sở'}
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {targetFacilityName} • Thẩm quyền: Business Operations Manager (Ban hành &amp; cấu hình chính sách)
+                {targetFacilityName} • Thẩm quyền: Quản lý vận hành doanh nghiệp (Ban hành &amp; cấu hình chính sách)
               </p>
             </div>
           </div>
