@@ -6571,6 +6571,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                         loading="lazy"
                         onError={(e) => {
                           const target = e.currentTarget
+                          if (!target.src.includes('localhost:8080') && fac.imageUrl?.startsWith('/uploads')) {
+                            target.src = `http://localhost:8080${fac.imageUrl.startsWith('/') ? '' : '/'}${fac.imageUrl}`
+                            return
+                          }
                           target.onerror = null
                           target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=800&q=80'
                         }}

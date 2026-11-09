@@ -9,6 +9,7 @@ import { Facility, StorageUnit } from '../../types'
 import { BrandLogo } from '../../components/common/BrandLogo'
 import { StorageUnitDetailModal } from '../../components/modals/StorageUnitDetailModal'
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
+import { resolveFacilityImageUrl } from '../../utils/storageUnitImages'
 
 import facilityD1Img from '../../assets/facilities/facility-d1.jpg'
 import facilityD7Img from '../../assets/facilities/facility-d7.jpg'
@@ -123,7 +124,8 @@ export const FacilitiesPage: React.FC = () => {
               const facUnits = units.filter(u => u.facilityId === facility.id)
               const availableUnits = facUnits.filter(u => u.status === 'AVAILABLE').length
               const totalUnits = facUnits.length
-              const imageUrl = facility.imageUrl || FACILITY_IMAGES[idx % FACILITY_IMAGES.length]
+              const rawImg = facility.imageUrl ? resolveFacilityImageUrl(facility.imageUrl) : ''
+              const imageUrl = rawImg || FACILITY_IMAGES[idx % FACILITY_IMAGES.length]
 
               return (
                 <div
@@ -140,6 +142,15 @@ export const FacilitiesPage: React.FC = () => {
                       src={imageUrl} 
                       alt={facility.name} 
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.currentTarget
+                        if (!target.src.includes('localhost:8080') && facility.imageUrl?.startsWith('/uploads')) {
+                          target.src = `http://localhost:8080${facility.imageUrl.startsWith('/') ? '' : '/'}${facility.imageUrl}`
+                          return
+                        }
+                        target.onerror = null
+                        target.src = FACILITY_IMAGES[idx % FACILITY_IMAGES.length]
+                      }}
                     />
                     <div className="absolute top-2.5 right-2.5">
                       <Badge variant="success" className="font-semibold">{availableUnits} Kho Trống</Badge>

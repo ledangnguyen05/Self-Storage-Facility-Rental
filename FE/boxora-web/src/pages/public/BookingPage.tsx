@@ -49,7 +49,7 @@ import { contractService } from '../../services/contractService'
 import { cancellationPolicyService } from '../../services/cancellationPolicyService'
 import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
 import { facilityUnitTypeService } from '../../services/facilityUnitTypeService'
-import { resolveUnitImageUrl } from '../../utils/storageUnitImages'
+import { resolveUnitImageUrl, resolveFacilityImageUrl } from '../../utils/storageUnitImages'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { FacilityNoUnitsModal } from '../../components/modals/FacilityNoUnitsModal'
 import { PayLaterAppointmentConfirmModal } from '../../components/modals/PayLaterAppointmentConfirmModal'
@@ -91,16 +91,7 @@ import facilityTanBinhImg from '../../assets/facilities/facility-tanbinh.jpg'
 export const getFacilityImage = (fac?: Facility | null, index = 0): string => {
   if (!fac) return facilityD1Img
   if (fac.imageUrl && fac.imageUrl.trim().length > 0) {
-    const trimmed = fac.imageUrl.trim()
-    if (
-      trimmed.startsWith('http://') ||
-      trimmed.startsWith('https://') ||
-      trimmed.startsWith('data:') ||
-      trimmed.startsWith('blob:')
-    ) {
-      return trimmed
-    }
-    return trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+    return resolveFacilityImageUrl(fac.imageUrl)
   }
 
   const code = (fac.code || '').toUpperCase()
@@ -2439,6 +2430,10 @@ export const BookingPage: React.FC = () => {
                           loading="lazy"
                           onError={(e) => {
                             const target = e.currentTarget
+                            if (!target.src.includes('localhost:8080') && fac.imageUrl?.startsWith('/uploads')) {
+                              target.src = `http://localhost:8080${fac.imageUrl.startsWith('/') ? '' : '/'}${fac.imageUrl}`
+                              return
+                            }
                             target.onerror = null
                             const code = (fac.code || '').toUpperCase()
                             if (code.includes('D7') || code.includes('Q7')) target.src = facilityD7Img

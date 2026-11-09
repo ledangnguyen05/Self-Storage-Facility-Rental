@@ -8,6 +8,7 @@ import facilityThuduc from '../../assets/facilities/facility-thuduc.jpg'
 import facilityTanbinh from '../../assets/facilities/facility-tanbinh.jpg'
 import { facilityService } from '../../services/facilityService'
 import { Facility } from '../../types'
+import { resolveFacilityImageUrl } from '../../utils/storageUnitImages'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -131,8 +132,8 @@ const formatFacilityCode = (f: Facility, index: number) => {
 }
 
 const getFacilityPhoto = (f: Facility, index: number): string => {
-  if (f.imageUrl && f.imageUrl.trim().length > 0 && (f.imageUrl.startsWith('http') || f.imageUrl.startsWith('/'))) {
-    return f.imageUrl
+  if (f.imageUrl && f.imageUrl.trim().length > 0) {
+    return resolveFacilityImageUrl(f.imageUrl)
   }
   const nameUpper = (f.name || '').toUpperCase()
   const codeUpper = (f.code || '').toUpperCase()
@@ -449,6 +450,12 @@ export const CinematicServicesSection: React.FC<CinematicServicesSectionProps> =
                     alt={hub.name}
                     loading="lazy"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      target.onerror = null
+                      const fallbackList = [facilityD1, facilityD7, facilityThuduc, facilityTanbinh]
+                      target.src = fallbackList[index % fallbackList.length]
+                    }}
                   />
                 </div>
                 <div className="p-5 space-y-1.5 flex flex-col flex-1 justify-between">

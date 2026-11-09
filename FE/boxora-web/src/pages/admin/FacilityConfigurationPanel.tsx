@@ -26,23 +26,9 @@ import { LocationPickerMap } from '../../components/map/LocationPickerMap'
 import { FloorListManager } from '../../components/facility/FloorListManager'
 import { FloorPlanHierarchyPreview } from '../../components/facility/FloorPlanHierarchyPreview'
 import { getApiBaseUrl } from '../../lib/axios'
+import { resolveFacilityImageUrl } from '../../utils/storageUnitImages'
 
-export const resolveFacilityImageUrl = (url?: string): string => {
-  if (!url) return ''
-  const trimmed = url.trim()
-  if (
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('blob:') ||
-    trimmed.startsWith('data:')
-  ) {
-    return trimmed
-  }
-  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
-  const base = getApiBaseUrl()
-  const cleanBase = base ? base.replace(/\/api\/?$/, '') : 'http://localhost:8080'
-  return `${cleanBase}${cleanUrl}`
-}
+export { resolveFacilityImageUrl }
 
 interface FacilityConfigurationPanelProps {
   facilities: Facility[]
