@@ -1,5 +1,5 @@
 import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { userService } from '../../services/userService'
 import { facilityService } from '../../services/facilityService'
@@ -174,7 +174,7 @@ export const ShiftRosterPage: React.FC = () => {
   const [dateShortcut, setDateShortcut] = useState<'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH' | 'CUSTOM'>('THIS_WEEK')
   const [dateRangeError, setDateRangeError] = useState<string | null>(null)
 
-  const [activeTab, setActiveTabState] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>('ROSTER'); const setActiveTab = (t: 'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE') => { triggerTabDataLoading(320); setActiveTabState(t); }
+  const [activeTab, setActiveTab] = useState<'ROSTER' | 'SWAPS' | 'STAFF' | 'ATTENDANCE'>('ROSTER')
 
   // Real Data States
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
@@ -182,6 +182,8 @@ export const ShiftRosterPage: React.FC = () => {
   const [handovers, setHandovers] = useState<ShiftHandover[]>([])
   const [staffList, setStaffList] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const hasLoadedAssignmentsRef = useRef(false)
+  const hasLoadedFacilitiesRef = useRef(false)
 
   // Filters & Search for Roster Table
   const [searchTerm, setSearchTerm] = useState('')
@@ -224,22 +226,24 @@ export const ShiftRosterPage: React.FC = () => {
   useEffect(() => {
     if (contextFacilities && contextFacilities.length > 0) {
       setFacilities(contextFacilities)
+      hasLoadedFacilitiesRef.current = true
     }
   }, [contextFacilities])
 
-  // Synchronize with topbar facility selector ("Cơ sở trực thuộc")
+  // Synchronize with topbar facility selector ("Cơ sở trực thuộc") without circular dependency
   useEffect(() => {
     if (!canFilterFacility) {
-      if (user?.facilityId && selectedFacilityId !== user.facilityId) {
-        setSelectedFacilityId(user.facilityId)
+      if (user?.facilityId) {
+        const targetFacId = user.facilityId
+        setSelectedFacilityId(prev => (prev !== targetFacId ? targetFacId : prev))
       }
       return
     }
     if (contextFacilityId !== undefined) {
       const nextScope = (!contextFacilityId || contextFacilityId.toUpperCase() === 'ALL') ? 'ALL' : contextFacilityId
-      setSelectedFacilityId(nextScope)
+      setSelectedFacilityId(prev => (prev !== nextScope ? nextScope : prev))
     }
-  }, [contextFacilityId, canFilterFacility, user?.facilityId, selectedFacilityId])
+  }, [contextFacilityId, canFilterFacility, user?.facilityId])
 
   const handleFacilityChange = (facId: string) => {
     setSelectedFacilityId(facId)
@@ -247,33 +251,34 @@ export const ShiftRosterPage: React.FC = () => {
     setCurrentPage(1)
   }
 
-  // Load facilities fallback
+  // Load facilities fallback - runs only once if context facilities are absent
   useEffect(() => {
+    if (hasLoadedFacilitiesRef.current) return
+    if (contextFacilities && contextFacilities.length > 0) {
+      setFacilities(contextFacilities)
+      hasLoadedFacilitiesRef.current = true
+      return
+    }
     const loadFacilities = async () => {
+      hasLoadedFacilitiesRef.current = true
       try {
         const res = await facilityService.getFacilities()
         const facs = res?.content || []
-        setFacilities(facs)
-        const userFacId = user?.facilityId
-        if (!canFilterFacility && userFacId) {
-          setSelectedFacilityId(userFacId)
-        } else if (contextFacilityId && contextFacilityId.toUpperCase() !== 'ALL') {
-          setSelectedFacilityId(contextFacilityId)
-        } else if (canFilterFacility) {
-          setSelectedFacilityId('ALL')
-        } else if (userFacId && facs.some(f => f.id === userFacId)) {
-          setSelectedFacilityId(userFacId)
-        } else if (facs.length > 0) {
-          setSelectedFacilityId(facs[0].id)
+        if (facs.length > 0) {
+          setFacilities(facs)
+          const userFacId = user?.facilityId
+          if (!canFilterFacility && userFacId) {
+            setSelectedFacilityId(prev => (prev !== userFacId ? userFacId : prev))
+          } else if (contextFacilityId && contextFacilityId.toUpperCase() !== 'ALL') {
+            setSelectedFacilityId(prev => (prev !== contextFacilityId ? contextFacilityId : prev))
+          }
         }
       } catch (err) {
         console.warn('Failed to load facilities:', err)
       }
     }
-    if (!contextFacilities || contextFacilities.length === 0) {
-      void loadFacilities()
-    }
-  }, [user, isBusinessManager, contextFacilityId, contextFacilities])
+    void loadFacilities()
+  }, [contextFacilities, canFilterFacility, contextFacilityId, user?.facilityId])
 
   // Date shortcuts handler
   const applyShortcut = (shortcut: 'LAST_WEEK' | 'THIS_WEEK' | 'NEXT_WEEK' | 'TODAY' | 'THIS_MONTH') => {
@@ -333,7 +338,8 @@ export const ShiftRosterPage: React.FC = () => {
 
   // Fetch all operational data for selected facility & date range
   const fetchData = useCallback(async (silent?: unknown) => {
-    if (silent !== true) setIsLoading(true)
+    const isSilent = silent === true || hasLoadedAssignmentsRef.current
+    if (!isSilent) setIsLoading(true)
     try {
       const targetFacilityId = (!selectedFacilityId || selectedFacilityId.toUpperCase() === 'ALL') ? undefined : selectedFacilityId
 

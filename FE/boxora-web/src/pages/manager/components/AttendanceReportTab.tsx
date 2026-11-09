@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   staffAssignmentService,
   StaffAssignmentResponse,
@@ -93,6 +93,7 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL')
   const [assignments, setAssignments] = useState<StaffAssignmentResponse[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
+  const hasLoadedRef = useRef(false)
   const [printDate, setPrintDate] = useState<string>('')
 
   // Quick preset switch
@@ -125,7 +126,8 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
   // Fetch assignments with range
   const fetchAttendanceData = useCallback(async (silent = false) => {
     if (!facilityId) return
-    if (!silent) setIsLoading(true)
+    const isSilent = silent || hasLoadedRef.current
+    if (!isSilent) setIsLoading(true)
     try {
       const res = await staffAssignmentService.getAllAssignments({
         facilityId,
@@ -134,11 +136,12 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
         size: 500
       })
       setAssignments(res.content || [])
+      hasLoadedRef.current = true
     } catch (err) {
       console.error('Lỗi tải dữ liệu chấm công:', err)
       if (!silent) setAssignments([])
     } finally {
-      if (!silent) setIsLoading(false)
+      setIsLoading(false)
     }
   }, [facilityId, fromDate, toDate])
 
@@ -148,7 +151,7 @@ export const AttendanceReportTab: React.FC<AttendanceReportTabProps> = ({
 
   useRealtimeSync(() => {
     void fetchAttendanceData(true)
-  }, { intervalMs: 3500 })
+  }, { intervalMs: 60000 })
 
   // Filtered list
   const filteredList = useMemo(() => {

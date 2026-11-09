@@ -30,6 +30,7 @@ export const TabDataLoadingGate: React.FC<TabDataLoadingGateProps> = ({
   const location = useLocation()
   const { isTabLoading } = useTabDataLoading()
   const prevRouteKeyRef = useRef<string>(`${location.pathname}${location.search}`)
+  const hasMountedContentRef = useRef(false)
 
   useEffect(() => {
     triggerTabDataLoading(360)
@@ -43,23 +44,32 @@ export const TabDataLoadingGate: React.FC<TabDataLoadingGateProps> = ({
     }
   }, [location.pathname, location.search])
 
+  useEffect(() => {
+    if (!isTabLoading) {
+      hasMountedContentRef.current = true
+    }
+  }, [isTabLoading])
+
+  const showInitialLoader = isTabLoading && !hasMountedContentRef.current
+
   return (
     <div className="relative w-full">
-      {isTabLoading && (
+      {showInitialLoader ? (
         <div className={`w-full ${minHeightClass} flex items-center justify-center py-16`}>
           <BoxoraMinimalLoader />
         </div>
+      ) : (
+        <>
+          {isTabLoading && (
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-600/30 overflow-hidden z-30 pointer-events-none">
+              <div className="h-full bg-blue-600 animate-pulse w-full" />
+            </div>
+          )}
+          <div className="w-full">
+            {children}
+          </div>
+        </>
       )}
-
-      <div
-        className={
-          isTabLoading
-            ? 'opacity-0 pointer-events-none select-none h-0 overflow-hidden'
-            : 'opacity-100 transition-opacity duration-150'
-        }
-      >
-        {children}
-      </div>
     </div>
   )
 }
