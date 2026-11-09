@@ -2330,12 +2330,12 @@ export const ManagerDashboard: React.FC = () => {
                 </button>
 
 
-                {(role === 'BUSINESS_MANAGER' || role === 'FACILITY_MANAGER') &&
+                {(role === 'ADMIN' || role === 'BUSINESS_MANAGER' || role === 'FACILITY_MANAGER' || hasPermission('STORAGE_UNIT_DELETE')) &&
                   (selectedUnit.status === 'Available' || selectedUnit.status === 'Maintenance') && (
                   <button
                     type="button"
                     onClick={() => setDeleteUnitConfirm(selectedUnit)}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all w-full justify-center mt-1"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-all w-full justify-center mt-1 cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-[16px]">delete</span>
                     {tr('Xóa kho', 'Delete Unit')}

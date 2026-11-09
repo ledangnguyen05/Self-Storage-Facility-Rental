@@ -99,7 +99,7 @@ public class UnitTypeController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('UNIT_TYPE_DELETE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('UNIT_TYPE_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xóa loại kho (chỉ xóa khi không có kho nào đang thuộc loại này)")
     public ResponseEntity<ApiResponse<Void>> deleteUnitType(@PathVariable UUID id) {
         unitTypeService.deleteUnitType(id);

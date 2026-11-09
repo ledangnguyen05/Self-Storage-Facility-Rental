@@ -66,14 +66,14 @@ public class StorageUnitController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_CREATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> createUnit(@Valid @RequestBody StorageUnitCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Tạo ngăn kho thành công", storageUnitService.createUnit(request)));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> updateUnit(
             @PathVariable UUID id,
             @Valid @RequestBody StorageUnitUpdateRequest request
@@ -82,14 +82,14 @@ public class StorageUnitController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_DELETE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deleteUnit(@PathVariable UUID id) {
         storageUnitService.deleteUnit(id);
         return ResponseEntity.ok(ApiResponse.success("Xóa ngăn kho thành công", null));
     }
 
     @PatchMapping("/{id}/toggle-maintenance")
-    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('STORAGE_UNIT_UPDATE') or hasAnyRole('ADMIN', 'BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     public ResponseEntity<ApiResponse<StorageUnitResponse>> toggleMaintenance(
             @PathVariable UUID id,
             @RequestBody(required = false) ToggleMaintenanceRequest request
