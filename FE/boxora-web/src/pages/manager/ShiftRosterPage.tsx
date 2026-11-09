@@ -366,25 +366,63 @@ export const ShiftRosterPage: React.FC = () => {
         loadedStaff = staffRes.data || []
       } else {
         // Facility Manager page: include BOTH regular STAFF and FACILITY_MANAGER in that facility
-        const [staffRes, managerRes] = await Promise.all([
+        const [staffRes, managerRes, allFacilityUsersRes] = await Promise.all([
           userService.getAllUsers({
             role: 'STAFF',
             facilityId: targetFacilityId,
             size: 100
-          }),
+          }).catch(() => ({ data: [] })),
           userService.getAllUsers({
             role: 'FACILITY_MANAGER',
             facilityId: targetFacilityId,
             size: 100
-          })
+          }).catch(() => ({ data: [] })),
+          userService.getAllUsers({
+            facilityId: targetFacilityId,
+            size: 150
+          }).catch(() => ({ data: [] }))
         ])
         const staffUsers = staffRes.data || []
         const managerUsers = managerRes.data || []
+        const allFacUsers = (allFacilityUsersRes.data || []).filter(u => {
+          const r = (u.roleName || u.role?.name || '').toUpperCase()
+          return r === 'STAFF' || r === 'FACILITY_MANAGER'
+        })
+
         const userMap = new Map<string, User>()
-        // Show Facility Managers first, then Staff
         managerUsers.forEach(u => userMap.set(u.id, u))
         staffUsers.forEach(u => userMap.set(u.id, u))
-        loadedStaff = Array.from(userMap.values())
+        allFacUsers.forEach(u => {
+          if (!userMap.has(u.id)) userMap.set(u.id, u)
+        })
+
+        // Also incorporate any assigned personnel from assignments in that facility
+        assignList.forEach(a => {
+          if (a.staffId && !userMap.has(a.staffId)) {
+            userMap.set(a.staffId, {
+              id: a.staffId,
+              username: a.staffUsername || a.staffEmail || a.staffFullName || 'staff',
+              email: a.staffEmail || '',
+              fullName: a.staffFullName || a.staffUsername || '',
+              roleName: a.staffRole || (a.roleInShift === 'FACILITY_LEAD' ? 'FACILITY_MANAGER' : 'STAFF'),
+              isActive: true
+            } as User)
+          }
+        })
+
+        // Include current logged in user if they belong to this facility
+        if (user?.id && !userMap.has(user.id) && (!targetFacilityId || user.facilityId === targetFacilityId)) {
+          userMap.set(user.id, user)
+        }
+
+        // Sort: Facility Managers first, then Staff, then by fullName
+        loadedStaff = Array.from(userMap.values()).sort((a, b) => {
+          const roleA = (a.roleName || a.role?.name || '').toUpperCase()
+          const roleB = (b.roleName || b.role?.name || '').toUpperCase()
+          if (roleA === 'FACILITY_MANAGER' && roleB !== 'FACILITY_MANAGER') return -1
+          if (roleA !== 'FACILITY_MANAGER' && roleB === 'FACILITY_MANAGER') return 1
+          return (a.fullName || a.username || '').localeCompare(b.fullName || b.username || '')
+        })
       }
       setStaffList(loadedStaff)
 

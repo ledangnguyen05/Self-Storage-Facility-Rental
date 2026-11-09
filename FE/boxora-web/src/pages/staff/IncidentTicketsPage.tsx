@@ -14,6 +14,11 @@ import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { User, Facility, StorageUnit } from '../../types'
 import { toast } from '../../utils/toast'
 
+const formatVnd = (amount?: number | null) => {
+  if (amount == null) return '0đ'
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount)
+}
+
 export const IncidentTicketsPage: React.FC = () => {
   const { user, role, hasPermission } = useAuth()
   const effectiveRole = role || (typeof user?.role === 'string' ? user.role : user?.role?.name) || 'STAFF'
@@ -147,6 +152,13 @@ export const IncidentTicketsPage: React.FC = () => {
   const [billingAmount, setBillingAmount] = useState('')
   const [billingNote, setBillingNote] = useState('')
   const [isSubmittingBilling, setIsSubmittingBilling] = useState(false)
+
+  // 6B-2: Payout Confirmation Modal (Chi Trả Hoàn Tiền Sự Cố)
+  const [showPayoutModal, setShowPayoutModal] = useState(false)
+  const [payoutTxnRef, setPayoutTxnRef] = useState('')
+  const [payoutProofUrl, setPayoutProofUrl] = useState('')
+  const [payoutNotes, setPayoutNotes] = useState('')
+  const [isSubmittingPayout, setIsSubmittingPayout] = useState(false)
 
   // 6C: Maintenance & Unit Transfer Modals (Flow 4 & 5)
   const [showMaintenanceModal, setShowMaintenanceModal] = useState(false)
@@ -373,6 +385,33 @@ export const IncidentTicketsPage: React.FC = () => {
       toast.error(err?.response?.data?.message || 'Không thể điều chỉnh phụ phí.')
     } finally {
       setIsSubmittingBilling(false)
+    }
+  }
+
+  // Xác Nhận Giải Ngân Hoàn Tiền Sự Cố (Facility Manager / Business Manager)
+  const handleConfirmPayout = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!detailTicket) return
+    if (!payoutTxnRef.trim()) {
+      toast.warning('Vui lòng nhập mã tham chiếu giao dịch chuyển khoản!')
+      return
+    }
+    setIsSubmittingPayout(true)
+    try {
+      const res = await supportTicketService.adminConfirmPayout(detailTicket.id, {
+        transferTransactionRef: payoutTxnRef.trim(),
+        transferProofUrl: payoutProofUrl.trim(),
+        adminNotes: payoutNotes.trim() || undefined
+      })
+      toast.success('Đã hoàn tất chi trả hoàn tiền thành công! Phiếu sự cố đã được đóng và doanh thu đã được cập nhật.')
+      setShowPayoutModal(false)
+      setDetailTicket(res)
+      await fetchTicketsAndData()
+    } catch (err: any) {
+      console.error('Confirm payout error:', err)
+      toast.error(err?.response?.data?.message || err?.message || 'Không thể xác nhận hoàn tiền.')
+    } finally {
+      setIsSubmittingPayout(false)
     }
   }
 
@@ -2013,6 +2052,83 @@ export const IncidentTicketsPage: React.FC = () => {
                 </div>
               )}
 
+              {/* FLOW 3B: THỰC HIỆN HOÀN TIỀN / GIẢI NGÂN (FM & ADMIN ACTION) */}
+              {Boolean(detailTicket.refundAmount && Number(detailTicket.refundAmount) > 0) &&
+               (detailTicket.refundStatus === 'PENDING_FM_APPROVAL' || detailTicket.refundStatus === 'PENDING_ADMIN_PAYOUT') && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 border-2 border-emerald-500/40 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-emerald-600 text-[22px]">account_balance_wallet</span>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">Yêu Cầu Chi Trả Hoàn Tiền Sự Cố</div>
+                        <div className="text-[11px] text-emerald-700 font-semibold">Khách hàng đã xác nhận &amp; cung cấp thông tin tài khoản</div>
+                      </div>
+                    </div>
+                    <span className="font-mono font-extrabold text-base text-emerald-700 bg-white px-2.5 py-1 rounded-lg border border-emerald-300">
+                      {formatVnd(detailTicket.refundAmount)}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-1.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-slate-500">Ngân hàng thụ hưởng:</span>{' '}
+                        <strong className="text-slate-900">{detailTicket.bankName || 'Chưa rõ'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Số tài khoản:</span>{' '}
+                        <strong className="font-mono text-emerald-700">{detailTicket.bankAccountNumber || 'Chưa rõ'}</strong>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <span className="text-slate-500">Chủ tài khoản:</span>{' '}
+                        <strong className="text-slate-900">{detailTicket.bankAccountName || 'Chưa rõ'}</strong>
+                      </div>
+                    </div>
+                    {detailTicket.fmApprovalNote && (
+                      <div className="text-[11px] text-slate-600 border-t border-slate-100 pt-1.5">
+                        <span className="text-slate-500">Lý do/Căn cứ duyệt:</span> {detailTicket.fmApprovalNote}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayoutTxnRef(`FT-${Date.now().toString().slice(-8)}`)
+                        setPayoutProofUrl('')
+                        setPayoutNotes(`Quản lý cơ sở ${user?.fullName || ''} thực hiện hoàn tiền sự cố`)
+                        setShowPayoutModal(true)
+                      }}
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-98"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">payments</span>
+                      <span>Thực Hiện Hoàn Tiền (Xác Nhận Đã Chuyển)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {Boolean(detailTicket.refundAmount && Number(detailTicket.refundAmount) > 0) && detailTicket.refundStatus === 'COMPLETED' && (
+                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-950 text-xs flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-emerald-600 text-[20px]">verified</span>
+                    <div>
+                      <span className="font-bold">Đã hoàn tiền thành công: </span>
+                      <span className="font-mono font-bold text-emerald-700">{formatVnd(detailTicket.refundAmount)}</span>
+                      {detailTicket.transferTransactionRef && (
+                        <span className="text-slate-500 ml-2">(Mã GD: <strong className="font-mono">{detailTicket.transferTransactionRef}</strong>)</span>
+                      )}
+                    </div>
+                  </div>
+                  {detailTicket.transferProofUrl && (
+                    <a href={detailTicket.transferProofUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-bold text-[11px]">
+                      Xem UNC
+                    </a>
+                  )}
+                </div>
+              )}
+
               {/* FLOW 7 BƯỚC 7: CẬP NHẬT TIẾN ĐỘ & TRAO ĐỔI (TABBED MESSAGING) */}
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-2">
@@ -2687,6 +2803,113 @@ export const IncidentTicketsPage: React.FC = () => {
                 >
                   <span className="material-symbols-outlined text-[16px]">check_circle</span>
                   <span>{isSubmittingBilling ? 'Đang lưu...' : billingMode === 'REFUND' ? 'Gửi Đề Xuất Hoàn Tiền' : 'Lưu Kết Quả Đối Soát'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FLOW 3B MODAL: Xác Nhận Giải Ngân Hoàn Tiền (Payout) */}
+      {showPayoutModal && detailTicket && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 text-left">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">payments</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Xác Nhận Giải Ngân Hoàn Tiền</h3>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Phiếu #{detailTicket.ticketCode || detailTicket.id.slice(0, 8)} — {detailTicket.facilityName || 'Tại cơ sở'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500">Số tiền cần chi trả:</span>
+                <span className="font-mono font-bold text-base text-emerald-700">
+                  {formatVnd(detailTicket.refundAmount)}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-200">
+                <div>
+                  <span className="text-slate-500">Ngân hàng:</span>{' '}
+                  <strong className="text-slate-900">{detailTicket.bankName || 'N/A'}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-500">Số tài khoản:</span>{' '}
+                  <strong className="font-mono text-slate-900">{detailTicket.bankAccountNumber || 'N/A'}</strong>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-slate-500">Tên chủ tài khoản:</span>{' '}
+                  <strong className="text-slate-900">{detailTicket.bankAccountName || 'N/A'}</strong>
+                </div>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmPayout} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Mã tham chiếu giao dịch chuyển khoản (Transaction Ref / FT Code) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={payoutTxnRef}
+                  onChange={(e) => setPayoutTxnRef(e.target.value)}
+                  placeholder="Ví dụ: FT261109988771 hoặc MB123456"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Link ảnh biên lai chuyển tiền / UNC (tùy chọn)
+                </label>
+                <input
+                  type="url"
+                  value={payoutProofUrl}
+                  onChange={(e) => setPayoutProofUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Ghi chú kế toán / vận hành
+                </label>
+                <textarea
+                  rows={2}
+                  value={payoutNotes}
+                  onChange={(e) => setPayoutNotes(e.target.value)}
+                  placeholder="Ghi chú đối soát hoặc thông tin thêm..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
+                />
+              </div>
+
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 text-[11px] leading-relaxed">
+                ℹ️ <strong>Lưu ý:</strong> Sau khi xác nhận hoàn tiền, khoản chi trả này sẽ được tự động cập nhật vào <strong>Mục 6: Hoàn tiền &amp; Bồi thường trả kho</strong> của Báo cáo doanh thu cơ sở.
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isSubmittingPayout}
+                  onClick={() => setShowPayoutModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPayout || !payoutTxnRef.trim()}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">verified</span>
+                  <span>{isSubmittingPayout ? 'Đang xác nhận...' : 'Xác Nhận Đã Hoàn Tiền'}</span>
                 </button>
               </div>
             </form>

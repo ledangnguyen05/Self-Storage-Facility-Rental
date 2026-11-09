@@ -46,8 +46,11 @@ import com.boxora.entity.NotificationLog;
 import com.boxora.enums.NotificationChannel;
 import com.boxora.enums.NotificationType;
 import com.boxora.entity.Payment;
+import com.boxora.entity.RefundRequest;
 import com.boxora.enums.PaymentType;
 import com.boxora.enums.PaymentStatus;
+import com.boxora.enums.RefundStatus;
+import com.boxora.repository.RefundRequestRepository;
 import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +84,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
     private final PaymentRepository paymentRepository;
     private final EmailService emailService;
     private final SmartLockAdapter smartLockAdapter;
+    private final RefundRequestRepository refundRequestRepository;
 
     @Override
     public SupportTicketResponse createTicket(SupportTicketRequest request) {
@@ -842,7 +846,7 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         ticket.setBankName(request.getBankName().trim());
         ticket.setBankAccountNumber(request.getBankAccountNumber().trim());
         ticket.setBankAccountName(request.getBankAccountName().trim().toUpperCase());
-        ticket.setRefundStatus("PENDING_ADMIN_PAYOUT");
+        ticket.setRefundStatus("PENDING_FM_APPROVAL");
         ticket.setStatus(TicketStatus.IN_PROGRESS);
 
         String bankNote = String.format("[KHÁCH CUNG CẤP TK NHẬN TIỀN]: Ngân hàng: %s | STK: %s | Chủ TK: %s%s",
@@ -850,14 +854,44 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 (request.getNote() != null && !request.getNote().isBlank()) ? " | Ghi chú: " + request.getNote().trim() : "");
         ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n" + bankNote : bankNote);
 
+        if (refundRequestRepository != null && ticket.getRefundAmount() != null && ticket.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                String reqCode = "REF-" + ticket.getTicketCode();
+                RefundRequest rr = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                if (rr == null) {
+                    rr = RefundRequest.builder()
+                            .requestCode(reqCode)
+                            .customer(ticket.getCustomer())
+                            .facility(ticket.getFacility())
+                            .booking(ticket.getBooking())
+                            .requestedAmount(ticket.getRefundAmount())
+                            .finalRefundAmount(ticket.getRefundAmount())
+                            .deductionAmount(BigDecimal.ZERO)
+                            .bankName(ticket.getBankName())
+                            .bankAccountNumber(ticket.getBankAccountNumber())
+                            .bankAccountName(ticket.getBankAccountName())
+                            .reason("Hoàn tiền theo phiếu hỗ trợ #" + ticket.getTicketCode() + (ticket.getTitle() != null ? ": " + ticket.getTitle() : ""))
+                            .requestedBy(ticket.getCustomer())
+                            .build();
+                }
+                rr.setStatus(RefundStatus.PROCESSING_TRANSFER);
+                rr.setBankName(ticket.getBankName());
+                rr.setBankAccountNumber(ticket.getBankAccountNumber());
+                rr.setBankAccountName(ticket.getBankAccountName());
+                refundRequestRepository.save(rr);
+            } catch (Exception ex) {
+                log.warn("Could not sync refund request on submitBankInfo: {}", ex.getMessage());
+            }
+        }
+
         ticket = supportTicketRepository.save(ticket);
 
-        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, "AWAITING_CUSTOMER_BANK_INFO", "PENDING_ADMIN_PAYOUT",
-                "Khách hàng đã cung cấp thông tin tài khoản ngân hàng nhận tiền");
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, "AWAITING_CUSTOMER_BANK_INFO", "PENDING_FM_APPROVAL",
+                "Khách hàng đã cung cấp thông tin tài khoản ngân hàng nhận tiền. Đã chuyển hồ sơ tới Quản lý cơ sở để giải ngân.");
 
         sendCustomerTicketNotification(ticket,
                 "Đã ghi nhận thông tin tài khoản ngân hàng",
-                String.format("Boxora đã nhận thông tin tài khoản ngân hàng [%s - %s]. Admin đang tiến hành lệnh chuyển khoản.", request.getBankName(), request.getBankAccountNumber()),
+                String.format("Boxora đã nhận thông tin tài khoản ngân hàng [%s - %s]. Quản lý cơ sở đang tiến hành lệnh chi trả hoàn tiền.", request.getBankName(), request.getBankAccountNumber()),
                 NotificationType.SUPPORT_TICKET_UPDATE);
 
         return mapToResponse(ticket);
@@ -872,12 +906,17 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             throw new AppException(ErrorCode.FORBIDDEN, "System Admin không có thẩm quyền giải ngân tài chính. Thao tác này yêu cầu quyền REFUND_APPROVE (Quản lý nghiệp vụ/Kế toán).");
         }
 
-        if (!"BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) && !"FINANCE_MANAGER".equalsIgnoreCase(currentUserRole)) {
-            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản lý vận hành kinh doanh (Business Manager) có quyền thực hiện và xác nhận chuyển khoản hoàn tiền");
+        if (!"BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole) && !"FINANCE_MANAGER".equalsIgnoreCase(currentUserRole) && !"FACILITY_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            throw new AppException(ErrorCode.FORBIDDEN, "Chỉ Quản lý cơ sở hoặc Quản lý vận hành kinh doanh mới có quyền thực hiện và xác nhận chuyển khoản hoàn tiền");
         }
 
         SupportTicket ticket = supportTicketRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.TICKET_NOT_FOUND));
+
+        User currentStaffUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
+        if ("FACILITY_MANAGER".equalsIgnoreCase(currentUserRole) && currentStaffUser != null) {
+            validateFacilityScope(ticket, currentStaffUser);
+        }
 
         if ("COMPLETED".equalsIgnoreCase(ticket.getRefundStatus())) {
             throw new AppException(ErrorCode.PAYMENT_ALREADY_PROCESSED, "Yêu cầu hoàn tiền này đã được giải ngân hoàn tất trước đó");
@@ -891,17 +930,16 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             throw new AppException(ErrorCode.INVALID_REQUEST, "Mã tham chiếu giao dịch chuyển khoản không được để trống");
         }
 
-        User adminUser = currentUserId != null ? userRepository.findById(currentUserId).orElse(null) : null;
-
         ticket.setTransferTransactionRef(request.getTransferTransactionRef().trim());
-        ticket.setTransferProofUrl(request.getTransferProofUrl().trim());
+        ticket.setTransferProofUrl(request.getTransferProofUrl() != null ? request.getTransferProofUrl().trim() : null);
         ticket.setTransferConfirmedAt(LocalDateTime.now());
-        ticket.setTransferConfirmedBy(adminUser);
+        ticket.setTransferConfirmedBy(currentStaffUser);
         ticket.setRefundStatus("COMPLETED");
         ticket.setStatus(TicketStatus.RESOLVED);
         ticket.setResolvedAt(LocalDateTime.now());
 
-        String payoutNote = String.format("[ADMIN ĐÃ CHUYỂN TIỀN]: Mã giao dịch: %s. %s",
+        String payoutNote = String.format("[ĐÃ HOÀN TIỀN THÀNH CÔNG - %s]: Mã giao dịch: %s. %s",
+                currentStaffUser != null ? currentStaffUser.getFullName() : "Quản lý cơ sở",
                 request.getTransferTransactionRef().trim(),
                 request.getAdminNotes() != null ? request.getAdminNotes().trim() : "");
         ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n" + payoutNote : payoutNote);
@@ -917,9 +955,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                         .status(PaymentStatus.REFUNDED)
                         .paymentMethod("BANK_TRANSFER")
                         .paymentTime(LocalDateTime.now())
-                        .confirmedByStaff(adminUser)
+                        .confirmedByStaff(currentStaffUser)
                         .confirmedAt(LocalDateTime.now())
-                        .paymentNotes("Chi trả tiền trả kho hoàn tiền cho ticket #" + ticket.getTicketCode())
+                        .paymentNotes("Chi trả tiền hoàn trả sự cố/trả kho cho ticket #" + ticket.getTicketCode())
                         .build();
                 paymentRepository.save(refundPayment);
             } catch (Exception ex) {
@@ -927,15 +965,50 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             }
         }
 
+        // Tạo / Cập nhật bản ghi RefundRequest để đồng bộ vào Báo cáo doanh thu Mục 6
+        if (refundRequestRepository != null && ticket.getRefundAmount() != null && ticket.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+            try {
+                String reqCode = "REF-" + ticket.getTicketCode();
+                RefundRequest rr = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                if (rr == null) {
+                    rr = RefundRequest.builder()
+                            .requestCode(reqCode)
+                            .customer(ticket.getCustomer())
+                            .facility(ticket.getFacility())
+                            .booking(ticket.getBooking())
+                            .requestedAmount(ticket.getRefundAmount())
+                            .finalRefundAmount(ticket.getRefundAmount())
+                            .deductionAmount(BigDecimal.ZERO)
+                            .bankName(ticket.getBankName() != null ? ticket.getBankName() : "N/A")
+                            .bankAccountNumber(ticket.getBankAccountNumber() != null ? ticket.getBankAccountNumber() : "N/A")
+                            .bankAccountName(ticket.getBankAccountName() != null ? ticket.getBankAccountName() : "N/A")
+                            .reason("Hoàn tiền theo phiếu hỗ trợ #" + ticket.getTicketCode() + (ticket.getTitle() != null ? ": " + ticket.getTitle() : ""))
+                            .requestedBy(ticket.getCustomer() != null ? ticket.getCustomer() : currentStaffUser)
+                            .build();
+                }
+                rr.setStatus(RefundStatus.COMPLETED);
+                rr.setReviewedBy(ticket.getFmApprovedBy() != null ? ticket.getFmApprovedBy() : currentStaffUser);
+                rr.setReviewedAt(ticket.getFmApprovedAt() != null ? ticket.getFmApprovedAt() : LocalDateTime.now());
+                rr.setProcessedBy(currentStaffUser);
+                rr.setProcessedAt(LocalDateTime.now());
+                rr.setTransactionReference(request.getTransferTransactionRef().trim());
+                rr.setTransferProofUrl(request.getTransferProofUrl() != null ? request.getTransferProofUrl().trim() : null);
+                rr.setProcessNotes(payoutNote);
+                refundRequestRepository.save(rr);
+            } catch (Exception ex) {
+                log.warn("Could not sync refund request record on adminConfirmPayout: {}", ex.getMessage());
+            }
+        }
+
         ticket = supportTicketRepository.save(ticket);
 
-        logActivity(ticket, ActivityAction.SUPPORT_TICKET_RESOLVE, "PENDING_ADMIN_PAYOUT", "COMPLETED",
-                "Admin hoàn tất chuyển khoản tiền hoàn trả: " + request.getTransferTransactionRef());
+        logActivity(ticket, ActivityAction.SUPPORT_TICKET_RESOLVE, "PENDING_FM_APPROVAL", "COMPLETED",
+                "Quản lý cơ sở / Kế toán hoàn tất chuyển khoản tiền hoàn trả: " + request.getTransferTransactionRef());
 
         // Thông báo cho khách hàng kèm ảnh biên lai (không cần khách xác nhận lại)
         sendCustomerTicketNotification(ticket,
                 "Hoàn tất chuyển khoản tiền hoàn trả kho",
-                String.format("Admin đã chuyển khoản thành công số tiền: %,d đ vào tài khoản %s - %s. Mã GD: %s. Quý khách có thể xem ảnh biên lai chuyển tiền tại chi tiết yêu cầu.",
+                String.format("Quản lý cơ sở đã chuyển khoản thành công số tiền: %,d đ vào tài khoản %s - %s. Mã GD: %s. Quý khách có thể xem ảnh biên lai chuyển tiền tại chi tiết yêu cầu.",
                         ticket.getRefundAmount() != null ? ticket.getRefundAmount().longValue() : 0,
                         ticket.getBankName() != null ? ticket.getBankName() : "",
                         ticket.getBankAccountNumber() != null ? ticket.getBankAccountNumber() : "",
@@ -1785,6 +1858,36 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             logActivity(ticket, ActivityAction.SUPPORT_TICKET_UPDATE, ticket.getStatus().name(), ticket.getStatus().name(),
                     "Khách hàng đã ĐỒNG Ý đề xuất hoàn tiền " + (ticket.getRefundAmount() != null ? String.format("%,dđ", ticket.getRefundAmount().longValue()) : "")
                     + ". Hồ sơ đã chuyển đến Facility Manager để duyệt giải ngân.");
+
+            if (refundRequestRepository != null && ticket.getRefundAmount() != null && ticket.getRefundAmount().compareTo(BigDecimal.ZERO) > 0) {
+                try {
+                    String reqCode = "REF-" + ticket.getTicketCode();
+                    RefundRequest rr = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                    if (rr == null) {
+                        rr = RefundRequest.builder()
+                                .requestCode(reqCode)
+                                .customer(ticket.getCustomer())
+                                .facility(ticket.getFacility())
+                                .booking(ticket.getBooking())
+                                .requestedAmount(ticket.getRefundAmount())
+                                .finalRefundAmount(ticket.getRefundAmount())
+                                .deductionAmount(BigDecimal.ZERO)
+                                .bankName(ticket.getBankName() != null ? ticket.getBankName() : "N/A")
+                                .bankAccountNumber(ticket.getBankAccountNumber() != null ? ticket.getBankAccountNumber() : "N/A")
+                                .bankAccountName(ticket.getBankAccountName() != null ? ticket.getBankAccountName() : "N/A")
+                                .reason("Hoàn tiền theo phiếu hỗ trợ #" + ticket.getTicketCode() + (ticket.getTitle() != null ? ": " + ticket.getTitle() : ""))
+                                .requestedBy(ticket.getCustomer())
+                                .build();
+                    }
+                    rr.setStatus(RefundStatus.PROCESSING_TRANSFER);
+                    if (ticket.getBankName() != null) rr.setBankName(ticket.getBankName());
+                    if (ticket.getBankAccountNumber() != null) rr.setBankAccountNumber(ticket.getBankAccountNumber());
+                    if (ticket.getBankAccountName() != null) rr.setBankAccountName(ticket.getBankAccountName());
+                    refundRequestRepository.save(rr);
+                } catch (Exception ex) {
+                    log.warn("Could not sync refund request on customerDecideRefund: {}", ex.getMessage());
+                }
+            }
 
             SupportTicketContactLog logEntry = SupportTicketContactLog.builder()
                     .ticket(ticket)

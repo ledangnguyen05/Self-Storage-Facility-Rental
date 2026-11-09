@@ -96,6 +96,9 @@ class SupportTicketServiceTest {
     @Mock
     private com.boxora.service.EmailService emailService;
 
+    @Mock
+    private com.boxora.repository.RefundRequestRepository refundRequestRepository;
+
     @InjectMocks
     private SupportTicketServiceImpl supportTicketService;
 

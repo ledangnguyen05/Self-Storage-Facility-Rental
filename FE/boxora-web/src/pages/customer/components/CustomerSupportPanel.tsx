@@ -327,7 +327,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
           console.warn('Could not sync bank info with handover record:', decisionErr)
         }
       }
-      setBankSuccessMsg('Đã lưu thông tin tài khoản ngân hàng thành công! Bộ phận kế toán/quản trị sẽ tiến hành đối soát và giải ngân tiền hoàn.')
+      setBankSuccessMsg('Đã lưu thông tin tài khoản ngân hàng thành công! Hồ sơ đã được chuyển tới Quản lý cơ sở để duyệt chi và thực hiện hoàn tiền.')
       await loadMyTickets()
       setTimeout(() => {
         setBankInfoTicket(null)
@@ -338,7 +338,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
             bankName: bankName.trim(),
             bankAccountNumber: bankAccountNumber.trim(),
             bankAccountName: bankAccountName.trim().toUpperCase(),
-            refundStatus: 'PENDING_ADMIN_PAYOUT',
+            refundStatus: 'PENDING_FM_APPROVAL',
           } : null)
         }
       }, 2500)
@@ -1239,7 +1239,8 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                     const catInfo = CATEGORY_LABELS[t.category] || CATEGORY_LABELS.OTHER
                     const isReturnRefund = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' || !!(t.title && t.title.toLowerCase().includes('trả kho'))
                     const isSelectedUnit = (filterUnit !== 'ALL' && t.unitCode === filterUnit) || (initialUnit && t.unitCode === initialUnit)
-                    const needsBank = isReturnRefund && t.refundStatus === 'AWAITING_CUSTOMER_BANK_INFO' && t.status !== 'CLOSED' && t.status !== 'RESOLVED'
+                    const hasProposedRefund = Boolean(t.refundAmount && Number(t.refundAmount) > 0)
+                    const needsBank = (t.refundStatus === 'AWAITING_CUSTOMER_BANK_INFO' || t.refundStatus === 'AWAITING_CUSTOMER_CONFIRMATION' || (hasProposedRefund && !t.bankAccountNumber && t.refundStatus !== 'COMPLETED')) && t.status !== 'CLOSED' && t.status !== 'RESOLVED'
 
                     return (
                       <tr
@@ -1282,12 +1283,12 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                             {t.description}
                           </p>
                           {/* Refund badge */}
-                          {isReturnRefund && (
-                            <div className="mt-1 flex items-center gap-1.5">
+                          {(isReturnRefund || hasProposedRefund) && (
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                               {getRefundBadge(t)}
                               {t.refundAmount && (
-                                <span className="font-mono text-[10.5px] font-bold text-emerald-700">
-                                  {formatVND(t.refundAmount)}
+                                <span className="font-mono text-[10.5px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                  Hoàn: {formatVND(t.refundAmount)}
                                 </span>
                               )}
                             </div>
@@ -1319,7 +1320,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                                 className="px-2.5 py-1 rounded-lg bg-orange-500 hover:bg-orange-600 active:scale-98 text-white font-bold text-[11px] transition-all cursor-pointer shadow-xs flex items-center gap-1 animate-pulse"
                               >
                                 <span className="material-symbols-outlined text-[13px]">account_balance</span>
-                                <span>Nhập STK</span>
+                                <span>Xác nhận &amp; Nhập STK</span>
                               </button>
                             )}
 
@@ -1910,6 +1911,96 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
                   </div>
                 </div>
               )})()}
+
+              {/* Refund Proposal & Payout Section for General / Incident Tickets */}
+              {!(selectedTicket.category === 'RETURN_REFUND' || selectedTicket.category === 'RETURN_EXPIRED' || (selectedTicket.title && selectedTicket.title.toLowerCase().includes('trả kho'))) &&
+               Boolean(selectedTicket.refundAmount && Number(selectedTicket.refundAmount) > 0) && (
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 space-y-3 text-emerald-950">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs flex items-center gap-1.5 text-emerald-900">
+                      <span className="material-symbols-outlined text-[18px] text-emerald-700">currency_exchange</span>
+                      <span>Đề xuất hoàn tiền sự cố &amp; Phụ phí:</span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {selectedTicket.refundStatus === 'COMPLETED' ? '✓ Đã hoàn tất chuyển tiền' :
+                       selectedTicket.refundStatus === 'PENDING_FM_APPROVAL' ? '⏳ Chờ Quản lý cơ sở thực hiện chuyển tiền' :
+                       selectedTicket.refundStatus === 'PENDING_ADMIN_PAYOUT' ? '⏳ Đang thực hiện lệnh chuyển khoản' :
+                       '👉 Cần bạn xác nhận & cung cấp STK'}
+                    </span>
+                  </div>
+
+                  <div className="p-3 bg-white/95 rounded-xl border border-emerald-200 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-600 font-medium">Số tiền Boxora đề xuất hoàn trả:</span>
+                      <span className="font-mono font-extrabold text-base text-emerald-700">
+                        {formatVND(selectedTicket.refundAmount)}
+                      </span>
+                    </div>
+
+                    {selectedTicket.fmApprovalNote && (
+                      <div className="text-slate-600 border-t border-slate-100 pt-1.5 text-[11.5px]">
+                        <span className="font-semibold text-slate-700">Căn cứ &amp; lý do: </span>
+                        <span>{selectedTicket.fmApprovalNote}</span>
+                      </div>
+                    )}
+
+                    {selectedTicket.bankAccountNumber ? (
+                      <div className="text-slate-600 border-t border-slate-100 pt-1.5 text-[11.5px]">
+                        <span className="font-semibold text-slate-700">Tài khoản nhận tiền: </span>
+                        <span className="font-mono font-bold text-slate-900">
+                          {selectedTicket.bankName} · {selectedTicket.bankAccountNumber} ({selectedTicket.bankAccountName})
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] text-amber-700">info</span>
+                        <span>Quý khách vui lòng bấm nút bên dưới để xác nhận và nhập thông tin tài khoản ngân hàng nhận tiền.</span>
+                      </div>
+                    )}
+
+                    {selectedTicket.transferTransactionRef && (
+                      <div className="text-slate-600 border-t border-slate-100 pt-1.5 text-[11.5px] space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span>
+                            <span className="font-semibold text-slate-700">Mã giao dịch chi trả: </span>
+                            <span className="font-mono font-bold text-emerald-700">{selectedTicket.transferTransactionRef}</span>
+                          </span>
+                          {selectedTicket.transferProofUrl && (
+                            <a href={selectedTicket.transferProofUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-bold text-[11px] flex items-center gap-1">
+                              <span className="material-symbols-outlined text-[14px]">receipt</span>
+                              Xem biên lai
+                            </a>
+                          )}
+                        </div>
+                        {selectedTicket.transferConfirmedAt && (
+                          <div className="text-[10.5px] text-slate-500 font-mono">
+                            Thời gian chuyển: {formatTimeStr(selectedTicket.transferConfirmedAt)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Customer action button: Xác nhận & Nhập thông tin ngân hàng */}
+                  {selectedTicket.refundStatus !== 'COMPLETED' && (
+                    <div className="pt-1 flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBankInfoTicket(selectedTicket)
+                          setBankName(selectedTicket.bankName || '')
+                          setBankAccountNumber(selectedTicket.bankAccountNumber || '')
+                          setBankAccountName(selectedTicket.bankAccountName || user?.fullName || '')
+                        }}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-98"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">account_balance</span>
+                        <span>{selectedTicket.bankAccountNumber ? 'Cập nhật lại STK ngân hàng' : 'Xác nhận & Nhập thông tin ngân hàng'}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Resolution Note if resolved/closed */}
               {selectedTicket.resolutionNote && (

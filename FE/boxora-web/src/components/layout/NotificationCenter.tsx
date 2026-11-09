@@ -122,7 +122,15 @@ const getNotificationAction = (item: NotificationLog, role?: string | null) => {
       item.notificationType === 'REFUND_PAYOUT_COMPLETED') &&
     role === 'CUSTOMER'
   ) {
-    return { label: 'Xem yêu cầu hỗ trợ', to: '/portal/customer?tab=support' }
+    const isRefundProposal =
+      item.notificationType === 'REFUND_BANK_INFO_REQUIRED' ||
+      item.title?.toLowerCase().includes('hoàn tiền') ||
+      item.content?.toLowerCase().includes('hoàn trả số tiền') ||
+      item.content?.toLowerCase().includes('hoàn tiền')
+    return {
+      label: isRefundProposal ? 'Xác nhận & Nhập STK' : 'Xem yêu cầu hỗ trợ',
+      to: '/portal/customer?tab=support',
+    }
   }
 
   if (
