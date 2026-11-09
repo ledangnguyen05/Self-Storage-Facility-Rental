@@ -40,10 +40,10 @@ public class FacilityController {
 
     @PostMapping(value = "/upload-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAnyAuthority('FACILITY_CREATE', 'FACILITY_UPDATE') or hasRole('ADMIN')")
-    @Operation(summary = "Tải ảnh cơ sở lên Cloudflare R2")
+    @Operation(summary = "Tải ảnh cơ sở")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadFacilityImage(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = cloudflareR2Service.uploadFacilityImage(file);
-        return ResponseEntity.ok(ApiResponse.success("Tải ảnh cơ sở lên Cloudflare R2 thành công", response));
+        return ResponseEntity.ok(ApiResponse.success("Tải ảnh cơ sở thành công", response));
     }
 
     @GetMapping("{id}")

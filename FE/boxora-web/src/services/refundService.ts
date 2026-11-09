@@ -117,7 +117,7 @@ export const refundService = {
         }
       }
     }
-    throw lastError || new Error('Không thể tải ảnh chứng từ lên Cloudflare R2')
+    throw lastError || new Error('Không thể tải ảnh chứng từ')
   },
 
   async createRefund(data: RefundCreatePayload): Promise<RefundRequestItem> {

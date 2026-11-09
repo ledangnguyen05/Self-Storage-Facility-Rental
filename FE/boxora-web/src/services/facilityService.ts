@@ -42,7 +42,7 @@ export const facilityService = {
         }
       }
     }
-    throw lastError || new Error('Không thể tải ảnh cơ sở lên Cloudflare R2')
+    throw lastError || new Error('Không thể tải ảnh cơ sở')
   },
 
   async createFacility(data: Partial<Facility>) {

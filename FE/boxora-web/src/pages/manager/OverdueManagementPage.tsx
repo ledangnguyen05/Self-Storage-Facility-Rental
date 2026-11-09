@@ -1365,12 +1365,12 @@ export const OverdueManagementPage: React.FC = () => {
               {/* Đính kèm chứng từ biên lai chuyển khoản / thu tiền trên Cloudflare R2 */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
                 <div className="font-bold text-slate-700 flex items-center justify-between">
-                  <span>Ảnh biên lai / chứng từ thanh toán (Cloudflare R2 - tùy chọn):</span>
+                  <span>Ảnh biên lai / chứng từ thanh toán (tùy chọn):</span>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold text-xs cursor-pointer transition">
                     <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                    <span>{isUploadingSettlementProof ? 'Đang tải lên R2...' : (settlementProofUrl ? 'Đổi ảnh biên lai' : 'Tải ảnh chứng từ lên R2')}</span>
+                    <span>{isUploadingSettlementProof ? 'Đang tải lên...' : (settlementProofUrl ? 'Đổi ảnh biên lai' : 'Tải ảnh chứng từ lên')}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1384,10 +1384,10 @@ export const OverdueManagementPage: React.FC = () => {
                           const url = await supportTicketService.uploadAttachment(file)
                           if (url) {
                             setSettlementProofUrl(url)
-                            toast.success('Đã tải ảnh biên lai tất toán lên Cloudflare R2 thành công!')
+                            toast.success('Đã tải ảnh biên lai tất toán thành công!')
                           }
                         } catch (err: any) {
-                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chứng từ lên R2.')
+                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chứng từ.')
                         } finally {
                           setIsUploadingSettlementProof(false)
                           e.target.value = ''

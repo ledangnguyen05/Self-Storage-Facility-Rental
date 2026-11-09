@@ -2308,7 +2308,7 @@ export const IncidentTicketsPage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ảnh chụp hiện trường (Tải lên R2 — Chọn một hoặc nhiều ảnh, tối đa 10MB/ảnh)
+                  Ảnh chụp hiện trường (Chọn một hoặc nhiều ảnh, tối đa 10MB/ảnh)
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="cursor-pointer px-3.5 py-2 bg-slate-50 border border-dashed border-slate-300 hover:border-rose-500 rounded-xl text-xs font-semibold text-slate-700 flex items-center gap-1.5 transition-colors">

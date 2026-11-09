@@ -25,6 +25,24 @@ import { DynamicPricingMatrixPanel } from './DynamicPricingMatrixPanel'
 import { LocationPickerMap } from '../../components/map/LocationPickerMap'
 import { FloorListManager } from '../../components/facility/FloorListManager'
 import { FloorPlanHierarchyPreview } from '../../components/facility/FloorPlanHierarchyPreview'
+import { getApiBaseUrl } from '../../lib/axios'
+
+export const resolveFacilityImageUrl = (url?: string): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  const cleanBase = base ? base.replace(/\/api\/?$/, '') : 'http://localhost:8080'
+  return `${cleanBase}${cleanUrl}`
+}
 
 interface FacilityConfigurationPanelProps {
   facilities: Facility[]
@@ -146,6 +164,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const [selectedFloorIndex, setSelectedFloorIndex] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
   const [isUploadingFacilityImage, setIsUploadingFacilityImage] = useState(false)
+  const [facilityImagePreview, setFacilityImagePreview] = useState<string>('')
   const [isGeocoding, setIsGeocoding] = useState(false)
   const [formError, setFormError] = useState('')
   const [notice, setNotice] = useState('')
@@ -229,6 +248,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const startCreate = () => {
     setEditingFacility(null)
     setDraft(blankDraft())
+    setFacilityImagePreview('')
     setSelectedFloorIndex(0)
     setActiveStep(1)
     setFormError('')
@@ -241,6 +261,7 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
   const startEdit = (facility: Facility) => {
     setEditingFacility(facility)
     setDraft(toDraft(facility))
+    setFacilityImagePreview('')
     setSelectedFloorIndex(0)
     setActiveStep(1)
     setFormError('')
@@ -854,11 +875,19 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                       <div className="sm:col-span-2 lg:col-span-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-800/40">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                           <div className="relative w-28 h-20 rounded-xl overflow-hidden border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-center shrink-0">
-                            {draft.imageUrl ? (
+                            {(facilityImagePreview || draft.imageUrl) ? (
                               <img
-                                src={draft.imageUrl}
+                                src={facilityImagePreview || resolveFacilityImageUrl(draft.imageUrl)}
                                 alt={draft.name || 'Ảnh chi nhánh'}
                                 className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  const target = e.currentTarget
+                                  if (!target.src.includes('localhost:8080') && draft.imageUrl?.startsWith('/uploads')) {
+                                    target.src = `http://localhost:8080${draft.imageUrl.startsWith('/') ? '' : '/'}${draft.imageUrl}`
+                                  } else {
+                                    target.src = '/assets/facilities/facility-d1.jpg'
+                                  }
+                                }}
                               />
                             ) : (
                               <span className="material-symbols-outlined text-2xl text-slate-300">domain</span>
@@ -871,12 +900,12 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                           </div>
                           <div className="flex-1 space-y-1.5">
                             <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                              {t('Ảnh đại diện chi nhánh (Cloudflare R2)', 'Facility Image (Cloudflare R2)')}
+                              {t('Ảnh đại diện chi nhánh', 'Facility Image')}
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                               <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-2xs">
                                 <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                                <span>{draft.imageUrl ? t('Thay ảnh chi nhánh') : t('Tải ảnh lên R2')}</span>
+                                <span>{(facilityImagePreview || draft.imageUrl) ? t('Thay ảnh chi nhánh') : t('Tải ảnh lên')}</span>
                                 <input
                                   type="file"
                                   accept="image/png,image/jpeg,image/webp,image/jpg"
@@ -885,6 +914,8 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                                   onChange={async (e) => {
                                     const file = e.target.files?.[0]
                                     if (!file) return
+                                    const localPreview = URL.createObjectURL(file)
+                                    setFacilityImagePreview(localPreview)
                                     setIsUploadingFacilityImage(true)
                                     setFormError('')
                                     try {
@@ -1297,11 +1328,16 @@ export const FacilityConfigurationPanel: React.FC<FacilityConfigurationPanelProp
                         <div className="flex items-center gap-3 min-w-0">
                           {facility.imageUrl ? (
                             <img
-                              src={facility.imageUrl}
+                              src={resolveFacilityImageUrl(facility.imageUrl)}
                               alt={facility.name}
                               className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-2xs"
                               onError={(e) => {
-                                (e.currentTarget as HTMLElement).style.display = 'none'
+                                const target = e.currentTarget
+                                if (!target.src.includes('localhost:8080') && facility.imageUrl?.startsWith('/uploads')) {
+                                  target.src = `http://localhost:8080${facility.imageUrl.startsWith('/') ? '' : '/'}${facility.imageUrl}`
+                                } else {
+                                  target.src = '/assets/facilities/facility-d1.jpg'
+                                }
                               }}
                             />
                           ) : (

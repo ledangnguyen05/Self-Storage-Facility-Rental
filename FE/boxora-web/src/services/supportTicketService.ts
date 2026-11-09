@@ -373,7 +373,7 @@ export const supportTicketService = {
         }
       }
     }
-    throw lastError || new Error('Không thể tải ảnh lên Cloudflare R2')
+    throw lastError || new Error('Không thể tải ảnh')
   },
 
   async uploadAttachment(file: File): Promise<string> {

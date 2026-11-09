@@ -42,7 +42,7 @@ export const storageUnitService = {
         }
       }
     }
-    throw lastError || new Error('Không thể tải ảnh ngăn kho lên Cloudflare R2')
+    throw lastError || new Error('Không thể tải ảnh ngăn kho')
   },
   async getUnits(params?: { facilityId?: string; floorLevel?: string; status?: string; forAssignment?: boolean; forBookingId?: string }) {
     const response = await api.get('/api/v1/storage-units', { params })

@@ -32,7 +32,7 @@ public class StorageUnitController {
     @PreAuthorize("hasAnyAuthority('STORAGE_UNIT_CREATE', 'STORAGE_UNIT_UPDATE', 'UNIT_TYPE_CREATE', 'UNIT_TYPE_UPDATE') or hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<FileUploadResponse>> uploadUnitImage(@RequestParam("file") MultipartFile file) {
         FileUploadResponse response = cloudflareR2Service.uploadUnitImage(file);
-        return ResponseEntity.ok(ApiResponse.success("Tải ảnh ngăn kho lên Cloudflare R2 thành công", response));
+        return ResponseEntity.ok(ApiResponse.success("Tải ảnh ngăn kho thành công", response));
     }
 
     @GetMapping

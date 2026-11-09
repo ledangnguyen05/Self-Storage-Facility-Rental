@@ -1343,7 +1343,7 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                                 className="w-14 h-12 object-cover rounded border border-slate-200"
                               />
                               <span className="text-[11px] font-bold text-purple-700 underline pr-1">
-                                Xem ảnh niêm phong (Cloudflare R2)
+                                Xem ảnh niêm phong
                               </span>
                             </a>
                           </div>
@@ -2193,11 +2193,11 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Ảnh chụp hiện trường kiểm kê / niêm phong (Cloudflare R2):</label>
+                <label className="font-semibold text-slate-700 block mb-1">Ảnh chụp hiện trường kiểm kê / niêm phong:</label>
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs cursor-pointer transition">
                     <span className="material-symbols-outlined text-[16px]">add_photo_alternate</span>
-                    <span>{isUploadingSealingPhoto ? 'Đang tải lên R2...' : (sealingPhotoUrl ? 'Đổi ảnh hiện trường' : 'Tải ảnh lên R2')}</span>
+                    <span>{isUploadingSealingPhoto ? 'Đang tải lên...' : (sealingPhotoUrl ? 'Đổi ảnh hiện trường' : 'Tải ảnh lên')}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -2211,10 +2211,10 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                           const url = await supportTicketService.uploadAttachment(file)
                           if (url) {
                             setSealingPhotoUrl(url)
-                            toast.success('Đã tải ảnh hiện trường kiểm kê lên Cloudflare R2!')
+                            toast.success('Đã tải ảnh hiện trường kiểm kê thành công!')
                           }
                         } catch (err: any) {
-                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh hiện trường lên R2.')
+                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh hiện trường.')
                         } finally {
                           setIsUploadingSealingPhoto(false)
                           e.target.value = ''

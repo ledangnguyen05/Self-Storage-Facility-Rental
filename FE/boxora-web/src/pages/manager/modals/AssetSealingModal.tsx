@@ -220,11 +220,11 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
                 />
               </div>
               <div className="sm:col-span-2 pt-1">
-                <label className="text-[10px] text-slate-500 font-bold block mb-1">ẢNH HIỆN TRƯỜNG TEM NIÊM PHONG (CLOUDFLARE R2)</label>
+                <label className="text-[10px] text-slate-500 font-bold block mb-1">ẢNH HIỆN TRƯỜNG TEM NIÊM PHONG</label>
                 <div className="flex items-center gap-2 flex-wrap">
                   <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded text-xs font-semibold cursor-pointer transition">
                     <span className="material-symbols-outlined text-[15px]">add_a_photo</span>
-                    <span>{isUploadingEvidence ? 'Đang tải lên R2...' : (evidenceUrl ? 'Đổi ảnh niêm phong' : 'Tải ảnh niêm phong lên')}</span>
+                    <span>{isUploadingEvidence ? 'Đang tải lên...' : (evidenceUrl ? 'Đổi ảnh niêm phong' : 'Tải ảnh niêm phong lên')}</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -239,7 +239,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
                           const url = await supportTicketService.uploadAttachment(file)
                           if (url) setEvidenceUrl(url)
                         } catch (err: any) {
-                          setErrorMessage(err?.response?.data?.message || 'Không thể tải ảnh niêm phong lên R2')
+                          setErrorMessage(err?.response?.data?.message || 'Không thể tải ảnh niêm phong')
                         } finally {
                           setIsUploadingEvidence(false)
                           e.target.value = ''
@@ -254,7 +254,7 @@ export const AssetSealingModal: React.FC<AssetSealingModalProps> = ({
                       rel="noreferrer"
                       className="text-[11px] font-mono text-emerald-700 underline truncate max-w-xs"
                     >
-                      ✓ Đã tải lên R2 ({evidenceUrl})
+                      ✓ Đã tải lên ({evidenceUrl})
                     </a>
                   )}
                 </div>
