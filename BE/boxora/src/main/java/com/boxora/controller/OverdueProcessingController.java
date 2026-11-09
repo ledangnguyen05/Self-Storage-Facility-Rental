@@ -44,7 +44,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/overdue/summary")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Dashboard KPI tổng hợp công nợ và các nhóm quá hạn")
     public ResponseEntity<ApiResponse<OverdueSummaryResponse>> getOverdueSummary(
             @RequestParam(required = false) UUID facilityId
@@ -54,7 +54,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/overdue/contracts")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Danh sách hợp đồng quá hạn kèm bộ lọc nâng cao và phân trang")
     public ResponseEntity<ApiResponse<PageResponse<OverdueContractItemResponse>>> getOverdueContracts(
             @RequestParam(required = false) UUID facilityId,
@@ -75,7 +75,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/overdue/contracts/{contractId}")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xem hồ sơ chi tiết một hợp đồng quá hạn (Công nợ, SmartLock, Niêm phong, Audit)")
     public ResponseEntity<ApiResponse<OverdueContractDetailResponse>> getOverdueContractDetail(
             @PathVariable UUID contractId
@@ -85,7 +85,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/remind")
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Gửi thông báo nhắc nợ cước đa kênh (SMS, EMAIL, CALL) và lưu vết")
     public ResponseEntity<ApiResponse<String>> sendReminder(
             @PathVariable UUID contractId,
@@ -96,7 +96,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/pin-revocation/request")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Tạo yêu cầu thu hồi PIN/QR SmartLock")
     public ResponseEntity<ApiResponse<OverdueContractDetailResponse.PinRevocationDto>> requestPinRevocation(
             @PathVariable UUID contractId,
@@ -107,7 +107,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/pin-revocation/execute")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Thực hiện thu hồi PIN/QR SmartLock qua IoT Gateway (hỗ trợ Mock Adapter và mô phỏng Offline)")
     public ResponseEntity<ApiResponse<OverdueContractDetailResponse.PinRevocationDto>> executePinRevocation(
             @PathVariable UUID contractId,
@@ -118,7 +118,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/pin-temp-grant")
-    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE') or hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('OVERDUE_PROCESS', 'ACCESS_CREDENTIAL_REVOKE') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Cấp quyền truy cập tạm thời cho khách hàng có lý do chính đáng")
     public ResponseEntity<ApiResponse<String>> grantTemporaryPin(
             @PathVariable UUID contractId,
@@ -129,7 +129,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/sealing")
-    @PreAuthorize("hasAnyAuthority('SEALING_CREATE', 'OVERDUE_PROCESS') or hasRole('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('SEALING_CREATE', 'OVERDUE_PROCESS') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Quy trình niêm phong kho: REQUEST, APPROVE, REJECT, COMPLETE (kèm bảng kiểm kê tài sản)")
     public ResponseEntity<ApiResponse<String>> processSealingWorkflow(
             @PathVariable UUID contractId,
@@ -140,7 +140,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/liquidate-release")
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Giải phóng buồng kho nợ cước thanh lý tài sản kiểm kê về trạng thái AVAILABLE")
     public ResponseEntity<ApiResponse<String>> releaseLiquidatedStorageUnit(
             @PathVariable UUID contractId,
@@ -151,7 +151,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/complete-settlement")
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xác nhận khách hàng đã tới thanh toán công nợ và hoàn tất trả kho")
     public ResponseEntity<ApiResponse<String>> completeSettlement(
             @PathVariable UUID contractId,
@@ -162,7 +162,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/overdue/export/csv")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xuất file CSV danh sách nợ cước quá hạn")
     public ResponseEntity<byte[]> exportOverdueCsv(
             @RequestParam(required = false) UUID facilityId,
@@ -181,7 +181,7 @@ public class OverdueProcessingController {
     // --- Legacy / Backwards-compatibility Endpoints ---
 
     @GetMapping("/sealing-records")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Danh sách biên bản niêm phong kho lưu trữ (BR-RULE-012)")
     public ResponseEntity<ApiResponse<PageResponse<SealingRecordResponse>>> getAllSealingRecords(
             @RequestParam(required = false) UUID facilityId,
@@ -195,7 +195,7 @@ public class OverdueProcessingController {
     }
 
     @GetMapping("/sealing-records/{id}")
-    @PreAuthorize("hasAuthority('OVERDUE_VIEW')")
+    @PreAuthorize("hasAuthority('OVERDUE_VIEW') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Xem chi tiết một biên bản niêm phong kho")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> getSealingRecordById(
             @PathVariable UUID id
@@ -205,7 +205,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/sealing-records/{id}/unseal")
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Mở niêm phong kho sau khi khách đã thanh toán công nợ và phí quá hạn (BR-RULE-012)")
     public ResponseEntity<ApiResponse<SealingRecordResponse>> unsealUnit(
             @PathVariable UUID id,
@@ -216,7 +216,7 @@ public class OverdueProcessingController {
     }
 
     @PostMapping("/overdue/contracts/{contractId}/lockout")
-    @PreAuthorize("hasAuthority('OVERDUE_PROCESS')")
+    @PreAuthorize("hasAuthority('OVERDUE_PROCESS') or hasRole('ADMIN') or hasAnyRole('BUSINESS_MANAGER', 'FACILITY_MANAGER')")
     @Operation(summary = "Revoke stored PIN/QR credentials for a contract that reached its facility threshold")
     public ResponseEntity<ApiResponse<com.boxora.dto.response.LockoutResponse>> lockoutContract(
             @PathVariable UUID contractId,
