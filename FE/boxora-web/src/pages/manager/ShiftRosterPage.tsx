@@ -189,6 +189,7 @@ export const ShiftRosterPage: React.FC = () => {
   const [filterStaff, setFilterStaff] = useState<string>('ALL')
   const [filterZone, setFilterZone] = useState<string>('ALL')
   const [filterStatus, setFilterStatus] = useState<string>('ALL')
+  const [swapFilterStatus, setSwapFilterStatus] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'>('ALL')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 8
 
@@ -475,7 +476,36 @@ export const ShiftRosterPage: React.FC = () => {
     })
   }, [swapRequests, isBusinessManager, staffList])
 
-  const pendingSwapCount = useMemo(() => displaySwapRequests.filter(s => s.status === 'PENDING').length, [displaySwapRequests])
+  const pendingSwapCount = useMemo(() => displaySwapRequests.filter(s => {
+    const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+    return (s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && !isPast
+  }).length, [displaySwapRequests, todayStr])
+
+  const approvedSwapCount = useMemo(() => displaySwapRequests.filter(s => s.status === 'APPROVED').length, [displaySwapRequests])
+  const rejectedSwapCount = useMemo(() => displaySwapRequests.filter(s => s.status === 'REJECTED').length, [displaySwapRequests])
+  const cancelledSwapCount = useMemo(() => displaySwapRequests.filter(s => {
+    const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+    return s.status === 'CANCELLED' || ((s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && isPast)
+  }).length, [displaySwapRequests, todayStr])
+
+  const filteredSwapsByStatus = useMemo(() => {
+    if (swapFilterStatus === 'ALL') return displaySwapRequests
+    if (swapFilterStatus === 'PENDING') {
+      return displaySwapRequests.filter(s => {
+        const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+        return (s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && !isPast
+      })
+    }
+    if (swapFilterStatus === 'APPROVED') return displaySwapRequests.filter(s => s.status === 'APPROVED')
+    if (swapFilterStatus === 'REJECTED') return displaySwapRequests.filter(s => s.status === 'REJECTED')
+    if (swapFilterStatus === 'CANCELLED') {
+      return displaySwapRequests.filter(s => {
+        const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+        return s.status === 'CANCELLED' || ((s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && isPast)
+      })
+    }
+    return displaySwapRequests
+  }, [displaySwapRequests, swapFilterStatus, todayStr])
 
   const distinctShiftsCount = useMemo(() => {
     const shifts = new Set(assignments.map(a => a.shift))
@@ -1625,11 +1655,96 @@ export const ShiftRosterPage: React.FC = () => {
             </div>
           </div>
 
-          {displaySwapRequests.length === 0 ? (
+          {/* BỘ LỌC LỊCH SỬ & TRẠNG THÁI YÊU CẦU ĐỔI CA */}
+          <div className="flex items-center gap-1.5 flex-wrap bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+            <span className="text-slate-500 font-semibold px-1 flex items-center gap-1 text-[11px]">
+              <span className="material-symbols-outlined text-[16px]">history</span>
+              Lọc lịch sử &amp; trạng thái:
+            </span>
+            <button
+              type="button"
+              onClick={() => setSwapFilterStatus('ALL')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                swapFilterStatus === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              Tất cả ({displaySwapRequests.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapFilterStatus('PENDING')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapFilterStatus === 'PENDING'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
+              }`}
+            >
+              <span>{isBusinessManager ? 'Chờ Business Manager duyệt' : 'Chờ duyệt'}</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapFilterStatus === 'PENDING' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {pendingSwapCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapFilterStatus('APPROVED')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapFilterStatus === 'APPROVED'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200'
+              }`}
+            >
+              <span>Lịch sử đã duyệt</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapFilterStatus === 'APPROVED' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {approvedSwapCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapFilterStatus('REJECTED')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapFilterStatus === 'REJECTED'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : 'bg-white text-rose-700 hover:bg-rose-50 border border-rose-200'
+              }`}
+            >
+              <span>Lịch sử từ chối</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapFilterStatus === 'REJECTED' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {rejectedSwapCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapFilterStatus('CANCELLED')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapFilterStatus === 'CANCELLED'
+                  ? 'bg-slate-700 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <span>Lịch sử đã hủy / quá hạn</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapFilterStatus === 'CANCELLED' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {cancelledSwapCount}
+              </span>
+            </button>
+          </div>
+
+          {filteredSwapsByStatus.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-xs">
-              {isBusinessManager
-                ? 'Hiện tại không có yêu cầu đổi ca nào giữa các Quản lý cơ sở.'
-                : 'Hiện tại không có yêu cầu đổi ca nào tại chi nhánh này.'}
+              {displaySwapRequests.length === 0
+                ? (isBusinessManager
+                    ? 'Hiện tại không có yêu cầu đổi ca nào giữa các Quản lý cơ sở.'
+                    : 'Hiện tại không có yêu cầu đổi ca nào tại chi nhánh này.')
+                : 'Không có yêu cầu đổi ca nào trong bộ lọc trạng thái đã chọn.'}
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -1645,7 +1760,7 @@ export const ShiftRosterPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {displaySwapRequests.map(swap => {
+                  {filteredSwapsByStatus.map(swap => {
                     const isPending = swap.status === 'PENDING'
                     const isManagerApproved = swap.status === 'MANAGER_APPROVED'
                     const isApproved = swap.status === 'APPROVED'

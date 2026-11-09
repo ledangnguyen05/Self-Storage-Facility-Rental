@@ -142,7 +142,8 @@ export const StaffMyShiftsPage: React.FC = () => {
   const [isPunching, setIsPunching] = useState(false)
 
   // Shift Swap Sub-tabs & Response modal
-  const [swapSubTab, setSwapSubTab] = useState<'INCOMING' | 'OUTGOING'>('INCOMING')
+  const [swapSubTab, setSwapSubTab] = useState<'INCOMING' | 'OUTGOING' | 'HISTORY'>('INCOMING')
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'ALL' | 'APPROVED' | 'REJECTED' | 'CANCELLED'>('ALL')
   const [swapResponseModal, setSwapResponseModal] = useState<{
     swap: ShiftSwapRequest
     accept: boolean
@@ -323,6 +324,36 @@ export const StaffMyShiftsPage: React.FC = () => {
       return s.status === 'MANAGER_APPROVED' && !isPast
     }).length
   }, [incomingSwaps, todayStr])
+
+  // Shift Swap History: all requests that are finalized or overdue
+  const historySwaps = useMemo(() => {
+    return mySwaps.filter(s => {
+      const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+      const isOverdue = (isPast && (s.status === 'PENDING' || s.status === 'MANAGER_APPROVED')) ||
+        (s.status === 'CANCELLED' && (Boolean(s.managerNotes?.includes('Quá hạn')) || isPast))
+      return s.status === 'APPROVED' || s.status === 'REJECTED' || s.status === 'CANCELLED' || isOverdue
+    })
+  }, [mySwaps, todayStr])
+
+  const historyApprovedCount = useMemo(() => historySwaps.filter(s => s.status === 'APPROVED').length, [historySwaps])
+  const historyRejectedCount = useMemo(() => historySwaps.filter(s => s.status === 'REJECTED').length, [historySwaps])
+  const historyCancelledCount = useMemo(() => historySwaps.filter(s => {
+    const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+    return s.status === 'CANCELLED' || ((s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && isPast)
+  }).length, [historySwaps, todayStr])
+
+  const filteredHistorySwaps = useMemo(() => {
+    if (historyStatusFilter === 'ALL') return historySwaps
+    if (historyStatusFilter === 'APPROVED') return historySwaps.filter(s => s.status === 'APPROVED')
+    if (historyStatusFilter === 'REJECTED') return historySwaps.filter(s => s.status === 'REJECTED')
+    if (historyStatusFilter === 'CANCELLED') {
+      return historySwaps.filter(s => {
+        const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+        return s.status === 'CANCELLED' || ((s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && isPast)
+      })
+    }
+    return historySwaps
+  }, [historySwaps, historyStatusFilter, todayStr])
 
   // KPIs calculated from real data
   const kpis = useMemo(() => {
@@ -1260,6 +1291,24 @@ export const StaffMyShiftsPage: React.FC = () => {
                 {outgoingSwaps.length}
               </span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setSwapSubTab('HISTORY')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+                swapSubTab === 'HISTORY'
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <span className="material-symbols-outlined text-[16px]">history</span>
+              <span>Lịch sử yêu cầu đổi ca</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                swapSubTab === 'HISTORY' ? 'bg-blue-200/80 text-blue-900' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {historySwaps.length}
+              </span>
+            </button>
           </div>
 
           {/* SUB-TAB 1: INCOMING REQUESTS */}
@@ -1509,6 +1558,180 @@ export const StaffMyShiftsPage: React.FC = () => {
                         )
                       })}
 
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SUB-TAB 3: SHIFT SWAP HISTORY (Lịch sử yêu cầu đổi ca) */}
+          {swapSubTab === 'HISTORY' && (
+            <div className="flex flex-col gap-4">
+              {/* Filter pills */}
+              <div className="flex items-center gap-1.5 flex-wrap bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                <span className="text-slate-500 font-semibold px-1 flex items-center gap-1 text-[11px]">
+                  <span className="material-symbols-outlined text-[16px]">filter_list</span>
+                  Lọc trạng thái:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatusFilter('ALL')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                    historyStatusFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-2xs'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  Tất cả ({historySwaps.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatusFilter('APPROVED')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    historyStatusFilter === 'APPROVED'
+                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200'
+                  }`}
+                >
+                  <span>Lịch sử đã duyệt</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    historyStatusFilter === 'APPROVED' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    {historyApprovedCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatusFilter('REJECTED')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    historyStatusFilter === 'REJECTED'
+                      ? 'bg-rose-600 text-white shadow-2xs'
+                      : 'bg-white text-rose-700 hover:bg-rose-50 border border-rose-200'
+                  }`}
+                >
+                  <span>Lịch sử từ chối</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    historyStatusFilter === 'REJECTED' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'
+                  }`}>
+                    {historyRejectedCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHistoryStatusFilter('CANCELLED')}
+                  className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    historyStatusFilter === 'CANCELLED'
+                      ? 'bg-slate-700 text-white shadow-2xs'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <span>Lịch sử đã hủy / quá hạn</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                    historyStatusFilter === 'CANCELLED' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    {historyCancelledCount}
+                  </span>
+                </button>
+              </div>
+
+              {filteredHistorySwaps.length === 0 ? (
+                <div className="py-12 text-center text-slate-500">
+                  <span className="material-symbols-outlined text-4xl text-slate-300 block mb-2">history</span>
+                  <p className="font-semibold text-slate-700">Chưa có lịch sử đổi ca nào</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Các yêu cầu đổi ca đã hoàn tất, bị từ chối hoặc đã hủy sẽ được lưu trữ và hiển thị tại đây.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-600 font-bold uppercase text-[11px]">
+                        <th className="py-3 px-4">Loại yêu cầu</th>
+                        <th className="py-3 px-4">Ngày ca trực</th>
+                        <th className="py-3 px-4">Ca trực</th>
+                        <th className="py-3 px-4">Đồng nghiệp liên quan</th>
+                        <th className="py-3 px-4">Lý do xin đổi</th>
+                        <th className="py-3 px-4">Kết quả / Trạng thái</th>
+                        <th className="py-3 px-4">Ghi chú &amp; Phê duyệt</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredHistorySwaps.map(swap => {
+                        const isOutgoing = swap.requesterId === user?.id
+                        const isApproved = swap.status === 'APPROVED'
+                        const isRejected = swap.status === 'REJECTED'
+                        const isCancelled = swap.status === 'CANCELLED'
+                        const isPast = Boolean(swap.assignmentDate && swap.assignmentDate < todayStr)
+                        const isOverdue = (isPast && (swap.status === 'PENDING' || swap.status === 'MANAGER_APPROVED')) ||
+                          (isCancelled && (Boolean(swap.managerNotes?.includes('Quá hạn')) || isPast))
+
+                        const peerName = isOutgoing
+                          ? (swap.targetStaffName || swap.targetStaffUsername)
+                          : (swap.requesterName || swap.requesterUsername)
+                        const peerEmail = isOutgoing ? swap.targetStaffEmail : swap.requesterEmail
+
+                        return (
+                          <tr key={swap.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3 px-4">
+                              <span className={`inline-block px-2 py-0.5 rounded-full font-bold text-[10px] border ${
+                                isOutgoing
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                  : 'bg-purple-50 text-purple-700 border-purple-200'
+                              }`}>
+                                {isOutgoing ? 'Đơn bạn gửi đi' : 'Đơn gửi đến bạn'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4 font-mono font-bold text-slate-900">
+                              {formatVN(swap.assignmentDate)}
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span className="font-semibold text-slate-800">{formatShiftLabel(swap.assignmentShift)}</span>
+                              {swap.assignedZone && <span className="text-slate-400 block text-[11px]">{swap.assignedZone}</span>}
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <strong className="text-slate-900">{peerName}</strong>
+                              {peerEmail && <span className="text-slate-400 block text-[11px]">{peerEmail}</span>}
+                            </td>
+
+                            <td className="py-3 px-4 max-w-xs text-slate-600 truncate" title={swap.reason}>
+                              {swap.reason}
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${
+                                isOverdue ? 'bg-slate-100 text-slate-700 border-slate-300' :
+                                isApproved ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                isRejected ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}>
+                                {isOverdue ? 'Quá hạn đổi' :
+                                 isApproved ? 'Đã hoàn tất đổi ca' :
+                                 isRejected ? 'Bị từ chối' : 'Đã hủy'}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4 text-[11px] text-slate-500">
+                              {swap.reviewedByName && (
+                                <div>Quản lý: <strong className="text-slate-800">{swap.reviewedByName}</strong></div>
+                              )}
+                              {swap.managerNotes && (
+                                <p className="italic text-slate-600 mt-0.5">Ý kiến QL: {swap.managerNotes}</p>
+                              )}
+                              {swap.targetStaffNotes && (
+                                <p className="italic text-blue-600 mt-0.5">Phản hồi: {swap.targetStaffNotes}</p>
+                              )}
+                              {swap.reviewedAt && (
+                                <span className="text-[10px] text-slate-400 block mt-0.5">{formatDateTime(swap.reviewedAt)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>

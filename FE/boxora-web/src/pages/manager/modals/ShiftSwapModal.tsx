@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { userService } from '../../../services/userService'
 import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent, isShiftStarted } from '../../../services/staffAssignmentService'
 import { useAuth } from '../../../context/AuthContext'
@@ -12,6 +12,19 @@ export interface ShiftSwapModalProps {
   targetRole?: 'STAFF' | 'FACILITY_MANAGER'
   availableAssignments?: StaffAssignmentResponse[]
   onSuccess: (msg: string) => void
+}
+
+const formatDateLocal = (d: Date): string => {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const formatVN = (dateStr?: string | null): string => {
+  if (!dateStr) return '—'
+  const parts = dateStr.split('-')
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`
+  }
+  return dateStr
 }
 
 const getShiftLabel = (shift?: string) => {
@@ -31,6 +44,7 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
   onSuccess
 }) => {
   const { user } = useAuth()
+  const todayStr = useMemo(() => formatDateLocal(new Date()), [])
 
   // Business rule: STAFF only swaps with STAFF; FACILITY_MANAGER only swaps with FACILITY_MANAGER
   const effectiveRole: 'STAFF' | 'FACILITY_MANAGER' = useMemo(() => {
@@ -42,57 +56,45 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
 
   const isManager = effectiveRole === 'FACILITY_MANAGER'
 
-  // Filter swappable assignments (only upcoming / active assignments)
-  const validAssignments = useMemo(() => {
-    const list = assignment ? [assignment] : availableAssignments
-    return list.filter(a => a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftStarted(a))
-  }, [assignment, availableAssignments])
-
+  // Selected date to swap shift
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr)
+  const [userAssignments, setUserAssignments] = useState<StaffAssignmentResponse[]>([])
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('')
+
+  // Candidates & Busy staff states
   const [candidateStaff, setCandidateStaff] = useState<User[]>([])
+  const [facilityShiftsOnDate, setFacilityShiftsOnDate] = useState<StaffAssignmentResponse[]>([])
   const [selectedTargetId, setSelectedTargetId] = useState<string>('')
   const [reason, setReason] = useState('')
   const [isAgreed, setIsAgreed] = useState(false)
-  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false)
   const [isLoadingAssignments, setIsLoadingAssignments] = useState(false)
-  const [fetchedUserAssignments, setFetchedUserAssignments] = useState<StaffAssignmentResponse[]>([])
+  const [isLoadingCandidates, setIsLoadingCandidates] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // Determine current active assignment
-  const allAvailableAssignments = useMemo(() => {
-    if (validAssignments.length > 0) return validAssignments
-    return fetchedUserAssignments
-  }, [validAssignments, fetchedUserAssignments])
-
-  const activeAssignment = useMemo(() => {
-    if (selectedAssignmentId) {
-      const found = allAvailableAssignments.find(a => a.id === selectedAssignmentId)
-      if (found) return found
-    }
-    return allAvailableAssignments[0] || null
-  }, [selectedAssignmentId, allAvailableAssignments])
-
-  // Reset or initialize when modal opens
+  // Initialize modal state on open
   useEffect(() => {
     if (isOpen) {
       setReason('')
       setIsAgreed(false)
       setErrorMessage(null)
 
+      const initialDate = assignment?.assignedDate || (availableAssignments.length > 0 ? availableAssignments[0].assignedDate : todayStr)
+      setSelectedDate(initialDate)
+
       if (assignment) {
         setSelectedAssignmentId(assignment.id)
       } else if (availableAssignments.length > 0) {
-        const first = availableAssignments.find(a => a.status !== 'COMPLETED' && a.status !== 'CANCELLED')
-        setSelectedAssignmentId(first ? first.id : '')
+        setSelectedAssignmentId(availableAssignments[0].id)
       } else {
         setSelectedAssignmentId('')
-        // Try fetching current user's assignments
-        void fetchUserUpcomingAssignments()
       }
-    }
-  }, [isOpen, assignment, availableAssignments])
 
+      void fetchUserUpcomingAssignments()
+    }
+  }, [isOpen, assignment, availableAssignments, todayStr])
+
+  // Fetch all upcoming swappable assignments of current user
   const fetchUserUpcomingAssignments = async () => {
     if (!user?.id) return
     setIsLoadingAssignments(true)
@@ -101,47 +103,101 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
       const res = await staffAssignmentService.getAllAssignments({
         staffId: user.id,
         facilityId: effFacility,
-        size: 50
+        fromDate: todayStr,
+        size: 100
       })
-      const list = (res?.content || []).filter((a: StaffAssignmentResponse) => a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftStarted(a))
-      setFetchedUserAssignments(list)
-      if (list.length > 0) {
-        setSelectedAssignmentId(list[0].id)
+      let list = (res?.content || []).filter(
+        (a: StaffAssignmentResponse) => a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftStarted(a)
+      )
+
+      // Merge with passed assignment or availableAssignments if any
+      if (assignment && !list.some((a: StaffAssignmentResponse) => a.id === assignment.id)) {
+        list = [assignment, ...list]
+      }
+      availableAssignments.forEach(a => {
+        if (!list.some((existing: StaffAssignmentResponse) => existing.id === a.id)) {
+          list.push(a)
+        }
+      })
+
+      setUserAssignments(list)
+
+      // If no assignment was previously selected, default to first on selected date
+      const onDate = list.filter((a: StaffAssignmentResponse) => a.assignedDate === selectedDate)
+      if (onDate.length > 0) {
+        setSelectedAssignmentId(onDate[0].id)
       }
     } catch {
-      // Ignored
+      // Fallback to local assignments
+      const fallbackList = assignment ? [assignment] : availableAssignments
+      setUserAssignments(fallbackList)
     } finally {
       setIsLoadingAssignments(false)
     }
   }
 
-  // Load candidate peers (strictly filtered by role: STAFF -> STAFF, FACILITY_MANAGER -> FACILITY_MANAGER)
-  useEffect(() => {
-    if (isOpen) {
-      void loadCandidates()
-    }
-  }, [isOpen, facilityId, activeAssignment, effectiveRole])
+  // Swappable shifts of current user on the chosen selectedDate
+  const shiftsOnDate = useMemo(() => {
+    return userAssignments.filter(
+      a => a.assignedDate === selectedDate && a.status === 'ASSIGNED' && !isShiftAbsent(a) && !isShiftStarted(a)
+    )
+  }, [userAssignments, selectedDate])
 
-  const loadCandidates = async () => {
+  // Distinct dates where user has available shifts
+  const userShiftDates = useMemo(() => {
+    const dates = Array.from(new Set(userAssignments.map(a => a.assignedDate))).filter(Boolean) as string[]
+    return dates.sort()
+  }, [userAssignments])
+
+  // Active assignment being swapped
+  const activeAssignment = useMemo(() => {
+    if (selectedAssignmentId) {
+      const found = shiftsOnDate.find(a => a.id === selectedAssignmentId)
+      if (found) return found
+    }
+    return shiftsOnDate[0] || null
+  }, [selectedAssignmentId, shiftsOnDate])
+
+  // When selectedDate changes, adjust selectedAssignmentId
+  useEffect(() => {
+    if (shiftsOnDate.length > 0) {
+      if (!shiftsOnDate.some(a => a.id === selectedAssignmentId)) {
+        setSelectedAssignmentId(shiftsOnDate[0].id)
+      }
+    } else {
+      setSelectedAssignmentId('')
+    }
+  }, [shiftsOnDate, selectedAssignmentId])
+
+  // Load candidate peers and facility shifts on selected date to check conflicts
+  const loadCandidatesAndConflicts = useCallback(async () => {
+    if (!activeAssignment || !isOpen) return
     setIsLoadingCandidates(true)
     setErrorMessage(null)
     try {
-      const targetFacilityId = facilityId || activeAssignment?.facilityId || user?.facilityId
-      const res = await userService.getAllUsers({
+      const targetFacilityId = facilityId || activeAssignment.facilityId || user?.facilityId
+
+      // 1. Fetch peers of the same role in this facility
+      const peerRes = await userService.getAllUsers({
         role: effectiveRole,
         facilityId: targetFacilityId,
-        size: 50
+        size: 100
       })
+      const currentStaffId = activeAssignment.staffId || user?.id
+      const peers = (peerRes?.data || []).filter(u => u.id !== currentStaffId && u.id !== user?.id && u.isActive !== false)
+      setCandidateStaff(peers)
 
-      // Exclude current user and current assignment's owner
-      const currentStaffId = activeAssignment?.staffId || user?.id
-      const list = (res?.data || []).filter(u => u.id !== currentStaffId && u.id !== user?.id)
-      setCandidateStaff(list)
-      if (list.length > 0) {
-        setSelectedTargetId(list[0].id)
-      } else {
-        setSelectedTargetId('')
-      }
+      // 2. Fetch all assignments in the facility on activeAssignment's date to find conflicts
+      const facilityShiftsRes = await staffAssignmentService.getAllAssignments({
+        facilityId: targetFacilityId,
+        fromDate: activeAssignment.assignedDate,
+        toDate: activeAssignment.assignedDate,
+        size: 100
+      })
+      const fShifts = (facilityShiftsRes?.content || []).filter(
+        (a: StaffAssignmentResponse) => a.status !== 'CANCELLED'
+      )
+      setFacilityShiftsOnDate(fShifts)
     } catch {
       setErrorMessage(
         isManager
@@ -151,7 +207,48 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
     } finally {
       setIsLoadingCandidates(false)
     }
-  }
+  }, [activeAssignment, isOpen, facilityId, user?.facilityId, user?.id, effectiveRole, isManager])
+
+  useEffect(() => {
+    if (activeAssignment) {
+      void loadCandidatesAndConflicts()
+    }
+  }, [activeAssignment, loadCandidatesAndConflicts])
+
+  // Check peer availability: A peer is busy if they already have an assignment on this date & shift slot
+  const { availableCandidates, busyCandidates } = useMemo(() => {
+    if (!activeAssignment) return { availableCandidates: [], busyCandidates: [] }
+
+    const busyStaffIds = new Set(
+      facilityShiftsOnDate
+        .filter(a => a.shift === activeAssignment.shift)
+        .map(a => a.staffId)
+    )
+
+    const available: User[] = []
+    const busy: User[] = []
+
+    candidateStaff.forEach(peer => {
+      if (busyStaffIds.has(peer.id)) {
+        busy.push(peer)
+      } else {
+        available.push(peer)
+      }
+    })
+
+    return { availableCandidates: available, busyCandidates: busy }
+  }, [activeAssignment, facilityShiftsOnDate, candidateStaff])
+
+  // Auto-select first available candidate
+  useEffect(() => {
+    if (availableCandidates.length > 0) {
+      if (!availableCandidates.some(c => c.id === selectedTargetId)) {
+        setSelectedTargetId(availableCandidates[0].id)
+      }
+    } else {
+      setSelectedTargetId('')
+    }
+  }, [availableCandidates, selectedTargetId])
 
   if (!isOpen) return null
 
@@ -159,14 +256,14 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
     e.preventDefault()
 
     if (!activeAssignment) {
-      setErrorMessage('Vui lòng chọn ca làm việc cần đổi.')
+      setErrorMessage('Vui lòng chọn ca làm việc hợp lệ cần đổi.')
       return
     }
     if (!selectedTargetId) {
       setErrorMessage(
         isManager
-          ? 'Vui lòng chọn Quản lý cơ sở tiếp nhận ca.'
-          : 'Vui lòng chọn nhân viên tiếp nhận ca.'
+          ? 'Không có Quản lý cơ sở khả dụng để nhận ca này.'
+          : 'Không có nhân viên khả dụng để nhận ca này.'
       )
       return
     }
@@ -193,11 +290,11 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
         reason: reason.trim()
       })
 
-      const target = candidateStaff.find(s => s.id === selectedTargetId)
+      const target = availableCandidates.find(s => s.id === selectedTargetId)
       const targetName = target?.fullName || target?.username || 'đồng nghiệp'
       onSuccess(
         isManager
-          ? `Đã gửi yêu cầu đổi ca sang Quản lý cơ sở ${targetName}. Đang chờ đối ứng và hệ thống xử lý!`
+          ? `Đã gửi yêu cầu đổi ca sang Quản lý cơ sở ${targetName}. Chờ Business Manager xem xét phê duyệt!`
           : `Đã gửi yêu cầu đổi ca sang nhân viên ${targetName}. Đang gửi tới Quản lý cơ sở phê duyệt trước khi chuyển tiếp cho đồng nghiệp!`
       )
       onClose()
@@ -245,40 +342,77 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
           </button>
         </div>
 
-        {/* Warning if no valid assignment */}
-        {!activeAssignment && !isLoadingAssignments && (
+        {/* 1. DATE SELECTION */}
+        <div>
+          <label className="block text-slate-700 font-bold text-xs mb-1">
+            Chọn ngày muốn đổi ca trực <span className="text-rose-500">*</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={selectedDate}
+              min={todayStr}
+              onChange={e => setSelectedDate(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+            />
+          </div>
+
+          {/* Quick shortcuts for user's upcoming shift dates */}
+          {userShiftDates.length > 0 && (
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-slate-400 font-medium">Ngày bạn có ca trực:</span>
+              {userShiftDates.map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setSelectedDate(d)}
+                  className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                    selectedDate === d
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {formatVN(d)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 2. NOTICE IF NO SHIFTS ON SELECTED DATE */}
+        {shiftsOnDate.length === 0 && !isLoadingAssignments && (
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5">
-            <span className="material-symbols-outlined text-[20px] shrink-0 text-amber-600">warning</span>
+            <span className="material-symbols-outlined text-[20px] shrink-0 text-amber-600">event_busy</span>
             <div>
-              <p className="font-bold">Không tìm thấy ca trực khả dụng để xin đổi!</p>
-              <p className="mt-1">
-                Bạn hiện chưa có ca trực nào được phân công hoặc các ca hiện có đã hoàn thành/hủy. Vui lòng phân công ca trực trước khi thực hiện đổi ca.
+              <p className="font-bold">Không có ca làm việc trong ngày {formatVN(selectedDate)}</p>
+              <p className="mt-1 text-amber-700">
+                Bạn không được phân công ca trực nào trong ngày này để xin đổi ca. Vui lòng chọn một ngày khác mà bạn có ca trực sắp tới.
               </p>
             </div>
           </div>
         )}
 
-        {/* Assignment Selection if multiple are available */}
-        {allAvailableAssignments.length > 1 && (
+        {/* 3. SHIFT SELECTION IF MULTIPLE SHIFTS ON THAT DATE */}
+        {shiftsOnDate.length > 1 && (
           <div>
             <label className="block text-slate-700 font-bold text-xs mb-1">
-              Chọn ca trực cần xin đổi <span className="text-rose-500">*</span>
+              Chọn ca trực trong ngày {formatVN(selectedDate)} cần đổi <span className="text-rose-500">*</span>
             </label>
             <select
               value={selectedAssignmentId}
               onChange={e => setSelectedAssignmentId(e.target.value)}
               className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
             >
-              {allAvailableAssignments.map(a => (
+              {shiftsOnDate.map(a => (
                 <option key={a.id} value={a.id}>
-                  {getShiftLabel(a.shift)} • {a.assignedDate} • {a.assignedZone || 'Khu vực cơ sở'}
+                  {getShiftLabel(a.shift)} • {a.assignedZone || 'Khu vực cơ sở'}
                 </option>
               ))}
             </select>
           </div>
         )}
 
-        {/* Current Shift Summary Card */}
+        {/* 4. CURRENT SHIFT SUMMARY CARD */}
         {activeAssignment && (
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex flex-col gap-2 text-xs">
             <div className="flex items-center justify-between">
@@ -293,7 +427,7 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-500 font-medium">Ngày trực:</span>
-              <span className="font-mono font-semibold text-slate-700">{activeAssignment.assignedDate}</span>
+              <span className="font-mono font-semibold text-slate-700">{formatVN(activeAssignment.assignedDate)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-500 font-medium">Phân khu đảm trách:</span>
@@ -302,6 +436,7 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
           </div>
         )}
 
+        {/* Error message banner */}
         {errorMessage && (
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px]">error</span>
@@ -309,95 +444,138 @@ export const ShiftSwapModal: React.FC<ShiftSwapModalProps> = ({
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-3.5 text-xs">
-          <div>
-            <label className="block text-slate-700 font-bold mb-1">
-              {isManager
-                ? 'Quản lý cơ sở tiếp nhận ca thay thế (Facility Manager)'
-                : 'Nhân viên tiếp nhận ca thay thế (Staff)'}{' '}
-              <span className="text-rose-500">*</span>
-            </label>
-            {isLoadingCandidates ? (
-              <div className="text-slate-400 italic py-2">Đang tải danh sách nhân sự {isManager ? 'quản lý' : 'nhân viên'}...</div>
-            ) : candidateStaff.length === 0 ? (
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs italic">
+        {/* Form fields only active if there is an active shift */}
+        {activeAssignment && (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3.5 text-xs">
+            {/* 5. TARGET STAFF SELECTION WITH CONFLICT VALIDATION */}
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">
                 {isManager
-                  ? 'Không tìm thấy Quản lý cơ sở nào khác cùng chi nhánh để đổi ca.'
-                  : 'Không tìm thấy nhân viên nào khác cùng chi nhánh để đổi ca.'}
-              </div>
-            ) : (
-              <select
-                value={selectedTargetId}
-                onChange={e => setSelectedTargetId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white"
-              >
-                {candidateStaff.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.fullName || s.username} ({s.email}) — [{isManager ? 'Facility Manager' : 'Staff'}]
-                  </option>
-                ))}
-              </select>
-            )}
-            <p className="text-[11px] text-slate-400 mt-1">
-              {isManager
-                ? 'ℹ️ Quy định: Quản lý cơ sở chỉ được đổi ca với Quản lý cơ sở cùng chi nhánh.'
-                : 'ℹ️ Quy định: Nhân viên chỉ được đổi ca với Nhân viên cùng chi nhánh.'}
-            </p>
-          </div>
+                  ? 'Quản lý cơ sở tiếp nhận ca thay thế (Facility Manager)'
+                  : 'Nhân viên tiếp nhận ca thay thế (Staff)'}{' '}
+                <span className="text-rose-500">*</span>
+              </label>
 
-          <div>
-            <label className="block text-slate-700 font-bold mb-1">
-              Lý do xin đổi ca <span className="text-rose-500">*</span>
+              {isLoadingCandidates ? (
+                <div className="text-slate-400 italic py-2 flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+                  <span>Đang kiểm tra lịch trực của các {isManager ? 'Quản lý' : 'nhân viên'}...</span>
+                </div>
+              ) : availableCandidates.length === 0 ? (
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col gap-1.5">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                    <span className="material-symbols-outlined text-[18px] text-amber-600">block</span>
+                    <span>Không có {isManager ? 'Quản lý cơ sở' : 'nhân viên'} nào khả dụng để nhận ca này!</span>
+                  </div>
+                  {busyCandidates.length > 0 ? (
+                    <p className="text-[11px] text-amber-700">
+                      Tất cả {isManager ? 'Quản lý cơ sở' : 'nhân viên'} khác tại chi nhánh đã có ca trực vào khung giờ <strong>{getShiftLabel(activeAssignment.shift)} ngày {formatVN(activeAssignment.assignedDate)}</strong> ({busyCandidates.map(c => c.fullName || c.username).join(', ')}).
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-amber-700">
+                      Chi nhánh hiện không có nhân sự cùng vai trò ({isManager ? 'Facility Manager' : 'Staff'}) nào khác để thực hiện đổi ca.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <select
+                    value={selectedTargetId}
+                    onChange={e => setSelectedTargetId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-blue-500 focus:bg-white cursor-pointer"
+                  >
+                    {availableCandidates.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.fullName || s.username} ({s.email}) — [Trống lịch, sẵn sàng nhận ca]
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Note about busy staff excluded */}
+                  {busyCandidates.length > 0 && (
+                    <p className="text-[11px] text-slate-400 mt-1 italic">
+                      * Đã loại trừ {busyCandidates.length} nhân sự đã có lịch trực vào khung giờ này ({busyCandidates.map(c => c.fullName || c.username).join(', ')}).
+                    </p>
+                  )}
+                </>
+              )}
+
+              <p className="text-[11px] text-slate-400 mt-1">
+                {isManager
+                  ? 'ℹ️ Quy định: Quản lý cơ sở chỉ được đổi ca với Quản lý cơ sở cùng chi nhánh (Facility Manager đổi với Facility Manager).'
+                  : 'ℹ️ Quy định: Nhân viên chỉ được đổi ca với Nhân viên cùng chi nhánh (Staff đổi với Staff).'}
+              </p>
+            </div>
+
+            {/* 6. REASON */}
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">
+                Lý do xin đổi ca <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                value={reason}
+                onChange={e => setReason(e.target.value)}
+                placeholder={
+                  isManager
+                    ? 'Nêu rõ lý do cần đổi ca quản lý cơ sở (lịch họp ban giám đốc, đào tạo, việc cá nhân...)'
+                    : 'Nêu rõ lý do cần đổi ca (việc gia đình, sức khỏe, lịch đào tạo...)'
+                }
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal outline-none focus:border-blue-500 focus:bg-white resize-none"
+              />
+            </div>
+
+            {/* 7. AGREEMENT CHECKBOX */}
+            <label className="flex items-start gap-2 cursor-pointer pt-1">
+              <input
+                type="checkbox"
+                checked={isAgreed}
+                onChange={e => setIsAgreed(e.target.checked)}
+                className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+              />
+              <span className="text-slate-600 text-[11px] leading-tight">
+                {isManager
+                  ? 'Tôi xác nhận đề xuất đổi ca này với Quản lý cơ sở đồng nghiệp cùng chi nhánh và chịu trách nhiệm về bàn giao công việc.'
+                  : 'Tôi xác nhận gửi yêu cầu này tới Quản lý cơ sở phê duyệt trước. Khi Quản lý đồng ý, hệ thống sẽ tự động chuyển tiếp tới đồng nghiệp tiếp nhận.'}
+              </span>
             </label>
-            <textarea
-              rows={3}
-              value={reason}
-              onChange={e => setReason(e.target.value)}
-              placeholder={
-                isManager
-                  ? 'Nêu rõ lý do cần đổi ca quản lý cơ sở (lịch họp ban giám đốc, đào tạo, việc cá nhân...)'
-                  : 'Nêu rõ lý do cần đổi ca (việc gia đình, sức khỏe, lịch đào tạo...)'
-              }
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-normal outline-none focus:border-blue-500 focus:bg-white resize-none"
-            />
-          </div>
 
-          <label className="flex items-start gap-2 cursor-pointer pt-1">
-            <input
-              type="checkbox"
-              checked={isAgreed}
-              onChange={e => setIsAgreed(e.target.checked)}
-              className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-            />
-            <span className="text-slate-600 text-[11px] leading-tight">
-              {isManager
-                ? 'Tôi xác nhận đề xuất đổi ca này với Quản lý cơ sở đồng nghiệp cùng chi nhánh và chịu trách nhiệm về bàn giao công việc.'
-                : 'Tôi xác nhận gửi yêu cầu này tới Quản lý cơ sở phê duyệt trước. Khi Quản lý đồng ý, hệ thống sẽ tự động chuyển tiếp tới đồng nghiệp tiếp nhận.'}
-            </span>
-          </label>
+            {/* 8. ACTION BUTTONS */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || availableCandidates.length === 0 || !activeAssignment}
+                className={`px-4 py-2 font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white ${
+                  isManager ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {isSubmitting && <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>}
+                <span>Gửi yêu cầu đổi ca</span>
+              </button>
+            </div>
+          </form>
+        )}
 
-          {/* Action buttons */}
-          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+        {/* If no active assignment, provide close button */}
+        {!activeAssignment && (
+          <div className="flex items-center justify-end pt-3 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              disabled={isSubmitting}
               className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors cursor-pointer"
             >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || candidateStaff.length === 0 || !activeAssignment}
-              className={`px-4 py-2 font-bold rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed text-white ${
-                isManager ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-amber-600 hover:bg-amber-700'
-              }`}
-            >
-              {isSubmitting && <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>}
-              <span>Gửi yêu cầu đổi ca</span>
+              Đóng
             </button>
           </div>
-        </form>
+        )}
       </div>
     </div>
   )

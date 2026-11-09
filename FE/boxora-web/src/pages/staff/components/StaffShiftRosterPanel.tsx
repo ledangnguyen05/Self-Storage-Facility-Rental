@@ -181,6 +181,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
 
   // Swap Requests Sub-filter
   const [swapScopeFilter, setSwapScopeFilter] = useState<'ALL' | 'INCOMING' | 'OUTGOING'>('ALL')
+  const [swapStatusFilter, setSwapStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'>('ALL')
 
   // Modals & Action States
   const [selectedAssignmentForSwap, setSelectedAssignmentForSwap] = useState<StaffAssignmentResponse | null>(null)
@@ -416,7 +417,7 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
   }, [assignments])
 
   // Filtered Swap Requests
-  const filteredSwapRequests = useMemo(() => {
+  const scopeFilteredSwaps = useMemo(() => {
     if (swapScopeFilter === 'INCOMING') {
       return swapRequests.filter(s => s.targetStaffId === user?.id)
     }
@@ -425,6 +426,37 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
     }
     return swapRequests
   }, [swapRequests, swapScopeFilter, user?.id])
+
+  const scopePendingSwapCount = useMemo(() => scopeFilteredSwaps.filter(s => {
+    const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+    return (s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && !isPast
+  }).length, [scopeFilteredSwaps, todayStr])
+
+  const approvedSwapCount = useMemo(() => scopeFilteredSwaps.filter(s => s.status === 'APPROVED').length, [scopeFilteredSwaps])
+  const rejectedSwapCount = useMemo(() => scopeFilteredSwaps.filter(s => s.status === 'REJECTED').length, [scopeFilteredSwaps])
+  const cancelledSwapCount = useMemo(() => scopeFilteredSwaps.filter(s => {
+    const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+    return s.status === 'CANCELLED' || ((s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && isPast)
+  }).length, [scopeFilteredSwaps, todayStr])
+
+  const filteredSwapRequests = useMemo(() => {
+    if (swapStatusFilter === 'ALL') return scopeFilteredSwaps
+    if (swapStatusFilter === 'PENDING') {
+      return scopeFilteredSwaps.filter(s => {
+        const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+        return (s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && !isPast
+      })
+    }
+    if (swapStatusFilter === 'APPROVED') return scopeFilteredSwaps.filter(s => s.status === 'APPROVED')
+    if (swapStatusFilter === 'REJECTED') return scopeFilteredSwaps.filter(s => s.status === 'REJECTED')
+    if (swapStatusFilter === 'CANCELLED') {
+      return scopeFilteredSwaps.filter(s => {
+        const isPast = Boolean(s.assignmentDate && s.assignmentDate < todayStr)
+        return s.status === 'CANCELLED' || ((s.status === 'PENDING' || s.status === 'MANAGER_APPROVED') && isPast)
+      })
+    }
+    return scopeFilteredSwaps
+  }, [scopeFilteredSwaps, swapStatusFilter, todayStr])
 
   // Direct Staff Attendance Actions
   const handleCheckIn = async (assignment: StaffAssignmentResponse) => {
@@ -1475,6 +1507,89 @@ export const StaffShiftRosterPanel: React.FC<StaffShiftRosterPanelProps> = ({
                 Đơn bạn gửi ({myOutgoingSwaps.length})
               </button>
             </div>
+          </div>
+
+          {/* Lọc Lịch Sử & Trạng Thái Yêu Cầu Đổi Ca */}
+          <div className="flex items-center gap-1.5 flex-wrap bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+            <span className="text-slate-500 font-semibold px-1 flex items-center gap-1 text-[11px]">
+              <span className="material-symbols-outlined text-[16px]">history</span>
+              Lọc lịch sử &amp; trạng thái:
+            </span>
+            <button
+              type="button"
+              onClick={() => setSwapStatusFilter('ALL')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                swapStatusFilter === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              Tất cả ({scopeFilteredSwaps.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapStatusFilter('PENDING')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapStatusFilter === 'PENDING'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
+              }`}
+            >
+              <span>Chờ xử lý</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapStatusFilter === 'PENDING' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
+              }`}>
+                {scopePendingSwapCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapStatusFilter('APPROVED')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapStatusFilter === 'APPROVED'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200'
+              }`}
+            >
+              <span>Lịch sử đã duyệt</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapStatusFilter === 'APPROVED' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {approvedSwapCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapStatusFilter('REJECTED')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapStatusFilter === 'REJECTED'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : 'bg-white text-rose-700 hover:bg-rose-50 border border-rose-200'
+              }`}
+            >
+              <span>Lịch sử từ chối</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapStatusFilter === 'REJECTED' ? 'bg-rose-700 text-white' : 'bg-rose-100 text-rose-800'
+              }`}>
+                {rejectedSwapCount}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSwapStatusFilter('CANCELLED')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                swapStatusFilter === 'CANCELLED'
+                  ? 'bg-slate-700 text-white shadow-2xs'
+                  : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <span>Lịch sử đã hủy / quá hạn</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                swapStatusFilter === 'CANCELLED' ? 'bg-slate-800 text-white' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {cancelledSwapCount}
+              </span>
+            </button>
           </div>
 
           {/* Regulatory Notice Banner */}
