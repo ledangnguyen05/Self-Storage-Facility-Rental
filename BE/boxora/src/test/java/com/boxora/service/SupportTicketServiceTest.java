@@ -562,9 +562,10 @@ class SupportTicketServiceTest {
         }
 
         // Scenario 9: Invalid state transitions rejected
+        // Scenario 9: Customer can cancel/close an OPEN ticket directly
         @Test
-        @DisplayName("Scenario 9: Closing an OPEN ticket directly is rejected with TICKET_INVALID_STATUS_TRANSITION")
-        void scenario9_invalidStatusTransitionRejected() {
+        @DisplayName("Scenario 9: Customer can cancel/close an OPEN ticket directly")
+        void scenario9_customerCanCloseOpenTicket() {
             SupportTicket ticket = SupportTicket.builder()
                     .title("Ticket mới tạo")
                     .customer(testCustomer)
@@ -577,9 +578,10 @@ class SupportTicketServiceTest {
             when(requestContext.currentUserId()).thenReturn(customerId);
             when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
             when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-            AppException ex = assertThrows(AppException.class, () -> supportTicketService.closeTicket(ticketId, "Confirm"));
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_STATUS_TRANSITION);
+            SupportTicketResponse res = supportTicketService.closeTicket(ticketId, "Khách hàng chủ động hủy yêu cầu");
+            assertThat(res.getStatus()).isEqualTo(TicketStatus.CLOSED.name());
         }
 
         // Scenario 10: Full flow test (Create -> Take -> Resolve -> Confirm/Close -> Reopen)
@@ -664,8 +666,8 @@ class SupportTicketServiceTest {
         }
 
         @Test
-        @DisplayName("Customer cannot close ticket if status is OPEN or IN_PROGRESS")
-        void customerCannotCloseNonResolvedTicket_throwsException() {
+        @DisplayName("Customer can close or cancel their own ticket even when IN_PROGRESS")
+        void customerCanCloseOwnTicketEvenWhenInProgress() {
             UUID ticketId = UUID.randomUUID();
             SupportTicket ticket = SupportTicket.builder()
                     .title("Hỏng khóa")
@@ -678,12 +680,11 @@ class SupportTicketServiceTest {
             when(requestContext.currentUserId()).thenReturn(customerId);
             when(requestContext.currentUserRole()).thenReturn("CUSTOMER");
             when(supportTicketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+            when(supportTicketRepository.save(any(SupportTicket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-            AppException ex = assertThrows(AppException.class, () ->
-                    supportTicketService.closeTicket(ticketId, "Đóng sớm"));
-
-            assertThat(ex.getErrorCode()).isEqualTo(ErrorCode.TICKET_INVALID_STATUS_TRANSITION);
-            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+            SupportTicketResponse res = supportTicketService.closeTicket(ticketId, "Đóng sớm");
+            assertThat(res.getStatus()).isEqualTo(TicketStatus.CLOSED.name());
+            assertThat(ticket.getStatus()).isEqualTo(TicketStatus.CLOSED);
         }
 
         @Test

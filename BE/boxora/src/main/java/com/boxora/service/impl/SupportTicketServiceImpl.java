@@ -55,6 +55,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
@@ -725,10 +726,10 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             validateFacilityScope(ticket, manager);
         }
 
-        // Ticket must be in RESOLVED state to be closed
-        if (ticket.getStatus() != TicketStatus.RESOLVED) {
+        // Ticket already closed check
+        if (ticket.getStatus() == TicketStatus.CLOSED) {
             throw new AppException(ErrorCode.TICKET_INVALID_STATUS_TRANSITION,
-                    "Chỉ có thể đóng ticket khi đã ở trạng thái ĐÃ XỬ LÝ (RESOLVED)");
+                    "Phiếu sự cố đã được đóng hoàn tất, không thể thao tác lại");
         }
 
         TicketStatus oldStatus = ticket.getStatus();
@@ -746,6 +747,26 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             noteText += " [Đánh giá: " + rating + " sao]";
         }
         ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n[ĐÓNG PHIẾU]: " + noteText : "[ĐÓNG PHIẾU]: " + noteText);
+
+        if (ticket.getRefundStatus() != null && !"COMPLETED".equals(ticket.getRefundStatus()) && !"NONE".equals(ticket.getRefundStatus())) {
+            ticket.setRefundStatus("CANCELLED");
+        }
+
+        // Khôi phục trạng thái buồng kho nếu là yêu cầu trả kho bị khách hoặc quản lý hủy/đóng
+        Booking booking = ticket.getBooking();
+        if (booking != null && booking.getStatus() == BookingStatus.CHECKOUT_REQUESTED) {
+            LocalDate today = LocalDate.now();
+            if (booking.getEndDate() != null && booking.getEndDate().isBefore(today)) {
+                booking.setStatus(BookingStatus.OVERDUE);
+            } else {
+                booking.setStatus(BookingStatus.ACTIVE);
+            }
+            booking.setStepTransitionHistory((booking.getStepTransitionHistory() != null ? booking.getStepTransitionHistory() : "")
+                    + String.format("[%s] Yêu cầu trả kho đã được đóng/hủy. Khôi phục trạng thái buồng kho về %s.\n",
+                            LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")),
+                            booking.getStatus()));
+            bookingRepository.save(booking);
+        }
 
         ticket = supportTicketRepository.save(ticket);
 
