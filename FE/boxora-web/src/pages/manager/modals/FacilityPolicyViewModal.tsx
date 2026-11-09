@@ -12,9 +12,9 @@ interface FacilityPolicyViewModalProps {
 }
 
 const EDITABLE_POLICY_FIELDS = [
-  ['depositPercentage', 'Tỷ lệ tiền cọc (%)', 0, 100],
+  ['depositPercentage', 'Tỷ lệ tiền cọc (%)', 0, undefined],
   ['cancellationFullRefundHours', 'Hạn hủy hoàn 100% (giờ)', 0, 720],
-  ['cancellationPartialRefundPercent', 'Tỷ lệ hủy trong 24-48h (%)', 0, 100],
+  ['cancellationPartialRefundPercent', 'Tỷ lệ hủy trong 24-48h (%)', 0, undefined],
   ['cancellationAfter48hRefundPercent', 'Tỷ lệ hoàn sau 48h đặt (%)', 0, 100],
   ['depositRefundSlaDays', 'SLA hoàn cọc (ngày làm việc)', 0, 365],
   ['dailyLateFee', 'Tỷ lệ phí phạt trễ hạn (% ngày / loại kho)', 0, 500],
@@ -149,6 +149,7 @@ export const FacilityPolicyViewModal: React.FC<FacilityPolicyViewModalProps> = (
                   type="number"
                   min={min}
                   max={max}
+                  step="any"
                   value={editValues[key] ?? ''}
                   onChange={(event) => setEditValues((current) => ({
                     ...current,

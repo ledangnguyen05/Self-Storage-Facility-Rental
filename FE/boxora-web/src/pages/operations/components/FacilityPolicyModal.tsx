@@ -23,12 +23,12 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
 
   const [selectedFacilityId, setSelectedFacilityId] = useState<string>('')
   const [isActive, setIsActive] = useState<boolean>(true)
-  const [depositPercentage, setDepositPercentage] = useState<number>(100)
+  const [depositPercentage, setDepositPercentage] = useState<number | string>(100)
   const [minimumRentalMonths, setMinimumRentalMonths] = useState<number>(1)
 
   const [cancellationFullRefundHours, setCancellationFullRefundHours] = useState<number>(24)
   const [cancellationPartialRefundHours, setCancellationPartialRefundHours] = useState<number>(48)
-  const [cancellationPartialRefundPercent, setCancellationPartialRefundPercent] = useState<number>(70)
+  const [cancellationPartialRefundPercent, setCancellationPartialRefundPercent] = useState<number | string>(70)
   const [cancellationAfter48hRefundPercent, setCancellationAfter48hRefundPercent] = useState<number>(50)
 
   const [depositRefundSlaDays, setDepositRefundSlaDays] = useState<number>(3)
@@ -98,13 +98,23 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
       return
     }
 
-    if (depositPercentage < 0 || depositPercentage > 100) {
-      setErrorMsg('Tỷ lệ tiền cọc phải nằm trong khoảng từ 0% đến 100%.')
+    if (depositPercentage === '' || depositPercentage === null || depositPercentage === undefined || isNaN(Number(depositPercentage))) {
+      setErrorMsg('Vui lòng nhập tỷ lệ tiền cọc.')
       return
     }
 
-    if (cancellationPartialRefundPercent < 0 || cancellationPartialRefundPercent > 100) {
-      setErrorMsg('Tỷ lệ hủy trong 24-48h phải nằm trong khoảng từ 0% đến 100%.')
+    if (Number(depositPercentage) < 0) {
+      setErrorMsg('Tỷ lệ tiền cọc phải lớn hơn hoặc bằng 0%.')
+      return
+    }
+
+    if (cancellationPartialRefundPercent === '' || cancellationPartialRefundPercent === null || cancellationPartialRefundPercent === undefined || isNaN(Number(cancellationPartialRefundPercent))) {
+      setErrorMsg('Vui lòng nhập tỷ lệ hủy trong 24-48h.')
+      return
+    }
+
+    if (Number(cancellationPartialRefundPercent) < 0) {
+      setErrorMsg('Tỷ lệ hủy trong 24-48h phải lớn hơn hoặc bằng 0%.')
       return
     }
 
@@ -237,10 +247,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   <input
                     type="number"
                     min="0"
-                    max="100"
-                    step="5"
+                    step="any"
                     value={depositPercentage}
-                    onChange={(e) => setDepositPercentage(Number(e.target.value))}
+                    onChange={(e) => setDepositPercentage(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full pl-3 pr-8 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                     required
                   />
@@ -282,10 +291,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   <input
                     type="number"
                     min="0"
-                    max="100"
-                    step="5"
+                    step="any"
                     value={cancellationPartialRefundPercent}
-                    onChange={(e) => setCancellationPartialRefundPercent(Number(e.target.value))}
+                    onChange={(e) => setCancellationPartialRefundPercent(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full pl-3 pr-8 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                     required
                   />
@@ -302,8 +310,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   <input
                     type="number"
                     min="0"
-                    max="100"
-                    step="5"
+                    step="any"
                     value={cancellationAfter48hRefundPercent}
                     onChange={(e) => setCancellationAfter48hRefundPercent(Number(e.target.value))}
                     className="w-full pl-3 pr-8 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"

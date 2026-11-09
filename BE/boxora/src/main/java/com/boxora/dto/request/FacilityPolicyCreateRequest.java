@@ -18,7 +18,7 @@ public class FacilityPolicyCreateRequest {
 
     private Boolean isActive;
 
-    @NotNull @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    @NotNull @DecimalMin(value = "0.0")
     private Double depositPercentage;
 
     @Min(0)
@@ -31,7 +31,7 @@ public class FacilityPolicyCreateRequest {
     @NotNull @Min(0)
     private Integer cancellationPartialRefundHours;
 
-    @NotNull @DecimalMin(value = "0.0") @DecimalMax(value = "100.0")
+    @NotNull @DecimalMin(value = "0.0")
     private Double cancellationPartialRefundPercent;
 
     @Min(0)
