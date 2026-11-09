@@ -353,11 +353,6 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                   disabled={isLoadingTypes || unitTypes.length === 0}
                   className={fieldClassName}
                 >
-                  <option value="">
-                    {isLoadingTypes
-                      ? t('Đang tải loại kho...', 'Loading storage types...')
-                      : t('Chọn loại kho', 'Select a storage type')}
-                  </option>
                   {unitTypes.map((unitType) => (
                     <option key={unitType.id} value={unitType.id}>
                       {unitType.typeName} ({unitType.dimensions})
@@ -406,7 +401,6 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                   onChange={(event) => setSelectedZoneCode(event.target.value)}
                   className={fieldClassName}
                 >
-                  <option value="">-- {t('Không gán phân khu (tùy chọn)', 'No zone assigned')} --</option>
                   {activeStorageZones.map((zn) => (
                     <option key={zn.id || zn.code} value={zn.code || zn.id}>
                       {zn.name} ({zn.code})
