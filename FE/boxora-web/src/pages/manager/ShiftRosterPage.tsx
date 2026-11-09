@@ -355,12 +355,36 @@ export const ShiftRosterPage: React.FC = () => {
       setAssignments(assignList)
 
       // 2. Staff / Manager list
-      const staffRes = await userService.getAllUsers({
-        role: isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF',
-        facilityId: targetFacilityId,
-        size: 100
-      })
-      const loadedStaff = staffRes.data || []
+      let loadedStaff: User[] = []
+      if (isBusinessManager) {
+        const staffRes = await userService.getAllUsers({
+          role: 'FACILITY_MANAGER',
+          facilityId: targetFacilityId,
+          size: 100
+        })
+        loadedStaff = staffRes.data || []
+      } else {
+        // Facility Manager page: include BOTH regular STAFF and FACILITY_MANAGER in that facility
+        const [staffRes, managerRes] = await Promise.all([
+          userService.getAllUsers({
+            role: 'STAFF',
+            facilityId: targetFacilityId,
+            size: 100
+          }),
+          userService.getAllUsers({
+            role: 'FACILITY_MANAGER',
+            facilityId: targetFacilityId,
+            size: 100
+          })
+        ])
+        const staffUsers = staffRes.data || []
+        const managerUsers = managerRes.data || []
+        const userMap = new Map<string, User>()
+        // Show Facility Managers first, then Staff
+        managerUsers.forEach(u => userMap.set(u.id, u))
+        staffUsers.forEach(u => userMap.set(u.id, u))
+        loadedStaff = Array.from(userMap.values())
+      }
       setStaffList(loadedStaff)
 
       // 3. Shift swap requests in range
@@ -866,7 +890,9 @@ export const ShiftRosterPage: React.FC = () => {
               {totalStaffCount}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              {t('Staff thuộc biên chế chi nhánh', 'Branch permanent staff members')}
+              {isBusinessManager
+                ? t('Quản lý cơ sở trong phạm vi', 'Facility managers in scope')
+                : t('Nhân sự cơ sở (Quản lý & Nhân viên)', 'Facility personnel (Managers & Staff)')}
             </div>
           </div>
         </div>
@@ -1725,6 +1751,10 @@ export const ShiftRosterPage: React.FC = () => {
                             ) : swap.requesterId === user?.id || swap.targetStaffId === user?.id ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">
                                 Đơn cá nhân (Chờ cấp trên duyệt)
+                              </span>
+                            ) : (swap.requesterRole === 'FACILITY_MANAGER' || swap.targetStaffRole === 'FACILITY_MANAGER') && !isBusinessManager ? (
+                              <span className="text-[11px] font-medium text-slate-500 italic">
+                                Chờ Business Manager duyệt
                               </span>
                             ) : (
                               <div className="flex items-center justify-end gap-1.5">
