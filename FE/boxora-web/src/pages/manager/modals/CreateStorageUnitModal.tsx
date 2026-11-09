@@ -5,6 +5,7 @@ import { storageUnitService } from '../../../services/storageUnitService'
 import { facilityUnitTypeService } from '../../../services/facilityUnitTypeService'
 import { useLanguage } from '../../../context/LanguageContext'
 import { parseFacilityFloorPlanConfig } from '../../../utils/facilityLayout'
+import { resolveUnitImageUrl } from '../../../utils/storageUnitImages'
 
 interface CreateStorageUnitModalProps {
   isOpen: boolean
@@ -428,11 +429,15 @@ export const CreateStorageUnitModal: React.FC<CreateStorageUnitModalProps> = ({
                 <div className="flex items-center gap-2.5 min-w-0">
                   {selectedType.imageUrl ? (
                     <img
-                      src={selectedType.imageUrl}
+                      src={resolveUnitImageUrl(selectedType.imageUrl)}
                       alt={selectedType.typeName}
                       className="w-11 h-11 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                       onError={(e) => {
                         const target = e.currentTarget
+                        if (!target.src.includes('localhost:8080') && selectedType.imageUrl?.startsWith('/uploads')) {
+                          target.src = `http://localhost:8080${selectedType.imageUrl.startsWith('/') ? '' : '/'}${selectedType.imageUrl}`
+                          return
+                        }
                         target.onerror = null
                         target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=200&q=80'
                       }}

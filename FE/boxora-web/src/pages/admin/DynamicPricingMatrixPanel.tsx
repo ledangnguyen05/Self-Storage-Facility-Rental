@@ -8,6 +8,7 @@ import { useRealtimeSync } from '../../hooks/useRealtimeSync'
 import { EditUnitTypeModal } from './components/EditUnitTypeModal'
 import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
 import { facilityUnitTypeService } from '../../services/facilityUnitTypeService'
+import { resolveUnitImageUrl } from '../../utils/storageUnitImages'
 
 interface DynamicPricingMatrixPanelProps {
   facilities: Facility[]
@@ -877,11 +878,15 @@ export const DynamicPricingMatrixPanel: React.FC<DynamicPricingMatrixPanelProps>
                           <div className="flex items-center gap-2.5">
                             {ut.imageUrl ? (
                               <img
-                                src={ut.imageUrl}
+                                src={resolveUnitImageUrl(ut.imageUrl)}
                                 alt={ut.typeName}
                                 className="w-9 h-9 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
                                 onError={(e) => {
                                   const target = e.currentTarget
+                                  if (!target.src.includes('localhost:8080') && ut.imageUrl?.startsWith('/uploads')) {
+                                    target.src = `http://localhost:8080${ut.imageUrl.startsWith('/') ? '' : '/'}${ut.imageUrl}`
+                                    return
+                                  }
                                   target.onerror = null
                                   target.src = 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=200&q=80'
                                 }}

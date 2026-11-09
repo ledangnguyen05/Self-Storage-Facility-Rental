@@ -3,6 +3,7 @@ import { UnitType, FacilityPolicy } from '../../../types'
 import { storageUnitService } from '../../../services/storageUnitService'
 import { facilityUnitTypeService } from '../../../services/facilityUnitTypeService'
 import { useLanguage } from '../../../context/LanguageContext'
+import { resolveUnitImageUrl } from '../../../utils/storageUnitImages'
 
 interface EditUnitTypeModalProps {
   unitType: UnitType | null
@@ -34,8 +35,8 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
   const [basePrice, setBasePrice] = useState<number | ''>('')
   const [acPrice, setAcPrice] = useState<number | ''>('')
   const [isActive, setIsActive] = useState<boolean>(true)
-  const [priceChangeReason, setPriceChangeReason] = useState('')
   const [imageUrl, setImageUrl] = useState<string>('')
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string>('')
   const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false)
   const [imageUploadSuccessMsg, setImageUploadSuccessMsg] = useState<string | null>(null)
   const [imageLoadError, setImageLoadError] = useState<boolean>(false)
@@ -56,10 +57,10 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setAcPrice(unitType.acPricePerMonth != null && unitType.acPricePerMonth > 0 ? unitType.acPricePerMonth : '')
       setIsActive(unitType.isActive ?? true)
       setImageUrl(unitType.imageUrl || '')
+      setLocalPreviewUrl('')
       setImageUploadSuccessMsg(null)
       setImageLoadError(false)
       setShowRemoveImageConfirm(false)
-      setPriceChangeReason('')
       setErrorMsg(null)
     } else {
       setTypeName('')
@@ -72,10 +73,10 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       setAcPrice('')
       setIsActive(true)
       setImageUrl('')
+      setLocalPreviewUrl('')
       setImageUploadSuccessMsg(null)
       setImageLoadError(false)
       setShowRemoveImageConfirm(false)
-      setPriceChangeReason('')
       setErrorMsg(null)
     }
   }, [unitType, isOpen])
@@ -116,6 +117,11 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       e.target.value = ''
       return
     }
+
+    // Hiển thị ngay ảnh xem trước từ tệp cục bộ (0s delay, không lỗi tải)
+    const previewUrl = URL.createObjectURL(file)
+    setLocalPreviewUrl(previewUrl)
+    setImageLoadError(false)
 
     setIsUploadingImage(true)
     setErrorMsg(null)
@@ -164,6 +170,10 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
       if (unitType) {
         const isBackendUnitType = !unitType.id.startsWith('fut_')
         const trimmedImg = imageUrl.trim()
+        const defaultReason = isActive !== unitType.isActive
+          ? (isActive ? 'Kích hoạt lại loại kho' : 'Tạm ngưng hoạt động loại kho')
+          : 'Cập nhật cấu hình loại kho'
+
         const payload: UnitType = {
           ...unitType,
           typeName: typeName.trim(),
@@ -176,7 +186,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
           acPricePerMonth: numAcPrice,
           isActive,
           imageUrl: trimmedImg || undefined,
-          priceChangeReason: priceChangeReason.trim() || 'Cập nhật cấu hình loại kho',
+          priceChangeReason: defaultReason,
         }
 
         let updatedType: UnitType = payload
@@ -199,11 +209,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
             depositAmount: Number(basePrice),
             isActive,
             imageUrl: trimmedImg, // chuỗi rỗng để xóa ảnh, hoặc link ảnh đã upload
-            priceChangeReason: priceChangeReason.trim() || (
-              isActive !== unitType.isActive
-                ? (isActive ? 'Kích hoạt lại loại kho' : 'Tạm ngưng hoạt động loại kho')
-                : 'Cập nhật cấu hình loại kho'
-            ),
+            priceChangeReason: defaultReason,
           }
           const beRes = await storageUnitService.updateUnitType(unitType.id, bePayload)
           if (beRes) {
@@ -369,6 +375,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                     type="button"
                     onClick={() => {
                       setImageUrl(unitType.imageUrl || '')
+                      setLocalPreviewUrl('')
                       setImageLoadError(false)
                       setImageUploadSuccessMsg(null)
                       setShowRemoveImageConfirm(false)
@@ -379,7 +386,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                     <span>{t('Khôi phục ảnh đã lưu')}</span>
                   </button>
                 )}
-                {imageUrl && !showRemoveImageConfirm && (
+                {(imageUrl || localPreviewUrl) && !showRemoveImageConfirm && (
                   <button
                     type="button"
                     onClick={() => setShowRemoveImageConfirm(true)}
@@ -409,6 +416,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                     type="button"
                     onClick={() => {
                       setImageUrl('')
+                      setLocalPreviewUrl('')
                       setImageLoadError(false)
                       setImageUploadSuccessMsg(null)
                       setShowRemoveImageConfirm(false)
@@ -431,14 +439,21 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
             <div className="flex flex-col sm:flex-row items-center gap-3">
               {/* Preview Thumbnail */}
               <div className="w-full sm:w-36 h-24 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden flex items-center justify-center shrink-0 relative group">
-                {imageUrl && !imageLoadError ? (
+                {(localPreviewUrl || imageUrl) && !imageLoadError ? (
                   <img
-                    src={imageUrl}
+                    src={localPreviewUrl || resolveUnitImageUrl(imageUrl)}
                     alt={typeName || 'Ảnh mô phỏng kho'}
                     className="w-full h-full object-cover"
-                    onError={() => setImageLoadError(true)}
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      if (!target.src.includes('localhost:8080') && imageUrl?.startsWith('/uploads')) {
+                        target.src = `http://localhost:8080${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`
+                      } else {
+                        setImageLoadError(true)
+                      }
+                    }}
                   />
-                ) : imageUrl && imageLoadError ? (
+                ) : (localPreviewUrl || imageUrl) && imageLoadError ? (
                   <div className="flex flex-col items-center justify-center text-amber-500 p-2 text-center">
                     <span className="material-symbols-outlined text-2xl">broken_image</span>
                     <span className="text-[10px] mt-0.5">Ảnh lỗi hiển thị</span>
@@ -452,7 +467,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                 {isUploadingImage && (
                   <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-2xs flex items-center justify-center text-white text-[11px] font-bold">
                     <span className="animate-spin material-symbols-outlined text-lg mr-1">progress_activity</span>
-                    Tải lên...
+                    Đang lưu...
                   </div>
                 )}
               </div>
@@ -461,7 +476,7 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
               <div className="flex-1 w-full space-y-1.5 text-left">
                 <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition shadow-xs">
                   <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                  <span>{imageUrl ? t('Thay ảnh khác') : t('Tải ảnh mô phỏng lên')}</span>
+                  <span>{(imageUrl || localPreviewUrl) ? t('Thay ảnh khác') : t('Tải ảnh mô phỏng lên')}</span>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/jpg,image/gif"
@@ -616,20 +631,6 @@ export const EditUnitTypeModal: React.FC<EditUnitTypeModalProps> = ({
                   : t('Kho này không có máy lạnh A/C (sẽ ẩn tùy chọn A/C khi khách đặt kho)')}
               </p>
             </div>
-          </div>
-
-          {/* Reason for change */}
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {t('Lý do cập nhật')}
-            </label>
-            <input
-              type="text"
-              value={priceChangeReason}
-              onChange={(e) => setPriceChangeReason(e.target.value)}
-              placeholder="VD: Điều chỉnh giá niêm yết theo quý / Cập nhật kích thước chuẩn"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-            />
           </div>
 
           {/* Action buttons */}

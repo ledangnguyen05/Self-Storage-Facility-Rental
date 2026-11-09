@@ -50,6 +50,7 @@ import { contractService } from '../../services/contractService'
 import { cancellationPolicyService } from '../../services/cancellationPolicyService'
 import { customDiscountService, CustomDiscount } from '../../services/customDiscountService'
 import { facilityUnitTypeService } from '../../services/facilityUnitTypeService'
+import { resolveUnitImageUrl } from '../../utils/storageUnitImages'
 import { DocuSealSimulationModal } from '../../components/modals/DocuSealSimulationModal'
 import { FacilityNoUnitsModal } from '../../components/modals/FacilityNoUnitsModal'
 import { PayLaterAppointmentConfirmModal } from '../../components/modals/PayLaterAppointmentConfirmModal'
@@ -2610,7 +2611,7 @@ export const BookingPage: React.FC = () => {
                     const displayPrice = getDynamicPriceForSize(sizeUnit, unitAcMode === 'AC')
                     const realPhotoInfo = getRealPhotoForSize(sizeUnit.volumeNumber, unitAcMode === 'AC')
                     const availCount = getAvailableCountForSize(sizeUnit)
-                    const uploadedImage = (sizeUnit as any).imageUrl
+                    const uploadedImage = (sizeUnit as any).imageUrl ? resolveUnitImageUrl((sizeUnit as any).imageUrl) : undefined
                     const displayPhoto = uploadedImage || realPhotoInfo.photoUrl || '/assets/units/unit-standard.jpg'
 
                     return (
@@ -2672,6 +2673,10 @@ export const BookingPage: React.FC = () => {
                               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                               onError={(e) => {
                                 const target = e.currentTarget
+                                if (!target.src.includes('localhost:8080') && uploadedImage?.startsWith('/uploads')) {
+                                  target.src = `http://localhost:8080${uploadedImage.startsWith('/') ? '' : '/'}${uploadedImage}`
+                                  return
+                                }
                                 target.onerror = null
                                 target.src = realPhotoInfo.photoUrl || '/assets/units/unit-standard.jpg'
                               }}
@@ -4029,7 +4034,7 @@ export const BookingPage: React.FC = () => {
                 <div className="w-full h-full relative">
                   <img
                     src={
-                      (inspectingSizeUnit as any)?.imageUrl ||
+                      resolveUnitImageUrl((inspectingSizeUnit as any)?.imageUrl) ||
                       getRealPhotoForSize(
                         inspectingSizeUnit.volumeNumber,
                         (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
@@ -4039,6 +4044,11 @@ export const BookingPage: React.FC = () => {
                     className="w-full h-full object-cover"
                     onError={(e) => {
                       const target = e.currentTarget
+                      const inspImg = (inspectingSizeUnit as any)?.imageUrl
+                      if (!target.src.includes('localhost:8080') && inspImg?.startsWith('/uploads')) {
+                        target.src = `http://localhost:8080${inspImg.startsWith('/') ? '' : '/'}${inspImg}`
+                        return
+                      }
                       target.onerror = null
                       target.src = getRealPhotoForSize(
                         inspectingSizeUnit.volumeNumber,

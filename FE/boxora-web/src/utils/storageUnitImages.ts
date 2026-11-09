@@ -1,3 +1,22 @@
+import { getApiBaseUrl } from '../lib/axios'
+
+export const resolveUnitImageUrl = (url?: string | null): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  const cleanBase = base ? base.replace(/\/api\/?$/, '') : 'http://localhost:8080'
+  return `${cleanBase}${cleanUrl}`
+}
+
 export interface StorageUnitImage {
   id: string
   url: string
