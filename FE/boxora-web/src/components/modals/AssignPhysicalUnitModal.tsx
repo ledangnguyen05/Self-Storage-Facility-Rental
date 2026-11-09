@@ -22,67 +22,80 @@ const EQUIVALENT_TYPE_GROUPS: string[][] = [
   ['10000000-0000-0000-0000-000000000005'], // Cold Storage (5m²)
 ]
 
-type SizeCategory = 'MINI' | 'MEDIUM' | 'STANDARD' | 'LARGE' | 'COLD' | null
-
-function classifyByTypeAndText(typeId?: string | null, text?: string | null, areaSqMeters?: number | null): SizeCategory {
-  if (typeId) {
-    if (EQUIVALENT_TYPE_GROUPS[0].includes(typeId)) return 'MINI'
-    if (EQUIVALENT_TYPE_GROUPS[1].includes(typeId)) return 'MEDIUM'
-    if (EQUIVALENT_TYPE_GROUPS[2].includes(typeId)) return 'STANDARD'
-    if (EQUIVALENT_TYPE_GROUPS[3].includes(typeId)) return 'LARGE'
-    if (EQUIVALENT_TYPE_GROUPS[4].includes(typeId)) return 'COLD'
+function extractAreaNumber(area?: number | string | null, name?: string | null): number | null {
+  if (typeof area === 'number' && !Number.isNaN(area) && area > 0) return area
+  if (typeof area === 'string' && area.trim()) {
+    const parsed = parseFloat(area.replace(',', '.'))
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed
   }
-
-  if (text) {
-    const t = text.toLowerCase().trim()
-    if (t.includes('kho lạnh') || t.includes('cold storage')) return 'COLD'
-
-    // Parse numeric volume/area like "1 m³", "3 m³", "6 m³", "12 m³", "18 m³", "25 m³", "1m2"
-    const numMatch = t.match(/(\d+(?:[.,]\d+)?)\s*m(?:³|3|²|2)?/i)
-    if (numMatch) {
-      const val = parseFloat(numMatch[1].replace(',', '.'))
-      if (!Number.isNaN(val)) {
-        if (val <= 2) return 'MINI'
-        if (val <= 4.5) return 'MEDIUM'
-        if (val <= 8.5) return 'STANDARD'
-        return 'LARGE'
-      }
+  if (name) {
+    const match = name.match(/(\d+(?:[.,]\d+)?)\s*m(?:³|3|²|2)?/i)
+    if (match) {
+      const val = parseFloat(match[1].replace(',', '.'))
+      if (!Number.isNaN(val) && val > 0) return val
     }
-
-    if (t.includes('mini') || t.includes('locker') || t.includes('tủ cá nhân')) return 'MINI'
-    if (t.includes('vừa') || t.includes('medium') || t.includes('studio') || t.includes('nhỏ')) return 'MEDIUM'
-    if (t.includes('tiêu chuẩn') || t.includes('standard') || t.includes('phòng ngủ')) return 'STANDARD'
-    if (t.includes('lớn') || t.includes('commercial') || t.includes('extra') || t.includes('thương mại') || t.includes('doanh nghiệp')) return 'LARGE'
   }
-
-  if (typeof areaSqMeters === 'number' && areaSqMeters > 0) {
-    if (areaSqMeters <= 1.8) return 'MINI'
-    if (areaSqMeters <= 4.5) return 'MEDIUM'
-    if (areaSqMeters <= 8.5) return 'STANDARD'
-    return 'LARGE'
-  }
-
   return null
 }
 
-function isUnitMatchingBookedSize(u: StorageUnit, targetTypeId?: string | null, targetName?: string | null): boolean {
+function normalizeTypeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\(.*?\)/g, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+function isUnitMatchingBookedSize(
+  u: StorageUnit,
+  targetTypeId?: string | null,
+  targetName?: string | null,
+  targetArea?: number | string | null
+): boolean {
+  // 1. Khớp tuyệt đối theo Unit Type ID nếu cả 2 bên đều có id
   if (targetTypeId && u.unitTypeId) {
-    if (u.unitTypeId === targetTypeId) return true
+    if (u.unitTypeId.toLowerCase() === targetTypeId.toLowerCase()) return true
     for (const group of EQUIVALENT_TYPE_GROUPS) {
-      if (group.includes(targetTypeId) && group.includes(u.unitTypeId)) return true
+      const lowerGroup = group.map((id) => id.toLowerCase())
+      if (lowerGroup.includes(targetTypeId.toLowerCase()) && lowerGroup.includes(u.unitTypeId.toLowerCase())) {
+        return true
+      }
     }
+    // Cả 2 đều có mã loại kho rõ ràng nhưng khác nhau -> Không trùng loại!
+    return false
   }
 
+  const parsedTargetArea = extractAreaNumber(targetArea, targetName)
+  const parsedUnitArea = extractAreaNumber(u.areaSqMeters, u.unitTypeName)
+
+  // 2. Đối chiếu theo tên loại kho nếu có
   if (targetName && u.unitTypeName) {
-    const t = targetName.toLowerCase().trim()
-    const n = u.unitTypeName.toLowerCase().trim()
-    if (t && n && (t === n || n.includes(t) || t.includes(n))) return true
+    const t = normalizeTypeName(targetName)
+    const n = normalizeTypeName(u.unitTypeName)
+
+    if (t === n && t.length > 0) {
+      if (parsedTargetArea != null && parsedUnitArea != null) {
+        return Math.abs(parsedTargetArea - parsedUnitArea) <= 1.0
+      }
+      return true
+    }
+
+    if (t.length >= 4 && n.length >= 4 && (t.includes(n) || n.includes(t))) {
+      if (parsedTargetArea != null && parsedUnitArea != null) {
+        return Math.abs(parsedTargetArea - parsedUnitArea) <= 1.0
+      }
+      return true
+    }
+
+    return false
   }
 
-  const targetCategory = classifyByTypeAndText(targetTypeId, targetName, null)
-  const unitCategory = classifyByTypeAndText(u.unitTypeId, u.unitTypeName, u.areaSqMeters)
-  if (targetCategory && unitCategory && targetCategory === unitCategory) {
-    return true
+  // 3. Dự phòng đối chiếu theo diện tích nếu thiếu tên hoặc id
+  if (parsedTargetArea != null && parsedUnitArea != null) {
+    return Math.abs(parsedTargetArea - parsedUnitArea) <= 0.5
   }
 
   return false
@@ -130,6 +143,17 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
     return ''
   }, [booking])
 
+  const bookedUnitArea = useMemo(() => {
+    if (!booking) return null
+    return (
+      booking.areaSqMeters ??
+      (booking as any)?.storageUnit?.areaSqMeters ??
+      (booking as any)?.unitType?.areaSqm ??
+      (booking as any)?.size?.areaSqMeters ??
+      extractAreaNumber(null, bookedUnitTypeName)
+    )
+  }, [booking, bookedUnitTypeName])
+
   useEffect(() => {
     if (!isOpen || !booking) {
       setAllUnits([])
@@ -171,7 +195,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
             u.bookingId !== booking.id
           return !isHeldByOther
         })
-        const matched = assignableList.filter((u) => isUnitMatchingBookedSize(u, targetTypeId, targetName))
+        const matched = assignableList.filter((u) => isUnitMatchingBookedSize(u, targetTypeId, targetName, bookedUnitArea))
 
         if (matched.length > 0) {
           setSelectedUnitId(matched[0].id)
@@ -188,7 +212,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
         setError('Không thể tải danh sách ô kho trống của cơ sở. Vui lòng thử lại.')
       })
       .finally(() => setLoadingUnits(false))
-  }, [isOpen, booking, targetFacilityId, bookedUnitTypeName])
+  }, [isOpen, booking, targetFacilityId, bookedUnitTypeName, bookedUnitArea])
 
   // Lọc các ô kho còn trống thuộc loại kho khách đã chọn trong hợp đồng
   const matchingUnits = useMemo(() => {
@@ -196,8 +220,8 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
     const targetTypeId = booking.unitTypeId
     const targetName = bookedUnitTypeName.trim()
 
-    return allUnits.filter((u) => isUnitMatchingBookedSize(u, targetTypeId, targetName))
-  }, [allUnits, booking, bookedUnitTypeName])
+    return allUnits.filter((u) => isUnitMatchingBookedSize(u, targetTypeId, targetName, bookedUnitArea))
+  }, [allUnits, booking, bookedUnitTypeName, bookedUnitArea])
 
   // Danh sách hiển thị: mặc định hiển thị ô kho khớp loại khách đã chọn
   const displayUnits = useMemo(() => {
@@ -479,7 +503,7 @@ export const AssignPhysicalUnitModal: React.FC<AssignPhysicalUnitModalProps> = (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto p-1 pr-1.5">
                       {displayUnits.map((unit) => {
                         const isSelected = selectedUnitId === unit.id
-                        const isMatchingType = isUnitMatchingBookedSize(unit, bookedUnitTypeId, bookedUnitTypeName)
+                        const isMatchingType = isUnitMatchingBookedSize(unit, bookedUnitTypeId, bookedUnitTypeName, bookedUnitArea)
                         const isReserved =
                           String(unit.status || '').toUpperCase() === 'RESERVED' ||
                           String(unit.status || '').toUpperCase() === 'PENDING_HANDOVER' ||
