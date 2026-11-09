@@ -78,6 +78,14 @@ const getWeekRange = (refDate: Date): { from: string; to: string } => {
   return { from: formatDateLocal(mon), to: formatDateLocal(sun) }
 }
 
+const getUserRole = (u: any): string => {
+  if (!u) return ''
+  if (typeof u.role === 'string') return u.role
+  if (u.role?.name) return u.role.name
+  if (u.roleName) return u.roleName
+  return ''
+}
+
 const getStaffRoleBadge = (roleName?: string) => {
   const norm = (roleName || '').toUpperCase().trim()
   switch (norm) {
@@ -140,9 +148,6 @@ export const ShiftRosterPage: React.FC = () => {
   const isStaffAssignment = (a: StaffAssignmentResponse) => {
     if (a.roleInShift === 'FACILITY_LEAD') return false
     if (a.staffRole && a.staffRole.toUpperCase() !== 'STAFF') return false
-    if (staffList.length > 0 && !staffList.some(s => s.id === a.staffId)) {
-      return false
-    }
     return true
   }
 
@@ -216,6 +221,21 @@ export const ShiftRosterPage: React.FC = () => {
   const [rejectHandoverTarget, setRejectHandoverTarget] = useState<ShiftHandover | null>(null)
   const [rejectHandoverReason, setRejectHandoverReason] = useState<string>('')
   const [isRejectingHandover, setIsRejectingHandover] = useState(false)
+
+  // Shift Swap Review & Response Modal States
+  const [reviewSwapModal, setReviewSwapModal] = useState<{
+    swap: ShiftSwapRequest
+    action: 'APPROVED' | 'REJECTED'
+  } | null>(null)
+  const [reviewNotes, setReviewNotes] = useState('')
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false)
+
+  const [respondSwapModal, setRespondSwapModal] = useState<{
+    swap: ShiftSwapRequest
+    accept: boolean
+  } | null>(null)
+  const [respondNotes, setRespondNotes] = useState('')
+  const [isSubmittingRespond, setIsSubmittingRespond] = useState(false)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -361,7 +381,25 @@ export const ShiftRosterPage: React.FC = () => {
       }
       setAssignments(assignList)
 
-      // 2. Staff / Manager list
+      // 2. Shift swap requests in range
+      const swapRes = await staffAssignmentService.getSwapRequests({
+        facilityId: targetFacilityId,
+        fromDate: appliedStartDate,
+        toDate: appliedEndDate,
+        role: isBusinessManager ? 'FACILITY_MANAGER' : undefined,
+        size: 100
+      })
+      let swapList: ShiftSwapRequest[] = []
+      if (swapRes?.content && Array.isArray(swapRes.content)) {
+        swapList = swapRes.content
+      } else if (Array.isArray(swapRes)) {
+        swapList = swapRes
+      }
+      if (targetFacilityId) {
+        swapList = swapList.filter(s => s.facilityId === targetFacilityId)
+      }
+
+      // 3. Staff / Manager list
       let loadedStaff: User[] = []
       if (isBusinessManager) {
         const staffRes = await userService.getAllUsers({
@@ -391,40 +429,76 @@ export const ShiftRosterPage: React.FC = () => {
         const staffUsers = staffRes.data || []
         const managerUsers = managerRes.data || []
         const allFacUsers = (allFacilityUsersRes.data || []).filter(u => {
-          const r = (u.roleName || u.role?.name || '').toUpperCase()
+          const r = getUserRole(u).toUpperCase()
           return r === 'STAFF' || r === 'FACILITY_MANAGER'
         })
 
         const userMap = new Map<string, User>()
-        managerUsers.forEach(u => userMap.set(u.id, u))
-        staffUsers.forEach(u => userMap.set(u.id, u))
+        managerUsers.forEach(u => userMap.set(u.id, { ...u, roleName: 'FACILITY_MANAGER' }))
+        staffUsers.forEach(u => userMap.set(u.id, { ...u, roleName: u.roleName || 'STAFF' }))
         allFacUsers.forEach(u => {
           if (!userMap.has(u.id)) userMap.set(u.id, u)
         })
 
         // Also incorporate any assigned personnel from assignments in that facility
         assignList.forEach(a => {
-          if (a.staffId && !userMap.has(a.staffId)) {
-            userMap.set(a.staffId, {
-              id: a.staffId,
-              username: a.staffUsername || a.staffEmail || a.staffFullName || 'staff',
-              email: a.staffEmail || '',
-              fullName: a.staffFullName || a.staffUsername || '',
-              roleName: a.staffRole || (a.roleInShift === 'FACILITY_LEAD' ? 'FACILITY_MANAGER' : 'STAFF'),
+          if (a.staffId) {
+            const existing = userMap.get(a.staffId)
+            const resolvedRole = a.staffRole || (a.roleInShift === 'FACILITY_LEAD' ? 'FACILITY_MANAGER' : undefined)
+            if (!existing) {
+              userMap.set(a.staffId, {
+                id: a.staffId,
+                username: a.staffUsername || a.staffEmail || a.staffFullName || 'staff',
+                email: a.staffEmail || '',
+                fullName: a.staffFullName || a.staffUsername || '',
+                roleName: resolvedRole || 'STAFF',
+                isActive: true
+              } as User)
+            } else if (resolvedRole && !existing.roleName) {
+              existing.roleName = resolvedRole
+            }
+          }
+        })
+
+        // Incorporate any participants from swap requests
+        swapList.forEach(s => {
+          if (s.requesterId && !userMap.has(s.requesterId)) {
+            userMap.set(s.requesterId, {
+              id: s.requesterId,
+              username: s.requesterUsername || s.requesterName || 'user',
+              email: s.requesterEmail || '',
+              fullName: s.requesterName || s.requesterUsername || '',
+              roleName: s.requesterRole || 'FACILITY_MANAGER',
+              isActive: true
+            } as User)
+          }
+          if (s.targetStaffId && !userMap.has(s.targetStaffId)) {
+            userMap.set(s.targetStaffId, {
+              id: s.targetStaffId,
+              username: s.targetStaffUsername || s.targetStaffName || 'user',
+              email: s.targetStaffEmail || '',
+              fullName: s.targetStaffName || s.targetStaffUsername || '',
+              roleName: s.targetStaffRole || 'FACILITY_MANAGER',
               isActive: true
             } as User)
           }
         })
 
         // Include current logged in user if they belong to this facility
-        if (user?.id && !userMap.has(user.id) && (!targetFacilityId || user.facilityId === targetFacilityId)) {
-          userMap.set(user.id, user)
+        if (user?.id && (!targetFacilityId || user.facilityId === targetFacilityId)) {
+          const existing = userMap.get(user.id)
+          if (!existing) {
+            userMap.set(user.id, {
+              ...user,
+              roleName: getUserRole(user) || 'FACILITY_MANAGER'
+            } as User)
+          }
         }
 
         // Sort: Facility Managers first, then Staff, then by fullName
         loadedStaff = Array.from(userMap.values()).sort((a, b) => {
-          const roleA = (a.roleName || a.role?.name || '').toUpperCase()
-          const roleB = (b.roleName || b.role?.name || '').toUpperCase()
+          const roleA = getUserRole(a).toUpperCase()
+          const roleB = getUserRole(b).toUpperCase()
           if (roleA === 'FACILITY_MANAGER' && roleB !== 'FACILITY_MANAGER') return -1
           if (roleA !== 'FACILITY_MANAGER' && roleB === 'FACILITY_MANAGER') return 1
           return (a.fullName || a.username || '').localeCompare(b.fullName || b.username || '')
@@ -432,23 +506,6 @@ export const ShiftRosterPage: React.FC = () => {
       }
       setStaffList(loadedStaff)
 
-      // 3. Shift swap requests in range
-      const swapRes = await staffAssignmentService.getSwapRequests({
-        facilityId: targetFacilityId,
-        fromDate: appliedStartDate,
-        toDate: appliedEndDate,
-        role: isBusinessManager ? 'FACILITY_MANAGER' : undefined,
-        size: 100
-      })
-      let swapList: ShiftSwapRequest[] = []
-      if (swapRes?.content && Array.isArray(swapRes.content)) {
-        swapList = swapRes.content
-      } else if (Array.isArray(swapRes)) {
-        swapList = swapRes
-      }
-      if (targetFacilityId) {
-        swapList = swapList.filter(s => s.facilityId === targetFacilityId)
-      }
       if (isBusinessManager) {
         // Business Manager only views & reviews shift swap requests between Facility Managers
         swapList = swapList.filter(s => {
@@ -607,24 +664,89 @@ export const ShiftRosterPage: React.FC = () => {
     }
   }
 
-  // Swap Review Actions
-  const handleReviewSwap = async (swapId: string, status: 'APPROVED' | 'REJECTED') => {
+  // Swap Review & Confirmation Actions
+  const handleOpenReviewModal = (swap: ShiftSwapRequest, action: 'APPROVED' | 'REJECTED') => {
     if (isAdmin) {
       showToast('Tài khoản Quản trị viên chỉ có quyền xem, giám sát ca trực toàn hệ thống.')
       return
     }
-    setActionLoadingId(swapId)
+    setReviewNotes(action === 'APPROVED'
+      ? (isBusinessManager ? 'Business Manager đã phê duyệt yêu cầu đổi ca cho Quản lý cơ sở.' : 'Quản lý cơ sở đã phê duyệt yêu cầu đổi ca.')
+      : ''
+    )
+    setReviewSwapModal({ swap, action })
+  }
+
+  const handleConfirmReviewSubmit = async () => {
+    if (!reviewSwapModal) return
+    const { swap, action } = reviewSwapModal
+    if (action === 'REJECTED' && !reviewNotes.trim()) {
+      showToast('Vui lòng nhập lý do từ chối yêu cầu đổi ca.')
+      return
+    }
+    setIsSubmittingReview(true)
     try {
-      await staffAssignmentService.reviewSwapRequest(swapId, {
-        status,
-        managerNotes: status === 'APPROVED'
-          ? (isBusinessManager ? 'Business Manager đã phê duyệt yêu cầu đổi ca cho Quản lý cơ sở' : 'Quản lý cơ sở đã phê duyệt đổi ca')
-          : (isBusinessManager ? 'Business Manager từ chối yêu cầu đổi ca' : 'Từ chối yêu cầu đổi ca')
+      await staffAssignmentService.reviewSwapRequest(swap.id, {
+        status: action,
+        managerNotes: reviewNotes.trim() || (action === 'APPROVED' ? 'Đã duyệt yêu cầu đổi ca' : 'Từ chối yêu cầu đổi ca')
       })
-      showToast(status === 'APPROVED' ? 'Đã duyệt yêu cầu đổi ca trực thành công!' : 'Đã từ chối yêu cầu đổi ca.')
+      showToast(action === 'APPROVED'
+        ? 'Đã phê duyệt đổi ca! Đơn chuyển tiếp đến người tiếp nhận để xác nhận.'
+        : 'Đã từ chối yêu cầu đổi ca.'
+      )
+      setReviewSwapModal(null)
+      setReviewNotes('')
       await fetchData()
     } catch (err: any) {
-      showToast(err?.response?.data?.message || 'Lỗi khi xử lý đổi ca.')
+      showToast(err?.response?.data?.message || 'Lỗi khi xử lý phê duyệt đổi ca.')
+    } finally {
+      setIsSubmittingReview(false)
+    }
+  }
+
+  // Target Staff / Manager Response Actions
+  const handleOpenRespondModal = (swap: ShiftSwapRequest, accept: boolean) => {
+    setRespondNotes(accept ? 'Tôi đồng ý tiếp nhận ca trực này và chịu trách nhiệm công việc.' : '')
+    setRespondSwapModal({ swap, accept })
+  }
+
+  const handleConfirmRespondSubmit = async () => {
+    if (!respondSwapModal) return
+    const { swap, accept } = respondSwapModal
+    if (!accept && !respondNotes.trim()) {
+      showToast('Vui lòng nhập lý do từ chối tiếp nhận ca trực.')
+      return
+    }
+    setIsSubmittingRespond(true)
+    try {
+      await staffAssignmentService.respondToSwapRequest(swap.id, {
+        accept,
+        notes: respondNotes.trim() || (accept ? 'Đồng ý tiếp nhận ca trực' : 'Từ chối nhận ca')
+      })
+      showToast(accept
+        ? 'Tiếp nhận ca trực thành công! Lịch trực của bạn đã được cập nhật.'
+        : 'Đã từ chối tiếp nhận ca trực.'
+      )
+      setRespondSwapModal(null)
+      setRespondNotes('')
+      await fetchData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lỗi khi phản hồi tiếp nhận ca.')
+    } finally {
+      setIsSubmittingRespond(false)
+    }
+  }
+
+  // Cancel own Swap Request
+  const handleCancelSwap = async (swapId: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn hủy yêu cầu đổi ca trực này?')) return
+    setActionLoadingId(swapId)
+    try {
+      await staffAssignmentService.cancelSwapRequest(swapId)
+      showToast('Đã hủy yêu cầu đổi ca thành công.')
+      await fetchData()
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || 'Lỗi khi hủy yêu cầu đổi ca.')
     } finally {
       setActionLoadingId(null)
     }
@@ -1298,12 +1420,16 @@ export const ShiftRosterPage: React.FC = () => {
                 }}
                 className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 outline-none focus:border-blue-400"
               >
-                <option value="ALL">{t('Tất cả nhân sự', 'All Staff')} ({staffList.length})</option>
-                {staffList.map(s => (
-                  <option key={s.id} value={s.id}>
-                    {s.fullName || s.username} [{getStaffRoleBadge(s.roleName || s.role?.name || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')).label}] ({s.email})
-                  </option>
-                ))}
+                <option value="ALL">{t('Tất cả nhân sự', 'All Personnel')} ({staffList.length})</option>
+                {staffList.map(s => {
+                  const roleStr = getUserRole(s) || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')
+                  const badge = getStaffRoleBadge(roleStr)
+                  return (
+                    <option key={s.id} value={s.id}>
+                      {s.fullName || s.username} [{badge.label}] ({s.email})
+                    </option>
+                  )
+                })}
               </select>
 
               {/* Filter Zone */}
@@ -1725,7 +1851,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
               }`}
             >
-              <span>{isBusinessManager ? 'Chờ Business Manager duyệt' : 'Chờ duyệt'}</span>
+              <span>{isBusinessManager ? 'Chờ duyệt & Xác nhận' : 'Chờ xử lý / xác nhận'}</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                 swapFilterStatus === 'PENDING' ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-800'
               }`}>
@@ -1741,7 +1867,7 @@ export const ShiftRosterPage: React.FC = () => {
                   : 'bg-white text-emerald-700 hover:bg-emerald-50 border border-emerald-200'
               }`}
             >
-              <span>Lịch sử đã duyệt</span>
+              <span>Lịch sử đã duyệt &amp; hoàn tất</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
                 swapFilterStatus === 'APPROVED' ? 'bg-emerald-700 text-white' : 'bg-emerald-100 text-emerald-800'
               }`}>
@@ -1887,9 +2013,9 @@ export const ShiftRosterPage: React.FC = () => {
                               : isApproved
                               ? 'Đã hoàn tất đổi ca'
                               : isManagerApproved
-                              ? (isBusinessManager ? 'Đã duyệt • Chờ QL tiếp nhận xác nhận' : 'QL đã duyệt • Chờ NV xác nhận')
+                              ? (isTargetManager ? 'QL đã duyệt • Chờ QL tiếp nhận xác nhận' : 'QL đã duyệt • Chờ NV tiếp nhận xác nhận')
                               : isPending
-                              ? (isBusinessManager ? 'Chờ Business Manager duyệt' : 'Chờ Quản lý duyệt')
+                              ? (isBusinessManager || isRequesterManager ? 'Chờ Business Manager duyệt' : 'Chờ Quản lý duyệt')
                               : isRejected
                               ? 'Đã từ chối'
                               : 'Đã hủy'}
@@ -1901,15 +2027,30 @@ export const ShiftRosterPage: React.FC = () => {
                             <span className="text-[11px] font-semibold text-slate-400 italic">
                               Quá hạn
                             </span>
-                          ) : isPending && (
+                          ) : isPending ? (
                             isAdmin ? (
                               <span className="text-[11px] font-medium text-slate-500 italic flex items-center justify-end gap-1">
                                 <span className="material-symbols-outlined text-[14px]">visibility</span>
                                 Giám sát (Chỉ xem)
                               </span>
-                            ) : swap.requesterId === user?.id || swap.targetStaffId === user?.id ? (
+                            ) : swap.requesterId === user?.id ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span className="text-[11px] font-semibold text-slate-400 italic">
+                                  Đơn của bạn (Chờ duyệt)
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isLoadingAction}
+                                  onClick={() => handleCancelSwap(swap.id)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                                  title="Hủy yêu cầu đổi ca"
+                                >
+                                  Hủy
+                                </button>
+                              </div>
+                            ) : swap.targetStaffId === user?.id ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">
-                                Đơn cá nhân (Chờ cấp trên duyệt)
+                                Bạn là người tiếp nhận (Chờ cấp trên duyệt trước)
                               </span>
                             ) : (swap.requesterRole === 'FACILITY_MANAGER' || swap.targetStaffRole === 'FACILITY_MANAGER') && !isBusinessManager ? (
                               <span className="text-[11px] font-medium text-slate-500 italic">
@@ -1920,7 +2061,7 @@ export const ShiftRosterPage: React.FC = () => {
                                 <button
                                   type="button"
                                   disabled={isLoadingAction}
-                                  onClick={() => handleReviewSwap(swap.id, 'APPROVED')}
+                                  onClick={() => handleOpenReviewModal(swap, 'APPROVED')}
                                   title={isBusinessManager ? "Phê duyệt yêu cầu đổi ca trực của Quản lý cơ sở" : "Duyệt đơn và chuyển tiếp tới nhân sự tiếp nhận xác nhận"}
                                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                                 >
@@ -1930,13 +2071,72 @@ export const ShiftRosterPage: React.FC = () => {
                                 <button
                                   type="button"
                                   disabled={isLoadingAction}
-                                  onClick={() => handleReviewSwap(swap.id, 'REJECTED')}
+                                  onClick={() => handleOpenReviewModal(swap, 'REJECTED')}
                                   className="px-3 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-lg font-semibold text-xs transition-colors cursor-pointer"
                                 >
                                   Từ chối
                                 </button>
                               </div>
                             )
+                          ) : isManagerApproved ? (
+                            /* Quản lý đã duyệt -> Chờ người tiếp nhận xác nhận hoặc từ chối */
+                            swap.targetStaffId === user?.id ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={isLoadingAction}
+                                  onClick={() => handleOpenRespondModal(swap, true)}
+                                  title="Đồng ý tiếp nhận ca làm việc này"
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                  <span>Chấp nhận nhận ca</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isLoadingAction}
+                                  onClick={() => handleOpenRespondModal(swap, false)}
+                                  title="Từ chối tiếp nhận ca làm việc"
+                                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-rose-50 text-slate-700 hover:text-rose-600 rounded-lg font-semibold text-xs transition-colors cursor-pointer flex items-center gap-1"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">cancel</span>
+                                  <span>Từ chối</span>
+                                </button>
+                              </div>
+                            ) : swap.requesterId === user?.id ? (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <span className="text-[11px] font-semibold text-blue-600 italic">
+                                  Đã duyệt • Chờ {swap.targetStaffName || swap.targetStaffUsername || 'đồng nghiệp'} nhận ca
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={isLoadingAction}
+                                  onClick={() => handleCancelSwap(swap.id)}
+                                  className="px-2 py-1 text-[11px] font-semibold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                                  title="Hủy yêu cầu đổi ca"
+                                >
+                                  Hủy
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] font-medium text-blue-600 italic flex items-center justify-end gap-1">
+                                <span className="material-symbols-outlined text-[14px]">hourglass_top</span>
+                                <span>Đã duyệt • Chờ {swap.targetStaffName || swap.targetStaffUsername || 'người nhận'} xác nhận</span>
+                              </span>
+                            )
+                          ) : isApproved ? (
+                            <span className="text-[11px] font-bold text-emerald-700 flex items-center justify-end gap-1">
+                              <span className="material-symbols-outlined text-[15px]">verified</span>
+                              Hoàn tất đổi ca
+                            </span>
+                          ) : isRejected ? (
+                            <span className="text-[11px] font-semibold text-rose-600 italic">
+                              Đã từ chối
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-slate-400 italic">
+                              Đã hủy
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -1974,7 +2174,8 @@ export const ShiftRosterPage: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {staffList.map(s => {
-                  const roleObj = getStaffRoleBadge(s.roleName || s.role?.name || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF'))
+                  const roleStr = getUserRole(s) || (isBusinessManager ? 'FACILITY_MANAGER' : 'STAFF')
+                  const roleObj = getStaffRoleBadge(roleStr)
                   return (
                     <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3 px-4 font-mono font-bold text-blue-700" title={s.id}>
@@ -2337,6 +2538,297 @@ export const ShiftRosterPage: React.FC = () => {
           onClose={() => setSelectedAssignmentForDelete(null)}
           onConfirm={handleConfirmDeleteAssignment}
         />
+      )}
+
+      {/* MODAL: REVIEW SHIFT SWAP CONFIRM (QUẢN LÝ PHÊ DUYỆT / TỪ CHỐI) */}
+      {reviewSwapModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-8 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className={`p-5 border-b flex items-start gap-3.5 ${
+              reviewSwapModal.action === 'APPROVED' ? 'bg-emerald-50/70 border-emerald-100' : 'bg-rose-50/70 border-rose-100'
+            }`}>
+              <div className={`p-2.5 rounded-xl border shrink-0 ${
+                reviewSwapModal.action === 'APPROVED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200'
+              }`}>
+                <span className="material-symbols-outlined text-[24px]">
+                  {reviewSwapModal.action === 'APPROVED' ? 'verified' : 'gpp_bad'}
+                </span>
+              </div>
+              <div className="flex-1">
+                <h3 className={`text-base font-bold ${
+                  reviewSwapModal.action === 'APPROVED' ? 'text-emerald-950' : 'text-rose-950'
+                }`}>
+                  {reviewSwapModal.action === 'APPROVED'
+                    ? (isBusinessManager ? 'Xác Nhận Phê Duyệt Đổi Ca (Quản Lý)' : 'Xác Nhận Phê Duyệt Đổi Ca')
+                    : 'Xác Nhận Từ Chối Đổi Ca'}
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {reviewSwapModal.action === 'APPROVED'
+                    ? 'Sau khi phê duyệt, đơn sẽ chuyển sang trạng thái chờ nhân sự tiếp nhận xác nhận lần cuối.'
+                    : 'Đơn đề xuất đổi ca sẽ bị từ chối và kết thúc, thông báo tới các bên liên quan.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReviewSwapModal(null)}
+                className="text-slate-400 hover:text-slate-600 rounded-lg p-1 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Body: Swap details */}
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Người xin đổi ca:</span>
+                  <div className="text-right">
+                    <span className="font-bold text-slate-900">
+                      {reviewSwapModal.swap.requesterName || reviewSwapModal.swap.requesterUsername}
+                    </span>
+                    <span className="text-[11px] text-slate-500 ml-1 font-mono">
+                      ({reviewSwapModal.swap.requesterEmail})
+                    </span>
+                    <span className="ml-1.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                      {reviewSwapModal.swap.requesterRole === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : 'Nhân viên'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Ca trực đề xuất đổi:</span>
+                  <div className="text-right font-semibold text-blue-700 flex items-center gap-1.5">
+                    <span>{formatShiftLabel(reviewSwapModal.swap.assignmentShift)}</span>
+                    <span className="text-slate-400">•</span>
+                    <span className="font-mono text-slate-700">{reviewSwapModal.swap.assignmentDate}</span>
+                    {reviewSwapModal.swap.assignedZone && (
+                      <>
+                        <span className="text-slate-400">•</span>
+                        <span className="text-slate-600">{reviewSwapModal.swap.assignedZone}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Người tiếp nhận thay thế:</span>
+                  <div className="text-right">
+                    <span className="font-bold text-slate-900">
+                      {reviewSwapModal.swap.targetStaffName || reviewSwapModal.swap.targetStaffUsername}
+                    </span>
+                    <span className="text-[11px] text-slate-500 ml-1 font-mono">
+                      ({reviewSwapModal.swap.targetStaffEmail})
+                    </span>
+                    <span className="ml-1.5 px-1.5 py-0.2 rounded text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+                      {reviewSwapModal.swap.targetStaffRole === 'FACILITY_MANAGER' ? 'Quản lý cơ sở' : 'Nhân viên'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-0.5">
+                  <span className="text-slate-500 font-medium">Lý do xin đổi:</span>
+                  <div className="mt-1 p-2 bg-white rounded-lg border border-slate-200 text-slate-800 italic">
+                    "{reviewSwapModal.swap.reason || 'Không có lý do chi tiết'}"
+                  </div>
+                </div>
+              </div>
+
+              {/* Manager Review Notes Field */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Ý kiến &amp; Lời dặn của Quản lý {reviewSwapModal.action === 'REJECTED' && <span className="text-rose-500">*</span>}
+                </label>
+                <textarea
+                  value={reviewNotes}
+                  onChange={e => setReviewNotes(e.target.value)}
+                  rows={3}
+                  placeholder={
+                    reviewSwapModal.action === 'APPROVED'
+                      ? 'Nhập ghi chú hoặc ý kiến phê duyệt gửi cho các bên...'
+                      : 'Vui lòng nêu rõ lý do từ chối yêu cầu đổi ca này...'
+                  }
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:bg-white transition-all resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isSubmittingReview}
+                onClick={() => setReviewSwapModal(null)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs cursor-pointer transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingReview}
+                onClick={handleConfirmReviewSubmit}
+                className={`px-4 py-2 rounded-xl font-bold text-xs text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                  reviewSwapModal.action === 'APPROVED'
+                    ? 'bg-emerald-600 hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-400'
+                    : 'bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-400'
+                }`}
+              >
+                {isSubmittingReview ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">
+                      {reviewSwapModal.action === 'APPROVED' ? 'check' : 'close'}
+                    </span>
+                    <span>
+                      {reviewSwapModal.action === 'APPROVED' ? 'Xác nhận phê duyệt' : 'Xác nhận từ chối'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RESPOND TO SHIFT SWAP (TIẾP NHẬN / TỪ CHỐI NHẬN CA) */}
+      {respondSwapModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-8 animate-in fade-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className={`p-5 border-b flex items-start gap-3.5 ${
+              respondSwapModal.accept ? 'bg-emerald-50/70 border-emerald-100' : 'bg-rose-50/70 border-rose-100'
+            }`}>
+              <div className={`p-2.5 rounded-xl border shrink-0 ${
+                respondSwapModal.accept ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200'
+              }`}>
+                <span className="material-symbols-outlined text-[24px]">
+                  {respondSwapModal.accept ? 'assignment_turned_in' : 'cancel'}
+                </span>
+              </div>
+              <div className="flex-1">
+                <h3 className={`text-base font-bold ${
+                  respondSwapModal.accept ? 'text-emerald-950' : 'text-rose-950'
+                }`}>
+                  {respondSwapModal.accept ? 'Xác Nhận Tiếp Nhận Ca Trực' : 'Xác Nhận Từ Chối Nhận Ca Trực'}
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  {respondSwapModal.accept
+                    ? 'Yêu cầu đổi ca này đã được Quản lý phê duyệt. Khi bạn đồng ý tiếp nhận, ca trực sẽ chính thức chuyển sang tên của bạn.'
+                    : 'Đơn đổi ca này sẽ bị từ chối và ca trực vẫn giữ nguyên cho người đề xuất ban đầu.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRespondSwapModal(null)}
+                className="text-slate-400 hover:text-slate-600 rounded-lg p-1 transition-colors cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Ca trực bạn sẽ nhận:</span>
+                  <div className="text-right font-bold text-blue-700 flex items-center gap-1.5">
+                    <span>{formatShiftLabel(respondSwapModal.swap.assignmentShift)}</span>
+                    <span className="text-slate-400">•</span>
+                    <span className="font-mono text-slate-800">{respondSwapModal.swap.assignmentDate}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Đồng nghiệp bàn giao:</span>
+                  <div className="text-right">
+                    <span className="font-bold text-slate-900">
+                      {respondSwapModal.swap.requesterName || respondSwapModal.swap.requesterUsername}
+                    </span>
+                    <span className="text-[11px] text-slate-500 ml-1 font-mono">
+                      ({respondSwapModal.swap.requesterEmail})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pb-2 border-b border-slate-200/60">
+                  <span className="text-slate-500 font-medium">Lý do xin đổi:</span>
+                  <div className="mt-1 p-2 bg-white rounded-lg border border-slate-200 text-slate-800 italic">
+                    "{respondSwapModal.swap.reason || 'Không có lý do chi tiết'}"
+                  </div>
+                </div>
+
+                {respondSwapModal.swap.managerNotes && (
+                  <div className="pt-0.5">
+                    <span className="text-emerald-700 font-bold">Ý kiến phê duyệt của Quản lý:</span>
+                    <div className="mt-1 p-2 bg-emerald-50/50 rounded-lg border border-emerald-200/80 text-emerald-900 font-medium">
+                      {respondSwapModal.swap.managerNotes}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Note input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Lời nhắn / Phản hồi của bạn {!respondSwapModal.accept && <span className="text-rose-500">*</span>}
+                </label>
+                <textarea
+                  value={respondNotes}
+                  onChange={e => setRespondNotes(e.target.value)}
+                  rows={3}
+                  placeholder={
+                    respondSwapModal.accept
+                      ? 'Nhập phản hồi hoặc xác nhận đã nắm công việc ca trực...'
+                      : 'Vui lòng nêu lý do bạn không thể tiếp nhận ca trực này...'
+                  }
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 outline-none focus:border-blue-500 focus:bg-white transition-all resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isSubmittingRespond}
+                onClick={() => setRespondSwapModal(null)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-xl font-bold text-xs cursor-pointer transition-colors"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingRespond}
+                onClick={handleConfirmRespondSubmit}
+                className={`px-4 py-2 rounded-xl font-bold text-xs text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm ${
+                  respondSwapModal.accept
+                    ? 'bg-emerald-600 hover:bg-emerald-700 focus:ring-2 focus:ring-emerald-400'
+                    : 'bg-rose-600 hover:bg-rose-700 focus:ring-2 focus:ring-rose-400'
+                }`}
+              >
+                {isSubmittingRespond ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Đang xử lý...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-[16px]">
+                      {respondSwapModal.accept ? 'check_circle' : 'cancel'}
+                    </span>
+                    <span>
+                      {respondSwapModal.accept ? 'Xác nhận nhận ca' : 'Từ chối nhận ca'}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
