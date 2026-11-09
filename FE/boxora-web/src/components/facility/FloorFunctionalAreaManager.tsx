@@ -51,13 +51,11 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
 
   const openCreateModal = () => {
     setEditingAreaId(null)
-    const nextIdx = floor.functionalAreas.length + 1
-    const defaultCode = `FA-${floor.code.replace(/[^a-zA-Z0-9]/g, '')}-${String(nextIdx).padStart(2, '0')}`
-    setName('Hành lang chính')
-    setCode(defaultCode)
+    setName('')
+    setCode('')
     setAreaType('MAIN_CORRIDOR')
     setCustomTypeLabel('')
-    setArea(30)
+    setArea('')
     setDescription('')
     setStatus('ACTIVE')
     setMaxPayloadKg('')
@@ -497,7 +495,7 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="VD: Hành lang chính khu Tây"
+                    placeholder="VD: Hành lang chính"
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
@@ -510,7 +508,7 @@ export const FloorFunctionalAreaManager: React.FC<FloorFunctionalAreaManagerProp
                     required
                     value={code}
                     onChange={(e) => setCode(e.target.value.toUpperCase())}
-                    placeholder="VD: FA-CORR-01"
+                    placeholder={floor.code ? `VD: FA-${floor.code.replace(/[^a-zA-Z0-9]/g, '')}-01` : 'VD: FA-FL01-01'}
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-mono font-bold uppercase text-slate-900 outline-none focus:border-cyan-600 focus:ring-2 focus:ring-cyan-600/15 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
                   />
                 </div>
