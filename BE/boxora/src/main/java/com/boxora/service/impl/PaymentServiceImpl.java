@@ -886,8 +886,10 @@ public class PaymentServiceImpl implements PaymentService {
 
         payment = paymentRepository.save(payment);
 
-        UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
-                ? booking.getStorageUnit().getFacility().getId() : null;
+        UUID facilityId = booking.getFacility() != null
+                ? booking.getFacility().getId()
+                : (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                        ? booking.getStorageUnit().getFacility().getId() : null);
         activityLogService.record(
                 facilityId,
                 ActivityAction.PAYMENT_INITIATED,
@@ -1475,8 +1477,10 @@ public class PaymentServiceImpl implements PaymentService {
                 throw new AppException(ErrorCode.FORBIDDEN);
             }
             if (facilityAccessGuard.isFacilityScoped()) {
-                UUID facilityId = (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null)
-                        ? booking.getStorageUnit().getFacility().getId() : null;
+                UUID facilityId = booking.getFacility() != null
+                        ? booking.getFacility().getId()
+                        : (booking.getStorageUnit() != null && booking.getStorageUnit().getFacility() != null
+                                ? booking.getStorageUnit().getFacility().getId() : null);
                 if (facilityId != null) {
                     facilityAccessGuard.checkFacilityAccess(facilityId);
                 }

@@ -17,7 +17,10 @@ public interface PaymentMapper {
     @Mapping(source = "confirmedByStaff.fullName", target = "confirmedByName")
     @Mapping(target = "unitCode", ignore = true)
     @Mapping(target = "facilityName", ignore = true)
+    @Mapping(target = "facilityId", ignore = true)
     @Mapping(target = "customerName", ignore = true)
+    @Mapping(target = "contractCode", ignore = true)
+    @Mapping(target = "reconciliationStatus", ignore = true)
     PaymentResponse toResponse(Payment entity);
 
     @org.mapstruct.AfterMapping
@@ -30,6 +33,12 @@ public interface PaymentMapper {
                     response.setFacilityName(entity.getBooking().getStorageUnit().getFacility().getName());
                     response.setFacilityId(entity.getBooking().getStorageUnit().getFacility().getId());
                 }
+            }
+            if (response.getFacilityName() == null && entity.getBooking().getFacility() != null) {
+                response.setFacilityName(entity.getBooking().getFacility().getName());
+            }
+            if (response.getFacilityId() == null && entity.getBooking().getFacility() != null) {
+                response.setFacilityId(entity.getBooking().getFacility().getId());
             }
             if (entity.getBooking().getCustomer() != null) {
                 response.setCustomerName(entity.getBooking().getCustomer().getFullName());
@@ -45,6 +54,14 @@ public interface PaymentMapper {
             }
             if (response.getFacilityId() == null && entity.getContract().getFacility() != null) {
                 response.setFacilityId(entity.getContract().getFacility().getId());
+            }
+            if (response.getFacilityName() == null && entity.getContract().getUnit() != null && entity.getContract().getUnit().getFacility() != null) {
+                response.setFacilityName(entity.getContract().getUnit().getFacility().getName());
+                response.setFacilityId(entity.getContract().getUnit().getFacility().getId());
+            }
+            if (response.getFacilityName() == null && entity.getContract().getBooking() != null && entity.getContract().getBooking().getFacility() != null) {
+                response.setFacilityName(entity.getContract().getBooking().getFacility().getName());
+                response.setFacilityId(entity.getContract().getBooking().getFacility().getId());
             }
             if (response.getCustomerName() == null && entity.getContract().getCustomer() != null) {
                 response.setCustomerName(entity.getContract().getCustomer().getFullName());

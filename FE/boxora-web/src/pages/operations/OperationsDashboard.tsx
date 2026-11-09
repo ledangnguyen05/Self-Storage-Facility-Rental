@@ -1,5 +1,5 @@
 import { useRealtimeSync } from '../../hooks/useRealtimeSync'
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { useLanguage } from '../../context/LanguageContext'
 import { reportService } from '../../services/reportService'
@@ -531,6 +531,22 @@ export const OperationsDashboard: React.FC = () => {
     }
   }, [revenueData])
 
+  // Helper to resolve facility display name from item or facilities list
+  const getFacilityDisplayName = useCallback(
+    (item?: { facilityName?: string | null; facilityId?: string | null } | null): string => {
+      if (!item) return '—'
+      if (item.facilityName && item.facilityName.trim() && item.facilityName !== '—') {
+        return item.facilityName
+      }
+      if (item.facilityId) {
+        const found = (facilities || []).find((f) => f.id === item.facilityId)
+        if (found?.name) return found.name
+      }
+      return '—'
+    },
+    [facilities]
+  )
+
   // Filtered Payments for Client Table
   const filteredPayments = useMemo(() => {
     return payments.filter((item) => {
@@ -539,7 +555,9 @@ export const OperationsDashboard: React.FC = () => {
         const matchCode = item.id.toLowerCase().includes(query) || (item.transactionId && item.transactionId.toLowerCase().includes(query)) || (item.receiptVoucherCode && item.receiptVoucherCode.toLowerCase().includes(query))
         const matchCustomer = item.customerName && item.customerName.toLowerCase().includes(query)
         const matchContract = (item.contractCode && item.contractCode.toLowerCase().includes(query)) || (item.bookingCode && item.bookingCode.toLowerCase().includes(query))
-        if (!matchCode && !matchCustomer && !matchContract) return false
+        const facName = getFacilityDisplayName(item)
+        const matchFacility = facName && facName !== '—' && facName.toLowerCase().includes(query)
+        if (!matchCode && !matchCustomer && !matchContract && !matchFacility) return false
       }
 
       if (tableFinancialCategory !== 'ALL') {
@@ -560,7 +578,7 @@ export const OperationsDashboard: React.FC = () => {
 
       return true
     })
-  }, [payments, tableSearch, tableFinancialCategory, tablePaymentMethod, tableReconStatus])
+  }, [payments, tableSearch, tableFinancialCategory, tablePaymentMethod, tableReconStatus, getFacilityDisplayName])
 
   // Excel & CSV Export Handlers
   const handleExportSystemExcel = async () => {
@@ -784,7 +802,7 @@ export const OperationsDashboard: React.FC = () => {
         { val: p.paymentTime ? new Date(p.paymentTime).toLocaleString('vi-VN') : (p.createdAt ? new Date(p.createdAt).toLocaleString('vi-VN') : '') },
         { val: p.customerName || 'N/A' },
         { val: p.contractCode || p.bookingCode || '—' },
-        { val: p.facilityName || '—' },
+        { val: getFacilityDisplayName(p) },
         { val: language === 'vi' ? typeBadge.labelVi : typeBadge.labelEn },
         { val: language === 'vi' ? finCat.labelVi : finCat.labelEn },
         { val: p.amount || 0, type: 'Number', style: 'Number' },
@@ -830,7 +848,7 @@ export const OperationsDashboard: React.FC = () => {
         p.paymentTime || p.createdAt || '',
         p.customerName || 'N/A',
         p.contractCode || p.bookingCode || '—',
-        p.facilityName || '—',
+        getFacilityDisplayName(p),
         language === 'vi' ? typeBadge.labelVi : typeBadge.labelEn,
         language === 'vi' ? finCat.labelVi : finCat.labelEn,
         p.amount || 0,
@@ -2110,7 +2128,7 @@ export const OperationsDashboard: React.FC = () => {
                         </td>
                         {/* 5. Cơ sở */}
                         <td className="py-3 px-3 text-slate-700">
-                          {p.facilityName || '—'}
+                          {getFacilityDisplayName(p)}
                         </td>
                         {/* 6. Loại nghiệp vụ */}
                         <td className="py-3 px-3">
@@ -2254,7 +2272,7 @@ export const OperationsDashboard: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">{tr('Cơ sở', 'Facility')}</span>
-                    <span className="font-semibold">{selectedPaymentDetail.facilityName || '—'}</span>
+                    <span className="font-semibold">{getFacilityDisplayName(selectedPaymentDetail)}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-slate-400 uppercase font-bold block mb-0.5">{tr('Hợp đồng / Booking', 'Contract / Booking')}</span>
