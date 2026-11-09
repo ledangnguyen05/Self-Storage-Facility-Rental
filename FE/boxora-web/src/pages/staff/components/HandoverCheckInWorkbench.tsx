@@ -35,6 +35,23 @@ import { toast } from '../../../utils/toast'
 import { contractService, RentalContract } from '../../../services/contractService'
 import { useAuth } from '../../../context/AuthContext'
 import { useRealtimeSync } from '../../../hooks/useRealtimeSync'
+import { getApiBaseUrl } from '../../../lib/axios'
+
+const resolveImageUrl = (url: string | null | undefined): string => {
+  if (!url) return ''
+  const trimmed = url.trim()
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed
+  }
+  const cleanUrl = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  const base = getApiBaseUrl()
+  return base ? `${base}${cleanUrl}` : cleanUrl
+}
 
 export interface BookingChecklist {
   doorRoll: boolean
@@ -2577,7 +2594,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             setPreviewImageModal({
                               isOpen: true,
                               title: 'Ảnh Chứng Từ Thanh Toán Đã Lưu',
-                              url: effectivePaymentProofUrl,
+                              url: resolveImageUrl(effectivePaymentProofUrl),
                               fileName: effectivePaymentProofName,
                             })
                           }
@@ -2585,9 +2602,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           title="Bấm để xem ảnh phóng to"
                         >
                           <img
-                            src={effectivePaymentProofUrl}
+                            src={resolveImageUrl(effectivePaymentProofUrl)}
                             alt="Chứng từ thanh toán"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            onError={(e) => {
+                              const target = e.currentTarget
+                              if (!target.src.includes('localhost:8080') && effectivePaymentProofUrl?.startsWith('/uploads')) {
+                                target.src = `http://localhost:8080${effectivePaymentProofUrl.startsWith('/') ? '' : '/'}${effectivePaymentProofUrl}`
+                              }
+                            }}
                           />
                           <div className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-0.5 text-white transition-opacity">
                             <ZoomIn size={20} />
@@ -2596,7 +2619,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         </div>
                       ) : (
                         <div
-                          onClick={() => window.open(effectivePaymentProofUrl, '_blank')}
+                          onClick={() => window.open(resolveImageUrl(effectivePaymentProofUrl), '_blank')}
                           className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-rose-50 border-2 border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0 cursor-pointer hover:bg-rose-100 transition shadow-xs"
                           title="Bấm để mở file PDF"
                         >
@@ -2619,7 +2642,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           {effectivePaymentProofUrl}
                         </span>
 
-                        {/* Nút xem ảnh / mở tab mới */}
+                        {/* Nút xem ảnh */}
                         <div className="pt-1 flex items-center gap-2 flex-wrap">
                           <button
                             type="button"
@@ -2627,7 +2650,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                               setPreviewImageModal({
                                 isOpen: true,
                                 title: 'Ảnh Chứng Từ Thanh Toán Đã Lưu',
-                                url: effectivePaymentProofUrl,
+                                url: resolveImageUrl(effectivePaymentProofUrl),
                                 fileName: effectivePaymentProofName,
                               })
                             }
@@ -2636,15 +2659,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             <Eye size={13} />
                             <span>Xem ảnh phóng to</span>
                           </button>
-                          <a
-                            href={effectivePaymentProofUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                          >
-                            <ExternalLink size={12} />
-                            <span>Mở tab mới</span>
-                          </a>
                         </div>
                       </div>
                     </div>
@@ -2727,7 +2741,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             setPreviewImageModal({
                               isOpen: true,
                               title: 'Ảnh Bản Scan Hợp Đồng Giấy Đã Ký',
-                              url: effectivePaperContractUrl,
+                              url: resolveImageUrl(effectivePaperContractUrl),
                               fileName: effectivePaperContractName,
                             })
                           }
@@ -2735,9 +2749,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           title="Bấm để xem ảnh phóng to"
                         >
                           <img
-                            src={effectivePaperContractUrl}
+                            src={resolveImageUrl(effectivePaperContractUrl)}
                             alt="Bản scan hợp đồng giấy"
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                            onError={(e) => {
+                              const target = e.currentTarget
+                              if (!target.src.includes('localhost:8080') && effectivePaperContractUrl?.startsWith('/uploads')) {
+                                target.src = `http://localhost:8080${effectivePaperContractUrl.startsWith('/') ? '' : '/'}${effectivePaperContractUrl}`
+                              }
+                            }}
                           />
                           <div className="absolute inset-0 bg-slate-950/45 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-0.5 text-white transition-opacity">
                             <ZoomIn size={20} />
@@ -2746,7 +2766,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                         </div>
                       ) : (
                         <div
-                          onClick={() => window.open(effectivePaperContractUrl, '_blank')}
+                          onClick={() => window.open(resolveImageUrl(effectivePaperContractUrl), '_blank')}
                           className="w-24 h-24 sm:w-28 sm:h-28 rounded-xl bg-rose-50 border-2 border-rose-200 flex flex-col items-center justify-center text-rose-600 shrink-0 cursor-pointer hover:bg-rose-100 transition shadow-xs"
                           title="Bấm để mở file PDF"
                         >
@@ -2769,7 +2789,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                           {effectivePaperContractUrl}
                         </span>
 
-                        {/* Nút xem ảnh / mở tab mới */}
+                        {/* Nút xem ảnh */}
                         <div className="pt-1 flex items-center gap-2 flex-wrap">
                           <button
                             type="button"
@@ -2777,7 +2797,7 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                               setPreviewImageModal({
                                 isOpen: true,
                                 title: 'Ảnh Bản Scan Hợp Đồng Giấy Đã Ký',
-                                url: effectivePaperContractUrl,
+                                url: resolveImageUrl(effectivePaperContractUrl),
                                 fileName: effectivePaperContractName,
                               })
                             }
@@ -2786,15 +2806,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                             <Eye size={13} />
                             <span>Xem ảnh phóng to</span>
                           </button>
-                          <a
-                            href={effectivePaperContractUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                          >
-                            <ExternalLink size={12} />
-                            <span>Mở tab mới</span>
-                          </a>
                         </div>
                       </div>
                     </div>
@@ -3476,16 +3487,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               </div>
 
               <div className="flex items-center gap-2">
-                <a
-                  href={previewImageModal.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
-                  title="Mở trong tab mới"
-                >
-                  <ExternalLink size={16} />
-                  <span className="hidden sm:inline">Mở tab mới</span>
-                </a>
                 <button
                   type="button"
                   onClick={() => setPreviewImageModal(null)}
@@ -3500,9 +3501,15 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
             <div className="p-4 flex-1 overflow-auto flex items-center justify-center bg-slate-100/60 dark:bg-slate-950/40 min-h-[300px]">
               {isImageFile(previewImageModal.url, previewImageModal.fileName) ? (
                 <img
-                  src={previewImageModal.url}
+                  src={resolveImageUrl(previewImageModal.url)}
                   alt={previewImageModal.title}
                   className="max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-lg border border-slate-200 dark:border-slate-800"
+                  onError={(e) => {
+                    const target = e.currentTarget
+                    if (!target.src.includes('localhost:8080') && previewImageModal.url?.startsWith('/uploads')) {
+                      target.src = `http://localhost:8080${previewImageModal.url.startsWith('/') ? '' : '/'}${previewImageModal.url}`
+                    }
+                  }}
                 />
               ) : (
                 <div className="text-center p-8 space-y-3">
