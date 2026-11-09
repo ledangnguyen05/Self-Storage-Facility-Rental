@@ -1,10 +1,11 @@
 import { triggerTabDataLoading } from '../../utils/tabLoadingTracker'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useOutletContext, Link, useSearchParams } from 'react-router-dom'
+import { useOutletContext, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { storageUnitService } from '../../services/storageUnitService'
 import { facilityService } from '../../services/facilityService'
 import { facilityPolicyService } from '../../services/facilityPolicyService'
 import { reportService } from '../../services/reportService'
+import { overdueService } from '../../services/overdueService'
 import { bookingService } from '../../services/bookingService'
 import { contractService } from '../../services/contractService'
 import { supportTicketService, SupportTicketRecord } from '../../services/supportTicketService'
@@ -34,6 +35,52 @@ import { RefundManagementWorkbench } from './components/RefundManagementWorkbenc
 import { refundService } from '../../services/refundService'
 import { handoverService } from '../../services/handoverService'
 
+export const resolveOverdueStageMeta = (stage?: string) => {
+  const norm = (stage || '').toUpperCase()
+  switch (norm) {
+    case 'GRACE_PERIOD':
+      return {
+        stage: 'GRACE_PERIOD',
+        milestone: 1,
+        label: 'Mốc 1: Ân hạn cước',
+        shortLabel: 'Ân hạn',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        desc: 'Đang trong thời gian ân hạn, chưa tính phí phạt trễ hạn'
+      }
+    case 'WARNING':
+      return {
+        stage: 'WARNING',
+        milestone: 2,
+        label: 'Mốc 2: Cảnh báo nợ',
+        shortLabel: 'Cảnh báo',
+        badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+        desc: 'Hết thời gian ân hạn, bắt đầu tính phí phạt theo ngày'
+      }
+    case 'PIN_REVOCATION':
+    case 'ACCESS_BLOCKED':
+      return {
+        stage: 'PIN_REVOCATION',
+        milestone: 3,
+        label: 'Mốc 3: Tạm khóa PIN / Ra vào',
+        shortLabel: 'Khóa PIN',
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+        desc: 'Tạm khóa mã PIN smart lock, tạm ngưng quyền mở kho'
+      }
+    case 'SEALING_ELIGIBLE':
+    case 'ELIGIBLE_FOR_SEALING':
+      return {
+        stage: 'SEALING_ELIGIBLE',
+        milestone: 4,
+        label: 'Mốc 4: Đủ điều kiện niêm phong',
+        shortLabel: 'Niêm phong',
+        badgeClass: 'bg-rose-100 text-rose-900 border-rose-300 font-bold',
+        desc: 'Quá hạn nghiêm trọng, đủ điều kiện lập hội đồng niêm phong tài sản'
+      }
+    default:
+      return null
+  }
+}
+
 interface InspectedUnit {
   id: string
   backendId?: string
@@ -58,6 +105,10 @@ interface InspectedUnit {
   maintenanceReason?: string
   maintenanceBy?: string
   maintenanceAt?: string
+  overdueStage?: string
+  overdueStageLabel?: string
+  overdueDays?: number
+  overdueDebt?: number
 }
 
 type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'refunds' | 'policy'
@@ -139,6 +190,7 @@ export const ManagerDashboard: React.FC = () => {
 
   // Tab State
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const tabParam = searchParams.get('tab') as ManagerDashboardTab | null
 
   const isTabAllowed = (tab: ManagerDashboardTab | null): boolean => {
@@ -449,7 +501,7 @@ export const ManagerDashboard: React.FC = () => {
     }
   }, [selectedFacility, isFacilityScoped, assignedFacilityId, facilities, activeTab])
 
-  // 1. Overview Tab Data (Storage Units, Overdue Debt, Facility Operating Policy)
+  // 1. Overview Tab Data (Storage Units, Overdue Debt across 4 milestones, Facility Operating Policy)
   const fetchOverviewData = async (facId?: string, silent: boolean = false) => {
     if (!silent) setIsLoading(true)
     try {
@@ -457,24 +509,124 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, polRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, contractsRes, polRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
+        overdueService.getContracts(targetId ? { facilityId: targetId, size: 500 } : { size: 500 }),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
       ])
 
-      // Process Storage Units
+      // 4 Overdue Milestones in Boxora Operating Policy:
+      // 1. GRACE_PERIOD (Ân hạn cước)
+      // 2. WARNING (Cảnh báo tính phạt)
+      // 3. PIN_REVOCATION / ACCESS_BLOCKED (Tạm khóa mã PIN)
+      // 4. SEALING_ELIGIBLE / ELIGIBLE_FOR_SEALING (Đủ điều kiện niêm phong)
+      const OVERDUE_MILESTONES = new Set([
+        'GRACE_PERIOD',
+        'WARNING',
+        'PIN_REVOCATION',
+        'ACCESS_BLOCKED',
+        'SEALING_ELIGIBLE',
+        'ELIGIBLE_FOR_SEALING'
+      ])
+
+      const overdueMap = new Map<string, {
+        unitCode: string
+        unitId?: string
+        stage: string
+        daysOverdue: number
+        totalDebt?: number
+        contractCode?: string
+        contractId?: string
+        customerName?: string
+      }>()
+
+      const rawOverdueItems: OverdueDebtItem[] = []
+
+      // Ingest from reportService.getOverdueDebtReport
+      if (debtRes.status === 'fulfilled' && debtRes.value?.items) {
+        rawOverdueItems.push(...debtRes.value.items)
+        debtRes.value.items.forEach(item => {
+          const stage = (item.overdueStage || '').toUpperCase()
+          const days = Number(item.daysOverdue) || 0
+          if (OVERDUE_MILESTONES.has(stage) || (days > 0 && stage !== 'POLICY_UNCONFIGURED' && stage !== 'SETTLED')) {
+            const entry = {
+              unitCode: item.unitCode,
+              unitId: item.unitId || undefined,
+              stage: stage || 'WARNING',
+              daysOverdue: days,
+              totalDebt: item.totalDebt != null ? Number(item.totalDebt) : undefined,
+              contractCode: item.contractCode || undefined,
+              contractId: item.contractId || undefined,
+              customerName: item.customerName || undefined
+            }
+            if (item.unitCode && item.unitCode !== 'N/A') overdueMap.set(item.unitCode, entry)
+            if (item.unitId) overdueMap.set(item.unitId, entry)
+          }
+        })
+      }
+
+      // Ingest from overdueService.getContracts
+      if (contractsRes.status === 'fulfilled' && contractsRes.value?.content) {
+        contractsRes.value.content.forEach((c: any) => {
+          const stage = (c.stage || '').toUpperCase()
+          const days = Number(c.daysOverdue) || 0
+          if (OVERDUE_MILESTONES.has(stage) || (days > 0 && stage !== 'POLICY_UNCONFIGURED' && stage !== 'SETTLED')) {
+            const existing = c.unitCode ? overdueMap.get(c.unitCode) : undefined
+            const entry = {
+              unitCode: c.unitCode,
+              unitId: c.unitId || existing?.unitId,
+              stage: stage || existing?.stage || 'WARNING',
+              daysOverdue: days || existing?.daysOverdue || 0,
+              totalDebt: c.totalDebt != null ? Number(c.totalDebt) : existing?.totalDebt,
+              contractCode: c.contractCode || existing?.contractCode,
+              contractId: c.contractId || existing?.contractId,
+              customerName: c.customerName || existing?.customerName
+            }
+            if (c.unitCode && c.unitCode !== 'N/A') overdueMap.set(c.unitCode, entry)
+            if (c.unitId) overdueMap.set(c.unitId, entry)
+          }
+        })
+      }
+
+      // Merge into overdueItems state
+      const mergedOverdueItems: OverdueDebtItem[] = [...rawOverdueItems]
+      overdueMap.forEach((val) => {
+        if (!mergedOverdueItems.some(i => i.unitCode === val.unitCode)) {
+          mergedOverdueItems.push({
+            unitCode: val.unitCode,
+            unitId: val.unitId,
+            contractCode: val.contractCode,
+            contractId: val.contractId,
+            customerName: val.customerName,
+            daysOverdue: val.daysOverdue,
+            totalDebt: val.totalDebt,
+            overdueStage: val.stage,
+          })
+        }
+      })
+      setOverdueItems(mergedOverdueItems)
+
+      // Process Storage Units with 4-stage delinquency recognition
       if (unitsRes.status === 'fulfilled' && Array.isArray(unitsRes.value) && unitsRes.value.length > 0) {
         const mapped: InspectedUnit[] = unitsRes.value.map((su: StorageUnit) => {
-          const isAvail = su.status === 'AVAILABLE'
-          const isOcc = su.status === 'OCCUPIED'
-          const isMaint = su.status === 'UNDER_MAINTENANCE' || su.status === 'MAINTENANCE'
-          const isRes = su.status === 'RESERVED'
-          const isOverdue = su.status === 'OVERDUE_LOCKED'
+          const overdueInfo = overdueMap.get(su.unitCode) || (su.id ? overdueMap.get(su.id) : undefined)
+          const isOverdueStage = overdueInfo != null && (
+            OVERDUE_MILESTONES.has((overdueInfo.stage || '').toUpperCase()) ||
+            Number(overdueInfo.daysOverdue) > 0
+          )
+          const isOverdue = su.status === 'OVERDUE_LOCKED' || Boolean(isOverdueStage)
+          const isAvail = su.status === 'AVAILABLE' && !isOverdue
+          const isOcc = su.status === 'OCCUPIED' && !isOverdue
+          const isMaint = (su.status === 'UNDER_MAINTENANCE' || su.status === 'MAINTENANCE') && !isOverdue
+          const isRes = su.status === 'RESERVED' && !isOverdue
 
           let status: InspectedUnit['status'] = 'Unknown'
           let color: InspectedUnit['color'] = 'red'
-          if (isAvail) {
+          if (isOverdue) {
+            status = 'Overdue'
+            color = 'rose'
+          } else if (isAvail) {
             status = 'Available'
             color = 'emerald'
           } else if (isOcc) {
@@ -486,10 +638,9 @@ export const ManagerDashboard: React.FC = () => {
           } else if (isRes) {
             status = 'Pending'
             color = 'amber'
-          } else if (isOverdue) {
-            status = 'Overdue'
-            color = 'rose'
           }
+
+          const overdueMeta = overdueInfo?.stage ? resolveOverdueStageMeta(overdueInfo.stage) : null
 
           return {
             id: su.unitCode,
@@ -499,8 +650,8 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: isMaint ? (su.maintenanceBy || tr('Kỹ thuật viên cơ sở', 'On-site Technician')) : (su.tenantName || (isAvail ? tr('Chưa có khách thuê', 'Vacant (No tenant)') : isRes ? tr('Đang cập nhật hồ sơ', 'Updating profile') : tr('Chưa có thông tin', 'No information'))),
-            contract: isMaint ? (su.maintenanceReason || tr('Bảo trì kỹ thuật định kỳ', 'Routine Maintenance')) : (su.contractCode || (isAvail ? tr('Chưa có hợp đồng', 'No active contract') : isRes ? tr('Chờ ký HĐ bàn giao', 'Pending contract signature') : tr('Chưa có mã HĐ', 'No contract ID'))),
+            tenant: isMaint ? (su.maintenanceBy || tr('Kỹ thuật viên cơ sở', 'On-site Technician')) : (overdueInfo?.customerName || su.tenantName || (isAvail ? tr('Chưa có khách thuê', 'Vacant (No tenant)') : isRes ? tr('Đang cập nhật hồ sơ', 'Updating profile') : tr('Chưa có thông tin', 'No information'))),
+            contract: isMaint ? (su.maintenanceReason || tr('Bảo trì kỹ thuật định kỳ', 'Routine Maintenance')) : (overdueInfo?.contractCode || su.contractCode || (isAvail ? tr('Chưa có hợp đồng', 'No active contract') : isRes ? tr('Chờ ký HĐ bàn giao', 'Pending contract signature') : tr('Chưa có mã HĐ', 'No contract ID'))),
             due: isMaint
               ? (su.maintenanceAt ? new Date(su.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Đang bảo trì')
               : (su.startDate && su.dueDate)
@@ -520,7 +671,11 @@ export const ManagerDashboard: React.FC = () => {
             imageUrl: su.imageUrl,
             maintenanceReason: su.maintenanceReason,
             maintenanceBy: su.maintenanceBy,
-            maintenanceAt: su.maintenanceAt
+            maintenanceAt: su.maintenanceAt,
+            overdueStage: overdueInfo?.stage,
+            overdueStageLabel: overdueMeta?.label,
+            overdueDays: overdueInfo?.daysOverdue,
+            overdueDebt: overdueInfo?.totalDebt,
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
@@ -529,13 +684,6 @@ export const ManagerDashboard: React.FC = () => {
       } else {
         setUnits([])
         setSelectedUnit(null)
-      }
-
-      // Process Overdue Debt
-      if (debtRes.status === 'fulfilled' && debtRes.value?.items) {
-        setOverdueItems(debtRes.value.items)
-      } else {
-        setOverdueItems([])
       }
 
       // Process Policy & Policy Exception
@@ -1499,7 +1647,9 @@ export const ManagerDashboard: React.FC = () => {
                unit.status === 'Rented' ? tr('Thuê', 'Rented') :
                unit.status === 'Pending' ? tr('Chờ giao', 'Pending') :
                unit.status === 'Maintenance' ? tr('Bảo trì', 'Maintenance') :
-               unit.status === 'Overdue' ? tr('Quá hạn', 'Overdue') : unit.status === 'Unknown' ? 'Unknown' : tr('Bảo trì', 'Maintenance')}
+               unit.status === 'Overdue'
+                 ? (unit.overdueStage ? `${tr('Quá hạn', 'Overdue')} (${resolveOverdueStageMeta(unit.overdueStage)?.shortLabel || tr('Nợ', 'Debt')})` : tr('Quá hạn', 'Overdue'))
+                 : unit.status === 'Unknown' ? 'Unknown' : tr('Bảo trì', 'Maintenance')}
             </span>
           </div>
         </button>
@@ -1550,7 +1700,9 @@ export const ManagerDashboard: React.FC = () => {
                unit.status === 'Rented' ? tr('Thuê', 'Rented') :
                unit.status === 'Pending' ? tr('Chờ giao', 'Pending') :
                unit.status === 'Maintenance' ? tr('Bảo trì', 'Maintenance') :
-               unit.status === 'Overdue' ? tr('Quá hạn', 'Overdue') : unit.status === 'Unknown' ? 'Unknown' : tr('Bảo trì', 'Maintenance')}
+               unit.status === 'Overdue'
+                 ? (unit.overdueStage ? `${tr('Quá hạn', 'Overdue')} (${resolveOverdueStageMeta(unit.overdueStage)?.shortLabel || tr('Nợ', 'Debt')})` : tr('Quá hạn', 'Overdue'))
+                 : unit.status === 'Unknown' ? 'Unknown' : tr('Bảo trì', 'Maintenance')}
           </span>
         </div>
       </button>
@@ -1753,7 +1905,7 @@ export const ManagerDashboard: React.FC = () => {
         <button 
           type="button"
           onClick={() => handleStatusFilterClick('Overdue')}
-          title={`Lọc ${overdueUnitsCount} kho nợ quá hạn - Click lại để bỏ lọc`}
+          title={`Lọc ${overdueUnitsCount} kho thuộc 4 mốc nợ quá hạn - Click lại để bỏ lọc`}
           className={`p-4 rounded-2xl border text-left flex flex-col justify-between transition-all cursor-pointer ${
             statusFilter === 'Overdue'
               ? 'bg-rose-50/60 border-2 border-rose-600 ring-2 ring-rose-500/25 shadow-md'
@@ -1762,7 +1914,7 @@ export const ManagerDashboard: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] uppercase font-bold text-slate-500 font-mono">{tr('Nợ quá hạn', 'Overdue Payments')}</span>
-
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800">4 mốc</span>
           </div>
           <div className="flex items-baseline gap-1.5 mt-2">
             <span className="text-3xl font-extrabold font-mono tabular-nums text-rose-700 leading-none">
@@ -2176,7 +2328,9 @@ export const ManagerDashboard: React.FC = () => {
                   {selectedUnit.status === 'Available' ? tr('Kho trống', 'Available Units') :
                    selectedUnit.status === 'Rented' ? tr('Đang thuê', 'Rented') :
                    selectedUnit.status === 'Pending' ? tr('Chờ bàn giao', 'Pending Handover') :
-                   selectedUnit.status === 'Overdue' ? tr('Quá hạn nợ', 'Overdue Debt') : tr('Đang bảo trì', 'In Maintenance')}
+                   selectedUnit.status === 'Overdue'
+                     ? (selectedUnit.overdueStage ? `${tr('Quá hạn nợ', 'Overdue Debt')} • ${resolveOverdueStageMeta(selectedUnit.overdueStage)?.shortLabel || ''}` : tr('Quá hạn nợ', 'Overdue Debt'))
+                     : tr('Đang bảo trì', 'In Maintenance')}
                 </span>
               </div>
 
@@ -2258,6 +2412,36 @@ export const ManagerDashboard: React.FC = () => {
                 </div>
               )}
 
+              {/* Dedicated Overdue Milestone Info Card when Unit is Delinquent across 4 stages */}
+              {selectedUnit.status === 'Overdue' && (
+                <div className="p-3.5 bg-rose-50/90 rounded-xl border border-rose-200 flex flex-col gap-2 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between pb-1.5 border-b border-rose-200/70">
+                    <div className="flex items-center gap-1.5 text-rose-800 font-bold uppercase tracking-wide text-[11px]">
+                      <span className="material-symbols-outlined text-[16px] text-rose-600">warning</span>
+                      <span>{selectedUnit.overdueStageLabel || resolveOverdueStageMeta(selectedUnit.overdueStage)?.label || 'Hồ Sơ Nợ Quá Hạn'}</span>
+                    </div>
+                    <span className="font-mono text-rose-700 font-bold text-[11px] bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
+                      {selectedUnit.overdueDays != null ? `${selectedUnit.overdueDays} ngày trễ` : 'Quá hạn'}
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {selectedUnit.overdueStage && (
+                      <p className="text-[11px] text-rose-700 leading-relaxed">
+                        {resolveOverdueStageMeta(selectedUnit.overdueStage)?.desc}
+                      </p>
+                    )}
+                    {selectedUnit.overdueDebt != null && (
+                      <div className="flex items-center justify-between text-xs pt-1.5 border-t border-rose-200/50">
+                        <span className="text-rose-700 font-medium">Tổng nợ phát sinh:</span>
+                        <span className="font-mono font-extrabold text-rose-900 text-sm">
+                          {selectedUnit.overdueDebt.toLocaleString('vi-VN')} ₫
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Manager Actions (Read-only / Exception Workflow) */}
               <div className="flex flex-col gap-2 pt-1">
                 
@@ -2286,9 +2470,20 @@ export const ManagerDashboard: React.FC = () => {
                   </button>
                 )}
 
+                {selectedUnit.status === 'Overdue' && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/manager/overdue')}
+                    className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center gap-1.5 border border-rose-200 transition cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">account_balance_wallet</span>
+                    <span>Mở Bảng Quản Lý Nợ Quá Hạn (4 Mốc)</span>
+                  </button>
+                )}
+
                 {selectedUnit.status === 'Overdue' && selectedUnitOverdue
                   && selectedUnitOverdue.contractId
-                  && selectedUnitOverdue.overdueStage === 'ELIGIBLE_FOR_SEALING' && (
+                  && (selectedUnitOverdue.overdueStage === 'ELIGIBLE_FOR_SEALING' || selectedUnitOverdue.overdueStage === 'SEALING_ELIGIBLE') && (
                   <button
                     type="button"
                     onClick={() => {

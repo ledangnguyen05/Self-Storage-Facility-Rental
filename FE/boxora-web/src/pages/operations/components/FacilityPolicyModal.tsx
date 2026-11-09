@@ -33,7 +33,7 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
 
   const [depositRefundSlaDays, setDepositRefundSlaDays] = useState<number>(3)
 
-  const [dailyLateFee, setDailyLateFee] = useState<number>(100)
+  const [dailyLateFee, setDailyLateFee] = useState<number | string>(100)
   const [overdueGraceDays, setOverdueGraceDays] = useState<number>(3)
   const [overdueAccessDisableDays, setOverdueAccessDisableDays] = useState<number>(5)
   const [overdueSealingDays, setOverdueSealingDays] = useState<number>(7)
@@ -366,10 +366,9 @@ export const FacilityPolicyModal: React.FC<FacilityPolicyModalProps> = ({
                   <input
                     type="number"
                     min="0"
-                    max="500"
-                    step="5"
+                    step="any"
                     value={dailyLateFee}
-                    onChange={(e) => setDailyLateFee(Number(e.target.value))}
+                    onChange={(e) => setDailyLateFee(e.target.value === '' ? '' : Number(e.target.value))}
                     className="w-full pl-3 pr-8 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500 outline-none font-medium"
                     required
                   />
