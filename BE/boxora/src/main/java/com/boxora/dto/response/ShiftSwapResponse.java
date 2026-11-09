@@ -32,12 +32,14 @@ public class ShiftSwapResponse {
     private String requesterName;
     private String requesterUsername;
     private String requesterEmail;
+    private String requesterRole;
 
     // Target Staff
     private UUID targetStaffId;
     private String targetStaffName;
     private String targetStaffUsername;
     private String targetStaffEmail;
+    private String targetStaffRole;
 
     // Facility
     private UUID facilityId;

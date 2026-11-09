@@ -360,13 +360,15 @@ export const ShiftRosterPage: React.FC = () => {
         facilityId: targetFacilityId,
         size: 100
       })
-      setStaffList(staffRes.data || [])
+      const loadedStaff = staffRes.data || []
+      setStaffList(loadedStaff)
 
       // 3. Shift swap requests in range
       const swapRes = await staffAssignmentService.getSwapRequests({
         facilityId: targetFacilityId,
         fromDate: appliedStartDate,
         toDate: appliedEndDate,
+        role: isBusinessManager ? 'FACILITY_MANAGER' : undefined,
         size: 100
       })
       let swapList: ShiftSwapRequest[] = []
@@ -377,6 +379,14 @@ export const ShiftRosterPage: React.FC = () => {
       }
       if (targetFacilityId) {
         swapList = swapList.filter(s => s.facilityId === targetFacilityId)
+      }
+      if (isBusinessManager) {
+        // Business Manager only views & reviews shift swap requests between Facility Managers
+        swapList = swapList.filter(s => {
+          if (s.requesterRole === 'STAFF' || s.targetStaffRole === 'STAFF') return false
+          if (s.requesterRole === 'FACILITY_MANAGER' || s.targetStaffRole === 'FACILITY_MANAGER') return true
+          return loadedStaff.some(userItem => userItem.id === s.requesterId || userItem.id === s.targetStaffId)
+        })
       }
       setSwapRequests(swapList)
 
@@ -431,7 +441,17 @@ export const ShiftRosterPage: React.FC = () => {
   const assignedCount = useMemo(() => assignments.filter(a => a.status === 'ASSIGNED' && !isShiftAbsent(a)).length, [assignments])
   const absentCount = useMemo(() => assignments.filter(a => isShiftAbsent(a)).length, [assignments])
   const completedCount = useMemo(() => assignments.filter(a => a.status === 'COMPLETED').length, [assignments])
-  const pendingSwapCount = useMemo(() => swapRequests.filter(s => s.status === 'PENDING').length, [swapRequests])
+  // Shift swap requests strictly filtered for Facility Managers when viewed by Business Manager
+  const displaySwapRequests = useMemo(() => {
+    if (!isBusinessManager) return swapRequests
+    return swapRequests.filter(s => {
+      if (s.requesterRole === 'STAFF' || s.targetStaffRole === 'STAFF') return false
+      if (s.requesterRole === 'FACILITY_MANAGER' || s.targetStaffRole === 'FACILITY_MANAGER') return true
+      return staffList.some(userItem => userItem.id === s.requesterId || userItem.id === s.targetStaffId)
+    })
+  }, [swapRequests, isBusinessManager, staffList])
+
+  const pendingSwapCount = useMemo(() => displaySwapRequests.filter(s => s.status === 'PENDING').length, [displaySwapRequests])
 
   const distinctShiftsCount = useMemo(() => {
     const shifts = new Set(assignments.map(a => a.shift))
@@ -499,7 +519,9 @@ export const ShiftRosterPage: React.FC = () => {
     try {
       await staffAssignmentService.reviewSwapRequest(swapId, {
         status,
-        managerNotes: status === 'APPROVED' ? 'Quản lý cơ sở đã phê duyệt đổi ca' : 'Từ chối yêu cầu đổi ca'
+        managerNotes: status === 'APPROVED'
+          ? (isBusinessManager ? 'Business Manager đã phê duyệt yêu cầu đổi ca cho Quản lý cơ sở' : 'Quản lý cơ sở đã phê duyệt đổi ca')
+          : (isBusinessManager ? 'Business Manager từ chối yêu cầu đổi ca' : 'Từ chối yêu cầu đổi ca')
       })
       showToast(status === 'APPROVED' ? 'Đã duyệt yêu cầu đổi ca trực thành công!' : 'Đã từ chối yêu cầu đổi ca.')
       await fetchData()
@@ -1073,7 +1095,7 @@ export const ShiftRosterPage: React.FC = () => {
           }`}
         >
           <span className="material-symbols-outlined text-[18px]">swap_horiz</span>
-          <span>{t('Yêu Cầu Đổi Ca', 'Shift Swap Requests')} ({swapRequests.length})</span>
+          <span>{t('Yêu Cầu Đổi Ca', 'Shift Swap Requests')} ({displaySwapRequests.length})</span>
           {pendingSwapCount > 0 && (
             <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">
               {pendingSwapCount}
@@ -1546,32 +1568,40 @@ export const ShiftRosterPage: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-100 flex-wrap gap-3">
             <div>
               <div className="flex items-center gap-3">
-                <h2 className="text-base font-bold text-slate-900">Quản Lý Đổi Ca Trực</h2>
-                <button
-                  type="button"
-                  id="btn-manager-xin-doi-ca"
-                  onClick={() => {
-                    const myUpcoming = assignments.find(
-                      a => a.staffId === user?.id && a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr
-                    )
-                    setSelectedAssignmentForSwap(myUpcoming || null)
-                    setShowManagerSwapModal(true)
-                  }}
-                  className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
-                  <span>Xin đổi ca</span>
-                </button>
+                <h2 className="text-base font-bold text-slate-900">
+                  {isBusinessManager ? 'Phê Duyệt Đổi Ca Quản Lý Cơ Sở' : 'Quản Lý Đổi Ca Trực'}
+                </h2>
+                {!isBusinessManager && (
+                  <button
+                    type="button"
+                    id="btn-manager-xin-doi-ca"
+                    onClick={() => {
+                      const myUpcoming = assignments.find(
+                        a => a.staffId === user?.id && a.status === 'ASSIGNED' && !isShiftAbsent(a) && a.assignedDate >= todayStr
+                      )
+                      setSelectedAssignmentForSwap(myUpcoming || null)
+                      setShowManagerSwapModal(true)
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">swap_horiz</span>
+                    <span>Xin đổi ca</span>
+                  </button>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Quản lý cơ sở xem xét, phê duyệt hoặc xin đổi ca trực với Quản lý cơ sở khác (Facility Manager chỉ đổi với Facility Manager)
+                {isBusinessManager
+                  ? 'Business Manager xem xét, phê duyệt hoặc từ chối các yêu cầu đổi ca trực giữa các Quản lý cơ sở (Facility Manager chỉ đổi với Facility Manager).'
+                  : 'Quản lý cơ sở xem xét, phê duyệt hoặc xin đổi ca trực với Quản lý cơ sở khác (Facility Manager chỉ đổi với Facility Manager)'}
               </p>
             </div>
           </div>
 
-          {swapRequests.length === 0 ? (
+          {displaySwapRequests.length === 0 ? (
             <div className="py-12 text-center text-slate-400 text-xs">
-              Hiện tại không có yêu cầu đổi ca nào tại chi nhánh này.
+              {isBusinessManager
+                ? 'Hiện tại không có yêu cầu đổi ca nào giữa các Quản lý cơ sở.'
+                : 'Hiện tại không có yêu cầu đổi ca nào tại chi nhánh này.'}
             </div>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -1587,7 +1617,7 @@ export const ShiftRosterPage: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {swapRequests.map(swap => {
+                  {displaySwapRequests.map(swap => {
                     const isPending = swap.status === 'PENDING'
                     const isManagerApproved = swap.status === 'MANAGER_APPROVED'
                     const isApproved = swap.status === 'APPROVED'
@@ -1600,11 +1630,21 @@ export const ShiftRosterPage: React.FC = () => {
                     const isOverdue = (isPast && (isPending || isManagerApproved)) ||
                       (isCancelled && (Boolean(swap.managerNotes?.includes('Quá hạn')) || isPast))
 
+                    const isRequesterManager = swap.requesterRole === 'FACILITY_MANAGER' || isBusinessManager
+                    const isTargetManager = swap.targetStaffRole === 'FACILITY_MANAGER' || isBusinessManager
+
                     return (
                       <tr key={swap.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-900">{swap.requesterName || swap.requesterUsername}</div>
                           <div className="text-[10px] text-slate-400">{swap.requesterEmail}</div>
+                          <span className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                            isRequesterManager
+                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}>
+                            {isRequesterManager ? 'Quản lý cơ sở' : 'Nhân viên'}
+                          </span>
                         </td>
 
                         <td className="py-3 px-4">
@@ -1615,6 +1655,13 @@ export const ShiftRosterPage: React.FC = () => {
                         <td className="py-3 px-4">
                           <div className="font-semibold text-slate-900">{swap.targetStaffName || swap.targetStaffUsername}</div>
                           <div className="text-[10px] text-slate-400">{swap.targetStaffEmail}</div>
+                          <span className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-[10px] font-semibold ${
+                            isTargetManager
+                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                              : 'bg-blue-50 text-blue-700 border border-blue-200'
+                          }`}>
+                            {isTargetManager ? 'Quản lý cơ sở' : 'Nhân viên'}
+                          </span>
                         </td>
 
                         <td className="py-3 px-4">
@@ -1653,9 +1700,9 @@ export const ShiftRosterPage: React.FC = () => {
                               : isApproved
                               ? 'Đã hoàn tất đổi ca'
                               : isManagerApproved
-                              ? 'QL đã duyệt • Chờ NV xác nhận'
+                              ? (isBusinessManager ? 'Đã duyệt • Chờ QL tiếp nhận xác nhận' : 'QL đã duyệt • Chờ NV xác nhận')
                               : isPending
-                              ? 'Chờ Quản lý duyệt'
+                              ? (isBusinessManager ? 'Chờ Business Manager duyệt' : 'Chờ Quản lý duyệt')
                               : isRejected
                               ? 'Đã từ chối'
                               : 'Đã hủy'}
@@ -1683,11 +1730,11 @@ export const ShiftRosterPage: React.FC = () => {
                                   type="button"
                                   disabled={isLoadingAction}
                                   onClick={() => handleReviewSwap(swap.id, 'APPROVED')}
-                                  title="Duyệt đơn và chuyển tiếp tới nhân sự tiếp nhận xác nhận"
+                                  title={isBusinessManager ? "Phê duyệt yêu cầu đổi ca trực của Quản lý cơ sở" : "Duyệt đơn và chuyển tiếp tới nhân sự tiếp nhận xác nhận"}
                                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer flex items-center gap-1 shadow-xs"
                                 >
                                   <span className="material-symbols-outlined text-[15px]">send</span>
-                                  <span>Duyệt &amp; Chuyển NV</span>
+                                  <span>{isBusinessManager ? 'Phê duyệt' : 'Duyệt & Chuyển NV'}</span>
                                 </button>
                                 <button
                                   type="button"

@@ -354,6 +354,7 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
             UUID facilityId,
             ShiftSwapStatus status,
             UUID staffId,
+            String role,
             java.time.LocalDate fromDate,
             java.time.LocalDate toDate,
             int page,
@@ -373,6 +374,13 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
         final java.time.LocalDate targetFromDate = fromDate;
         final java.time.LocalDate targetToDate = toDate;
 
+        String currentUserRole = requestContext.currentUserRole();
+        String effectiveRole = role;
+        if ((effectiveRole == null || effectiveRole.isBlank()) && "BUSINESS_MANAGER".equalsIgnoreCase(currentUserRole)) {
+            effectiveRole = "FACILITY_MANAGER";
+        }
+        final String targetRoleName = effectiveRole;
+
         Specification<ShiftSwapRequest> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (targetFacilityId != null) {
@@ -385,6 +393,12 @@ public class ShiftSwapServiceImpl implements ShiftSwapService {
                 predicates.add(cb.or(
                         cb.equal(root.get("requester").get("id"), targetStaffId),
                         cb.equal(root.get("targetStaff").get("id"), targetStaffId)
+                ));
+            }
+            if (targetRoleName != null && !targetRoleName.isBlank()) {
+                predicates.add(cb.equal(
+                        cb.upper(root.get("requester").get("role").get("name")),
+                        targetRoleName.trim().toUpperCase()
                 ));
             }
             if (targetFromDate != null) {

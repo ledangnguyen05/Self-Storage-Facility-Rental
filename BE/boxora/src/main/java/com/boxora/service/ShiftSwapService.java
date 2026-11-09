@@ -26,6 +26,7 @@ public interface ShiftSwapService {
             UUID facilityId,
             ShiftSwapStatus status,
             UUID staffId,
+            String role,
             java.time.LocalDate fromDate,
             java.time.LocalDate toDate,
             int page,

@@ -137,10 +137,12 @@ export interface ShiftSwapRequest {
   requesterName?: string
   requesterUsername?: string
   requesterEmail?: string
+  requesterRole?: string
   targetStaffId: string
   targetStaffName?: string
   targetStaffUsername?: string
   targetStaffEmail?: string
+  targetStaffRole?: string
   facilityId: string
   facilityName?: string
   facilityCode?: string
@@ -274,6 +276,7 @@ export const staffAssignmentService = {
     facilityId?: string
     status?: string
     staffId?: string
+    role?: string
     fromDate?: string
     toDate?: string
     page?: number

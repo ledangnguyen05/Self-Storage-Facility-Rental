@@ -88,12 +88,13 @@ public class ShiftSwapController {
             @RequestParam(required = false) UUID facilityId,
             @RequestParam(required = false) ShiftSwapStatus status,
             @RequestParam(required = false) UUID staffId,
+            @RequestParam(required = false) String role,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        PageResponse<ShiftSwapResponse> response = shiftSwapService.getSwapRequests(facilityId, status, staffId, fromDate, toDate, page, size);
+        PageResponse<ShiftSwapResponse> response = shiftSwapService.getSwapRequests(facilityId, status, staffId, role, fromDate, toDate, page, size);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 
