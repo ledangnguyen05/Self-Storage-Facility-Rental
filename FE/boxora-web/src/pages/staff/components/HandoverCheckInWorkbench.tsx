@@ -2367,9 +2367,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
 
                         <div className="mt-3 pt-2.5 border-t border-slate-200/70">
                           <div className="flex items-center justify-between text-[11px] mb-2 gap-1">
-                            <span className="font-bold text-slate-900">
-                              {u.pricePerMonth ? `${u.pricePerMonth.toLocaleString('vi-VN')}đ/tháng` : 'N/A'}
-                            </span>
                             {isThisUnitAssigned ? (
                               <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                 Đã gán
