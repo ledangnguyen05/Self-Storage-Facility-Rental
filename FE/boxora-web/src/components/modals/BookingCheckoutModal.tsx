@@ -7,6 +7,11 @@ import { useAuth } from '../../context/AuthContext'
 import { bookingService } from '../../services/bookingService'
 import { paymentService, PaymentItem } from '../../services/paymentService'
 import { pricingService, PricingQuoteResponse } from '../../services/pricingService'
+import {
+  getVietnamDateString,
+  getVietnamTimeString,
+  formatVietnamDateTime,
+} from '../../utils/vietnamTime'
 
 export interface BookingCheckoutUnit {
   backendId?: string
@@ -207,24 +212,14 @@ export const BookingCheckoutModal: React.FC<BookingCheckoutModalProps> = ({ unit
           : 'BOOKING_PAYMENT'
       : 'BOOKING_PAYMENT'
 
-  // Validation: Check-in appointment must be at least 5 hours from current time
-  const minAllowedDateTime = new Date(Date.now() + 5 * 60 * 60 * 1000)
-  const minAllowedYear = minAllowedDateTime.getFullYear()
-  const minAllowedMonth = String(minAllowedDateTime.getMonth() + 1).padStart(2, '0')
-  const minAllowedDay = String(minAllowedDateTime.getDate()).padStart(2, '0')
-  const minAllowedDateStr = `${minAllowedYear}-${minAllowedMonth}-${minAllowedDay}`
-  const minAllowedTimeStr = `${String(minAllowedDateTime.getHours()).padStart(2, '0')}:${String(minAllowedDateTime.getMinutes()).padStart(2, '0')}`
+  // Validation: Check-in appointment theo múi giờ Việt Nam
+  const minAllowedDateStr = getVietnamDateString()
+  const minAllowedTimeStr = getVietnamTimeString()
 
   const selectedCheckInDateTime = (startDate && checkInTime) ? new Date(`${startDate}T${checkInTime}:00`) : null
-  const isTimeTooSoon = selectedCheckInDateTime ? selectedCheckInDateTime.getTime() < minAllowedDateTime.getTime() : false
+  const isTimeTooSoon = selectedCheckInDateTime ? selectedCheckInDateTime.getTime() < Date.now() - 30 * 60 * 1000 : false
 
-  const earliestAllowedFormatted = minAllowedDateTime.toLocaleString('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
+  const earliestAllowedFormatted = formatVietnamDateTime(new Date())
 
   const isExpired = secondsRemaining !== null && secondsRemaining <= 0
   const formattedCountdown = secondsRemaining === null

@@ -1,3 +1,22 @@
+import {
+  getVietnamDateString,
+  getVietnamTimeString,
+  formatVietnamDate,
+  formatVietnamDateTime,
+  getVietnamTomorrowDateString,
+  getVietnamCurrentMinutes,
+  VIETNAM_TIMEZONE
+} from './vietnamTime'
+
+export {
+  getVietnamDateString,
+  getVietnamTimeString,
+  formatVietnamDate,
+  formatVietnamDateTime,
+  getVietnamTomorrowDateString,
+  VIETNAM_TIMEZONE
+}
+
 export interface CheckInHourOption {
   value: string
   label: string
@@ -103,13 +122,10 @@ export const getPeriodForHour = (hour: string): CheckInPeriodId => {
 }
 
 /**
- * Format local Date object to YYYY-MM-DD string
+ * Format Date object to YYYY-MM-DD string theo đúng múi giờ Việt Nam
  */
 export const formatLocalDate = (date: Date = new Date()): string => {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return getVietnamDateString(date)
 }
 
 /**
@@ -129,7 +145,7 @@ export const PERIOD_END_HOURS: Record<CheckInPeriodId, number> = {
 }
 
 /**
- * Kiểm tra xem một ca tiếp đón đã qua thời gian tiếp nhận đối với ngày nhận kho đã chọn hay chưa.
+ * Kiểm tra xem một ca tiếp đón đã qua thời gian tiếp nhận đối với ngày nhận kho đã chọn hay chưa (theo giờ Việt Nam).
  * - Ngày nhận kho trước ngày hôm nay: đã qua (true)
  * - Ngày nhận kho sau ngày hôm nay: chưa qua (false)
  * - Ngày nhận kho là hôm nay: so sánh giờ hiện tại với giờ kết thúc của ca
@@ -140,7 +156,7 @@ export const isPeriodInPast = (
   refDate: Date = new Date()
 ): boolean => {
   if (!checkInDateStr) return false
-  const todayStr = formatLocalDate(refDate)
+  const todayStr = getVietnamDateString(refDate)
   const cleanDate = checkInDateStr.includes('T') ? checkInDateStr.split('T')[0] : checkInDateStr
 
   if (cleanDate < todayStr) return true
@@ -148,9 +164,39 @@ export const isPeriodInPast = (
 
   const endHour = PERIOD_END_HOURS[periodId as CheckInPeriodId] ?? 24
   const endMinutes = Math.floor(endHour * 60)
-  const currentMinutes = refDate.getHours() * 60 + refDate.getMinutes()
+  const currentMinutes = getVietnamCurrentMinutes(refDate)
 
   return currentMinutes >= endMinutes
+}
+
+/**
+ * Lấy giờ hẹn tối ưu nhất cho một ca tiếp đón (theo giờ Việt Nam).
+ * Nếu ngày đã chọn là hôm nay, tự động chọn mốc giờ chưa trôi qua trong ca.
+ */
+export const getBestCheckInHourForPeriod = (
+  checkInDateStr: string,
+  periodGroup: CheckInPeriodGroup,
+  refDate: Date = new Date()
+): string => {
+  const todayStr = getVietnamDateString(refDate)
+  const cleanDate = checkInDateStr.includes('T') ? checkInDateStr.split('T')[0] : checkInDateStr
+
+  if (cleanDate !== todayStr) {
+    return periodGroup.hours[0]?.value || '09:00'
+  }
+
+  const currentMinutes = getVietnamCurrentMinutes(refDate)
+  for (const h of periodGroup.hours) {
+    const [hh, mm] = h.value.split(':').map(Number)
+    const slotMinutes = hh * 60 + (mm || 0)
+    // Nếu mốc giờ còn ít nhất 5 phút tính từ hiện tại
+    if (slotMinutes >= currentMinutes - 5) {
+      return h.value
+    }
+  }
+
+  // Nếu đã qua mốc giờ cuối cùng trong ca nhưng ca chưa kết thúc, lấy mốc cuối
+  return periodGroup.hours[periodGroup.hours.length - 1]?.value || '09:00'
 }
 
 /**
@@ -179,25 +225,10 @@ export const hasAvailablePeriods = (
 }
 
 /**
- * Định dạng ngày sang định dạng chuẩn hiển thị DD/MM/YYYY.
+ * Định dạng ngày sang định dạng chuẩn hiển thị DD/MM/YYYY theo giờ Việt Nam.
  * Hỗ trợ string dạng YYYY-MM-DD hoặc ISO string.
  */
 export const formatDateDDMMYYYY = (dateVal?: string | null, fallback = ''): string => {
-  if (!dateVal) return fallback
-  const clean = dateVal.split('T')[0].trim()
-  const parts = clean.split('-')
-  if (parts.length === 3 && parts[0].length === 4) {
-    return `${parts[2]}/${parts[1]}/${parts[0]}`
-  }
-  try {
-    const d = new Date(dateVal)
-    if (isNaN(d.getTime())) return fallback || String(dateVal)
-    const day = String(d.getDate()).padStart(2, '0')
-    const month = String(d.getMonth() + 1).padStart(2, '0')
-    const year = d.getFullYear()
-    return `${day}/${month}/${year}`
-  } catch {
-    return fallback || String(dateVal)
-  }
+  return formatVietnamDate(dateVal, fallback)
 }
 

@@ -40,6 +40,9 @@ import {
   getFirstAvailablePeriod,
   hasAvailablePeriods,
   formatLocalDate,
+  getVietnamDateString,
+  getVietnamTomorrowDateString,
+  getBestCheckInHourForPeriod,
 } from '../../utils/checkInTimeSlots'
 import { facilityService } from '../../services/facilityService'
 import { storageUnitService } from '../../services/storageUnitService'
@@ -211,9 +214,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [selectedTierKey, setSelectedTierKey] = useState<SizeTierKey>(initialTier)
   const [rentalMonths, setRentalMonths] = useState<number>(3)
   const [startDate, setStartDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
+    const todayStr = getVietnamDateString()
+    if (hasAvailablePeriods(todayStr)) {
+      return todayStr
+    }
+    return getVietnamTomorrowDateString()
   })
 
   // Step 3: Customer Information
@@ -223,9 +228,11 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
   const [idCardType, setIdCardType] = useState<'CCCD' | 'PASSPORT'>('CCCD')
   const [email, setEmail] = useState<string>('')
   const [checkInDate, setCheckInDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
+    const todayStr = getVietnamDateString()
+    if (hasAvailablePeriods(todayStr)) {
+      return todayStr
+    }
+    return getVietnamTomorrowDateString()
   })
   const [selectedPeriodId, setSelectedPeriodId] = useState<string>(() => getFirstAvailablePeriod(checkInDate))
 
@@ -924,10 +931,10 @@ export const LandingBookingWizardModal: React.FC<LandingBookingWizardModalProps>
         unitCode: SIZE_TIERS[selectedTierKey].name,
         tier: SIZE_TIERS[selectedTierKey],
         rentalMonths,
-        startDate: startDate || checkInDate || new Date().toISOString().slice(0, 10),
-        checkInDate: checkInDate || startDate || new Date().toISOString().slice(0, 10),
+        startDate: startDate || checkInDate || getVietnamDateString(),
+        checkInDate: checkInDate || startDate || getVietnamDateString(),
         checkInTime: checkInTime || '09:00',
-        expectedCheckInAt: `${checkInDate || startDate || new Date().toISOString().slice(0, 10)}T${(selectedPeriod?.hours?.[0]?.value || checkInTime || '09:00').split(' - ')[0].trim().length === 5 ? (selectedPeriod?.hours?.[0]?.value || checkInTime || '09:00').split(' - ')[0].trim() + ':00' : '09:00:00'}`,
+        expectedCheckInAt: `${checkInDate || startDate || getVietnamDateString()}T${getBestCheckInHourForPeriod(checkInDate || startDate, selectedPeriod)}:00`,
         totalRentalFee: quoteCalculation.totalRent,
         depositAmount: quoteCalculation.depositAmount,
         status: 'PENDING_CONTACT',

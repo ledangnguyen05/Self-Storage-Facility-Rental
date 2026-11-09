@@ -22,6 +22,13 @@ export interface PortalBookingUnitData {
 type BookingWorkflow = 'HOLD_ONLY' | 'ONLINE_NOW'
 type BookingPackage = '15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom' | string
 
+import {
+  getVietnamDateString,
+  getVietnamTimeString,
+  formatVietnamDate,
+  formatVietnamDateTime,
+} from '../../utils/vietnamTime'
+
 interface PortalBookingReservationModalProps {
   unit: PortalBookingUnitData
   onClose: () => void
@@ -112,28 +119,18 @@ export const PortalBookingReservationModal: React.FC<PortalBookingReservationMod
     return merged
   }, [activeCustomDiscounts])
 
-  // Validation: Check-in appointment must be at least 5 hours from current time
-  const minAllowedDateTime = new Date(Date.now() + 5 * 60 * 60 * 1000)
-  const minAllowedYear = minAllowedDateTime.getFullYear()
-  const minAllowedMonth = String(minAllowedDateTime.getMonth() + 1).padStart(2, '0')
-  const minAllowedDay = String(minAllowedDateTime.getDate()).padStart(2, '0')
-  const minAllowedDateStr = `${minAllowedYear}-${minAllowedMonth}-${minAllowedDay}`
-  const minAllowedTimeStr = `${String(minAllowedDateTime.getHours()).padStart(2, '0')}:${String(minAllowedDateTime.getMinutes()).padStart(2, '0')}`
+  // Validation: Check-in appointment theo múi giờ Việt Nam
+  const minAllowedDateStr = getVietnamDateString()
+  const minAllowedTimeStr = getVietnamTimeString()
 
   const selectedCheckInDateTime = (bookingCheckInDate && bookingCheckInTime)
     ? new Date(`${bookingCheckInDate}T${bookingCheckInTime}:00`)
     : null
   const isCheckInTimeTooSoon = selectedCheckInDateTime
-    ? selectedCheckInDateTime.getTime() < minAllowedDateTime.getTime()
+    ? selectedCheckInDateTime.getTime() < Date.now() - 30 * 60 * 1000
     : false
 
-  const earliestAllowedFormatted = minAllowedDateTime.toLocaleString('vi-VN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
+  const earliestAllowedFormatted = formatVietnamDateTime(new Date())
 
   const handleCheckInDateChange = (val: string) => {
     setBookingCheckInDate(val)

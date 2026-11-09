@@ -28,6 +28,7 @@ import { staffAssignmentService, StaffAssignmentResponse, isShiftAbsent } from '
 import { ShiftSwapModal } from '../manager/modals/ShiftSwapModal'
 import { ShiftHandoverModal } from '../manager/modals/ShiftHandoverModal'
 import { ReceptionShiftAlertModal } from '../../components/modals/ReceptionShiftAlertModal'
+import { formatVietnamDateTime } from '../../utils/vietnamTime'
 import { EarlyCheckInConfirmModal, isBookingBeforeCheckInTime, EarlyCheckInActionType, getBookingScheduleInfo } from '../../components/modals/EarlyCheckInConfirmModal'
 import { CancelOverdueBookingModal } from '../../components/modals/CancelOverdueBookingModal'
 import { ContractRenewalsManagementPanel } from '../../components/renewal/ContractRenewalsManagementPanel'
@@ -2621,7 +2622,7 @@ export const StaffDashboard: React.FC = () => {
                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                       <strong className="text-emerald-600 dark:text-emerald-400 text-xs">
                         {reviewDetailBooking.expectedCheckInAt
-                          ? `${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleDateString('vi-VN')} ${new Date(reviewDetailBooking.expectedCheckInAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                          ? formatVietnamDateTime(reviewDetailBooking.expectedCheckInAt)
                           : `${(reviewDetailBooking as any).checkInDate || reviewDetailBooking.startDate} (${(reviewDetailBooking as any).checkInTime || 'Giờ tiếp đón'})`}
                       </strong>
                       {sched.relativeText && !['ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'].includes(s) && (

@@ -606,19 +606,20 @@ const formatRelativeTimeVi = (isoString?: string): string => {
   return `${diffMonth} tháng trước`
 }
 
+import {
+  formatVietnamDate,
+  formatVietnamDateTime,
+  getVietnamDateString,
+  getVietnamTomorrowDateString,
+  VIETNAM_TIMEZONE
+} from '../../utils/vietnamTime'
+
 interface CustomerDashboardProps {
   bookingOnly?: boolean
 }
 
 const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
-  if (!dateVal) return fallback
-  try {
-    const d = new Date(dateVal)
-    if (isNaN(d.getTime())) return fallback || String(dateVal)
-    return d.toLocaleString('vi-VN')
-  } catch {
-    return fallback || String(dateVal)
-  }
+  return formatVietnamDateTime(dateVal, fallback)
 }
 
 export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnly = false }) => {
@@ -683,7 +684,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
   // Reschedule Modal state
   const [rescheduleBookingTarget, setRescheduleBookingTarget] = useState<Booking | null>(null)
-  const [rescheduleNewDate, setRescheduleNewDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [rescheduleNewDate, setRescheduleNewDate] = useState<string>(() => getVietnamDateString())
   const [rescheduleNewTime, setRescheduleNewTime] = useState<string>('09:00')
   const [rescheduleReason, setRescheduleReason] = useState<string>('')
   const [isSubmittingReschedule, setIsSubmittingReschedule] = useState<boolean>(false)
@@ -693,11 +694,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   // Switch Renewal Method Modal State
   const [switchMethodTarget, setSwitchMethodTarget] = useState<ContractRenewal | null>(null)
   const [switchMethodMode, setSwitchMethodMode] = useState<'ONLINE' | 'COUNTER'>('COUNTER')
-  const [switchAppointmentDate, setSwitchAppointmentDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
-  })
+  const [switchAppointmentDate, setSwitchAppointmentDate] = useState<string>(() => getVietnamTomorrowDateString())
   const [switchAppointmentTime, setSwitchAppointmentTime] = useState<string>('09:00')
   const [switchMethodNotes, setSwitchMethodNotes] = useState<string>('')
   const [isSubmittingSwitchMethod, setIsSubmittingSwitchMethod] = useState<boolean>(false)
@@ -1958,11 +1955,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const [createdBookingResult, setCreatedBookingResult] = useState<{ bookingCode: string; unitCode: string; facilityName: string } | null>(null)
   const [bookingPackage, setBookingPackage] = useState<'15d' | '1m' | '3m' | '6m' | '12m' | '24m' | 'custom'>('3m')
   const [bookingCustomDays, setBookingCustomDays] = useState<number>(45)
-  const [bookingStartDate, setBookingStartDate] = useState<string>(() => new Date().toISOString().split('T')[0])
+  const [bookingStartDate, setBookingStartDate] = useState<string>(() => getVietnamDateString())
   const [bookingCheckInDate, setBookingCheckInDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 3)
-    return d.toISOString().split('T')[0]
+    const todayStr = getVietnamDateString()
+    const [y, m, d] = todayStr.split('-').map(Number)
+    const future = new Date(Date.UTC(y, m - 1, d + 3, 12, 0, 0))
+    return getVietnamDateString(future)
   })
   const [bookingCheckInTime, setBookingCheckInTime] = useState('10:00')
   const [bookingPolicyAccepted, setBookingPolicyAccepted] = useState<boolean>(true)
@@ -2011,11 +2009,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     })
     setBookingPackage('3m')
     setBookingCustomDays(45)
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = getVietnamDateString()
     setBookingStartDate(todayStr)
-    const checkInDate = new Date()
-    checkInDate.setDate(checkInDate.getDate() + 3)
-    setBookingCheckInDate(checkInDate.toISOString().split('T')[0])
+    const [y, m, d] = todayStr.split('-').map(Number)
+    const checkInDate = new Date(Date.UTC(y, m - 1, d + 3, 12, 0, 0))
+    setBookingCheckInDate(getVietnamDateString(checkInDate))
     setBookingPolicyAccepted(true)
     setBookingWorkflow('HOLD_ONLY')
     setBookingSuccess(false)
@@ -4113,7 +4111,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
   const handleOpenRescheduleModal = (booking: Booking) => {
     setRescheduleBookingTarget(booking)
     const baseDate = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(0, 10) : booking.startDate
-    setRescheduleNewDate(baseDate || new Date().toISOString().split('T')[0])
+    setRescheduleNewDate(baseDate || getVietnamDateString())
     const baseTime = booking.expectedCheckInAt ? booking.expectedCheckInAt.slice(11, 16) : (booking.checkInTime || '09:00')
     setRescheduleNewTime(baseTime)
     setRescheduleReason('')
@@ -9649,7 +9647,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     type="date"
                     required
                     value={switchAppointmentDate}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={getVietnamDateString()}
                     onChange={e => setSwitchAppointmentDate(e.target.value)}
                     className="w-full h-9 px-2.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
                   />

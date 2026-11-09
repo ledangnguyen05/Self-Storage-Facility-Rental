@@ -24,6 +24,10 @@ public class BoxoraApplication {
 
         // Tắt cơ chế devtools restart để tránh xung đột bytecode / RestartClassLoader
         System.setProperty("spring.devtools.restart.enabled", "false");
+
+        // Đồng bộ múi giờ mặc định sang giờ Việt Nam (UTC+7 / Asia/Ho_Chi_Minh) ngay khi JVM khởi động
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Ho_Chi_Minh"));
+        System.setProperty("user.timezone", "Asia/Ho_Chi_Minh");
     }
 
     @jakarta.annotation.PostConstruct

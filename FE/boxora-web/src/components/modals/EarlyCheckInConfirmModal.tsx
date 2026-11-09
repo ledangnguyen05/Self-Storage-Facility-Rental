@@ -98,11 +98,13 @@ export const getBookingScheduleInfo = (
   }
 
   const dateFormatted = targetDate.toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   })
   const timeFormatted = targetDate.toLocaleTimeString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
     hour: '2-digit',
     minute: '2-digit',
   })

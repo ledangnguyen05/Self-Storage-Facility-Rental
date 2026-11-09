@@ -353,6 +353,9 @@ import {
   hasAvailablePeriods,
   formatLocalDate,
   formatDateDDMMYYYY,
+  getBestCheckInHourForPeriod,
+  getVietnamDateString,
+  getVietnamTomorrowDateString,
 } from '../../utils/checkInTimeSlots'
 
 export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24, formatDateDDMMYYYY }
@@ -553,16 +556,20 @@ export const BookingPage: React.FC = () => {
   const [rentalMonths, setRentalMonths] = useState<number>(3)
   const [customDays, setCustomDays] = useState<number>(7)
 
-  // Step 4: Appointment Date & Time & Customer Details
+  // Step 4: Appointment Date & Time & Customer Details (Múi giờ Việt Nam Asia/Ho_Chi_Minh)
   const [checkInDate, setCheckInDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
+    const todayStr = getVietnamDateString()
+    if (hasAvailablePeriods(todayStr)) {
+      return todayStr
+    }
+    return getVietnamTomorrowDateString()
   })
   const [startDate, setStartDate] = useState<string>(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 1)
-    return d.toISOString().split('T')[0]
+    const todayStr = getVietnamDateString()
+    if (hasAvailablePeriods(todayStr)) {
+      return todayStr
+    }
+    return getVietnamTomorrowDateString()
   })
 
   useEffect(() => {
@@ -1453,8 +1460,8 @@ export const BookingPage: React.FC = () => {
       rentalDuration: rentalDurationText,
       checkInDate: checkInDate,
       checkInTime: checkInTime,
-      startDate: startDate || checkInDate || new Date().toISOString().slice(0, 10),
-      expectedCheckInAt: `${checkInDate || startDate || new Date().toISOString().slice(0, 10)}T${(checkInTime || '09:00').split(' - ')[0].trim().length === 5 ? (checkInTime || '09:00').split(' - ')[0].trim() + ':00' : '09:00:00'}`,
+      startDate: startDate || checkInDate || getVietnamDateString(),
+      expectedCheckInAt: `${checkInDate || startDate || getVietnamDateString()}T${getBestCheckInHourForPeriod(checkInDate, selectedPeriod)}:00`,
       totalRent: quoteCalculation.totalRent,
       depositAmount: quoteCalculation.depositAmount,
       totalEstimate: quoteCalculation.totalEstimate,
@@ -1677,15 +1684,8 @@ export const BookingPage: React.FC = () => {
       let createdBooking: any = null
 
       try {
-        const cleanTime = selectedPeriod.id === 'morning' ? '09:00' : (selectedPeriod.hours[0]?.value || '09:00')
-        let expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
-        const parsedCheckIn = new Date(expectedCheckInStr)
-        const minAllowedMs = Date.now() + 5.25 * 3600 * 1000
-        if (!Number.isNaN(parsedCheckIn.getTime()) && parsedCheckIn.getTime() < minAllowedMs) {
-          const safeDate = new Date(minAllowedMs)
-          const pad = (n: number) => String(n).padStart(2, '0')
-          expectedCheckInStr = `${safeDate.getFullYear()}-${pad(safeDate.getMonth() + 1)}-${pad(safeDate.getDate())}T${pad(safeDate.getHours())}:${pad(safeDate.getMinutes())}:00`
-        }
+        const cleanTime = getBestCheckInHourForPeriod(checkInDate, selectedPeriod)
+        const expectedCheckInStr = `${checkInDate}T${cleanTime}:00`
 
         const resolvedUnitTypeId = resolveUnitTypeIdForSelectedSize(currentSelectedSize)
 
@@ -3041,9 +3041,14 @@ export const BookingPage: React.FC = () => {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                        Ngày nhận bàn giao kho (Ngày bắt đầu thuê)
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                          Ngày nhận bàn giao kho (Ngày bắt đầu thuê)
+                        </label>
+                        <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400">
+                          {formatDateDDMMYYYY(checkInDate)}
+                        </span>
+                      </div>
                       <input
                         type="date"
                         min={formatLocalDate()}
@@ -3051,6 +3056,9 @@ export const BookingPage: React.FC = () => {
                         onChange={(e) => setCheckInDate(e.target.value)}
                         className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
                       />
+                      <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 block">
+                        Định dạng Việt Nam: <strong>{formatDateDDMMYYYY(checkInDate)}</strong> (Múi giờ Asia/Ho_Chi_Minh GMT+7)
+                      </span>
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">

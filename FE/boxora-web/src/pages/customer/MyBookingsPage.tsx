@@ -113,26 +113,19 @@ export const formatUnitTypeName = (b: Partial<Booking> | any): string => {
   return 'Kho Tiêu chuẩn (Boxora)'
 }
 
+import {
+  formatVietnamDate,
+  formatVietnamDateTime,
+  getVietnamDateString,
+  VIETNAM_TIMEZONE,
+} from '../../utils/vietnamTime'
+
 const safeFormatDateTime = (dateVal?: string | null, fallback = ''): string => {
-  if (!dateVal) return fallback
-  try {
-    const d = new Date(dateVal)
-    if (isNaN(d.getTime())) return fallback || String(dateVal)
-    return d.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
-  } catch {
-    return fallback || String(dateVal)
-  }
+  return formatVietnamDateTime(dateVal, fallback)
 }
 
 const safeFormatDate = (dateVal?: string | null, fallback = ''): string => {
-  if (!dateVal) return fallback
-  try {
-    const d = new Date(dateVal)
-    if (isNaN(d.getTime())) return fallback || String(dateVal)
-    return d.toLocaleDateString('vi-VN')
-  } catch {
-    return fallback || String(dateVal)
-  }
+  return formatVietnamDate(dateVal, fallback)
 }
 
 
@@ -155,7 +148,12 @@ export interface CheckInCountdownInfo {
  * Trích xuất giờ hẹn tiếp đón từ booking (từ expectedCheckInAt hoặc checkInTime)
  */
 export function getCheckInTimeString(b: any): string | null {
-  if (b?.checkInTime) return b.checkInTime
+  if (b?.checkInTime) {
+    const rawTime = String(b.checkInTime).trim()
+    const match = rawTime.match(/(\d{2}:\d{2})/)
+    if (match) return match[1]
+    return rawTime
+  }
   const raw = b?.expectedCheckInAt
   if (!raw) return null
   try {
@@ -165,11 +163,12 @@ export function getCheckInTimeString(b: any): string | null {
     }
     const d = new Date(raw)
     if (!isNaN(d.getTime())) {
-      const hours = d.getHours()
-      const minutes = d.getMinutes()
-      if (hours > 0 || minutes > 0 || (typeof raw === 'string' && raw.includes('T'))) {
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-      }
+      return new Intl.DateTimeFormat('en-GB', {
+        timeZone: VIETNAM_TIMEZONE,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).format(d)
     }
   } catch (e) {}
   return null

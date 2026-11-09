@@ -420,9 +420,10 @@ public class BookingServiceImpl implements BookingService {
             expectedCheckInAt = startDate.atTime(LocalTime.of(9, 0));
         }
 
-        LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
-        if (expectedCheckInAt.isBefore(minAllowedCheckIn)) {
-            expectedCheckInAt = minAllowedCheckIn.plusMinutes(15);
+        LocalDateTime nowVn = LocalDateTime.now(BUSINESS_ZONE);
+        // Chỉ điều chỉnh nếu lịch hẹn rơi vào quá khứ quá sâu (> 30 phút), ví dụ mở đơn từ sáng nhưng đêm mới bấm đặt
+        if (expectedCheckInAt.isBefore(nowVn.minusMinutes(30))) {
+            expectedCheckInAt = nowVn.plusMinutes(15);
         }
 
         int holdGraceHours = (activePolicy != null && activePolicy.getHoldGraceHours() != null)
@@ -2744,9 +2745,10 @@ public class BookingServiceImpl implements BookingService {
                     : startDate.atTime(LocalTime.of(9, 0));
         }
 
-        LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
-        if (expectedCheckInAt.isBefore(minAllowedCheckIn)) {
-            expectedCheckInAt = minAllowedCheckIn.plusMinutes(15);
+        LocalDateTime nowVn = LocalDateTime.now(BUSINESS_ZONE);
+        // Chỉ điều chỉnh nếu lịch hẹn rơi vào quá khứ quá sâu (> 30 phút), ví dụ mở đơn từ sáng nhưng đêm mới bấm đặt
+        if (expectedCheckInAt.isBefore(nowVn.minusMinutes(30))) {
+            expectedCheckInAt = nowVn.plusMinutes(15);
         }
 
         boolean isDirect = request.getSigningMethod() != null && !request.getSigningMethod().isBlank()
@@ -2880,14 +2882,10 @@ public class BookingServiceImpl implements BookingService {
                 if (!rawReqCheckIn.toLocalDate().equals(existing.getExpectedCheckInAt().toLocalDate())) {
                     return true;
                 }
-                LocalDateTime minAllowedCheckIn = LocalDateTime.now(BUSINESS_ZONE).plusHours(5);
-                boolean wasAutoBumped = !rawReqCheckIn.isAfter(minAllowedCheckIn);
-                if (!wasAutoBumped) {
-                    LocalTime reqTime = rawReqCheckIn.toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
-                    LocalTime extTime = existing.getExpectedCheckInAt().toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
-                    if (!reqTime.equals(extTime)) {
-                        return true;
-                    }
+                LocalTime reqTime = rawReqCheckIn.toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                LocalTime extTime = existing.getExpectedCheckInAt().toLocalTime().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+                if (!reqTime.equals(extTime)) {
+                    return true;
                 }
             }
         }
