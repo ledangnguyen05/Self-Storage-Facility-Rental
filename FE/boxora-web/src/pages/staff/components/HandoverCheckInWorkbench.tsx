@@ -18,7 +18,6 @@ import {
   Eye,
   QrCode,
   Lock,
-  Printer,
   Send,
   ZoomIn,
   ExternalLink,
@@ -3038,14 +3037,6 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                 <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
                   <button
                     type="button"
-                    onClick={() => setShowPdfModal(true)}
-                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                  >
-                    <Printer size={15} />
-                    <span>In Phiếu Bàn Giao</span>
-                  </button>
-                  <button
-                    type="button"
                     onClick={handleFinishAndNavigateToQueue}
                     className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                     title="Đóng hồ sơ bàn giao và quay lại danh sách chờ"
@@ -3432,16 +3423,8 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
               <div className="mt-5 flex items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setShowPdfModal(true)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Printer size={15} />
-                  <span>In Phiếu Nhận Kho</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => setHandoverSuccessModalData(null)}
-                  className="flex-1 py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                  className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
                 >
                   <span>Hoàn Tất &amp; Đóng</span>
                 </button>
