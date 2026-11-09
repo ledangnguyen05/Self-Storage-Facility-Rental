@@ -5361,52 +5361,36 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
               </div>
             </div>
 
-            {/* Bộ lọc danh mục, lọc theo mã kho & ô tìm kiếm */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[
-                  { id: 'ALL', label: 'Tất cả', count: unitHistoryCounts.all, icon: 'apps' },
-                  { id: 'OVERDUE', label: 'Nợ cước', count: unitHistoryCounts.overdue, icon: 'assignment_late' },
-                  { id: 'ACCESS', label: 'Mã PIN', count: unitHistoryCounts.access, icon: 'lock_open' },
-                  { id: 'RENEWAL', label: 'Gia hạn kho', count: unitHistoryCounts.renewal, icon: 'autorenew' },
-                  { id: 'NOTIFICATION', label: 'Hợp đồng và thanh toán', count: unitHistoryCounts.notification, icon: 'receipt_long' },
-                ].map(tab => {
-                  const isActive = unitHistoryCategory === tab.id
-                  const isOverdueTab = tab.id === 'OVERDUE'
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        setUnitHistoryCategory(tab.id as any)
-                        setUnitHistoryLimit(12)
-                      }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
-                        isActive
-                          ? isOverdueTab
-                            ? 'bg-rose-600 text-white shadow-xs'
-                            : 'bg-slate-900 text-white shadow-xs'
-                          : isOverdueTab && tab.count > 0
-                          ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
-                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                      }`}
-                    >
-                      <span className="material-symbols-outlined text-[15px]">{tab.icon}</span>
-                      <span>{tab.label}</span>
-                      <span
-                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                          isActive
-                            ? 'bg-white/20 text-white'
-                            : isOverdueTab && tab.count > 0
-                            ? 'bg-rose-200 text-rose-800'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {tab.count}
-                      </span>
-                    </button>
-                  )
-                })}
+            {/* Thanh công cụ: Lọc theo mã kho & tìm kiếm thông báo */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <span className="material-symbols-outlined text-[18px] text-slate-400">filter_list</span>
+                <span>
+                  Đang lọc danh mục:{' '}
+                  <strong className="text-slate-900 font-bold">
+                    {unitHistoryCategory === 'OVERDUE'
+                      ? 'Nợ cước & Cảnh báo'
+                      : unitHistoryCategory === 'ACCESS'
+                      ? 'Mã PIN'
+                      : unitHistoryCategory === 'RENEWAL'
+                      ? 'Gia hạn kho'
+                      : unitHistoryCategory === 'NOTIFICATION'
+                      ? 'Hợp đồng và thanh toán'
+                      : 'Tất cả thông báo'}
+                  </strong>
+                </span>
+                {unitHistoryCategory !== 'ALL' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUnitHistoryCategory('ALL')
+                      setUnitHistoryLimit(12)
+                    }}
+                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer underline ml-1"
+                  >
+                    (Bỏ lọc)
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
