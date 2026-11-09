@@ -1317,16 +1317,61 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     return customerBookings.filter(b => b.status === 'CONFIRMED' || b.status === 'PENDING_PAYMENT')
   }, [customerBookings])
 
+
+  const getContractDepositHeld = useCallback((contractItem: any) => {
+    if (Number(contractItem?.depositHeld || 0) > 0) return Number(contractItem.depositHeld)
+    const matchingPayment = customerPayments.find(
+      (p) => (p.bookingId === contractItem?.bookingId || (p.unitCode && contractItem?.unitCode && p.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase()))
+        && p.paymentType === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS')
+    )
+    if (matchingPayment?.amount && Number(matchingPayment.amount) > 0) return Number(matchingPayment.amount)
+    const matchingBooking = customerBookings.find(
+      (b) => b.id === contractItem?.bookingId || (b.unitCode && contractItem?.unitCode && b.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase())
+    )
+    if (matchingBooking?.depositPaid && Number(matchingBooking.depositPaid) > 0) return Number(matchingBooking.depositPaid)
+    if (matchingBooking?.depositAmount && Number(matchingBooking.depositAmount) > 0) return Number(matchingBooking.depositAmount)
+    return Number(contractItem?.monthlyFee || 0)
+  }, [customerPayments, customerBookings])
+
   // Real Customer Financial Summaries from DB
   const totalAmountPaid = useMemo(() => {
     return customerPayments.filter(p => p.status === 'PAID' || p.status === 'SUCCESS').reduce((sum, p) => sum + (p.amount || 0), 0)
   }, [customerPayments])
 
   const totalDepositsHeld = useMemo(() => {
-    const fromPayments = customerPayments.filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT')).reduce((sum, p) => sum + (p.amount || 0), 0)
-    const fromContracts = contracts.reduce((sum, c) => sum + (c.depositHeld || 0), 0)
-    return fromPayments > 0 ? fromPayments : fromContracts
-  }, [customerPayments, contracts])
+    // Chỉ tính tiền cọc đang được Boxora lưu giữ cho các hợp đồng đang hoạt động hoặc chờ nhận kho (chưa thanh lý)
+    const activeOrPendingContracts = contracts.filter(c => c.status !== 'TERMINATED' && c.status !== 'CANCELLED')
+    if (activeOrPendingContracts.length > 0) {
+      const contractBookingIds = new Set(contracts.map(c => c.bookingId).filter(Boolean))
+      const orphanBookingsDeposit = customerBookings
+        .filter(b => !contractBookingIds.has(b.id) && b.status !== 'CANCELLED' && b.status !== 'REJECTED')
+        .reduce((sum, b) => {
+          const depPaid = Number(b.depositPaid || 0)
+          if (depPaid > 0) return sum + depPaid
+          if (b.status === 'CONFIRMED' || b.status === 'ACTIVE' || b.paymentStatus === 'PAID') {
+            return sum + Number(b.depositAmount || 0)
+          }
+          return sum
+        }, 0)
+
+      return activeOrPendingContracts.reduce((sum, c) => sum + getContractDepositHeld(c), 0) + orphanBookingsDeposit
+    }
+
+    // Nếu chưa nạp được danh sách hợp đồng, tính từ các khoản thanh toán ký quỹ cọc thực tế từ DB
+    const fromPayments = customerPayments
+      .filter(p => (p.status === 'PAID' || p.status === 'SUCCESS') && (p.paymentType === 'DEPOSIT' || p.paymentType === 'BOOKING_PAYMENT'))
+      .reduce((sum, p) => {
+        if (p.paymentType === 'DEPOSIT') {
+          return sum + Number(p.amount || 0)
+        }
+        // Với BOOKING_PAYMENT, chỉ trích phần tiền cọc tương ứng của booking đó, không lấy toàn bộ số tiền thanh toán
+        const matchedBooking = customerBookings.find(b => b.id === p.bookingId)
+        const dep = Number(matchedBooking?.depositPaid || matchedBooking?.depositAmount || 0)
+        return sum + dep
+      }, 0)
+
+    return fromPayments
+  }, [contracts, getContractDepositHeld, customerBookings, customerPayments])
 
   const monthlyRentalTotal = useMemo(() => {
     return activatedContracts.reduce((sum, c) => sum + (c.monthlyFee || 0), 0)
@@ -1698,20 +1743,6 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     setIsCustomerPolicyModalOpen(true)
   }
 
-  const getContractDepositHeld = useCallback((contractItem: any) => {
-    if (Number(contractItem?.depositHeld || 0) > 0) return Number(contractItem.depositHeld)
-    const matchingPayment = customerPayments.find(
-      (p) => (p.bookingId === contractItem?.bookingId || (p.unitCode && contractItem?.unitCode && p.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase()))
-        && p.paymentType === 'DEPOSIT' && (p.status === 'PAID' || p.status === 'SUCCESS')
-    )
-    if (matchingPayment?.amount && Number(matchingPayment.amount) > 0) return Number(matchingPayment.amount)
-    const matchingBooking = customerBookings.find(
-      (b) => b.id === contractItem?.bookingId || (b.unitCode && contractItem?.unitCode && b.unitCode.trim().toUpperCase() === contractItem.unitCode.trim().toUpperCase())
-    )
-    if (matchingBooking?.depositPaid && Number(matchingBooking.depositPaid) > 0) return Number(matchingBooking.depositPaid)
-    if (matchingBooking?.depositAmount && Number(matchingBooking.depositAmount) > 0) return Number(matchingBooking.depositAmount)
-    return Number(contractItem?.monthlyFee || 0)
-  }, [customerPayments, customerBookings])
 
   const fetchCustomerTickets = useCallback(async (silent = false) => {
     try {
