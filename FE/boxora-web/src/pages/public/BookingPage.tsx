@@ -3343,33 +3343,6 @@ export const BookingPage: React.FC = () => {
                       )}
                     </div>
                   </div>
-
-                  {/* Special Notes with 500 Char Counter */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label htmlFor="booking-special-notes" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        Ghi chú về tài sản lưu trữ hoặc yêu cầu hỗ trợ (tùy chọn)
-                      </label>
-                      <span className={`text-[10px] ${specialNotes.length > 500 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
-                        {specialNotes.length}/500 ký tự
-                      </span>
-                    </div>
-                    <input
-                      id="booking-special-notes"
-                      type="text"
-                      maxLength={500}
-                      value={specialNotes}
-                      onChange={(e) => {
-                        setSpecialNotes(e.target.value)
-                        if (formErrors.specialNotes) setFormErrors((prev) => ({ ...prev, specialNotes: '' }))
-                      }}
-                      placeholder="VD: Cần hỗ trợ xe đẩy hàng, chuyển đồ căn hộ, hàng dễ vỡ..."
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/60 text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none"
-                    />
-                    {formErrors.specialNotes && (
-                      <p className="mt-1 text-xs text-red-600 font-medium">{formErrors.specialNotes}</p>
-                    )}
-                  </div>
                 </div>
 
                 {/* 3. POLICY ACCEPTANCE */}
