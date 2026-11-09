@@ -109,6 +109,9 @@ interface InspectedUnit {
   overdueStageLabel?: string
   overdueDays?: number
   overdueDebt?: number
+  bookingId?: string
+  bookingCode?: string
+  hasDirectBooking?: boolean
 }
 
 type ManagerDashboardTab = 'overview' | 'pending_orders' | 'reception' | 'handovers-returns' | 'returns' | 'renewals' | 'tickets' | 'refunds' | 'policy'
@@ -509,12 +512,33 @@ export const ManagerDashboard: React.FC = () => {
         ? facId
         : (selectedFacilityId && selectedFacilityId !== 'ALL' ? selectedFacilityId : facilities[0]?.id)
 
-      const [unitsRes, debtRes, contractsRes, polRes] = await Promise.allSettled([
+      const [unitsRes, debtRes, contractsRes, polRes, handoversRes] = await Promise.allSettled([
         storageUnitService.getUnits(targetId ? { facilityId: targetId } : undefined),
         reportService.getOverdueDebtReport(targetId ? { facilityId: targetId } : undefined),
         overdueService.getContracts(targetId ? { facilityId: targetId, size: 500 } : { size: 500 }),
         targetId ? facilityPolicyService.getByFacilityId(targetId) : Promise.resolve(null),
+        bookingService.getUpcomingArrivals(targetId ? targetId : undefined, { timeframe: 'ALL' }),
       ])
+
+      // Process upcoming handovers
+      let arrivalsList: Booking[] = []
+      if (handoversRes.status === 'fulfilled' && Array.isArray(handoversRes.value)) {
+        arrivalsList = mergeGuestArrivals(handoversRes.value, targetId)
+        setUpcomingHandovers(arrivalsList)
+      } else {
+        arrivalsList = mergeGuestArrivals([], targetId)
+        setUpcomingHandovers(arrivalsList)
+      }
+
+      // Fast lookup maps for bookings
+      const bookingsByUnitId = new Map<string, Booking>()
+      const bookingsByUnitCode = new Map<string, Booking>()
+      const bookingsById = new Map<string, Booking>()
+      arrivalsList.forEach(b => {
+        if (b.id) bookingsById.set(b.id, b)
+        if (b.storageUnitId) bookingsByUnitId.set(b.storageUnitId, b)
+        if (b.unitCode) bookingsByUnitCode.set(b.unitCode, b)
+      })
 
       // 4 Overdue Milestones in Boxora Operating Policy:
       // 1. GRACE_PERIOD (Ân hạn cước)
@@ -642,6 +666,19 @@ export const ManagerDashboard: React.FC = () => {
 
           const overdueMeta = overdueInfo?.stage ? resolveOverdueStageMeta(overdueInfo.stage) : null
 
+          // Check for linked active booking
+          const matchedBooking = (su.bookingId ? bookingsById.get(su.bookingId) : undefined)
+            || (su.id ? bookingsByUnitId.get(su.id) : undefined)
+            || (su.unitCode ? bookingsByUnitCode.get(su.unitCode) : undefined)
+          
+          const bookingId = su.bookingId || matchedBooking?.id
+          const hasDirectBooking = Boolean(bookingId)
+          const bookingTenantName = matchedBooking?.customerName
+          const bookingCode = matchedBooking?.bookingCode || su.contractCode
+          const bookingDue = (matchedBooking?.startDate && matchedBooking?.endDate)
+            ? `${new Date(matchedBooking.startDate).toLocaleDateString('vi-VN')} - ${new Date(matchedBooking.endDate).toLocaleDateString('vi-VN')}`
+            : undefined
+
           return {
             id: su.unitCode,
             backendId: su.id,
@@ -650,10 +687,16 @@ export const ManagerDashboard: React.FC = () => {
             status,
             rawStatus: su.status,
             color,
-            tenant: isMaint ? (su.maintenanceBy || tr('Kỹ thuật viên cơ sở', 'On-site Technician')) : (overdueInfo?.customerName || su.tenantName || (isAvail ? tr('Chưa có khách thuê', 'Vacant (No tenant)') : isRes ? tr('Đang cập nhật hồ sơ', 'Updating profile') : tr('Chưa có thông tin', 'No information'))),
-            contract: isMaint ? (su.maintenanceReason || tr('Bảo trì kỹ thuật định kỳ', 'Routine Maintenance')) : (overdueInfo?.contractCode || su.contractCode || (isAvail ? tr('Chưa có hợp đồng', 'No active contract') : isRes ? tr('Chờ ký HĐ bàn giao', 'Pending contract signature') : tr('Chưa có mã HĐ', 'No contract ID'))),
+            tenant: isMaint
+              ? (su.maintenanceBy || tr('Kỹ thuật viên cơ sở', 'On-site Technician'))
+              : (overdueInfo?.customerName || bookingTenantName || su.tenantName || (isAvail ? tr('Chưa có khách thuê', 'Vacant (No tenant)') : isRes ? (hasDirectBooking ? tr('Đang giữ chỗ', 'Reserved') : tr('Đang giữ chỗ (chờ nhận kho)', 'Reserved (Awaiting check-in)')) : tr('Chưa có thông tin', 'No information'))),
+            contract: isMaint
+              ? (su.maintenanceReason || tr('Bảo trì kỹ thuật định kỳ', 'Routine Maintenance'))
+              : (overdueInfo?.contractCode || bookingCode || su.contractCode || (isAvail ? tr('Chưa có hợp đồng', 'No active contract') : isRes ? (hasDirectBooking ? tr('Chờ ký HĐ bàn giao', 'Pending contract signature') : tr('Chờ gán đơn đặt chỗ', 'Awaiting booking assignment')) : tr('Chưa có mã HĐ', 'No contract ID'))),
             due: isMaint
               ? (su.maintenanceAt ? new Date(su.maintenanceAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Đang bảo trì')
+              : bookingDue
+              ? bookingDue
               : (su.startDate && su.dueDate)
               ? `${new Date(su.startDate).toLocaleDateString('vi-VN')} - ${new Date(su.dueDate).toLocaleDateString('vi-VN')}`
               : su.dueDate
@@ -676,6 +719,9 @@ export const ManagerDashboard: React.FC = () => {
             overdueStageLabel: overdueMeta?.label,
             overdueDays: overdueInfo?.daysOverdue,
             overdueDebt: overdueInfo?.totalDebt,
+            bookingId,
+            bookingCode,
+            hasDirectBooking,
           }
         })
         mapped.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' }))
@@ -2445,18 +2491,58 @@ export const ManagerDashboard: React.FC = () => {
               {/* Manager Actions (Read-only / Exception Workflow) */}
               <div className="flex flex-col gap-2 pt-1">
                 
+                {/* Pending Handover Unit Actions: CONDITIONAL SHOW / HIDE */}
                 {selectedUnit.status === 'Pending' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReadOnlyTargetBookingId(undefined)
-                      setShowReadOnlyBookingModal(true)
-                    }}
-                    className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">verified</span>
-                    <span>Xem Hồ Sơ &amp; 3 Điều Kiện Bàn Giao</span>
-                  </button>
+                  (() => {
+                    const pendingBooking = (selectedUnit.bookingId ? upcomingHandovers.find(b => b.id === selectedUnit.bookingId) : undefined)
+                      || upcomingHandovers.find(b => 
+                           (selectedUnit.backendId && b.storageUnitId === selectedUnit.backendId) ||
+                           (selectedUnit.id && b.unitCode === selectedUnit.id)
+                         )
+                      || (selectedUnit.bookingId ? { id: selectedUnit.bookingId, bookingCode: selectedUnit.bookingCode } : null)
+
+                    const targetBookingId = pendingBooking?.id || selectedUnit.bookingId
+
+                    if (targetBookingId) {
+                      // HIỆN BUTTON: Khi buồng kho có đơn đặt chỗ cụ thể chờ bàn giao
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReadOnlyTargetBookingId(targetBookingId)
+                            setReadOnlyTargetUnitCode(selectedUnit.id)
+                            setReadOnlyTargetUnitBackendId(selectedUnit.backendId)
+                            setShowReadOnlyBookingModal(true)
+                          }}
+                          className="w-full py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">verified</span>
+                          <span>Xem Hồ Sơ &amp; 3 Điều Kiện Bàn Giao</span>
+                        </button>
+                      )
+                    }
+
+                    // ẨN BUTTON & HIỂN THỊ THÔNG BÁO: Khi kho đang giữ chỗ theo hạn mức loại kho (chưa có đơn cụ thể)
+                    return (
+                      <div className="p-3.5 bg-amber-50/90 rounded-xl border border-amber-200 text-xs flex flex-col gap-2 text-amber-900 shadow-2xs">
+                        <div className="flex items-center gap-1.5 font-bold uppercase tracking-wide text-[11px] pb-1 border-b border-amber-200/70 text-amber-800">
+                          <span className="material-symbols-outlined text-[16px] text-amber-600">info</span>
+                          <span>Kho đang giữ chỗ theo loại kho</span>
+                        </div>
+                        <p className="text-[11px] text-amber-700 leading-relaxed">
+                          Buồng kho này đang được bảo lưu tạm thời cho khách đặt loại kho này (chưa gán mã đơn cá nhân). Khi khách đến quầy hoặc làm thủ tục check-in, nhân viên tiếp đón sẽ gán đơn cụ thể vào kho.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('reception')}
+                          className="w-full py-2 px-3 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold text-xs flex items-center justify-center gap-1.5 border border-amber-300 transition cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">desk</span>
+                          <span>Mở Bàn Tiếp Đón &amp; Gán Kho</span>
+                        </button>
+                      </div>
+                    )
+                  })()
                 )}
 
                 {role === 'FACILITY_MANAGER' && selectedUnit.status === 'Rented' && (
