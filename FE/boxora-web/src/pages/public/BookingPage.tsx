@@ -145,6 +145,7 @@ export interface StorageSizeUnitDef {
 export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   {
     id: '1m3',
+    typeName: 'Mini (tủ cá nhân)',
     volumeText: '1.2 m³',
     volumeNumber: 1.2,
     capacityText: '6 boxes',
@@ -229,6 +230,7 @@ export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   },
   {
     id: '8m3',
+    typeName: 'Vừa (phòng studio nhỏ)',
     volumeText: '7.8 m³',
     volumeNumber: 7.8,
     capacityText: '48 boxes',
@@ -289,6 +291,7 @@ export const STORAGE_SIZES_CATALOG: StorageSizeUnitDef[] = [
   },
   {
     id: '16m3',
+    typeName: 'Tiêu chuẩn (căn một phòng ngủ)',
     volumeText: '16.8 m³',
     volumeNumber: 16.8,
     capacityText: '100 boxes (Căn hộ 3PN)',
@@ -362,6 +365,24 @@ import {
 } from '../../utils/checkInTimeSlots'
 
 export { CHECK_IN_PERIOD_GROUPS, CHECK_IN_HOURS_24, formatDateDDMMYYYY }
+
+export const formatUnitTypeName = (typeName?: string): string => {
+  if (!typeName) return ''
+  const t = typeName.trim()
+  if (/^medium\s*\(\s*compact\s*studio\s*\)$/i.test(t) || t === 'Compact Studio Unit' || t === 'Compact Studio') {
+    return 'Vừa (phòng studio nhỏ)'
+  }
+  if (/^extra\s*large\s*\(\s*commercial\s*suite\s*\)$/i.test(t) || t === 'Commercial & E-Commerce Suite' || t === 'Commercial Suite') {
+    return 'Rất lớn (văn phòng thương mại)'
+  }
+  if (/^small\s*\(\s*personal\s*locker\s*\)$/i.test(t) || t === 'Personal Locker (Mini Box)' || t === 'Personal Locker') {
+    return 'Mini (tủ cá nhân)'
+  }
+  if (/^large\s*\(\s*standard\s*1-bedroom\s*\)$/i.test(t) || t === 'Standard 1-Bedroom Storage' || t === 'Standard 1-Bedroom') {
+    return 'Tiêu chuẩn (căn một phòng ngủ)'
+  }
+  return t
+}
 
 export const resolveUnitTypeIdForSelectedSize = (size: StorageSizeUnitDef): string => {
   if (size.dbUnitTypeId) {
@@ -534,9 +555,6 @@ export const BookingPage: React.FC = () => {
   const [preservationFilter, setPreservationFilter] = useState<PreservationFilterType>('ALL')
   const [stockStatusFilter, setStockStatusFilter] = useState<StockStatusFilterType>('ALL')
   const [areaFilter, setAreaFilter] = useState<AreaFilterType>('ALL')
-  const [sizeVisualMode, setSizeVisualMode] = useState<'3D' | 'PHOTO'>('3D')
-  const [userForced3DMode, setUserForced3DMode] = useState<boolean>(false)
-  const [inspectVisualTab, setInspectVisualTab] = useState<'3D' | 'PHOTO'>('3D')
   const [inspectingSizeUnit, setInspectingSizeUnit] = useState<StorageSizeUnitDef | null>(null)
 
   // Step 3: Rental Duration & Dates
@@ -1035,10 +1053,18 @@ export const BookingPage: React.FC = () => {
         const area = targetType.areaSqm != null ? Number(targetType.areaSqm) : (matchedCatalog ? matchedCatalog.areaM2 : (unit.areaSqMeters || 1))
         const dims = targetType.dimensions || (matchedCatalog ? matchedCatalog.dimensions : `${targetType.lengthM || 2}m × ${targetType.widthM || 1.5}m × ${targetType.heightM || 2.6}m`)
         const cap = matchedCatalog ? matchedCatalog.capacityText : `${Math.round(area * 8)} boxes`
-        const name = targetType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn')
+        const rawName = targetType.typeName || (matchedCatalog ? matchedCatalog.typeName : 'Kho tiêu chuẩn')
+        const name = formatUnitTypeName(rawName)
         const hasAc = targetType.acPricePerMonth != null && Number(targetType.acPricePerMonth) > 0
         const nonAcRate = Number(targetType.basePricePerMonth || (matchedCatalog ? matchedCatalog.nonAcRate : 5000000))
         const acRate = hasAc ? Number(targetType.acPricePerMonth) : 0
+
+        // Ưu tiên ảnh đã lưu/upload của loại kho hoặc buồng kho cụ thể
+        const unitWithPhoto = unitsSource.find(
+          (u) => (u.unitTypeId === targetType.id || u.unitTypeName === targetType.typeName) &&
+                 (u.imageUrl || u.primaryImageUrl || (u.images && u.images.length > 0))
+        )
+        const uploadedImg = targetType?.imageUrl || dbType?.imageUrl || unitWithPhoto?.imageUrl || unitWithPhoto?.primaryImageUrl || (unitWithPhoto?.images && unitWithPhoto.images[0]) || undefined
 
         matchedSizes.push({
           ...(matchedCatalog || STORAGE_SIZES_CATALOG[0]),
@@ -1048,8 +1074,8 @@ export const BookingPage: React.FC = () => {
           volumeText: `${vol} m³`,
           volumeNumber: vol,
           capacityText: cap,
-          image: targetType?.imageUrl || dbType?.imageUrl || (vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image)),
-          imageUrl: targetType?.imageUrl || dbType?.imageUrl || undefined,
+          image: uploadedImg || (vol >= 24 ? STORAGE_SIZES_CATALOG[STORAGE_SIZES_CATALOG.length - 1].image : (matchedCatalog?.image || STORAGE_SIZES_CATALOG[0].image)),
+          imageUrl: uploadedImg,
           dimensions: dims,
           areaM2: area,
           fitsDetailed: [
@@ -1065,6 +1091,7 @@ export const BookingPage: React.FC = () => {
       } else if (matchedCatalog) {
         matchedSizes.push({
           ...matchedCatalog,
+          typeName: formatUnitTypeName(matchedCatalog.typeName),
           hasAc: matchedCatalog.acRate > 0,
         })
       }
@@ -2571,48 +2598,6 @@ export const BookingPage: React.FC = () => {
                       </button>
                     ))}
                   </div>
-
-                  <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 px-1">
-                    <div className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200/70 dark:border-slate-700">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSizeVisualMode('3D')
-                          setUserForced3DMode(true)
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          sizeVisualMode === '3D'
-                            ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        <Box size={12} />
-                        <span>Mô hình 3D</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSizeVisualMode('PHOTO')
-                          setUserForced3DMode(false)
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                          sizeVisualMode === 'PHOTO'
-                            ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
-                            : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
-                        }`}
-                      >
-                        <Building2 size={12} />
-                        <span>Ảnh thực tế</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-medium">
-                      <span>Đang chọn:</span>
-                      <strong className="text-blue-600 dark:text-blue-400 font-bold">
-                        Kho {currentSelectedSize.volumeText} ({isAcActive ? 'A/C Máy lạnh' : 'Non-A/C'})
-                      </strong>
-                    </div>
-                  </div>
                 </div>
 
 
@@ -2625,6 +2610,8 @@ export const BookingPage: React.FC = () => {
                     const displayPrice = getDynamicPriceForSize(sizeUnit, unitAcMode === 'AC')
                     const realPhotoInfo = getRealPhotoForSize(sizeUnit.volumeNumber, unitAcMode === 'AC')
                     const availCount = getAvailableCountForSize(sizeUnit)
+                    const uploadedImage = (sizeUnit as any).imageUrl
+                    const displayPhoto = uploadedImage || realPhotoInfo.photoUrl || '/assets/units/unit-standard.jpg'
 
                     return (
                       <div
@@ -2639,8 +2626,8 @@ export const BookingPage: React.FC = () => {
                         <div className="p-3.5 pb-1.5 flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             {sizeUnit.typeName && (
-                              <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 block truncate" title={sizeUnit.typeName}>
-                                {sizeUnit.typeName}
+                              <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 block truncate" title={formatUnitTypeName(sizeUnit.typeName)}>
+                                {formatUnitTypeName(sizeUnit.typeName)}
                               </span>
                             )}
                             <div className="flex items-center gap-1.5 mt-0.5">
@@ -2661,9 +2648,6 @@ export const BookingPage: React.FC = () => {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation()
-                                setInspectVisualTab(
-                                  (sizeUnit as any).imageUrl && !userForced3DMode ? 'PHOTO' : sizeVisualMode
-                                )
                                 setInspectingSizeUnit(sizeUnit)
                               }}
                               className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer"
@@ -2679,38 +2663,26 @@ export const BookingPage: React.FC = () => {
                           </div>
                         </div>
 
-                        {/* Visual Container */}
+                        {/* Visual Container - Ảnh thực tế kho (ưu tiên ảnh đã upload, fallback ảnh mặc định) */}
                         <div className="mx-3.5 my-1 rounded-xl bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 border border-slate-100 dark:border-slate-800/80 flex items-center justify-center h-36 sm:h-38 overflow-hidden relative">
-                          {sizeVisualMode === '3D' && (!((sizeUnit as any).imageUrl) || userForced3DMode) ? (
-                            <div className="w-full h-full px-2 py-1 flex items-center justify-center group-hover:scale-[1.04] transition-transform duration-300">
-                              <StorageSizeIsometric3D
-                                sizeId={sizeUnit.id}
-                                volumeM3={sizeUnit.volumeNumber}
-                                dimensions={sizeUnit.dimensions}
-                                isAc={unitAcMode === 'AC'}
-                                showDimensions={true}
-                              />
+                          <div className="w-full h-full relative overflow-hidden">
+                            <img
+                              src={displayPhoto}
+                              alt={`Ảnh thực tế kho ${sizeUnit.volumeText}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                              onError={(e) => {
+                                const target = e.currentTarget
+                                target.onerror = null
+                                target.src = realPhotoInfo.photoUrl || '/assets/units/unit-standard.jpg'
+                              }}
+                            />
+                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent px-3 py-1.5 flex items-center justify-between text-[10px] text-white">
+                              <span className="font-semibold truncate">{sizeUnit.dimensions.replace('Cao ', '')}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-blue-600/90 font-bold shrink-0">
+                                {unitAcMode === 'AC' ? 'Kho A/C' : 'Tiêu chuẩn'}
+                              </span>
                             </div>
-                          ) : (
-                            <div className="w-full h-full relative overflow-hidden">
-                              <img
-                                src={(sizeUnit as any).imageUrl || realPhotoInfo.photoUrl}
-                                alt={`Ảnh thực tế kho ${sizeUnit.volumeText}`}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                onError={(e) => {
-                                  const target = e.currentTarget
-                                  target.onerror = null
-                                  target.src = realPhotoInfo.photoUrl
-                                }}
-                              />
-                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/75 via-slate-950/30 to-transparent px-3 py-1.5 flex items-center justify-between text-[10px] text-white">
-                                <span className="font-semibold truncate">{sizeUnit.dimensions.replace('Cao ', '')}</span>
-                                <span className="px-1.5 py-0.5 rounded bg-blue-600/90 font-bold shrink-0">
-                                  {unitAcMode === 'AC' ? 'Kho A/C' : 'Tiêu chuẩn'}
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                          </div>
                         </div>
 
                         {/* Bottom Controls */}
@@ -4064,7 +4036,8 @@ export const BookingPage: React.FC = () => {
               </span>
               <div>
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">
-                  Chi tiết quy cách kho {inspectingSizeUnit.volumeText}
+                  Kho {inspectingSizeUnit.volumeText}{' '}
+                  {inspectingSizeUnit.typeName ? `• ${formatUnitTypeName(inspectingSizeUnit.typeName)}` : ''}
                 </h3>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
                   {inspectingSizeUnit.dimensions} • {inspectingSizeUnit.areaM2} m²
@@ -4075,79 +4048,42 @@ export const BookingPage: React.FC = () => {
             <div className="space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
-                  Minh họa không gian:
+                  Hình ảnh thực tế không gian kho:
                 </span>
-                <div className="inline-flex p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <button
-                    type="button"
-                    onClick={() => setInspectVisualTab('3D')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                      inspectVisualTab === '3D'
-                        ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Mô hình 3D
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInspectVisualTab('PHOTO')}
-                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
-                      inspectVisualTab === 'PHOTO'
-                        ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    Ảnh kho thực tế
-                  </button>
+              </div>
+
+              <div className="h-64 sm:h-72 bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-200/80 dark:border-slate-800 relative">
+                <div className="w-full h-full relative">
+                  <img
+                    src={
+                      (inspectingSizeUnit as any)?.imageUrl ||
+                      getRealPhotoForSize(
+                        inspectingSizeUnit.volumeNumber,
+                        (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                      ).photoUrl || '/assets/units/unit-standard.jpg'
+                    }
+                    alt={`Ảnh thực tế kho ${inspectingSizeUnit.volumeText}`}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.currentTarget
+                      target.onerror = null
+                      target.src = getRealPhotoForSize(
+                        inspectingSizeUnit.volumeNumber,
+                        (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                      ).photoUrl || '/assets/units/unit-standard.jpg'
+                    }}
+                  />
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/85 via-slate-950/40 to-transparent p-4 text-white">
+                    <p className="text-xs font-medium">
+                      {getRealPhotoForSize(
+                        inspectingSizeUnit.volumeNumber,
+                        (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
+                      ).caption}
+                    </p>
+                  </div>
                 </div>
               </div>
-
-              <div className="h-56 bg-gradient-to-b from-slate-50 to-blue-50/40 dark:from-slate-800/60 dark:to-slate-800/30 rounded-2xl overflow-hidden flex items-center justify-center border border-slate-200/80 dark:border-slate-800 relative">
-                {inspectVisualTab === '3D' ? (
-                  <div className="w-full h-full p-3 flex items-center justify-center">
-                    <StorageSizeIsometric3D
-                      sizeId={inspectingSizeUnit.id}
-                      volumeM3={inspectingSizeUnit.volumeNumber}
-                      dimensions={inspectingSizeUnit.dimensions}
-                      isAc={(acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'}
-                      showDimensions={true}
-                    />
-                  </div>
-                ) : (
-                  <div className="w-full h-full relative">
-                    <img
-                      src={
-                        (inspectingSizeUnit as any)?.imageUrl ||
-                        getRealPhotoForSize(
-                          inspectingSizeUnit.volumeNumber,
-                          (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
-                        ).photoUrl
-                      }
-                      alt={`Ảnh thực tế kho ${inspectingSizeUnit.volumeText}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => {
-                        const target = e.currentTarget
-                        target.onerror = null
-                        target.src = getRealPhotoForSize(
-                          inspectingSizeUnit.volumeNumber,
-                          (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
-                        ).photoUrl
-                      }}
-                    />
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/80 via-slate-950/40 to-transparent px-4 py-2.5 text-[11px] text-white">
-                      {
-                        getRealPhotoForSize(
-                          inspectingSizeUnit.volumeNumber,
-                          (acSelectionMap[inspectingSizeUnit.id] || 'NON_AC') === 'AC'
-                        ).caption
-                      }
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
-
             <div className="grid grid-cols-2 gap-3 text-xs font-mono">
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60">
                 <span className="text-slate-400 block text-[10px]">KÍCH THƯỚC:</span>

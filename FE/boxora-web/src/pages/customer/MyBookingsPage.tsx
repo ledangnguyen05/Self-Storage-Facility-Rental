@@ -100,7 +100,7 @@ export const formatUnitTypeName = (b: Partial<Booking> | any): string => {
     return 'Kho Lạnh chuyên dụng (5 m³)'
   }
   if (typeId === 'dd168b92-ebdd-4e84-a6e1-7715b4745a26') {
-    return 'Kho Compact Studio (3 m³)'
+    return 'Kho Vừa (3 m³ - Studio)'
   }
 
   if (b.size?.volumeText) {
