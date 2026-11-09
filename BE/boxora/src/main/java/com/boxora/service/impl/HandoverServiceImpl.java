@@ -275,7 +275,17 @@ public class HandoverServiceImpl implements HandoverService {
         boolean eligibleForInspection = physicalPrereqsMet;
         boolean eligibleForCheckIn = physicalPrereqsMet && checkInTimeMet;
 
-        List<PaymentResponse> paymentHistory = paymentRepository.findAllByBooking_Id(booking.getId()).stream()
+        List<Payment> allBookingPayments = new ArrayList<>(paymentRepository.findAllByBooking_Id(booking.getId()));
+        if (contractOpt.isPresent()) {
+            List<Payment> contractPayments = paymentRepository.findByContract_Id(contractOpt.get().getId());
+            for (Payment cp : contractPayments) {
+                if (allBookingPayments.stream().noneMatch(p -> p.getId().equals(cp.getId()))) {
+                    allBookingPayments.add(cp);
+                }
+            }
+        }
+
+        List<PaymentResponse> paymentHistory = allBookingPayments.stream()
                 .sorted((a, b) -> {
                     LocalDateTime t1 = a.getPaymentTime() != null ? a.getPaymentTime() : LocalDateTime.MIN;
                     LocalDateTime t2 = b.getPaymentTime() != null ? b.getPaymentTime() : LocalDateTime.MIN;

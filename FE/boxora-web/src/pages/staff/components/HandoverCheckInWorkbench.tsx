@@ -826,6 +826,45 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
     return 0
   }, [displayTotalPayable, isDepositMet, isRentMet, currentBooking, currentPrerequisites, displayDepositDue, displayFirstMonthRentDue])
 
+  // Tổng số tiền khách hàng đã thực tế chi trả ghi nhận trong hệ thống / cơ sở dữ liệu
+  const totalAmountPaidFromDb = useMemo(() => {
+    const history = currentPrerequisites?.paymentHistory || []
+    const validPayments = history.filter(
+      (p) =>
+        p.status === 'PAID' ||
+        p.status === 'SUCCESS' ||
+        (!p.status && Number(p.amount || 0) > 0) ||
+        (p.status !== 'FAILED' &&
+          p.status !== 'REFUNDED' &&
+          p.status !== 'CANCELLED' &&
+          (Boolean(p.proofDocumentUrl) || Boolean(p.collectedByName)))
+    )
+    if (validPayments.length > 0) {
+      return validPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+    }
+
+    // Nếu paymentHistory trống, tính dựa trên các trường paid đã lưu trong prerequisites / booking:
+    const depPaid = Number(currentPrerequisites?.depositPaid || currentBooking?.depositPaid || 0)
+    const rentPaid = Number(currentPrerequisites?.totalRentPaid || currentPrerequisites?.firstMonthRentPaid || 0)
+    if (depPaid + rentPaid > 0) {
+      return depPaid + rentPaid
+    }
+
+    if (
+      currentBooking?.paymentStatus === 'PAID' ||
+      currentBooking?.status === 'CONFIRMED' ||
+      currentBooking?.status === 'ACTIVE'
+    ) {
+      if (Number(currentBooking.totalPrice || 0) > 0) return Number(currentBooking.totalPrice)
+      if (Number(currentBooking.initialPaymentAmount || 0) > 0) return Number(currentBooking.initialPaymentAmount)
+    }
+
+    const fallbackSum =
+      Number(currentPrerequisites?.depositPaid || currentBooking?.depositPaid || displayDepositDue || 0) +
+      Number(currentPrerequisites?.firstMonthRentPaid || displayFirstMonthRentDue || 0)
+    return fallbackSum
+  }, [currentPrerequisites, currentBooking, displayDepositDue, displayFirstMonthRentDue])
+
   // Đồng bộ hai chiều từ CSDL backend vào workbench session khi nạp dữ liệu đơn
   useEffect(() => {
     if (!selectedBookingId) return
@@ -2509,8 +2548,10 @@ export const HandoverCheckInWorkbench: React.FC<HandoverCheckInWorkbenchProps> =
                     </span>
                   </div>
                   <div className="pt-1 border-t border-emerald-200 flex items-center justify-between font-bold text-emerald-950">
-                    <span>Còn thiếu:</span>
-                    <span className="font-mono">0đ</span>
+                    <span>Tổng số tiền đã chi trả:</span>
+                    <span className="font-mono text-emerald-700">
+                      {totalAmountPaidFromDb.toLocaleString('vi-VN')}đ
+                    </span>
                   </div>
                 </div>
               </div>
