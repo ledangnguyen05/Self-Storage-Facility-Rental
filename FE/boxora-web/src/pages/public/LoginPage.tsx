@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import {
   ShieldCheck,
@@ -73,23 +73,61 @@ export const LoginPage: React.FC = () => {
   const [forgotSuccess, setForgotSuccess] = useState(false)
   const [forgotError, setForgotError] = useState<string | null>(null)
 
-  // If user is already authenticated, redirect them directly to their appropriate portal
+  // If user is already authenticated, redirect them directly to their appropriate portal once
+  const hasRedirectedRef = useRef(false)
+
   useEffect(() => {
-    if (isAuthenticated && user && !isLoading) {
+    if (isAuthenticated && user && !isLoading && !hasRedirectedRef.current) {
       const activeRole = role || extractRoleName(user)
+      const targetPortal = resolvePortalPath(activeRole)
+
       if (redirect) {
-        const decoded = decodeURIComponent(redirect)
-        const isCustomerPath = decoded.startsWith('/portal/customer')
-        if (isCustomerPath && activeRole !== 'CUSTOMER') {
-          navigate(resolvePortalPath(activeRole), { replace: true })
-          return
-        }
-        if (!isCustomerPath) {
-          navigate(decoded, { replace: true })
-          return
+        try {
+          const decoded = decodeURIComponent(redirect).trim()
+          // Guard against infinite redirect loops back to login/register or self
+          const isAuthLoop =
+            !decoded ||
+            decoded === '/login' ||
+            decoded.startsWith('/login?') ||
+            decoded.startsWith('/login/') ||
+            decoded === '/register' ||
+            decoded.startsWith('/register?') ||
+            decoded.startsWith('/register/')
+
+          if (!isAuthLoop) {
+            const isCustomerPath = decoded.startsWith('/portal/customer')
+            if (isCustomerPath && activeRole !== 'CUSTOMER') {
+              hasRedirectedRef.current = true
+              navigate(targetPortal, { replace: true })
+              return
+            }
+
+            const isStaffPath = decoded.startsWith('/portal/staff')
+            const isManagerPath = decoded.startsWith('/portal/facility-manager')
+            const isBusinessPath = decoded.startsWith('/portal/business-manager')
+            const isAdminPath = decoded.startsWith('/portal/admin')
+
+            const isAllowed =
+              (isCustomerPath && activeRole === 'CUSTOMER') ||
+              (isStaffPath && ['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN'].includes(activeRole)) ||
+              (isManagerPath && ['STAFF', 'FACILITY_MANAGER', 'BUSINESS_MANAGER', 'ADMIN'].includes(activeRole)) ||
+              (isBusinessPath && ['BUSINESS_MANAGER', 'ADMIN'].includes(activeRole)) ||
+              (isAdminPath && ['ADMIN', 'BUSINESS_MANAGER'].includes(activeRole)) ||
+              (!decoded.startsWith('/portal/'))
+
+            if (isAllowed) {
+              hasRedirectedRef.current = true
+              navigate(decoded, { replace: true })
+              return
+            }
+          }
+        } catch {
+          // ignore parsing error
         }
       }
-      navigate(resolvePortalPath(activeRole), { replace: true })
+
+      hasRedirectedRef.current = true
+      navigate(targetPortal, { replace: true })
     }
   }, [isAuthenticated, user, role, isLoading, redirect, navigate])
 
@@ -122,7 +160,7 @@ export const LoginPage: React.FC = () => {
     }
   }
 
-  const handleGoogleSuccess = async (idToken: string) => {
+  const handleGoogleSuccess = useCallback(async (idToken: string) => {
     setError(null)
     setSocialNotice('Đang xác thực tài khoản Google với hệ thống Boxora...')
     try {
@@ -205,11 +243,11 @@ export const LoginPage: React.FC = () => {
         setError('Đăng nhập bằng tài khoản Google thất bại. Vui lòng thử lại.')
       }
     }
-  }
+  }, [loginWithGoogle, navigate, redirect])
 
-  const handleGoogleError = (errMsg: string) => {
+  const handleGoogleError = useCallback((errMsg: string) => {
     setError(errMsg)
-  }
+  }, [])
 
   // Submit login
   const handleLoginSubmit = async (e: React.FormEvent) => {

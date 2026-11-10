@@ -207,6 +207,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [])
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setToken(null)
+      setUser(null)
+      setIsLoading(false)
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'boxora_access_token' && !e.newValue) {
+        handleAuthExpired()
+      }
+    }
+
+    window.addEventListener('boxora_auth_expired', handleAuthExpired)
+    window.addEventListener('storage', handleStorageChange)
+    return () => {
+      window.removeEventListener('boxora_auth_expired', handleAuthExpired)
+      window.removeEventListener('storage', handleStorageChange)
+    }
+  }, [])
+
   function parseJwtRole(jwtToken: string): RoleType | null {
     try {
       const base64Url = jwtToken.split('.')[1]

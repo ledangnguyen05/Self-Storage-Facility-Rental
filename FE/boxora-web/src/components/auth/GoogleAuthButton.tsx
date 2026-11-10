@@ -25,6 +25,11 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
 }) => {
   const googleBtnContainerRef = useRef<HTMLDivElement>(null)
   const [isGsiLoaded, setIsGsiLoaded] = useState(false)
+  const onSuccessRef = useRef(onSuccess)
+  onSuccessRef.current = onSuccess
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+  const hasInitializedRef = useRef(false)
 
   const defaultText = text || (mode === 'signup' ? 'Đăng ký nhanh bằng tài khoản Google' : 'Đăng nhập nhanh bằng tài khoản Google')
 
@@ -32,41 +37,45 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
     let checkInterval: any = null
 
     const initGsi = () => {
-      if (window.google?.accounts?.id && googleBtnContainerRef.current) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: GOOGLE_CLIENT_ID,
-            callback: (response: any) => {
-              if (response?.credential) {
-                onSuccess(response.credential)
-              } else {
-                onError('Không nhận được mã xác thực tài khoản từ Google.')
-              }
-            },
-            auto_select: false,
-            cancel_on_tap_outside: true
-          })
+      if (!window.google?.accounts?.id || !googleBtnContainerRef.current) return
+      if (hasInitializedRef.current) return
 
-          googleBtnContainerRef.current.innerHTML = ''
-          const parentWidth = googleBtnContainerRef.current.parentElement?.offsetWidth || 380
-          const btnWidth = Math.min(Math.max(parentWidth, 240), 400)
+      try {
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response: any) => {
+            if (response?.credential) {
+              onSuccessRef.current(response.credential)
+            } else {
+              onErrorRef.current('Không nhận được mã xác thực tài khoản từ Google.')
+            }
+          },
+          auto_select: false,
+          cancel_on_tap_outside: true
+        })
 
-          window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
-            type: 'standard',
-            theme: 'outline',
-            size: 'large',
-            text: mode === 'signup' ? 'signup_with' : 'signin_with',
-            shape: 'rectangular',
-            logo_alignment: 'left',
-            width: btnWidth,
-            locale: 'vi'
-          })
+        const parentWidth = googleBtnContainerRef.current.parentElement?.offsetWidth || 380
+        const btnWidth = Math.min(Math.max(parentWidth, 240), 400)
 
-          setIsGsiLoaded(true)
-          if (checkInterval) clearInterval(checkInterval)
-        } catch (err) {
-          console.error('Error initializing Google GIS:', err)
+        window.google.accounts.id.renderButton(googleBtnContainerRef.current, {
+          type: 'standard',
+          theme: 'outline',
+          size: 'large',
+          text: mode === 'signup' ? 'signup_with' : 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: btnWidth,
+          locale: 'vi'
+        })
+
+        hasInitializedRef.current = true
+        setIsGsiLoaded(true)
+        if (checkInterval) {
+          clearInterval(checkInterval)
+          checkInterval = null
         }
+      } catch (err) {
+        console.error('Error initializing Google GIS:', err)
       }
     }
 
@@ -76,14 +85,18 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
       checkInterval = setInterval(() => {
         if (window.google?.accounts?.id) {
           initGsi()
+          if (checkInterval) {
+            clearInterval(checkInterval)
+            checkInterval = null
+          }
         }
-      }, 200)
+      }, 300)
     }
 
     return () => {
       if (checkInterval) clearInterval(checkInterval)
     }
-  }, [onSuccess, onError, mode])
+  }, [mode])
 
   const handleClickFallback = () => {
     if (window.google?.accounts?.id) {
@@ -103,7 +116,7 @@ export const GoogleAuthButton: React.FC<GoogleAuthButtonProps> = ({
       <div
         ref={googleBtnContainerRef}
         className={`w-full flex justify-center items-center [&>div]:!mx-auto [&>div]:!w-full [&_iframe]:!mx-auto ${
-          !isGsiLoaded ? 'hidden' : ''
+          !isGsiLoaded ? 'h-0 overflow-hidden opacity-0 pointer-events-none' : ''
         }`}
       />
 

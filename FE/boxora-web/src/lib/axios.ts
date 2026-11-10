@@ -869,6 +869,9 @@ api.interceptors.response.use(
           localStorage.removeItem('boxora_access_token')
           localStorage.removeItem('boxora_refresh_token')
           localStorage.removeItem('boxora_user')
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('boxora_auth_expired'))
+          }
         }
         return Promise.reject(refreshErr)
       } finally {

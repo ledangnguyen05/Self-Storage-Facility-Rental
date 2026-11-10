@@ -83,22 +83,30 @@ function MainContent() {
   const { isTabLoading } = useTabDataLoading()
   const prevPathRef = useRef<string>(`${location.pathname}${location.search}`)
   const isPortalRoute = location.pathname.startsWith('/portal')
+  const isAuthRoute =
+    location.pathname === '/login' ||
+    location.pathname === '/register' ||
+    location.pathname === '/reset-password'
 
   useEffect(() => {
-    triggerTabDataLoading(400)
+    if (!isAuthRoute) {
+      triggerTabDataLoading(400)
+    }
   }, [])
 
   useEffect(() => {
     const key = `${location.pathname}${location.search}`
     if (prevPathRef.current !== key) {
       prevPathRef.current = key
-      triggerTabDataLoading(340)
+      if (!isAuthRoute && !key.startsWith('/login') && !key.startsWith('/register')) {
+        triggerTabDataLoading(340)
+      }
     }
-  }, [location.pathname, location.search])
+  }, [location.pathname, location.search, isAuthRoute])
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--background)] font-sans antialiased text-[var(--on-surface)]">
-      {!isPortalRoute && isTabLoading && (
+      {!isPortalRoute && !isAuthRoute && isTabLoading && (
         <div className="fixed inset-0 z-[100] bg-white/95 dark:bg-slate-950/95 backdrop-blur-xs flex items-center justify-center">
           <BoxoraMinimalLoader />
         </div>
