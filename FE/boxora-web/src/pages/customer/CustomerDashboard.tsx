@@ -2766,8 +2766,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
     const extractUnitFromText = (text?: string): string | undefined => {
       if (!text) return undefined
       for (const code of knownUnitCodes) {
-        if (code && text.toUpperCase().includes(code.toUpperCase())) {
-          return code
+        if (!code) continue
+        if (code.length <= 2) {
+          const regex = new RegExp(`(?:#|kho\\s+|\\b)${code}\\b`, 'i')
+          if (regex.test(text)) return code
+        } else {
+          if (text.toUpperCase().includes(code.toUpperCase())) {
+            return code
+          }
         }
       }
       const match = text.match(/#([A-Z0-9]{1,5}-[A-Z0-9-]{2,10})/i)
@@ -3527,13 +3533,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
       item.actionType === 'REFUND_APPROVED'
     if (isRefundRequest) return false
 
+    // Phải là hành động hoặc từ khóa rõ ràng liên quan đến thủ tục trả kho & thanh lý / quyết toán hoàn cọc
     const isReturnKeyword =
       text.includes('trả kho') ||
-      text.includes('quyết toán') ||
-      text.includes('nghiệm thu') ||
-      text.includes('khiếu nại') ||
-      (text.includes('hoàn cọc') && (text.includes('trả kho') || text.includes('nghiệm thu') || text.includes('quyết toán'))) ||
-      text.includes('khấu trừ')
+      text.includes('nghiệm thu trả kho') ||
+      text.includes('quyết toán trả kho') ||
+      text.includes('thanh lý hợp đồng') ||
+      (text.includes('hoàn cọc') && text.includes('trả kho')) ||
+      (text.includes('quyết toán') && (text.includes('kho') || text.includes('cọc')))
     return Boolean(isReturnAction || ((item.category === 'SUPPORT' || item.category === 'NOTIFICATION') && isReturnKeyword))
   }, [])
 
@@ -4667,107 +4674,71 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                     }
                   } catch (e) {}
 
-                  // 1. Kiểm tra trong danh sách support tickets
+                  // 1. Kiểm tra trong danh sách support tickets ĐANG MỞ / ĐANG XỬ LÝ trả kho
                   const returnTicket = customerTickets.find(t => {
-                    const isUnitMatch = (t.unitCode && c.unitCode && t.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
-                      (t.bookingId && c.bookingId && t.bookingId === c.bookingId) ||
-                      (t.title && c.unitCode && t.title.toUpperCase().includes(c.unitCode.toUpperCase())) ||
-                      (t.description && c.unitCode && t.description.toUpperCase().includes(c.unitCode.toUpperCase()))
+                    const isUnitMatch = (t.bookingId && c.bookingId && t.bookingId === c.bookingId) ||
+                      (t.unitCode && c.unitCode && t.unitCode.toUpperCase() === c.unitCode.toUpperCase())
+                    if (!isUnitMatch) return false
+
+                    // Phải đúng danh mục trả kho / hoàn cọc
                     const isReturnCategory = t.category === 'RETURN_REFUND' || t.category === 'RETURN_EXPIRED' ||
-                      t.title?.toLowerCase().includes('trả kho') ||
-                      t.description?.toLowerCase().includes('trả kho') ||
-                      t.title?.toLowerCase().includes('hoàn cọc') ||
-                      t.description?.toLowerCase().includes('hoàn cọc')
-                    const isNotCancelled = t.status !== 'CANCELLED' && t.status !== 'REJECTED' && t.status !== 'CLOSED'
-                    return isUnitMatch && isReturnCategory && isNotCancelled
+                      (t.title && t.title.toLowerCase().includes('yêu cầu trả kho')) ||
+                      (t.description && t.description.toLowerCase().includes('yêu cầu trả kho'))
+                    if (!isReturnCategory) return false
+
+                    // CHỈ coi là đang trả kho khi ticket chưa hoàn thành / chưa đóng
+                    const isActive = t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'REOPENED'
+                    return isActive
                   })
                   if (returnTicket) {
-                    const isCompleted = returnTicket.status === 'RESOLVED'
                     return {
                       id: returnTicket.id,
                       ticketId: returnTicket.id,
                       title: returnTicket.title || `Yêu cầu trả kho #${c.unitCode}`,
                       description: returnTicket.description || 'Đang tiến hành thủ tục trả kho.',
-                      status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
+                      status: 'IN_PROGRESS',
                       isSettlement: returnTicket.title?.toLowerCase().includes('quyết toán') || returnTicket.description?.toLowerCase().includes('quyết toán')
                     }
                   }
 
-                  // 2. Kiểm tra trong returnActivityLogs (thông báo nghiệm thu, quyết toán, hoàn cọc)
-                  const returnLog = returnActivityLogs.find(log => {
-                    const isUnitMatch = (log.unitCode && c.unitCode && log.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
-                      (log.meta?.bookingId && c.bookingId && log.meta.bookingId === c.bookingId) ||
-                      (log.title && c.unitCode && log.title.toUpperCase().includes(c.unitCode.toUpperCase())) ||
-                      (log.description && c.unitCode && log.description.toUpperCase().includes(c.unitCode.toUpperCase()))
-                    return isUnitMatch
-                  })
-                  if (returnLog) {
-                    const isCompleted = returnLog.title?.toLowerCase().includes('hoàn tất') || returnLog.description?.toLowerCase().includes('đã hoàn tất')
-                    return {
-                      id: returnLog.id,
-                      title: returnLog.title || `Hồ sơ nghiệm thu & trả kho #${c.unitCode}`,
-                      description: returnLog.description || 'Đang tiến hành quyết toán và xử lý hoàn cọc.',
-                      status: isCompleted ? 'COMPLETED' : 'IN_PROGRESS',
-                      isSettlement: true
-                    }
-                  }
-
-                  // 3. Kiểm tra localStorage (boxora_checkout_return_cases_v4 hoặc boxora_return_requests)
-                  try {
-                    const rawV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
-                    if (rawV4) {
-                      const list = JSON.parse(rawV4)
-                      if (Array.isArray(list)) {
-                        const item = list.find((it: any) =>
-                          (it.unitCode && c.unitCode && it.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
-                          (it.bookingId && c.bookingId && it.bookingId === c.bookingId)
-                        )
-                        if (item) {
-                          return {
-                            id: item.id,
-                            title: 'Hồ sơ trả kho đã tiếp nhận',
-                            description: item.reason || 'Đang tiến hành thủ tục nghiệm thu & trả kho.',
-                            status: item.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
-                            isSettlement: true
-                          }
-                        }
-                      }
-                    }
-                    const rawOld = localStorage.getItem('boxora_return_requests')
-                    if (rawOld) {
-                      const listOld = JSON.parse(rawOld)
-                      if (Array.isArray(listOld)) {
-                        const itemOld = listOld.find((it: any) =>
-                          (it.unitCode && c.unitCode && it.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
-                          (it.bookingId && c.bookingId && it.bookingId === c.bookingId)
-                        )
-                        if (itemOld) {
-                          return {
-                            id: itemOld.id,
-                            title: 'Hồ sơ trả kho đã tiếp nhận',
-                            description: itemOld.reason || 'Đang tiến hành thủ tục nghiệm thu & trả kho.',
-                            status: itemOld.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
-                            isSettlement: true
-                          }
-                        }
-                      }
-                    }
-                  } catch (e) {}
-
-                  // 4. Kiểm tra customerBookings trạng thái trả kho
+                  // 2. Kiểm tra customerBookings trạng thái trả kho thực tế từ backend
                   const b = customerBookings.find(bk =>
                     (bk.id === c.bookingId || (bk.unitCode && c.unitCode && bk.unitCode.toUpperCase() === c.unitCode.toUpperCase())) &&
-                    (bk.status === 'CHECKOUT_REQUESTED' || bk.status === 'INSPECTED' || (bk as any).returnStatus)
+                    (bk.status === 'CHECKOUT_REQUESTED' || bk.status === 'INSPECTED')
                   )
                   if (b) {
                     return {
                       id: b.id,
                       title: 'Yêu cầu trả kho theo đơn đặt chỗ',
                       description: (b as any).cancellationReason || 'Kho đang trong tiến trình bàn giao và trả kho.',
-                      status: b.status === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+                      status: 'IN_PROGRESS',
                       isSettlement: b.status === 'INSPECTED'
                     }
                   }
+
+                  // 3. Kiểm tra localStorage (chỉ đơn active chưa completed/closed và khớp đúng unitCode/bookingId)
+                  try {
+                    const rawV4 = localStorage.getItem('boxora_checkout_return_cases_v4')
+                    if (rawV4) {
+                      const list = JSON.parse(rawV4)
+                      if (Array.isArray(list)) {
+                        const item = list.find((it: any) =>
+                          ((it.unitCode && c.unitCode && it.unitCode.toUpperCase() === c.unitCode.toUpperCase()) ||
+                           (it.bookingId && c.bookingId && it.bookingId === c.bookingId)) &&
+                          it.status !== 'COMPLETED' && it.status !== 'CANCELLED' && it.status !== 'REJECTED'
+                        )
+                        if (item) {
+                          return {
+                            id: item.id,
+                            title: 'Hồ sơ trả kho đã tiếp nhận',
+                            description: item.reason || 'Đang tiến hành thủ tục nghiệm thu & trả kho.',
+                            status: 'IN_PROGRESS',
+                            isSettlement: true
+                          }
+                        }
+                      }
+                    }
+                  } catch (e) {}
 
                   return null
                 })()
@@ -4857,7 +4828,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 </span>
                               )}
                             </div>
-                            <span className="text-xs text-slate-500">{c.facilityName} • Hợp đồng #{c.contractCode}</span>
+                            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-600 mt-1">
+                              <span className="inline-flex items-center gap-1.5 font-bold text-slate-800 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg border border-slate-200/90 shadow-2xs transition-colors">
+                                <span className="material-symbols-outlined text-[15px] text-blue-600">storefront</span>
+                                <span>Cơ sở: <span className="text-blue-900 font-extrabold">{c.facilityName || matchedBooking?.facilityName || 'Hệ thống Boxora'}</span></span>
+                              </span>
+                              <span className="text-slate-300">•</span>
+                              <span className="font-mono text-slate-500 font-medium">Hợp đồng #{c.contractCode}</span>
+                            </div>
                           </div>
 
                         </div>
@@ -4872,6 +4850,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
 
                       {/* Thời Gian Bắt Đầu & Kết Thúc Thuê Kho */}
                       <div className="grid grid-cols-2 gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+                        <div className="col-span-2 flex items-center justify-between pb-2 border-b border-slate-200/60 text-xs">
+                          <span className="text-slate-500 font-medium flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[16px] text-blue-600">location_on</span>
+                            <span>Cơ sở lưu trữ:</span>
+                          </span>
+                          <span className="font-bold text-slate-900">
+                            {c.facilityName || matchedBooking?.facilityName || 'Cơ sở Boxora'}
+                          </span>
+                        </div>
                         <div className="flex flex-col">
                           <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1">
                             <span className="material-symbols-outlined text-[15px] text-blue-600">play_circle</span>
