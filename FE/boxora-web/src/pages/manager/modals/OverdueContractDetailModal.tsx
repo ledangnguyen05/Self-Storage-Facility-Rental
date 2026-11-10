@@ -2192,53 +2192,6 @@ export const OverdueContractDetailModal: React.FC<OverdueContractDetailModalProp
                 />
               </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Ảnh chụp hiện trường kiểm kê / niêm phong:</label>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-xs cursor-pointer transition">
-                    <span className="material-symbols-outlined text-[16px]">add_photo_alternate</span>
-                    <span>{isUploadingSealingPhoto ? 'Đang tải lên...' : (sealingPhotoUrl ? 'Đổi ảnh hiện trường' : 'Tải ảnh lên')}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      disabled={isUploadingSealingPhoto}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        setIsUploadingSealingPhoto(true)
-                        try {
-                          const url = await supportTicketService.uploadAttachment(file)
-                          if (url) {
-                            setSealingPhotoUrl(url)
-                            toast.success('Đã tải ảnh hiện trường kiểm kê thành công!')
-                          }
-                        } catch (err: any) {
-                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh hiện trường.')
-                        } finally {
-                          setIsUploadingSealingPhoto(false)
-                          e.target.value = ''
-                        }
-                      }}
-                    />
-                  </label>
-                  {sealingPhotoUrl && (
-                    <div className="flex items-center gap-2 p-1 bg-slate-50 border border-slate-200 rounded-lg">
-                      <img src={sealingPhotoUrl} alt="Ảnh hiện trường" className="w-9 h-9 object-cover rounded border border-slate-200" />
-                      <a href={sealingPhotoUrl} target="_blank" rel="noreferrer" className="text-[11px] font-mono text-indigo-600 hover:underline truncate max-w-[180px]">
-                        {sealingPhotoUrl}
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setSealingPhotoUrl('')}
-                        className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100">
