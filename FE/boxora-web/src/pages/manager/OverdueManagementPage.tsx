@@ -555,12 +555,6 @@ export const OverdueManagementPage: React.FC = () => {
               <span>{t('Phí phạt tích lũy:', 'Accrued late fees:')}</span>
               <span className="font-bold text-rose-700">{formatVND(summary?.totalLateFees)}</span>
             </div>
-            {summary && summary.unverifiedPaymentsAmount > 0 && (
-              <div className="flex justify-between text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
-                <span>{t('Chờ đối soát', 'Pending reconciliation')} ({summary.unverifiedPaymentsCount} {t('đơn', 'orders')}):</span>
-                <span className="font-bold">{formatVND(summary.unverifiedPaymentsAmount)}</span>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1371,56 +1365,6 @@ export const OverdueManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Đính kèm chứng từ biên lai chuyển khoản / thu tiền trên Cloudflare R2 */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
-                <div className="font-bold text-slate-700 flex items-center justify-between">
-                  <span>Ảnh biên lai / chứng từ thanh toán (tùy chọn):</span>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold text-xs cursor-pointer transition">
-                    <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                    <span>{isUploadingSettlementProof ? 'Đang tải lên...' : (settlementProofUrl ? 'Đổi ảnh biên lai' : 'Tải ảnh chứng từ lên')}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      disabled={isUploadingSettlementProof}
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        setIsUploadingSettlementProof(true)
-                        try {
-                          const url = await supportTicketService.uploadAttachment(file)
-                          if (url) {
-                            setSettlementProofUrl(url)
-                            toast.success('Đã tải ảnh biên lai tất toán thành công!')
-                          }
-                        } catch (err: any) {
-                          toast.error(err?.response?.data?.message || err?.message || 'Không thể tải ảnh chứng từ.')
-                        } finally {
-                          setIsUploadingSettlementProof(false)
-                          e.target.value = ''
-                        }
-                      }}
-                    />
-                  </label>
-                  {settlementProofUrl && (
-                    <div className="flex items-center gap-2 p-1 bg-white border border-slate-200 rounded-lg">
-                      <img src={settlementProofUrl} alt="Chứng từ" className="w-8 h-8 object-cover rounded border border-slate-200" />
-                      <a href={settlementProofUrl} target="_blank" rel="noreferrer" className="text-[11px] font-mono text-blue-600 hover:underline truncate max-w-[180px]">
-                        {settlementProofUrl}
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => setSettlementProofUrl('')}
-                        className="text-slate-400 hover:text-rose-600 text-xs px-1 cursor-pointer"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
 
               {/* Hướng dẫn quy trình hệ thống */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-700 leading-relaxed">
