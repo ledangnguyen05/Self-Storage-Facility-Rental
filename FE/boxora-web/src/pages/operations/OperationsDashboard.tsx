@@ -367,6 +367,13 @@ export const OperationsDashboard: React.FC = () => {
       const refund = item.refundAmount || 0
       const rentalRefund = item.rentalRefundAmount || 0
 
+      const overdueDebt = item.overdueDebt ?? 0
+      const overdueCount = item.overdueCount ?? 0
+      const blockedOrSealedCount = item.blockedOrSealedCount ?? 0
+      const depositsHeld = item.depositsHeld ?? 0
+      const activeContractsCount = item.activeContractsCount != null ? item.activeContractsCount : null
+      const pendingRefundAmount = item.pendingRefundAmount ?? 0
+
       const totalIn = item.totalRevenue || (rental + renewal + extra + deposit + booking + returnComp)
       const totalOut = refund
       const netCashFlow = item.netCashFlow != null ? item.netCashFlow : (totalIn - totalOut)
@@ -397,6 +404,13 @@ export const OperationsDashboard: React.FC = () => {
         netCashFlow,
         netRevenue,
         paymentCount: item.paymentCount || 0,
+        // Chỉ số tài chính chuyên biệt từng kỳ
+        overdueDebt,
+        overdueCount,
+        blockedOrSealedCount,
+        depositsHeld,
+        activeContractsCount,
+        pendingRefundAmount,
       }
     })
   }, [revenueData, language])
@@ -407,6 +421,26 @@ export const OperationsDashboard: React.FC = () => {
     }
     return monthlyRevenueData.filter(m => m.monthKey === selectedChartMonth)
   }, [monthlyRevenueData, selectedChartMonth])
+
+  // Active month object if a single month tab is chosen
+  const activeSelectedMonth = useMemo(() => {
+    if (selectedChartMonth === 'ALL') return null
+    return monthlyRevenueData.find(m => m.monthKey === selectedChartMonth) || null
+  }, [monthlyRevenueData, selectedChartMonth])
+
+  // Responsive KPIs based on selected month tab or overall period
+  const displayNetRevenue = activeSelectedMonth ? activeSelectedMonth.netRevenue : netRevenue
+  const displayCashIn = activeSelectedMonth ? activeSelectedMonth.totalIn : totalCashIn
+  const displayRentalRevenue = activeSelectedMonth ? (activeSelectedMonth.rental + activeSelectedMonth.renewal) : rentalRevenue
+  const displayOverdueDebt = activeSelectedMonth ? activeSelectedMonth.overdueDebt : totalOverdueDebt
+  const displayDepositsHeld = activeSelectedMonth ? activeSelectedMonth.depositsHeld : depositsHeld
+  const displayReturnCompensation = activeSelectedMonth ? activeSelectedMonth.returnComp : returnCompensation
+  const displayRefundedAmount = activeSelectedMonth ? activeSelectedMonth.refund : refundedAmount
+  const displayPendingRefundAmount = activeSelectedMonth ? activeSelectedMonth.pendingRefundAmount : pendingRefundAmount
+  const displayPaymentCount = activeSelectedMonth ? activeSelectedMonth.paymentCount : paymentCount
+  const displayTotalReturnSettlement = displayReturnCompensation + displayRefundedAmount
+  const displayActiveContractsCount = activeSelectedMonth ? activeSelectedMonth.activeContractsCount : activeContractsCount
+  const displayBlockedOrSealedCount = activeSelectedMonth ? activeSelectedMonth.blockedOrSealedCount : ((revenueData?.debtBreakdown?.accessBlockedCount ?? 0) + (revenueData?.debtBreakdown?.eligibleForSealingCount ?? 0))
 
   // Chart 2: Cash-in Breakdown (Cơ cấu tiền thực thu)
   const cashInBreakdown = useMemo(() => {
@@ -1070,7 +1104,7 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-emerald-700 tracking-tight whitespace-nowrap">
-                {formatVnd(netRevenue)}
+                {formatVnd(displayNetRevenue)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
                 {tr('Đã trừ hoàn tiền hợp lệ; không tính cọc & giữ chỗ', 'Deducted valid refunds; excludes deposits')}
@@ -1079,7 +1113,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-emerald-700 font-semibold">
               <span>{tr('Ghi nhận kỳ:', 'Period status:')}</span>
               <span className="font-mono bg-emerald-50 px-2 py-0.5 rounded text-emerald-800 border border-emerald-200">
-                {summary?.rentalRevenue ? `${Math.round(((summary.rentalRevenue) / Math.max(netRevenue, 1)) * 100)}% ${tr('thuê kho', 'unit rental')}` : '100%'}
+                {displayRentalRevenue ? `${Math.round(((displayRentalRevenue) / Math.max(displayNetRevenue, 1)) * 100)}% ${tr('thuê kho', 'unit rental')}` : '100%'}
               </span>
             </div>
           </div>
@@ -1094,13 +1128,13 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-blue-700 tracking-tight whitespace-nowrap">
-                {formatVnd(totalCashIn)}
+                {formatVnd(displayCashIn)}
               </div>
             </div>
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-medium">
               <span>{tr('Số giao dịch:', 'Payments:')}</span>
               <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded">
-                {paymentCount.toLocaleString(currencyLocale)} {tr('GD', 'txns')}
+                {displayPaymentCount.toLocaleString(currencyLocale)} {tr('GD', 'txns')}
               </span>
             </div>
           </div>
@@ -1115,7 +1149,7 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-amber-600 tracking-tight whitespace-nowrap">
-                {formatVnd(rentalRevenue)}
+                {formatVnd(displayRentalRevenue)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
                 {tr('Doanh thu cho thuê kho & tái ký trong kỳ', 'Storage rental fees & renewed contract cycles')}
@@ -1124,7 +1158,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600 font-medium">
               <span>{tr('Tái ký:', 'Renewals:')}</span>
               <span className="font-mono font-bold text-emerald-600">
-                {formatVnd(summary?.renewalFeeRevenue ?? 0)}
+                {formatVnd(activeSelectedMonth ? activeSelectedMonth.renewal : (summary?.renewalFeeRevenue ?? 0))}
               </span>
             </div>
           </div>
@@ -1139,7 +1173,7 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-rose-600 tracking-tight whitespace-nowrap">
-                {formatVnd(totalOverdueDebt)}
+                {formatVnd(displayOverdueDebt)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
                 {tr('Nợ cước thuê kho quá hạn chưa thu hồi', 'Overdue storage rental fees pending collection')}
@@ -1148,7 +1182,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-rose-700 font-semibold">
               <span>{tr('Khóa kho / Niêm phong:', 'Blocked / Sealing:')}</span>
               <span className="font-mono bg-rose-50 px-2 py-0.5 rounded text-rose-800 border border-rose-200">
-                {debtBreakdown.accessBlockedCount + debtBreakdown.eligibleForSealingCount} {tr('kho', 'units')}
+                {displayBlockedOrSealedCount} {tr('kho', 'units')}
               </span>
             </div>
           </div>
@@ -1163,7 +1197,7 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-cyan-700 tracking-tight whitespace-nowrap">
-                {formatVnd(depositsHeld)}
+                {formatVnd(displayDepositsHeld)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
                 {tr('Nghĩa vụ hoàn trả / quyết toán khi trả kho', 'Payable obligation awaiting checkout settlement')}
@@ -1172,7 +1206,7 @@ export const OperationsDashboard: React.FC = () => {
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-cyan-800 font-semibold">
               <span>{tr('Hợp đồng ACTIVE:', 'Active contracts:')}</span>
               <span className="font-mono bg-cyan-50 px-2 py-0.5 rounded text-cyan-800 border border-cyan-200">
-                {activeContractsCount !== null ? `${activeContractsCount} ${tr('HĐ', 'contracts')}` : '—'}
+                {displayActiveContractsCount !== null ? `${displayActiveContractsCount} ${tr('HĐ', 'contracts')}` : '—'}
               </span>
             </div>
           </div>
@@ -1187,12 +1221,12 @@ export const OperationsDashboard: React.FC = () => {
             </div>
             <div className="my-3">
               <div className="text-xl xl:text-2xl font-black font-mono text-purple-700 tracking-tight whitespace-nowrap">
-                {formatVnd(totalReturnSettlement)}
+                {formatVnd(displayTotalReturnSettlement)}
               </div>
               <p className="text-[11px] text-slate-500 mt-1 leading-snug">
-                {returnCompensation > 0 ? (
+                {displayReturnCompensation > 0 ? (
                   <span className="text-purple-700 font-semibold">
-                    {tr(`Bồi thường trả kho đã thu: +${formatVnd(returnCompensation)}`, `Collected return compensation: +${formatVnd(returnCompensation)}`)}
+                    {tr(`Bồi thường trả kho đã thu: +${formatVnd(displayReturnCompensation)}`, `Collected return compensation: +${formatVnd(displayReturnCompensation)}`)}
                   </span>
                 ) : (
                   tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')
@@ -1200,9 +1234,9 @@ export const OperationsDashboard: React.FC = () => {
               </p>
             </div>
             <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-purple-800 font-semibold">
-              <span>{returnCompensation > 0 ? tr('Đã hoàn cọc / Chờ duyệt:', 'Refunded / Pending:') : tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
+              <span>{displayReturnCompensation > 0 ? tr('Đã hoàn cọc / Chờ duyệt:', 'Refunded / Pending:') : tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
               <span className="font-mono bg-purple-50 px-1.5 py-0.5 rounded text-purple-800 border border-purple-200">
-                {returnCompensation > 0 ? `${formatVnd(refundedAmount)} • ${formatVnd(pendingRefundAmount)}` : formatVnd(pendingRefundAmount)}
+                {displayReturnCompensation > 0 ? `${formatVnd(displayRefundedAmount)} • ${formatVnd(displayPendingRefundAmount)}` : formatVnd(displayPendingRefundAmount)}
               </span>
             </div>
           </div>
@@ -1349,7 +1383,7 @@ export const OperationsDashboard: React.FC = () => {
                         id: 'overdueDebt',
                         label: tr('4. Công nợ phải thu', '4. Overdue Debt'),
                         shortLabel: tr('Công nợ', 'Debt'),
-                        amount: totalOverdueDebt,
+                        amount: m.overdueDebt ?? 0,
                         icon: 'gavel',
                         color: '#e11d48',
                         bgClass: 'bg-rose-600',
@@ -1360,7 +1394,7 @@ export const OperationsDashboard: React.FC = () => {
                         id: 'depositHeld',
                         label: tr('5. Tiền cọc đang giữ', '5. Deposits Held'),
                         shortLabel: tr('Cọc giữ', 'Deposit'),
-                        amount: depositsHeld,
+                        amount: m.depositsHeld ?? 0,
                         icon: 'lock',
                         color: '#0891b2',
                         bgClass: 'bg-cyan-600',
@@ -1370,8 +1404,8 @@ export const OperationsDashboard: React.FC = () => {
                       {
                         id: 'refund',
                         label: tr('6. Hoàn tiền & Bồi thường trả kho', '6. Refunds & Return Compensation'),
-                        shortLabel: ((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) > 0 ? tr('Bồi thường', 'Comp.') : tr('Hoàn tiền', 'Refund'),
-                        amount: ((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) + (m.refund > 0 ? m.refund : refundedAmount),
+                        shortLabel: (m.returnComp || 0) > 0 ? tr('Bồi thường', 'Comp.') : tr('Hoàn tiền', 'Refund'),
+                        amount: (m.returnComp || 0) + (m.refund || 0),
                         icon: 'assignment_return',
                         color: '#7e22ce',
                         bgClass: 'bg-purple-600',
@@ -1514,13 +1548,13 @@ export const OperationsDashboard: React.FC = () => {
                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('4. Công nợ phải thu', '4. Overdue Debt')}</span>
                                 <span className="material-symbols-outlined text-[16px] text-rose-600">gavel</span>
                               </div>
-                              <span className="font-mono font-bold text-rose-600 text-sm block">{formatVnd(totalOverdueDebt)}</span>
+                              <span className="font-mono font-bold text-rose-600 text-sm block">{formatVnd(m.overdueDebt ?? 0)}</span>
                               <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Nợ cước thuê kho quá hạn chưa thu hồi', 'Overdue storage rental fees pending collection')}</span>
                             </div>
                             <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-rose-700 font-semibold">
                               <span>{tr('Khóa kho / Niêm phong:', 'Blocked / Sealing:')}</span>
                               <span className="font-mono bg-rose-50 px-1.5 py-0.2 rounded text-rose-800 border border-rose-200">
-                                {debtBreakdown.accessBlockedCount + debtBreakdown.eligibleForSealingCount} {tr('kho', 'units')}
+                                {m.blockedOrSealedCount ?? 0} {tr('kho', 'units')}
                               </span>
                             </div>
                           </div>
@@ -1532,13 +1566,13 @@ export const OperationsDashboard: React.FC = () => {
                                 <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{tr('5. Tiền cọc đang giữ', '5. Deposits Held')}</span>
                                 <span className="material-symbols-outlined text-[16px] text-cyan-600">lock</span>
                               </div>
-                              <span className="font-mono font-bold text-cyan-700 text-sm block">{formatVnd(depositsHeld)}</span>
+                              <span className="font-mono font-bold text-cyan-700 text-sm block">{formatVnd(m.depositsHeld ?? 0)}</span>
                               <span className="text-[10px] text-slate-400 block mt-0.5 leading-tight">{tr('Nghĩa vụ hoàn trả / quyết toán khi trả kho', 'Payable obligation awaiting checkout settlement')}</span>
                             </div>
                             <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-between text-[10px] text-cyan-800 font-semibold">
                               <span>{tr('Hợp đồng ACTIVE:', 'Active contracts:')}</span>
                               <span className="font-mono bg-cyan-50 px-1.5 py-0.2 rounded text-cyan-800 border border-cyan-200">
-                                {activeContractsCount !== null ? `${activeContractsCount} ${tr('HĐ', 'contracts')}` : '—'}
+                                {m.activeContractsCount !== null ? `${m.activeContractsCount} ${tr('HĐ', 'contracts')}` : '—'}
                               </span>
                             </div>
                           </div>
@@ -1551,18 +1585,18 @@ export const OperationsDashboard: React.FC = () => {
                                 <span className="material-symbols-outlined text-[16px] text-purple-600">assignment_return</span>
                               </div>
                               <span className="font-mono font-bold text-purple-700 text-sm block">
-                                {formatVnd(((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) + (m.refund > 0 ? m.refund : refundedAmount))}
+                                {formatVnd((m.returnComp || 0) + (m.refund || 0))}
                               </span>
                               <span className="text-[10px] text-purple-600/80 block mt-0.5 leading-tight">
-                                {((m as any).returnComp || (displayedChartMonths.length === 1 ? returnCompensation : 0)) > 0
-                                  ? tr(`Bồi thường thu: +${formatVnd((m as any).returnComp || returnCompensation)} • Hoàn cọc: ${formatVnd(m.refund || refundedAmount)}`, `Compensation: +${formatVnd((m as any).returnComp || returnCompensation)} • Refund: ${formatVnd(m.refund || refundedAmount)}`)
-                                  : tr('Đã hoàn tiền thực tế thành công cho khách', 'Successfully refunded to customers')}
+                                {(m.returnComp || 0) > 0 || (m.refund || 0) > 0
+                                  ? tr(`Bồi thường thu: +${formatVnd(m.returnComp || 0)} • Hoàn cọc: ${formatVnd(m.refund || 0)}`, `Compensation: +${formatVnd(m.returnComp || 0)} • Refund: ${formatVnd(m.refund || 0)}`)
+                                  : tr('Không phát sinh hoàn tiền / bồi thường trong kỳ', 'No refunds or compensation in period')}
                               </span>
                             </div>
                             <div className="mt-2 pt-1.5 border-t border-purple-200/60 flex items-center justify-between text-[10px] text-purple-800 font-semibold">
                               <span>{tr('Chờ duyệt/chuyển:', 'Pending review:')}</span>
                               <span className="font-mono bg-white px-1.5 py-0.2 rounded text-purple-800 border border-purple-200">
-                                {formatVnd(pendingRefundAmount)}
+                                {formatVnd(m.pendingRefundAmount || 0)}
                               </span>
                             </div>
                           </div>
@@ -1583,20 +1617,20 @@ export const OperationsDashboard: React.FC = () => {
             {/* Footer Summary of Period */}
             <div className="mt-4 p-3 bg-slate-50 rounded-xl flex flex-wrap items-center justify-between gap-3 border border-slate-200 text-xs">
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-medium text-slate-600">
-                <span>{tr('Kỳ báo cáo:', 'Report Period:')} <strong className="text-slate-900">{periodLabel}</strong></span>
+                <span>{tr('Kỳ báo cáo:', 'Report Period:')} <strong className="text-slate-900">{activeSelectedMonth ? activeSelectedMonth.fullLabel : periodLabel}</strong></span>
                 <span>•</span>
-                <span>{tr('Tổng thực thu (Vào):', 'Total Inflow:')} <strong className="text-blue-700 font-mono">+{formatVnd(totalCashIn)}</strong></span>
-                {returnCompensation > 0 && (
+                <span>{tr('Tổng thực thu (Vào):', 'Total Inflow:')} <strong className="text-blue-700 font-mono">+{formatVnd(displayCashIn)}</strong></span>
+                {displayReturnCompensation > 0 && (
                   <>
                     <span>•</span>
-                    <span>{tr('Bồi thường trả kho:', 'Return Compensation:')} <strong className="text-rose-600 font-mono">+{formatVnd(returnCompensation)}</strong></span>
+                    <span>{tr('Bồi thường trả kho:', 'Return Compensation:')} <strong className="text-rose-600 font-mono">+{formatVnd(displayReturnCompensation)}</strong></span>
                   </>
                 )}
                 <span>•</span>
-                <span>{tr('Tổng hoàn trả (Ra):', 'Total Outflow:')} <strong className="text-purple-700 font-mono">-{formatVnd(refundedAmount)}</strong></span>
+                <span>{tr('Tổng hoàn trả (Ra):', 'Total Outflow:')} <strong className="text-purple-700 font-mono">-{formatVnd(displayRefundedAmount)}</strong></span>
               </div>
               <div className="font-mono font-bold text-slate-900">
-                {tr('Tổng doanh thu thuần kỳ:', 'Period Net Revenue:')} <span className="text-sm text-emerald-700 font-extrabold">{formatVnd(netRevenue)}</span>
+                {tr('Tổng doanh thu thuần kỳ:', 'Period Net Revenue:')} <span className="text-sm text-emerald-700 font-extrabold">{formatVnd(displayNetRevenue)}</span>
               </div>
             </div>
           </div>

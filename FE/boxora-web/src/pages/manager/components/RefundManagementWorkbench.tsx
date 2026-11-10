@@ -234,7 +234,11 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
     return refunds.filter(item => {
       // Status Filter
       if (statusFilter === 'PENDING') {
-        if (item.status !== 'PENDING_REVIEW' && item.status !== 'APPROVED') return false
+        if (
+          item.status !== 'PENDING_REVIEW' &&
+          item.status !== 'APPROVED' &&
+          item.status !== 'PROCESSING_TRANSFER'
+        ) return false
       } else if (statusFilter === 'PROCESSED') {
         if (
           item.status !== 'AWAITING_CUSTOMER_CONFIRMATION' &&
@@ -266,12 +270,16 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
 
   // KPIs
   const kpiPendingCount = useMemo(() => {
-    return refunds.filter(r => r.status === 'PENDING_REVIEW' || r.status === 'APPROVED').length
+    return refunds.filter(
+      r => r.status === 'PENDING_REVIEW' || r.status === 'APPROVED' || r.status === 'PROCESSING_TRANSFER'
+    ).length
   }, [refunds])
 
   const kpiPendingAmount = useMemo(() => {
     return refunds
-      .filter(r => r.status === 'PENDING_REVIEW' || r.status === 'APPROVED')
+      .filter(
+        r => r.status === 'PENDING_REVIEW' || r.status === 'APPROVED' || r.status === 'PROCESSING_TRANSFER'
+      )
       .reduce((sum, r) => sum + (r.finalRefundAmount || 0), 0)
   }, [refunds])
 
@@ -503,7 +511,10 @@ export const RefundManagementWorkbench: React.FC<RefundManagementWorkbenchProps>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
                 {filteredRefunds.map(refund => {
-                  const isPending = refund.status === 'PENDING_REVIEW' || refund.status === 'APPROVED'
+                  const isPending =
+                    refund.status === 'PENDING_REVIEW' ||
+                    refund.status === 'APPROVED' ||
+                    refund.status === 'PROCESSING_TRANSFER'
                   const isDone =
                     refund.status === 'AWAITING_CUSTOMER_CONFIRMATION' ||
                     refund.status === 'PROCESSED' ||

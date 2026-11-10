@@ -849,6 +849,8 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         ticket.setRefundStatus("PENDING_FM_APPROVAL");
         ticket.setStatus(TicketStatus.IN_PROGRESS);
 
+        Facility facility = resolveTicketFacility(ticket);
+
         String bankNote = String.format("[KHÁCH CUNG CẤP TK NHẬN TIỀN]: Ngân hàng: %s | STK: %s | Chủ TK: %s%s",
                 request.getBankName().trim(), request.getBankAccountNumber().trim(), request.getBankAccountName().trim().toUpperCase(),
                 (request.getNote() != null && !request.getNote().isBlank()) ? " | Ghi chú: " + request.getNote().trim() : "");
@@ -862,8 +864,9 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                     rr = RefundRequest.builder()
                             .requestCode(reqCode)
                             .customer(ticket.getCustomer())
-                            .facility(ticket.getFacility())
+                            .facility(facility)
                             .booking(ticket.getBooking())
+                            .contract(resolveTicketContract(ticket))
                             .requestedAmount(ticket.getRefundAmount())
                             .finalRefundAmount(ticket.getRefundAmount())
                             .deductionAmount(BigDecimal.ZERO)
@@ -871,13 +874,18 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                             .bankAccountNumber(ticket.getBankAccountNumber())
                             .bankAccountName(ticket.getBankAccountName())
                             .reason("Hoàn tiền theo phiếu hỗ trợ #" + ticket.getTicketCode() + (ticket.getTitle() != null ? ": " + ticket.getTitle() : ""))
-                            .requestedBy(ticket.getCustomer())
+                            .requestedBy(ticket.getCustomer() != null ? ticket.getCustomer() : (ticket.getCreatedByStaff() != null ? ticket.getCreatedByStaff() : ticket.getAssignedStaff()))
                             .build();
+                } else {
+                    if (rr.getFacility() == null && facility != null) {
+                        rr.setFacility(facility);
+                    }
                 }
-                rr.setStatus(RefundStatus.PROCESSING_TRANSFER);
+                rr.setStatus(RefundStatus.PENDING_REVIEW);
                 rr.setBankName(ticket.getBankName());
                 rr.setBankAccountNumber(ticket.getBankAccountNumber());
                 rr.setBankAccountName(ticket.getBankAccountName());
+                rr.setFinalRefundAmount(ticket.getRefundAmount());
                 refundRequestRepository.save(rr);
             } catch (Exception ex) {
                 log.warn("Could not sync refund request on submitBankInfo: {}", ex.getMessage());
@@ -970,12 +978,14 @@ public class SupportTicketServiceImpl implements SupportTicketService {
             try {
                 String reqCode = "REF-" + ticket.getTicketCode();
                 RefundRequest rr = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                Facility facility = resolveTicketFacility(ticket);
                 if (rr == null) {
                     rr = RefundRequest.builder()
                             .requestCode(reqCode)
                             .customer(ticket.getCustomer())
-                            .facility(ticket.getFacility())
+                            .facility(facility)
                             .booking(ticket.getBooking())
+                            .contract(resolveTicketContract(ticket))
                             .requestedAmount(ticket.getRefundAmount())
                             .finalRefundAmount(ticket.getRefundAmount())
                             .deductionAmount(BigDecimal.ZERO)
@@ -985,6 +995,10 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                             .reason("Hoàn tiền theo phiếu hỗ trợ #" + ticket.getTicketCode() + (ticket.getTitle() != null ? ": " + ticket.getTitle() : ""))
                             .requestedBy(ticket.getCustomer() != null ? ticket.getCustomer() : currentStaffUser)
                             .build();
+                } else {
+                    if (rr.getFacility() == null && facility != null) {
+                        rr.setFacility(facility);
+                    }
                 }
                 rr.setStatus(RefundStatus.COMPLETED);
                 rr.setReviewedBy(ticket.getFmApprovedBy() != null ? ticket.getFmApprovedBy() : currentStaffUser);
@@ -1241,13 +1255,37 @@ public class SupportTicketServiceImpl implements SupportTicketService {
         }
     }
 
+    private Facility resolveTicketFacility(SupportTicket ticket) {
+        if (ticket == null) return null;
+        if (ticket.getFacility() != null) return ticket.getFacility();
+        Facility fac = null;
+        if (ticket.getBooking() != null && ticket.getBooking().getFacility() != null) {
+            fac = ticket.getBooking().getFacility();
+        } else if (ticket.getStorageUnit() != null && ticket.getStorageUnit().getFacility() != null) {
+            fac = ticket.getStorageUnit().getFacility();
+        }
+        if (fac == null && facilityRepository != null) {
+            fac = facilityRepository.findAll().stream().findFirst().orElse(null);
+        }
+        if (fac != null && ticket.getFacility() == null) {
+            ticket.setFacility(fac);
+        }
+        return fac;
+    }
+
+    private RentalContract resolveTicketContract(SupportTicket ticket) {
+        if (ticket == null || ticket.getBooking() == null || rentalContractRepository == null) return null;
+        return rentalContractRepository.findByBookingId(ticket.getBooking().getId()).orElse(null);
+    }
+
     private void validateFacilityScope(SupportTicket ticket, User user) {
-        if (ticket.getFacility() == null || user.getFacility() == null) {
+        Facility fac = resolveTicketFacility(ticket);
+        if (fac == null || user.getFacility() == null) {
             throw new AppException(ErrorCode.FACILITY_ACCESS_DENIED);
         }
-        if (!ticket.getFacility().getId().equals(user.getFacility().getId())) {
+        if (!fac.getId().equals(user.getFacility().getId())) {
             log.warn("[SECURITY] User {} (facility {}) attempted operation on ticket {} in facility {}",
-                    user.getId(), user.getFacility().getId(), ticket.getId(), ticket.getFacility().getId());
+                    user.getId(), user.getFacility().getId(), ticket.getId(), fac.getId());
             throw new AppException(ErrorCode.TICKET_FACILITY_MISMATCH);
         }
     }
@@ -1863,12 +1901,14 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                 try {
                     String reqCode = "REF-" + ticket.getTicketCode();
                     RefundRequest rr = refundRequestRepository.findByRequestCode(reqCode).orElse(null);
+                    Facility facility = resolveTicketFacility(ticket);
                     if (rr == null) {
                         rr = RefundRequest.builder()
                                 .requestCode(reqCode)
                                 .customer(ticket.getCustomer())
-                                .facility(ticket.getFacility())
+                                .facility(facility)
                                 .booking(ticket.getBooking())
+                                .contract(resolveTicketContract(ticket))
                                 .requestedAmount(ticket.getRefundAmount())
                                 .finalRefundAmount(ticket.getRefundAmount())
                                 .deductionAmount(BigDecimal.ZERO)
@@ -1876,13 +1916,18 @@ public class SupportTicketServiceImpl implements SupportTicketService {
                                 .bankAccountNumber(ticket.getBankAccountNumber() != null ? ticket.getBankAccountNumber() : "N/A")
                                 .bankAccountName(ticket.getBankAccountName() != null ? ticket.getBankAccountName() : "N/A")
                                 .reason("Hoàn tiền theo phiếu hỗ trợ #" + ticket.getTicketCode() + (ticket.getTitle() != null ? ": " + ticket.getTitle() : ""))
-                                .requestedBy(ticket.getCustomer())
+                                .requestedBy(ticket.getCustomer() != null ? ticket.getCustomer() : (ticket.getCreatedByStaff() != null ? ticket.getCreatedByStaff() : ticket.getAssignedStaff()))
                                 .build();
+                    } else {
+                        if (rr.getFacility() == null && facility != null) {
+                            rr.setFacility(facility);
+                        }
                     }
-                    rr.setStatus(RefundStatus.PROCESSING_TRANSFER);
+                    rr.setStatus(RefundStatus.PENDING_REVIEW);
                     if (ticket.getBankName() != null) rr.setBankName(ticket.getBankName());
                     if (ticket.getBankAccountNumber() != null) rr.setBankAccountNumber(ticket.getBankAccountNumber());
                     if (ticket.getBankAccountName() != null) rr.setBankAccountName(ticket.getBankAccountName());
+                    rr.setFinalRefundAmount(ticket.getRefundAmount());
                     refundRequestRepository.save(rr);
                 } catch (Exception ex) {
                     log.warn("Could not sync refund request on customerDecideRefund: {}", ex.getMessage());

@@ -866,6 +866,12 @@ export interface RevenueReport {
     netCashFlow?: number
     netRevenue?: number
     paymentCount: number
+    overdueDebt?: number
+    overdueCount?: number
+    blockedOrSealedCount?: number
+    depositsHeld?: number
+    activeContractsCount?: number
+    pendingRefundAmount?: number
   }>
   paymentsByMethod?: Array<{
     paymentMethod: string | null

@@ -161,6 +161,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
   const [isSubmittingBank, setIsSubmittingBank] = useState<boolean>(false)
   const [bankSuccessMsg, setBankSuccessMsg] = useState<string | null>(null)
   const [bankErrorMsg, setBankErrorMsg] = useState<string | null>(null)
+  const [isConfirmingBankInfo, setIsConfirmingBankInfo] = useState<boolean>(false)
 
   // Cancel return/support ticket confirmation modal state
   const [cancelConfirmTicket, setCancelConfirmTicket] = useState<SupportTicketRecord | null>(null)
@@ -280,12 +281,24 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
     }
   }
 
-  // Handle Submit Bank Information for Refund
-  const handleSubmitBankInfo = async (e: React.FormEvent) => {
+  // Step 1: Pre-validate & show Confirmation modal
+  const handlePreSubmitBankInfo = (e: React.FormEvent) => {
     e.preventDefault()
     if (!bankInfoTicket) return
     if (!bankName.trim() || !bankAccountNumber.trim() || !bankAccountName.trim()) {
       setBankErrorMsg('Vui lòng điền đầy đủ Tên ngân hàng, Số tài khoản và Tên chủ tài khoản.')
+      return
+    }
+    setBankErrorMsg(null)
+    setIsConfirmingBankInfo(true)
+  }
+
+  // Step 2: Handle Submit Bank Information for Refund after Confirmation
+  const handleExecuteSubmitBankInfo = async () => {
+    if (!bankInfoTicket) return
+    if (!bankName.trim() || !bankAccountNumber.trim() || !bankAccountName.trim()) {
+      setBankErrorMsg('Vui lòng điền đầy đủ Tên ngân hàng, Số tài khoản và Tên chủ tài khoản.')
+      setIsConfirmingBankInfo(false)
       return
     }
 
@@ -327,10 +340,11 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
           console.warn('Could not sync bank info with handover record:', decisionErr)
         }
       }
-      setBankSuccessMsg('Đã lưu thông tin tài khoản ngân hàng thành công! Hồ sơ đã được chuyển tới Quản lý cơ sở để duyệt chi và thực hiện hoàn tiền.')
+      setBankSuccessMsg('Đã gửi thông tin tài khoản ngân hàng thành công! Hồ sơ đã được chuyển tới Quản lý cơ sở để thực hiện chuyển khoản hoàn tiền.')
       await loadMyTickets()
       setTimeout(() => {
         setBankInfoTicket(null)
+        setIsConfirmingBankInfo(false)
         setBankSuccessMsg(null)
         if (selectedTicket?.id === bankInfoTicket.id) {
           setSelectedTicket(prev => prev ? {
@@ -344,7 +358,7 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
       }, 2500)
     } catch (err: any) {
       console.error('Bank info submit error:', err)
-      setBankErrorMsg(err?.response?.data?.message || err?.message || 'Không thể lưu thông tin tài khoản ngân hàng.')
+      setBankErrorMsg(err?.response?.data?.message || err?.message || 'Không thể gửi thông tin tài khoản ngân hàng.')
     } finally {
       setIsSubmittingBank(false)
     }
@@ -2126,127 +2140,225 @@ export const CustomerSupportPanel: React.FC<CustomerSupportPanelProps> = ({
 
               <button
                 type="button"
-                onClick={() => setBankInfoTicket(null)}
+                onClick={() => {
+                  setBankInfoTicket(null)
+                  setIsConfirmingBankInfo(false)
+                }}
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Form Body */}
-            <form onSubmit={handleSubmitBankInfo} className="p-6 space-y-4 text-xs text-left">
-              {bankSuccessMsg && (
-                <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 font-medium flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                  <span>{bankSuccessMsg}</span>
+            {/* Modal Body: Switch between Form & Confirmation */}
+            {isConfirmingBankInfo ? (
+              <div className="p-6 space-y-4 text-xs text-left animate-in zoom-in-95 duration-150">
+                <div className="text-center space-y-1.5">
+                  <div className="w-11 h-11 mx-auto rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center shadow-inner">
+                    <span className="material-symbols-outlined text-[26px]">verified_user</span>
+                  </div>
+                  <h4 className="font-bold text-sm text-slate-900">
+                    Xác Nhận Lại Thông Tin Tài Khoản Nhận Tiền
+                  </h4>
+                  <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
+                    Vui lòng đối soát chính xác thông tin tài khoản ngân hàng thụ hưởng trước khi gửi tới Quản lý cơ sở để giải ngân.
+                  </p>
                 </div>
-              )}
 
-              {bankErrorMsg && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 font-medium flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px]">error</span>
-                  <span>{bankErrorMsg}</span>
-                </div>
-              )}
+                {bankErrorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 font-medium flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">error</span>
+                    <span>{bankErrorMsg}</span>
+                  </div>
+                )}
 
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
-                Số tiền hoàn đã duyệt: <strong className="font-mono text-emerald-700 text-xs">{bankInfoTicket.refundAmount ? formatVND(bankInfoTicket.refundAmount) : 'Theo biên bản quyết toán'}</strong>. Vui lòng cung cấp chính xác tài khoản ngân hàng chính chủ của bạn để nhận chuyển khoản.
-              </div>
-
-              {/* Ngân hàng */}
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
-                  Ngân hàng thụ hưởng <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  list="popular-banks-list"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  required
-                  placeholder="Chọn hoặc nhập tên ngân hàng (Ví dụ: Vietcombank, MB Bank...)"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
-                />
-                <datalist id="popular-banks-list">
-                  {POPULAR_BANKS.map(b => (
-                    <option key={b} value={b} />
-                  ))}
-                </datalist>
-              </div>
-
-              {/* Số tài khoản */}
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
-                  Số tài khoản ngân hàng <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={bankAccountNumber}
-                  onChange={(e) => setBankAccountNumber(e.target.value.replace(/\s+/g, ''))}
-                  required
-                  placeholder="Nhập số tài khoản ngân hàng..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white tracking-wider"
-                />
-              </div>
-
-              {/* Tên chủ tài khoản */}
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
-                  Tên chủ tài khoản (Không dấu) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={bankAccountName}
-                  onChange={(e) => setBankAccountName(e.target.value.toUpperCase())}
-                  required
-                  placeholder="Ví dụ: NGUYEN VAN A"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 uppercase outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
-                />
-              </div>
-
-              {/* Ghi chú */}
-              <div className="space-y-1">
-                <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
-                  Ghi chú thêm (tùy chọn)
-                </label>
-                <input
-                  type="text"
-                  value={bankNote}
-                  onChange={(e) => setBankNote(e.target.value)}
-                  placeholder="Chi nhánh ngân hàng hoặc lời nhắn..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
-                />
-              </div>
-
-              {/* Footer */}
-              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200">
-                <button
-                  type="button"
-                  disabled={isSubmittingBank}
-                  onClick={() => setBankInfoTicket(null)}
-                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingBank}
-                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md shadow-orange-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {isSubmittingBank ? (
-                    <>
-                      <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      <span>Đang lưu...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="material-symbols-outlined text-[16px]">save</span>
-                      <span>Xác Nhận Lưu Thông Tin</span>
-                    </>
+                {/* Information Card */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Mã yêu cầu:</span>
+                    <span className="font-mono font-bold text-slate-800">
+                      {bankInfoTicket.ticketCode || bankInfoTicket.ticketNumber || `#${bankInfoTicket.id.slice(0, 8)}`}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Số tiền hoàn duyệt:</span>
+                    <span className="font-mono font-extrabold text-sm text-emerald-600">
+                      {bankInfoTicket.refundAmount ? formatVND(bankInfoTicket.refundAmount) : 'Theo biên bản quyết toán'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Ngân hàng thụ hưởng:</span>
+                    <span className="font-bold text-slate-900">{bankName.trim()}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-1 border-b border-slate-200/60">
+                    <span className="text-slate-500">Số tài khoản:</span>
+                    <span className="font-mono font-black text-sm tracking-wider text-orange-600">
+                      {bankAccountNumber.trim()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center py-1">
+                    <span className="text-slate-500">Tên chủ tài khoản:</span>
+                    <span className="font-mono font-bold text-slate-900 uppercase">
+                      {bankAccountName.trim().toUpperCase()}
+                    </span>
+                  </div>
+                  {bankNote.trim() && (
+                    <div className="flex justify-between items-center pt-1 border-t border-slate-200/60 text-[11px]">
+                      <span className="text-slate-500">Ghi chú:</span>
+                      <span className="text-slate-700 italic">{bankNote.trim()}</span>
+                    </div>
                   )}
-                </button>
+                </div>
+
+                {/* Important Disclaimer / Warning */}
+                <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2.5 shadow-xs">
+                  <span className="material-symbols-outlined text-[20px] text-amber-700 shrink-0 mt-0.5">warning</span>
+                  <div>
+                    <strong className="block font-bold text-amber-950 mb-0.5">Lưu ý miễn trừ trách nhiệm:</strong>
+                    Quý khách vui lòng kiểm tra thật kỹ số tài khoản và tên chủ tài khoản thụ hưởng. <strong>Nếu có bất kỳ sai sót nào về thông tin tài khoản do quý khách cung cấp dẫn tới chuyển khoản thất lạc hoặc nhầm lẫn, Boxora hoàn toàn không chịu trách nhiệm.</strong>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    disabled={isSubmittingBank}
+                    onClick={() => setIsConfirmingBankInfo(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                  >
+                    Kiểm tra lại
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmittingBank}
+                    onClick={handleExecuteSubmitBankInfo}
+                    className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md shadow-orange-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSubmittingBank ? (
+                      <>
+                        <span className="inline-block w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Đang gửi thông tin...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="material-symbols-outlined text-[16px]">send</span>
+                        <span>Tôi xác nhận thông tin đã đúng & Gửi</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
-            </form>
+            ) : (
+              /* Form Body */
+              <form onSubmit={handlePreSubmitBankInfo} className="p-6 space-y-4 text-xs text-left">
+                {bankSuccessMsg && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 font-medium flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                    <span>{bankSuccessMsg}</span>
+                  </div>
+                )}
+
+                {bankErrorMsg && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 font-medium flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[18px]">error</span>
+                    <span>{bankErrorMsg}</span>
+                  </div>
+                )}
+
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                  Số tiền hoàn đã duyệt: <strong className="font-mono text-emerald-700 text-xs">{bankInfoTicket.refundAmount ? formatVND(bankInfoTicket.refundAmount) : 'Theo biên bản quyết toán'}</strong>. Vui lòng cung cấp chính xác tài khoản ngân hàng chính chủ của bạn để nhận chuyển khoản.
+                </div>
+
+                {/* Ngân hàng */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
+                    Ngân hàng thụ hưởng <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    list="popular-banks-list"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    required
+                    placeholder="Chọn hoặc nhập tên ngân hàng (Ví dụ: Vietcombank, MB Bank...)"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                  />
+                  <datalist id="popular-banks-list">
+                    {POPULAR_BANKS.map(b => (
+                      <option key={b} value={b} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Số tài khoản */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
+                    Số tài khoản ngân hàng <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bankAccountNumber}
+                    onChange={(e) => setBankAccountNumber(e.target.value.replace(/\s+/g, ''))}
+                    required
+                    placeholder="Nhập số tài khoản ngân hàng..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white tracking-wider"
+                  />
+                </div>
+
+                {/* Tên chủ tài khoản */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
+                    Tên chủ tài khoản (Không dấu) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={bankAccountName}
+                    onChange={(e) => setBankAccountName(e.target.value.toUpperCase())}
+                    required
+                    placeholder="Ví dụ: NGUYEN VAN A"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 uppercase outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                  />
+                </div>
+
+                {/* Ghi chú */}
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider">
+                    Ghi chú thêm (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    value={bankNote}
+                    onChange={(e) => setBankNote(e.target.value)}
+                    placeholder="Chi nhánh ngân hàng hoặc lời nhắn..."
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 outline-none focus:ring-2 focus:ring-orange-500 focus:bg-white"
+                  />
+                </div>
+
+                {/* Footer */}
+                <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    disabled={isSubmittingBank}
+                    onClick={() => {
+                      setBankInfoTicket(null)
+                      setIsConfirmingBankInfo(false)
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                  >
+                    Hủy bỏ
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingBank}
+                    className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md shadow-orange-600/20 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">send</span>
+                    <span>Xác nhận và gửi thông tin</span>
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

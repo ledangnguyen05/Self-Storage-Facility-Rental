@@ -26,12 +26,17 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
 import com.boxora.entity.Payment;
+import com.boxora.entity.HandoverRecord;
+import com.boxora.entity.RefundRequest;
 import com.boxora.enums.PaymentType;
+import com.boxora.enums.RefundStatus;
+import com.boxora.enums.OverdueStage;
 import com.boxora.service.OverdueDebtCalculationService;
 
 @Service
@@ -517,26 +522,42 @@ public class ReportServiceImpl implements ReportService {
         }
 
         List<RevenueMonthSummaryResponse> enrichedMonthlyRevenue = new ArrayList<>(monthlyRevenue);
-        for (RevenueMonthSummaryResponse m : enrichedMonthlyRevenue) {
-            if (m.getMonth() != null) {
-                BigDecimal refAmt = monthlyCompletedRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
-                BigDecimal rentalRefAmt = monthlyCompletedRentalRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
-                m.setRefundAmount(refAmt);
-                m.setRentalRefundAmount(rentalRefAmt);
-                BigDecimal mBookingRentalPortion = resolveBookingPaymentRentalPortion(
-                        m.getRentalFeeRevenue(),
-                        m.getBookingPaymentRevenue(),
-                        m.getDepositRevenue(),
-                        safe(m.getDepositRevenue()));
-                BigDecimal mGrossRev = safe(m.getRentalFeeRevenue())
-                        .add(mBookingRentalPortion)
-                        .add(safe(m.getRenewalFeeRevenue()))
-                        .add(safe(m.getExtraChargeRevenue()))
-                        .add(safe(m.getReturnCompensationRevenue()));
-                m.setNetRevenue(mGrossRev.subtract(rentalRefAmt).max(BigDecimal.ZERO));
-                m.setNetCashFlow(safe(m.getTotalRevenue()).subtract(refAmt));
-            }
-        }
+        enrichMonthlyMetrics(
+                enrichedMonthlyRevenue,
+                allContracts,
+                allBookings,
+                contractedBookingIds,
+                allRefunds,
+                allHandovers,
+                finalFacilityId,
+                monthlyCompletedRefunds,
+                monthlyCompletedRentalRefunds
+        );
+
+        return RevenueReportResponse.builder()
+                .fromDate(fromDate)
+                .toDate(toDate)
+                .systemSummary(systemSummary)
+                .byFacility(enrichedByFacility)
+                .monthlyRevenue(enrichedMonthlyRevenue)
+                .paymentsByMethod(paymentsByMethod)
+                .debtBreakdown(debtBreakdown)
+                .refundBreakdown(refundBreakdown)
+                .build();
+    }
+
+    private void enrichMonthlyMetrics(
+            List<RevenueMonthSummaryResponse> enrichedMonthlyRevenue,
+            List<RentalContract> allContracts,
+            List<Booking> allBookings,
+            Set<UUID> contractedBookingIds,
+            List<RefundRequest> allRefunds,
+            List<HandoverRecord> allHandovers,
+            UUID finalFacilityId,
+            Map<String, BigDecimal> monthlyCompletedRefunds,
+            Map<String, BigDecimal> monthlyCompletedRentalRefunds
+    ) {
+        // 1. Add any months that only have refunds but no payments
         for (Map.Entry<String, BigDecimal> entry : monthlyCompletedRefunds.entrySet()) {
             boolean exists = enrichedMonthlyRevenue.stream().anyMatch(m -> entry.getKey().equals(m.getMonth()));
             if (!exists) {
@@ -559,18 +580,288 @@ public class ReportServiceImpl implements ReportService {
                         .build());
             }
         }
-        enrichedMonthlyRevenue.sort(Comparator.comparing(RevenueMonthSummaryResponse::getMonth, Comparator.nullsLast(String::compareTo)));
 
-        return RevenueReportResponse.builder()
-                .fromDate(fromDate)
-                .toDate(toDate)
-                .systemSummary(systemSummary)
-                .byFacility(enrichedByFacility)
-                .monthlyRevenue(enrichedMonthlyRevenue)
-                .paymentsByMethod(paymentsByMethod)
-                .debtBreakdown(debtBreakdown)
-                .refundBreakdown(refundBreakdown)
-                .build();
+        LocalDate today = LocalDate.now();
+        Map<UUID, FacilityPolicy> policyMap = new HashMap<>();
+        if (facilityPolicyRepository != null) {
+            facilityPolicyRepository.findAll().forEach(p -> {
+                if (p != null && p.getFacility() != null && p.getFacility().getId() != null && Boolean.TRUE.equals(p.getIsActive())) {
+                    policyMap.put(p.getFacility().getId(), p);
+                }
+            });
+        }
+
+        // 2. Enrich each month with recognized revenue, net cash flow, deposits held, overdue debt, and pending refunds
+        for (RevenueMonthSummaryResponse m : enrichedMonthlyRevenue) {
+            if (m.getMonth() == null) continue;
+
+            YearMonth ym;
+            try {
+                ym = YearMonth.parse(m.getMonth());
+            } catch (Exception e) {
+                ym = null;
+            }
+            LocalDate mStart = ym != null ? ym.atDay(1) : LocalDate.of(2000, 1, 1);
+            LocalDate mEnd = ym != null ? ym.atEndOfMonth() : LocalDate.of(2099, 12, 31);
+            LocalDate refDate = today.isBefore(mEnd) ? today : mEnd;
+            LocalDateTime mEndCutoff = mEnd.atTime(LocalTime.MAX);
+
+            // A. Revenue and Cash Flow
+            BigDecimal refAmt = monthlyCompletedRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
+            BigDecimal rentalRefAmt = monthlyCompletedRentalRefunds.getOrDefault(m.getMonth(), BigDecimal.ZERO);
+            m.setRefundAmount(refAmt);
+            m.setRentalRefundAmount(rentalRefAmt);
+            BigDecimal mBookingRentalPortion = resolveBookingPaymentRentalPortion(
+                    m.getRentalFeeRevenue(),
+                    m.getBookingPaymentRevenue(),
+                    m.getDepositRevenue(),
+                    safe(m.getDepositRevenue()));
+            BigDecimal mGrossRev = safe(m.getRentalFeeRevenue())
+                    .add(mBookingRentalPortion)
+                    .add(safe(m.getRenewalFeeRevenue()))
+                    .add(safe(m.getExtraChargeRevenue()))
+                    .add(safe(m.getReturnCompensationRevenue()));
+            m.setNetRevenue(mGrossRev.subtract(rentalRefAmt).max(BigDecimal.ZERO));
+            m.setNetCashFlow(safe(m.getTotalRevenue()).subtract(refAmt));
+
+            // B. Pending Refunds in this month
+            BigDecimal mPendingRefund = allRefunds.stream()
+                    .filter(r -> finalFacilityId == null || (r.getFacility() != null && finalFacilityId.equals(r.getFacility().getId())))
+                    .filter(r -> r.getStatus() == RefundStatus.PENDING_REVIEW
+                            || r.getStatus() == RefundStatus.APPROVED
+                            || r.getStatus() == RefundStatus.PROCESSING_TRANSFER)
+                    .filter(r -> {
+                        LocalDateTime ct = r.getCreatedAt();
+                        return ct != null && String.format(Locale.ROOT, "%04d-%02d", ct.getYear(), ct.getMonthValue()).equals(m.getMonth());
+                    })
+                    .map(r -> r.getFinalRefundAmount() != null ? r.getFinalRefundAmount() : (r.getRequestedAmount() != null ? r.getRequestedAmount() : BigDecimal.ZERO))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            m.setPendingRefundAmount(mPendingRefund);
+
+            // C. Active Deposits Held in this month
+            BigDecimal mDepositsHeld = BigDecimal.ZERO;
+            long mActiveContracts = 0;
+
+            for (RentalContract c : allContracts) {
+                if (c == null) continue;
+                UUID facId = extractFacilityId(c);
+                if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
+
+                LocalDate cStart = c.getStartDate() != null ? c.getStartDate() : (c.getBooking() != null && c.getBooking().getStartDate() != null ? c.getBooking().getStartDate() : null);
+                if (cStart == null && c.getCreatedAt() != null) cStart = c.getCreatedAt().toLocalDate();
+                if (cStart != null && cStart.isAfter(mEnd)) {
+                    continue; // Started after this month
+                }
+
+                if (c.getStatus() == RentalContractStatus.TERMINATED || c.getStatus() == RentalContractStatus.CANCELLED) {
+                    LocalDate termDate = c.getUpdatedAt() != null ? c.getUpdatedAt().toLocalDate() : c.getEndDate();
+                    if (termDate != null && termDate.isBefore(mStart)) {
+                        continue; // Terminated prior to this month
+                    }
+                }
+
+                BigDecimal initDeposit = BigDecimal.ZERO;
+                boolean isContractActivated = c.getStatus() == RentalContractStatus.ACTIVE
+                        || c.getStatus() == RentalContractStatus.OVERDUE
+                        || c.getStatus() == RentalContractStatus.OVERDUE_LOCKED
+                        || c.getStatus() == RentalContractStatus.EXPIRED
+                        || c.getStatus() == RentalContractStatus.TERMINATED
+                        || c.getStatus() == null;
+
+                if (isContractActivated) {
+                    initDeposit = c.getDepositHeld() != null && c.getDepositHeld().compareTo(BigDecimal.ZERO) > 0
+                            ? c.getDepositHeld()
+                            : (c.getBooking() != null && c.getBooking().getDepositPaid() != null ? c.getBooking().getDepositPaid() : BigDecimal.ZERO);
+                } else {
+                    boolean isUnactivatedCounterBooking = "PAPER".equalsIgnoreCase(c.getSigningMethod())
+                            || "IN_PERSON".equalsIgnoreCase(c.getSigningMethod())
+                            || (c.getBooking() != null
+                                && "IN_PERSON".equalsIgnoreCase(c.getBooking().getSigningMethod())
+                                && c.getBooking().getStatus() != BookingStatus.ACTIVE
+                                && c.getBooking().getStatus() != BookingStatus.COMPLETED
+                                && c.getBooking().getStatus() != BookingStatus.OVERDUE
+                                && c.getBooking().getStatus() != BookingStatus.CHECKOUT_REQUESTED
+                                && c.getBooking().getStatus() != BookingStatus.INSPECTED);
+                    if (!isUnactivatedCounterBooking
+                            && c.getBooking() != null
+                            && c.getBooking().getDepositPaid() != null
+                            && c.getBooking().getDepositPaid().compareTo(BigDecimal.ZERO) > 0) {
+                        initDeposit = c.getBooking().getDepositPaid();
+                    }
+                }
+
+                if (initDeposit.compareTo(BigDecimal.ZERO) <= 0) continue;
+
+                BigDecimal refundedForContract = allRefunds.stream()
+                        .filter(r -> isDisbursedRefund(r.getStatus()))
+                        .filter(r -> {
+                            LocalDateTime refTime = r.getProcessedAt() != null ? r.getProcessedAt() : (r.getReviewedAt() != null ? r.getReviewedAt() : r.getCreatedAt());
+                            return refTime != null && !refTime.isAfter(mEndCutoff);
+                        })
+                        .filter(r -> (r.getContract() != null && r.getContract().getId() != null && c.getId() != null && r.getContract().getId().equals(c.getId()))
+                                || (c.getBooking() != null && c.getBooking().getId() != null && r.getBooking() != null && r.getBooking().getId() != null && r.getBooking().getId().equals(c.getBooking().getId())))
+                        .map(this::resolveDepositRefundAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal deductedForContract = BigDecimal.ZERO;
+                if (c.getBooking() != null && c.getBooking().getId() != null && handoverRecordRepository != null) {
+                    Optional<HandoverRecord> hrOpt = handoverRecordRepository.findTopByBooking_IdAndRecordTypeOrderByRecordedAtDesc(c.getBooking().getId(), "RETURN");
+                    if (hrOpt.isPresent() && hrOpt.get().getDeductionAmount() != null) {
+                        if (hrOpt.get().getRecordedAt() == null || !hrOpt.get().getRecordedAt().isAfter(mEndCutoff)) {
+                            deductedForContract = hrOpt.get().getDeductionAmount().min(initDeposit);
+                        }
+                    }
+                }
+
+                BigDecimal refundDeduction = allRefunds.stream()
+                        .filter(r -> isDisbursedRefund(r.getStatus()))
+                        .filter(r -> {
+                            LocalDateTime refTime = r.getProcessedAt() != null ? r.getProcessedAt() : (r.getReviewedAt() != null ? r.getReviewedAt() : r.getCreatedAt());
+                            return refTime != null && !refTime.isAfter(mEndCutoff);
+                        })
+                        .filter(r -> (r.getContract() != null && r.getContract().getId() != null && c.getId() != null && r.getContract().getId().equals(c.getId()))
+                                || (c.getBooking() != null && c.getBooking().getId() != null && r.getBooking() != null && r.getBooking().getId() != null && r.getBooking().getId().equals(c.getBooking().getId())))
+                        .map(r -> r.getDeductionAmount() != null ? r.getDeductionAmount() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                deductedForContract = deductedForContract.max(refundDeduction).min(initDeposit);
+
+                BigDecimal held = initDeposit.subtract(refundedForContract).subtract(deductedForContract).max(BigDecimal.ZERO);
+                if (c.getStatus() == RentalContractStatus.TERMINATED || c.getStatus() == RentalContractStatus.CANCELLED) {
+                    LocalDate termDate = c.getUpdatedAt() != null ? c.getUpdatedAt().toLocalDate() : c.getEndDate();
+                    if (termDate != null && !termDate.isAfter(mEnd)) {
+                        if (refundedForContract.add(deductedForContract).compareTo(BigDecimal.ZERO) > 0 || refundedForContract.add(deductedForContract).compareTo(initDeposit) >= 0) {
+                            held = BigDecimal.ZERO;
+                        }
+                    }
+                }
+
+                if (held.compareTo(BigDecimal.ZERO) > 0) {
+                    mDepositsHeld = mDepositsHeld.add(held);
+                    mActiveContracts++;
+                }
+            }
+
+            for (Booking b : allBookings) {
+                if (b == null || contractedBookingIds.contains(b.getId())) continue;
+                if (b.getDepositPaid() == null || b.getDepositPaid().compareTo(BigDecimal.ZERO) <= 0) continue;
+                if ("IN_PERSON".equalsIgnoreCase(b.getSigningMethod())
+                        && b.getStatus() != BookingStatus.ACTIVE
+                        && b.getStatus() != BookingStatus.COMPLETED
+                        && b.getStatus() != BookingStatus.OVERDUE
+                        && b.getStatus() != BookingStatus.CHECKOUT_REQUESTED
+                        && b.getStatus() != BookingStatus.INSPECTED) {
+                    continue;
+                }
+
+                UUID facId = extractFacilityId(b);
+                if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
+
+                LocalDate bStart = b.getStartDate() != null ? b.getStartDate() : (b.getCreatedAt() != null ? b.getCreatedAt().toLocalDate() : null);
+                if (bStart != null && bStart.isAfter(mEnd)) continue;
+
+                BigDecimal bDeposit = b.getDepositPaid();
+                BigDecimal refundedForBooking = allRefunds.stream()
+                        .filter(r -> isDisbursedRefund(r.getStatus()))
+                        .filter(r -> {
+                            LocalDateTime refTime = r.getProcessedAt() != null ? r.getProcessedAt() : (r.getReviewedAt() != null ? r.getReviewedAt() : r.getCreatedAt());
+                            return refTime != null && !refTime.isAfter(mEndCutoff);
+                        })
+                        .filter(r -> r.getBooking() != null && r.getBooking().getId() != null && b.getId() != null && b.getId().equals(r.getBooking().getId()))
+                        .map(this::resolveDepositRefundAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal refundDeduction = allRefunds.stream()
+                        .filter(r -> isDisbursedRefund(r.getStatus()))
+                        .filter(r -> {
+                            LocalDateTime refTime = r.getProcessedAt() != null ? r.getProcessedAt() : (r.getReviewedAt() != null ? r.getReviewedAt() : r.getCreatedAt());
+                            return refTime != null && !refTime.isAfter(mEndCutoff);
+                        })
+                        .filter(r -> r.getBooking() != null && r.getBooking().getId() != null && b.getId() != null && b.getId().equals(r.getBooking().getId()))
+                        .map(r -> r.getDeductionAmount() != null ? r.getDeductionAmount() : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                BigDecimal heldBooking = bDeposit.subtract(refundedForBooking).subtract(refundDeduction).max(BigDecimal.ZERO);
+                if (b.getStatus() == BookingStatus.CANCELLED || "REFUNDED".equalsIgnoreCase(b.getPaymentStatus())) {
+                    if (b.getUpdatedAt() != null && !b.getUpdatedAt().toLocalDate().isAfter(mEnd)) {
+                        heldBooking = BigDecimal.ZERO;
+                    }
+                }
+                if (heldBooking.compareTo(BigDecimal.ZERO) > 0) {
+                    mDepositsHeld = mDepositsHeld.add(heldBooking);
+                }
+            }
+
+            if (mDepositsHeld.compareTo(BigDecimal.ZERO) == 0 && allContracts.isEmpty() && allBookings.isEmpty()) {
+                BigDecimal mCompletedDepositRefunds = refAmt.subtract(rentalRefAmt).max(BigDecimal.ZERO);
+                mDepositsHeld = safe(m.getDepositRevenue()).subtract(mCompletedDepositRefunds).max(BigDecimal.ZERO);
+            }
+
+            m.setDepositsHeld(mDepositsHeld);
+            m.setActiveContractsCount(mActiveContracts);
+
+            // D. Overdue Debt in this month
+            BigDecimal mOverdueDebt = BigDecimal.ZERO;
+            long mOverdueCount = 0;
+            long mBlockedOrSealedCount = 0;
+
+            for (RentalContract c : allContracts) {
+                if (c == null) continue;
+                UUID facId = extractFacilityId(c);
+                if (finalFacilityId != null && !finalFacilityId.equals(facId)) continue;
+
+                LocalDate dueDate = c.getEndDate();
+                if (c.getBooking() != null && c.getBooking().getEndDate() != null) {
+                    if (dueDate == null || c.getBooking().getEndDate().isBefore(dueDate)) {
+                        dueDate = c.getBooking().getEndDate();
+                    }
+                }
+
+                if (dueDate == null || !dueDate.isBefore(refDate)) {
+                    continue; // Not overdue in or as of this month
+                }
+
+                if (c.getStatus() == RentalContractStatus.TERMINATED) {
+                    LocalDate termDate = c.getUpdatedAt() != null ? c.getUpdatedAt().toLocalDate() : c.getEndDate();
+                    if (termDate != null && termDate.isBefore(mStart)) {
+                        continue;
+                    }
+                }
+
+                FacilityPolicy policy = policyMap.get(facId);
+                if (policy != null && overdueDebtCalculationService != null) {
+                    OverdueDebtCalculationService.CalculationResult calc = overdueDebtCalculationService.calculateOverdueDebt(c, policy, refDate);
+                    if (calc != null) {
+                        BigDecimal debt = calc.totalDebt() != null ? calc.totalDebt() : BigDecimal.ZERO;
+                        if (debt.compareTo(BigDecimal.ZERO) > 0) {
+                            mOverdueDebt = mOverdueDebt.add(debt);
+                            mOverdueCount++;
+                        }
+                        if (calc.stage() == OverdueStage.PIN_REVOCATION || calc.stage() == OverdueStage.SEALING_ELIGIBLE) {
+                            mBlockedOrSealedCount++;
+                        }
+                    }
+                }
+            }
+
+            for (HandoverRecord h : allHandovers) {
+                if (h != null && h.getAdditionalAmountDue() != null && h.getAdditionalAmountDue().compareTo(BigDecimal.ZERO) > 0) {
+                    if (!"PAID".equalsIgnoreCase(h.getAdditionalPaymentStatus())) {
+                        if (h.getRecordedAt() != null && !h.getRecordedAt().toLocalDate().isAfter(refDate)) {
+                            UUID facId = extractFacilityId(h);
+                            if (finalFacilityId == null || finalFacilityId.equals(facId)) {
+                                mOverdueDebt = mOverdueDebt.add(h.getAdditionalAmountDue());
+                            }
+                        }
+                    }
+                }
+            }
+
+            m.setOverdueDebt(mOverdueDebt);
+            m.setOverdueCount(mOverdueCount);
+            m.setBlockedOrSealedCount(mBlockedOrSealedCount);
+        }
+
+        enrichedMonthlyRevenue.sort(Comparator.comparing(RevenueMonthSummaryResponse::getMonth, Comparator.nullsLast(String::compareTo)));
     }
 
     private static final java.util.regex.Pattern DEPOSIT_REFUND_PATTERN =

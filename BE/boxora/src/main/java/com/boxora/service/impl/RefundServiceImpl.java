@@ -59,6 +59,7 @@ public class RefundServiceImpl implements RefundService {
     private final RequestContext requestContext;
     private final FileStorageService fileStorageService;
     private final HandoverRecordRepository handoverRecordRepository;
+    private final SupportTicketRepository supportTicketRepository;
 
     @Override
     @Transactional
@@ -552,7 +553,98 @@ public class RefundServiceImpl implements RefundService {
                 RefundStatus.AWAITING_CUSTOMER_CONFIRMATION.name()
         );
 
+        // Đồng bộ trạng thái Ticket nếu yêu cầu hoàn tiền liên quan đến SupportTicket
+        syncLinkedSupportTicketOnProcessRefund(refund, processor, request.getProcessNotes());
+
         return toResponse(refund);
+    }
+
+    private void syncLinkedSupportTicketOnProcessRefund(RefundRequest refund, User processor, String processNotes) {
+        if (refund == null || supportTicketRepository == null) return;
+        try {
+            SupportTicket ticket = null;
+            if (refund.getRequestCode() != null && refund.getRequestCode().startsWith("REF-")) {
+                String potentialCode = refund.getRequestCode().substring(4);
+                ticket = supportTicketRepository.findByTicketCode(potentialCode).orElse(null);
+            }
+            if (ticket == null && refund.getRequestCode() != null) {
+                ticket = supportTicketRepository.findByTicketCode(refund.getRequestCode()).orElse(null);
+            }
+            if (ticket == null && refund.getReason() != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("(TK-\\d+-\\d+)").matcher(refund.getReason());
+                if (m.find()) {
+                    String tCode = m.group(1);
+                    ticket = supportTicketRepository.findByTicketCode(tCode).orElse(null);
+                }
+            }
+            if (ticket == null && refund.getBooking() != null) {
+                List<SupportTicket> bTickets = supportTicketRepository.findByBooking_IdOrderByCreatedAtDesc(refund.getBooking().getId());
+                if (bTickets != null && !bTickets.isEmpty()) {
+                    for (SupportTicket t : bTickets) {
+                        if ("PENDING_FM_APPROVAL".equalsIgnoreCase(t.getRefundStatus())
+                                || "PENDING_ADMIN_PAYOUT".equalsIgnoreCase(t.getRefundStatus())
+                                || "AWAITING_CUSTOMER_BANK_INFO".equalsIgnoreCase(t.getRefundStatus())) {
+                            ticket = t;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (ticket != null) {
+                ticket.setStatus(TicketStatus.RESOLVED);
+                ticket.setRefundStatus("COMPLETED");
+                ticket.setResolvedAt(LocalDateTime.now());
+                ticket.setTransferTransactionRef(refund.getTransactionReference());
+                ticket.setTransferProofUrl(refund.getTransferProofUrl());
+                ticket.setTransferConfirmedAt(LocalDateTime.now());
+                ticket.setTransferConfirmedBy(processor);
+
+                String payoutNote = String.format("[ĐÃ HOÀN TIỀN THÀNH CÔNG - %s]: Mã GD: %s | Ngân hàng: %s - STK: %s%s",
+                        processor != null && processor.getFullName() != null ? processor.getFullName() : "Quản lý cơ sở",
+                        refund.getTransactionReference() != null ? refund.getTransactionReference() : "",
+                        refund.getBankName() != null ? refund.getBankName() : "",
+                        refund.getBankAccountNumber() != null ? refund.getBankAccountNumber() : "",
+                        (processNotes != null && !processNotes.isBlank()) ? " | Ghi chú: " + processNotes.trim() : "");
+                ticket.setResolutionNote(ticket.getResolutionNote() != null ? ticket.getResolutionNote() + "\n" + payoutNote : payoutNote);
+
+                supportTicketRepository.save(ticket);
+
+                if (activityLogService != null) {
+                    activityLogService.record(
+                            ticket.getFacility() != null ? ticket.getFacility().getId() : (refund.getFacility() != null ? refund.getFacility().getId() : null),
+                            ActivityAction.SUPPORT_TICKET_RESOLVE,
+                            "SupportTicket",
+                            ticket.getId(),
+                            "Quản lý cơ sở hoàn tất chuyển khoản tiền hoàn trả: " + refund.getTransactionReference(),
+                            "IN_PROGRESS",
+                            "RESOLVED"
+                    );
+                }
+
+                if (ticket.getCustomer() != null && notificationLogRepository != null) {
+                    notificationLogRepository.save(NotificationLog.builder()
+                            .recipient(ticket.getCustomer())
+                            .recipientEmail(ticket.getCustomer().getEmail())
+                            .recipientName(ticket.getCustomer().getFullName() != null ? ticket.getCustomer().getFullName() : ticket.getCustomer().getUsername())
+                            .facility(ticket.getFacility() != null ? ticket.getFacility() : refund.getFacility())
+                            .channel(NotificationChannel.IN_APP)
+                            .notificationType(NotificationType.REFUND_PAYOUT_COMPLETED)
+                            .referenceType("SupportTicket")
+                            .referenceId(ticket.getId())
+                            .title("✓ Đã hoàn tiền sự cố #" + ticket.getTicketCode())
+                            .content(String.format("Quản lý cơ sở đã chuyển khoản thành công %,d đ vào tài khoản %s - %s. Mã GD: %s.",
+                                    refund.getFinalRefundAmount() != null ? refund.getFinalRefundAmount().longValue() : (ticket.getRefundAmount() != null ? ticket.getRefundAmount().longValue() : 0L),
+                                    refund.getBankName() != null ? refund.getBankName() : "",
+                                    refund.getBankAccountNumber() != null ? refund.getBankAccountNumber() : "",
+                                    refund.getTransactionReference() != null ? refund.getTransactionReference() : ""))
+                            .status("SENT")
+                            .build());
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Could not sync linked support ticket on processRefund: {}", ex.getMessage());
+        }
     }
 
     @Override

@@ -66,6 +66,9 @@ class RefundServiceTest {
     @Mock
     private HandoverRecordRepository handoverRecordRepository;
 
+    @Mock
+    private SupportTicketRepository supportTicketRepository;
+
     @InjectMocks
     private RefundServiceImpl refundService;
 

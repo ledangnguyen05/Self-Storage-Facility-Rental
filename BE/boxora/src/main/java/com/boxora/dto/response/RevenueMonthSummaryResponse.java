@@ -26,4 +26,10 @@ public class RevenueMonthSummaryResponse {
     private BigDecimal netCashFlow;
     private BigDecimal netRevenue;
     private Long paymentCount;
+    private BigDecimal overdueDebt;
+    private Long overdueCount;
+    private Long blockedOrSealedCount;
+    private BigDecimal depositsHeld;
+    private Long activeContractsCount;
+    private BigDecimal pendingRefundAmount;
 }
