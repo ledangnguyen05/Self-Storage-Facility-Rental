@@ -4828,14 +4828,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({ bookingOnl
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-600 mt-1">
-                              <span className="inline-flex items-center gap-1.5 font-bold text-slate-800 bg-slate-100 hover:bg-slate-200/80 px-2.5 py-1 rounded-lg border border-slate-200/90 shadow-2xs transition-colors">
-                                <span className="material-symbols-outlined text-[15px] text-blue-600">storefront</span>
-                                <span>Cơ sở: <span className="text-blue-900 font-extrabold">{c.facilityName || matchedBooking?.facilityName || 'Hệ thống Boxora'}</span></span>
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <span className="font-mono text-slate-500 font-medium">Hợp đồng #{c.contractCode}</span>
-                            </div>
+                            <span className="text-xs text-slate-500 font-mono mt-0.5">Hợp đồng #{c.contractCode}</span>
                           </div>
 
                         </div>
